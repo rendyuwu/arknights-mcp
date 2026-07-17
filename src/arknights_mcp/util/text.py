@@ -30,3 +30,17 @@ def sanitize_text(value: str, *, max_length: int = DEFAULT_MAX_TEXT_LENGTH) -> s
     if len(cleaned) > max_length:
         cleaned = cleaned[:max_length]
     return cleaned
+
+
+def is_placeholder(value: str | None) -> bool:
+    """A value is unset for validation purposes if empty or a ``<...>`` stub.
+
+    Single shared home (§V37) for the placeholder check used by ``config`` (OIDC
+    descriptor validation, §V9/§V10) and ``cli`` (sync base_url guard, §V5). The
+    ``str | None`` signature is the superset of the two former copies: ``None``
+    counts as unset.
+    """
+    if value is None:
+        return True
+    stripped = value.strip()
+    return not stripped or (stripped.startswith("<") and stripped.endswith(">"))

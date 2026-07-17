@@ -49,6 +49,7 @@ from arknights_mcp.sources.registry import (
     load_source_registry,
     set_source_enabled,
 )
+from arknights_mcp.util.text import is_placeholder
 
 DEFAULT_CONFIG_PATH = "config.toml"
 _PRIMARY_SOURCE_ID = "arknights_assets_gamedata"
@@ -109,11 +110,6 @@ def _load(args: argparse.Namespace) -> tuple[AppConfig, SourceRegistry]:
 def _expected_schema_version() -> str | None:
     files = sorted(default_migrations_dir().glob("[0-9]*.sql"))
     return files[-1].stem if files else None
-
-
-def _is_placeholder(value: str) -> bool:
-    stripped = value.strip()
-    return not stripped or (stripped.startswith("<") and stripped.endswith(">"))
 
 
 def _build_validate_promote(
@@ -196,7 +192,7 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
     resolved: dict[str, str] = {}
     for server in servers:
         url = source_cfg.base_url_for(server) if source_cfg is not None else ""
-        if _is_placeholder(url):
+        if is_placeholder(url):
             _err(
                 f"no allowlisted base_url configured for {_PRIMARY_SOURCE_ID!r} "
                 f"server {server!r} ([sync.{_PRIMARY_SOURCE_ID}])"

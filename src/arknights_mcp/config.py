@@ -18,6 +18,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from arknights_mcp.util.text import is_placeholder
+
 # Hosts that do not require HTTPS + OAuth for remote serving (§V9 loopback dev).
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "0::1"})
 
@@ -36,14 +38,6 @@ _SYNC_SCALAR_KEYS = frozenset(
 
 class ConfigError(ValueError):
     """Raised when configuration is invalid or unsafe to serve with."""
-
-
-def _is_placeholder(value: str | None) -> bool:
-    """A value is unset for validation purposes if empty or a ``<...>`` stub."""
-    if value is None:
-        return True
-    stripped = value.strip()
-    return not stripped or (stripped.startswith("<") and stripped.endswith(">"))
 
 
 class _Model(BaseModel):
@@ -158,9 +152,9 @@ class AuthConfig(_Model):
         """True when OIDC descriptors are present and non-placeholder (§V9/§V10)."""
         return (
             self.mode == "oidc"
-            and not _is_placeholder(self.issuer)
-            and not _is_placeholder(self.audience)
-            and not _is_placeholder(self.jwks_url)
+            and not is_placeholder(self.issuer)
+            and not is_placeholder(self.audience)
+            and not is_placeholder(self.jwks_url)
             and len(self.required_scopes) > 0
         )
 
