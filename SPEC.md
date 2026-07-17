@@ -102,7 +102,7 @@ T12|x|M0 minimal migrations: schema_migrations data_sources source_snapshots rec
 T13|x|M0 enemy parser importers/enemies.py → enemies + enemy_levels|V18
 T14|x|M0 stage + level/map/wave/spawn parser importers/stages.py+levels.py for pinned 4-4|V18
 T15|x|M0 minimal 4-4 fixture tests/fixtures/stage_4_4 (only test-required fields; no full dump)|V16
-T16|.|M0 one deterministic threat rule + evidence analyzers/rules + analyzers/stage.py|V6,V26
+T16|x|M0 one deterministic threat rule + evidence analyzers/rules + analyzers/stage.py|V6,V26
 T17|.|M0 internal analyze_stage service services/stages.py|V6,V14
 T18|.|M0 accept test: 4-4 → stage + enemy occurrence + provenance + threat finding; no wiki text|V5,V6,V16
 T19|.|M1 full migrations operator+enemy+stage+analysis tables per PRD §12|-
