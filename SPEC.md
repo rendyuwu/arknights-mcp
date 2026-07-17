@@ -93,7 +93,7 @@ T3|x|M0 pin deps → uv.lock (mcp>=1.28.1,<2, pydantic v2, sqlalchemy core, ruff
 T4|x|M0 policy files DATA_SOURCES.md DATA_POLICY.md TAKEDOWN_POLICY.md PRIVACY.md NOTICE SECURITY.md + README unofficial disclaimer + LICENSE Apache-2.0|V16,V27
 T5|x|M0 CLAUDE.md + AGENTS.md agent guardrails|-
 T6|x|M0 ADRs: dual-transport-1-core, immutable-promotion, no-query-net, code-only-dist, registry-takedown, oauth-remote|V1,V3,V4,V9,V14
-T7|.|M0 CI lint+type+test matrix Windows+macOS+Linux|-
+T7|x|M0 CI lint+type+test matrix Windows+macOS+Linux|-
 T8|.|M0 config.py + config.example.toml loader; refuse non-loopback remote w/o HTTPS+OAuth|V9
 T9|.|M0 machine source registry config/data_sources.toml + sources/registry.py loader|V27
 T10|.|M0 local snapshot adapter sources/base.py + local_snapshot.py|V1
