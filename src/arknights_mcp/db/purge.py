@@ -27,6 +27,7 @@ from arknights_mcp.db.migrations import open_writable
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.db.promotion import PromotionResult, promote_candidate
 from arknights_mcp.db.validate import ValidationReport, validate_database
+from arknights_mcp.util.sqlite import integrity_guard
 
 
 class PurgeError(RuntimeError):
@@ -173,18 +174,20 @@ def purge_and_rebuild(
 
         conn = open_writable(candidate)
         try:
-            affected = _purge_source_rows(conn, source_id)
-            materialize_policy_events(conn, policy_events)
-            conn.commit()
-        except sqlite3.IntegrityError as exc:
-            # A shared entity is still referenced by a non-purged source: fail
-            # closed rather than corrupt the graph. The current build stays active
-            # because promotion never runs (§V20).
-            conn.rollback()
-            raise PurgeError(
-                f"cannot purge {source_id!r}: a row it owns is still referenced by "
-                f"another source (shared entity); resolve before purging ({exc})"
-            ) from exc
+            # A shared entity still referenced by a non-purged source raises
+            # IntegrityError: fail closed rather than corrupt the graph. The
+            # current build stays active because promotion never runs (§V33/§V20).
+            with integrity_guard(
+                lambda exc: (
+                    f"cannot purge {source_id!r}: a row it owns is still referenced by "
+                    f"another source (shared entity); resolve before purging ({exc})"
+                ),
+                PurgeError,
+                on_error=conn.rollback,
+            ):
+                affected = _purge_source_rows(conn, source_id)
+                materialize_policy_events(conn, policy_events)
+                conn.commit()
         finally:
             conn.close()
 

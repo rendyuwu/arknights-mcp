@@ -21,6 +21,7 @@ from arknights_mcp.importers.field_policy import (
     sanitize_value,
 )
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
+from arknights_mcp.util.sqlite import integrity_guard
 
 
 @dataclass(frozen=True)
@@ -204,13 +205,12 @@ def insert_level(
     graceful :class:`ImporterError` rather than an uncaught ``IntegrityError`` that
     would tear down the whole candidate build with a raw traceback (§V3).
     """
-    try:
+    with integrity_guard(
+        f"level import for stage_pk={stage_pk} violates a uniqueness constraint "
+        f"(duplicate or missing structural index)",
+        ImporterError,
+    ):
         return _insert_level(conn, stage_pk, level, enemy_pk_by_game_id, provenance_id)
-    except sqlite3.IntegrityError as exc:
-        raise ImporterError(
-            f"level import for stage_pk={stage_pk} violates a uniqueness constraint "
-            f"(duplicate or missing structural index): {exc}"
-        ) from exc
 
 
 def _insert_level(

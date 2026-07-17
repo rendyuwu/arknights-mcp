@@ -20,6 +20,7 @@ from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.normalization import normalize_enemy_sources
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
+from arknights_mcp.util.sqlite import integrity_guard
 
 
 class ImporterError(ValueError):
@@ -166,7 +167,13 @@ def insert_enemies(
         enemy_pk = cur.lastrowid
         enemies_inserted += 1
         for level in enemy.levels:
-            try:
+            # A repeated or absent level index collides on UNIQUE(enemy_pk,
+            # level_variant); fail closed with a clear message instead of an
+            # uncaught traceback that tears down the whole build (§V33 / §V3).
+            with integrity_guard(
+                f"enemy {enemy.game_id!r} has a duplicate level_variant {level.level_variant}",
+                ImporterError,
+            ):
                 conn.execute(
                     "INSERT INTO enemy_levels "
                     "(enemy_pk, level_variant, hp, atk, def, res, attack_interval, "
@@ -191,14 +198,6 @@ def insert_enemies(
                         json_or_none(level.abilities),
                     ),
                 )
-            except sqlite3.IntegrityError as exc:
-                # A repeated or absent level index collides on UNIQUE(enemy_pk,
-                # level_variant); fail closed with a clear message instead of an
-                # uncaught traceback that tears down the whole build (§V3).
-                raise ImporterError(
-                    f"enemy {enemy.game_id!r} has a duplicate level_variant "
-                    f"{level.level_variant}: {exc}"
-                ) from exc
             levels_inserted += 1
     return EnemyImportResult(enemies_inserted=enemies_inserted, levels_inserted=levels_inserted)
 

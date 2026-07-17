@@ -169,7 +169,7 @@ T69|x|M1 CI-only `kengxxiao_gamedata` CN cross-validator (deferred from T68): ke
 T70|x|DRY: extract dup coerce helpers `_as_int`/`_as_float`/`_as_str`/`_json_or_none` (3 copies: `importers/enemies.py:66-81` + `levels.py:87-100` + `stages.py:64-69`) → 1 shared home (`util/coerce.py`); resolve `_as_str` divergence (levels `sanitize_text` vs enemies/stages raw) via explicit `sanitize=` param, ⊥ silent variant copies|V37
 T71|x|DRY: unify `_is_placeholder` (2 copies: `cli.py:114` `(str)` + `config.py:41` `(str\|None)`) → 1 shared fn (`str\|None` signature)|V37
 T72|x|DRY: dedup `INSERT INTO record_provenance` (`enemies.py:167` inline vs `stages.py:121` `_insert_provenance` helper) → shared helper in `importers/manifest.py`; both importers route through it|V37,V17
-T73|.|DRY: extract repeated `sqlite3.IntegrityError`→`ImporterError` guard (3 sites: `enemies.py:225` + `levels.py:226` + `db/purge.py`) → 1 shared guard (ctx mgr\|decorator)|V37,V33
+T73|x|DRY: extract repeated `sqlite3.IntegrityError`→`ImporterError` guard (3 sites: `enemies.py:225` + `levels.py:226` + `db/purge.py`) → 1 shared guard (ctx mgr\|decorator)|V37,V33
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
