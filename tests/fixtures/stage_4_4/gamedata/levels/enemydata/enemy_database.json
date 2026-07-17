@@ -1,0 +1,40 @@
+{
+  "enemies": {
+    "enemy_1007_slime": {
+      "levels": [
+        {
+          "level": 0,
+          "hp": 1650,
+          "atk": 320,
+          "def": 100,
+          "res": 0,
+          "attackInterval": 2.0,
+          "attackRange": 0.0,
+          "moveSpeed": 0.7,
+          "weight": 2,
+          "lifePointReduction": 1,
+          "blockBehavior": "blockable",
+          "abilities": []
+        }
+      ]
+    },
+    "enemy_1105_drone": {
+      "levels": [
+        {
+          "level": 0,
+          "hp": 900,
+          "atk": 260,
+          "def": 0,
+          "res": 10,
+          "attackInterval": 1.6,
+          "attackRange": 1.2,
+          "moveSpeed": 1.0,
+          "weight": 1,
+          "lifePointReduction": 1,
+          "blockBehavior": "unblockable_flying",
+          "abilities": ["aerial"]
+        }
+      ]
+    }
+  }
+}

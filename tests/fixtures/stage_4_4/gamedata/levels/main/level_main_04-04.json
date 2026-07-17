@@ -1,0 +1,67 @@
+{
+  "mapData": {
+    "width": 8,
+    "height": 5,
+    "mapVersion": "1",
+    "environment": {},
+    "tiles": [
+      {
+        "x": 0,
+        "y": 0,
+        "tileKey": "tile_start",
+        "heightType": "LOWLAND",
+        "buildableType": "NONE",
+        "passable": true
+      },
+      {
+        "x": 7,
+        "y": 4,
+        "tileKey": "tile_end",
+        "heightType": "LOWLAND",
+        "buildableType": "NONE",
+        "passable": true
+      }
+    ]
+  },
+  "routes": [
+    {
+      "routeIndex": 0,
+      "startPosition": { "row": 0, "col": 0 },
+      "endPosition": { "row": 4, "col": 7 },
+      "checkpoints": []
+    }
+  ],
+  "waves": [
+    {
+      "waveIndex": 0,
+      "preDelay": 1.0,
+      "maxTimeWaiting": 10.0,
+      "fragments": [
+        {
+          "actions": [
+            {
+              "enemyId": "enemy_1007_slime",
+              "levelVariant": 0,
+              "routeIndex": 0,
+              "spawnTime": 2.0,
+              "count": 3,
+              "interval": 1.5,
+              "spawnGroup": "g0",
+              "hidden": false
+            },
+            {
+              "enemyId": "enemy_1105_drone",
+              "levelVariant": 0,
+              "routeIndex": 0,
+              "spawnTime": 8.0,
+              "count": 2,
+              "interval": 2.0,
+              "spawnGroup": "g1",
+              "hidden": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

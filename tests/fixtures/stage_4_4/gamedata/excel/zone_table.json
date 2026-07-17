@@ -1,0 +1,9 @@
+{
+  "zones": {
+    "main_4": {
+      "zoneId": "main_4",
+      "zoneName": "Chapter 4",
+      "type": "MAINLINE"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "stages": {
+    "main_04-04": {
+      "stageId": "main_04-04",
+      "code": "4-4",
+      "name": "Combustion",
+      "zoneId": "main_4",
+      "stageType": "MAIN",
+      "difficulty": "NORMAL",
+      "apCost": 18,
+      "recommendedLevel": 45,
+      "maxLifePoints": 3,
+      "levelId": "gamedata/levels/main/level_main_04-04.json"
+    }
+  }
+}
