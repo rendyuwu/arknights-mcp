@@ -83,6 +83,8 @@ V25: `mcp>=1.28.1,<2`; exact resolved version in `uv.lock`. SDK v2 migration →
 V26: analyzer rules on typed fields (⊥ NL keyword match). missing field → reduce confidence | limitation. conflicting source fields → omit conclusion + warn.
 V27: source registry complete ∀ enabled source: `source_id` + owner + URL + purpose/domains + regions + license/permission status + attribution + enabled + `last_reviewed` + snapshot commit. `get_data_sources` ⊥ secrets | local fs path | OAuth config | takedown correspondence.
 V28: admin ops (sync, import, validate, purge, source mgmt) CLI-only. ⊥ exposed as MCP tool.
+V29: importer parse contract verified vs real `arknights_assets_gamedata` schema; ⊥ validate data path solely on synthetic fixture matching parser. real shapes: `enemy_database.json` top-level id-keyed dict → list `{level, enemyData.attributes.<stat>.m_value}` (no `"enemies"` wrapper; `maxHp`/`magicResistance`/`baseAttackTime` ≠ `hp`/`res`/`attackInterval`); `stage_table.levelId` = `Obt/Main/level_main_04-04` (Title-case, no `gamedata/levels/` prefix, no `.json`); level tiles grid-indexed (no `x`/`y`; `passableMask` ≠ `passable`), wave action enemy under `key` ≠ `enemyId`; enemy motion @ `enemy_database` `enemyData.motion.m_value` (handbook no `motionType`).
+V30: raw upstream shape ≠ normalized tables → explicit `importers/normalization.py` transform ! bridge. sync/import ! report per-stage import counts; non-empty source yielding 0 levels/tiles/spawns/`stage_enemies` → fail closed (⊥ silent empty build).
 
 ## §T TASKS
 
@@ -152,8 +154,8 @@ T62|.|M7 privacy log scan (no token/prompt/args/body)|V12
 T63|.|M7 no-bulk-reconstruction test|V19
 T64|.|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
 T65|.|M7 tag private-alpha v0.1.0 release|-
-
-## §B BUGS
+T66|.|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18
+T67|.|M1 real-shape contract test: fixture built from real enemy_database/stage_table/level shapes (⊥ synthetic-only); assert `sync`/`import` 4-4 → non-empty enemies+tiles+spawns+`stage_enemies`|V29,V30
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
@@ -161,3 +163,4 @@ B2|2026-07-17|V1/PRD17.4: `max_total_download_mb` loaded but never wired → ada
 B3|2026-07-17|V1/PRD17.4: redirect handler checked HTTPS+count only, no same-domain → 302 to foreign host followed, domain allowlist bypassed|`_BoundedRedirectHandler` default-deny cross-domain vs original host; `allow_cross_domain` opt-out
 B4|2026-07-17|V1/PRD17.4: `_total_bytes` per-adapter + fresh adapter per server → `sync --server all` allowed ~2x total cap|shared run-level `DownloadBudget` injected into all adapters in the run
 B5|2026-07-17|`json.loads` ran before depth cap → deep-nested JSON raised uncaught `RecursionError` traceback not graceful reject|catch `RecursionError` in `_download` → `SourceAdapterError("JSON exceeds safe nesting depth")`
+B6|2026-07-17|H1 verified vs upstream `master`@`413a81a3ff3e`: T13/T14/T21 parsers+fixture `tests/fixtures/stage_4_4` target synthetic shape ≠ real `arknights_assets_gamedata`. (a) real `enemy_database.json` = top-level id-keyed dict of list `{level, enemyData.attributes.<stat>.m_value}`, no `"enemies"` wrapper → `parse_enemies` guard `"enemies" not in database_raw` raises `ImporterError` (in `_HANDLED_ERRORS` → graceful exit 1) at once; stat keys differ (`maxHp`≠`hp`, `magicResistance`≠`res`, `baseAttackTime`≠`attackInterval`). (b) real `levelId`=`Obt/Main/level_main_04-04` (Title-case, no `gamedata/levels/` prefix, no `.json`) → `_discover_level_paths` collects 0/3264 → 0 level files. (c) real level `mapData` no width/height (grid `map`), tiles no x/y → 0/117 kept; wave action enemy under `key` ≠ `enemyId` → 0/26 spawns. (d) `motionType` absent from handbook (real motion @ `enemy_database` `enemyData.motion.m_value`) → aerial rule V6 substrate empty. ∴ real `sync --server en` ⊥ import combat data (halts at enemy-DB guard; if bypassed → silent empty stages). NOT H1's predicted raw `AttributeError`|V29,V30 ∴ T66 normalization transform + T67 real-shape contract test; T13/T14/T21 ⊥ done vs real data (fixture-only)
