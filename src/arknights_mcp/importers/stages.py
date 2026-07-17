@@ -22,6 +22,7 @@ from arknights_mcp.importers.levels import LevelImportResult, insert_level, pars
 from arknights_mcp.importers.manifest import make_record_provenance
 from arknights_mcp.importers.normalization import normalize_level, normalize_level_id
 from arknights_mcp.sources.base import SourceAdapter
+from arknights_mcp.util.coerce import as_int, as_str
 
 _LOG = logging.getLogger(__name__)
 
@@ -61,14 +62,6 @@ class StageImportResult:
     levels_imported: int = 0
 
 
-def _as_int(value: Any) -> int | None:
-    return int(value) if isinstance(value, bool | int | float) else None
-
-
-def _as_str(value: Any) -> str | None:
-    return value if isinstance(value, str) else None
-
-
 def parse_zones(zone_raw: Any) -> list[ParsedZone]:
     if not isinstance(zone_raw, dict) or "zones" not in zone_raw:
         raise ImporterError("zone table missing top-level 'zones'")
@@ -82,8 +75,8 @@ def parse_zones(zone_raw: Any) -> list[ParsedZone]:
         out.append(
             ParsedZone(
                 game_id=game_id,
-                display_name=_as_str(kept.get("zoneName")),
-                zone_type=_as_str(kept.get("type")),
+                display_name=as_str(kept.get("zoneName")),
+                zone_type=as_str(kept.get("type")),
                 provenance_record=kept,
             )
         )
@@ -103,15 +96,15 @@ def parse_stages(stage_raw: Any) -> list[ParsedStage]:
         out.append(
             ParsedStage(
                 game_id=game_id,
-                stage_code=_as_str(kept.get("code")),
-                display_name=_as_str(kept.get("name")),
-                zone_game_id=_as_str(kept.get("zoneId")),
-                stage_type=_as_str(kept.get("stageType")),
-                difficulty=_as_str(kept.get("difficulty")),
-                sanity_cost=_as_int(kept.get("apCost")),
-                recommended_level=_as_int(kept.get("recommendedLevel")),
-                max_life_points=_as_int(kept.get("maxLifePoints")),
-                level_id=_as_str(kept.get("levelId")),
+                stage_code=as_str(kept.get("code")),
+                display_name=as_str(kept.get("name")),
+                zone_game_id=as_str(kept.get("zoneId")),
+                stage_type=as_str(kept.get("stageType")),
+                difficulty=as_str(kept.get("difficulty")),
+                sanity_cost=as_int(kept.get("apCost")),
+                recommended_level=as_int(kept.get("recommendedLevel")),
+                max_life_points=as_int(kept.get("maxLifePoints")),
+                level_id=as_str(kept.get("levelId")),
                 provenance_record=kept,
             )
         )

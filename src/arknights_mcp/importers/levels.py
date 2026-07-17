@@ -9,7 +9,6 @@ tiles, routes, waves, and spawns for one stage, then derives the
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -21,7 +20,7 @@ from arknights_mcp.importers.field_policy import (
     apply_allowlist,
     sanitize_value,
 )
-from arknights_mcp.util.text import sanitize_text
+from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
 
 
 @dataclass(frozen=True)
@@ -84,22 +83,6 @@ class LevelImportResult:
     stage_enemies: int = 0
 
 
-def _as_int(value: Any) -> int | None:
-    return int(value) if isinstance(value, bool | int | float) else None
-
-
-def _as_float(value: Any) -> float | None:
-    return float(value) if isinstance(value, bool | int | float) else None
-
-
-def _as_str(value: Any) -> str | None:
-    return sanitize_text(value) if isinstance(value, str) else None
-
-
-def _json_or_none(value: Any) -> str | None:
-    return None if value is None else json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
 def parse_level(level_raw: Any) -> ParsedLevel:
     """Transform a raw level JSON document into typed structural data."""
     if not isinstance(level_raw, dict):
@@ -112,7 +95,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
     for raw in map_data.get("tiles", []):
         if not isinstance(raw, dict):
             continue
-        x, y = _as_int(raw.get("x")), _as_int(raw.get("y"))
+        x, y = as_int(raw.get("x")), as_int(raw.get("y"))
         if x is None or y is None:
             continue
         passable = raw.get("passable")
@@ -120,9 +103,9 @@ def parse_level(level_raw: Any) -> ParsedLevel:
             ParsedTile(
                 x=x,
                 y=y,
-                tile_key=_as_str(raw.get("tileKey")),
-                height_type=_as_str(raw.get("heightType")),
-                buildable_type=_as_str(raw.get("buildableType")),
+                tile_key=as_str(raw.get("tileKey"), sanitize=True),
+                height_type=as_str(raw.get("heightType"), sanitize=True),
+                buildable_type=as_str(raw.get("buildableType"), sanitize=True),
                 passable=bool(passable) if isinstance(passable, bool) else None,
                 special_properties=sanitize_value(raw.get("specialProperties")),
             )
@@ -132,7 +115,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
     for raw in level_raw.get("routes", []):
         if not isinstance(raw, dict):
             continue
-        idx = _as_int(raw.get("routeIndex"))
+        idx = as_int(raw.get("routeIndex"))
         if idx is None:
             continue
         routes.append(
@@ -148,7 +131,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
     for raw in level_raw.get("waves", []):
         if not isinstance(raw, dict):
             continue
-        w_idx = _as_int(raw.get("waveIndex"))
+        w_idx = as_int(raw.get("waveIndex"))
         if w_idx is None:
             continue
         spawns: list[ParsedSpawn] = []
@@ -164,12 +147,12 @@ def parse_level(level_raw: Any) -> ParsedLevel:
                 spawns.append(
                     ParsedSpawn(
                         enemy_game_id=enemy_id,
-                        level_variant=_as_int(action.get("levelVariant")) or 0,
-                        route_index=_as_int(action.get("routeIndex")),
-                        spawn_time=_as_float(action.get("spawnTime")),
-                        count=_as_int(action.get("count")),
-                        interval=_as_float(action.get("interval")),
-                        spawn_group=_as_str(action.get("spawnGroup")),
+                        level_variant=as_int(action.get("levelVariant")) or 0,
+                        route_index=as_int(action.get("routeIndex")),
+                        spawn_time=as_float(action.get("spawnTime")),
+                        count=as_int(action.get("count")),
+                        interval=as_float(action.get("interval")),
+                        spawn_group=as_str(action.get("spawnGroup"), sanitize=True),
                         hidden=bool(action.get("hidden", False)),
                         # V18: keep only the allowlisted structural spawn fields
                         # (sanitized), never the whole raw action (which may carry
@@ -180,16 +163,16 @@ def parse_level(level_raw: Any) -> ParsedLevel:
         waves.append(
             ParsedWave(
                 wave_index=w_idx,
-                pre_delay=_as_float(raw.get("preDelay")),
-                max_time_waiting=_as_float(raw.get("maxTimeWaiting")),
+                pre_delay=as_float(raw.get("preDelay")),
+                max_time_waiting=as_float(raw.get("maxTimeWaiting")),
                 spawns=spawns,
             )
         )
 
     return ParsedLevel(
-        width=_as_int(map_data.get("width")),
-        height=_as_int(map_data.get("height")),
-        map_version=_as_str(map_data.get("mapVersion")),
+        width=as_int(map_data.get("width")),
+        height=as_int(map_data.get("height")),
+        map_version=as_str(map_data.get("mapVersion"), sanitize=True),
         environment=sanitize_value(map_data.get("environment")),
         tiles=tiles,
         routes=routes,
@@ -246,7 +229,7 @@ def _insert_level(
             level.width,
             level.height,
             level.map_version,
-            _json_or_none(level.environment),
+            json_or_none(level.environment),
             provenance_id,
         ),
     )
@@ -264,7 +247,7 @@ def _insert_level(
                 tile.height_type,
                 tile.buildable_type,
                 None if tile.passable is None else int(tile.passable),
-                _json_or_none(tile.special_properties),
+                json_or_none(tile.special_properties),
                 provenance_id,
             ),
         )
@@ -278,9 +261,9 @@ def _insert_level(
             (
                 stage_pk,
                 route.route_index,
-                _json_or_none(route.start_position),
-                _json_or_none(route.end_position),
-                _json_or_none(route.checkpoints),
+                json_or_none(route.start_position),
+                json_or_none(route.end_position),
+                json_or_none(route.checkpoints),
                 provenance_id,
             ),
         )
@@ -320,7 +303,7 @@ def _insert_level(
                     spawn.interval,
                     spawn.spawn_group,
                     int(spawn.hidden),
-                    _json_or_none(spawn.source_fragment),
+                    json_or_none(spawn.source_fragment),
                     provenance_id,
                 ),
             )

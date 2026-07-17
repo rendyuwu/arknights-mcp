@@ -7,7 +7,6 @@ insertion so it is unit-testable without a database.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +19,7 @@ from arknights_mcp.importers.field_policy import (
 from arknights_mcp.importers.manifest import make_record_provenance
 from arknights_mcp.importers.normalization import normalize_enemy_sources
 from arknights_mcp.sources.base import SourceAdapter
+from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
 
 
 class ImporterError(ValueError):
@@ -63,24 +63,6 @@ class EnemyImportResult:
     levels_inserted: int
 
 
-def _as_int(value: Any) -> int | None:
-    return int(value) if isinstance(value, bool | int | float) else None
-
-
-def _as_float(value: Any) -> float | None:
-    return float(value) if isinstance(value, bool | int | float) else None
-
-
-def _as_str(value: Any) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _json_or_none(value: Any) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
 def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
     """Transform raw handbook + database JSON into typed, allowlisted enemies."""
     if not isinstance(handbook_raw, dict) or "enemyData" not in handbook_raw:
@@ -100,7 +82,7 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
         if not isinstance(entry, dict):
             continue
         kept_hb = apply_allowlist(entry, ENEMY_HANDBOOK_ALLOWLIST).kept
-        enemy_class = _as_str(kept_hb.get("enemyLevel"))
+        enemy_class = as_str(kept_hb.get("enemyLevel"))
 
         levels: list[ParsedEnemyLevel] = []
         kept_levels: list[dict[str, Any]] = []
@@ -113,17 +95,17 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
             kept_levels.append(kept)
             levels.append(
                 ParsedEnemyLevel(
-                    level_variant=_as_int(kept.get("level")) or 0,
-                    hp=_as_int(kept.get("hp")),
-                    atk=_as_int(kept.get("atk")),
-                    def_=_as_int(kept.get("def")),
-                    res=_as_int(kept.get("res")),
-                    attack_interval=_as_float(kept.get("attackInterval")),
-                    attack_range=_as_float(kept.get("attackRange")),
-                    move_speed=_as_float(kept.get("moveSpeed")),
-                    weight=_as_int(kept.get("weight")),
-                    life_point_reduction=_as_int(kept.get("lifePointReduction")),
-                    block_behavior=_as_str(kept.get("blockBehavior")),
+                    level_variant=as_int(kept.get("level")) or 0,
+                    hp=as_int(kept.get("hp")),
+                    atk=as_int(kept.get("atk")),
+                    def_=as_int(kept.get("def")),
+                    res=as_int(kept.get("res")),
+                    attack_interval=as_float(kept.get("attackInterval")),
+                    attack_range=as_float(kept.get("attackRange")),
+                    move_speed=as_float(kept.get("moveSpeed")),
+                    weight=as_int(kept.get("weight")),
+                    life_point_reduction=as_int(kept.get("lifePointReduction")),
+                    block_behavior=as_str(kept.get("blockBehavior")),
                     targeting=kept.get("targeting"),
                     immunities=kept.get("immunities"),
                     abilities=kept.get("abilities"),
@@ -133,12 +115,12 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
         parsed.append(
             ParsedEnemy(
                 game_id=game_id,
-                display_name=_as_str(kept_hb.get("name")),
+                display_name=as_str(kept_hb.get("name")),
                 enemy_class=enemy_class,
                 is_boss=enemy_class == "BOSS",
                 is_elite=enemy_class == "ELITE",
-                attack_type=_as_str(kept_hb.get("attackType")),
-                motion_type=_as_str(kept_hb.get("motionType")),
+                attack_type=as_str(kept_hb.get("attackType")),
+                motion_type=as_str(kept_hb.get("motionType")),
                 levels=levels,
                 provenance_record={"handbook": kept_hb, "levels": kept_levels},
             )
@@ -217,9 +199,9 @@ def insert_enemies(
                         level.weight,
                         level.life_point_reduction,
                         level.block_behavior,
-                        _json_or_none(level.targeting),
-                        _json_or_none(level.immunities),
-                        _json_or_none(level.abilities),
+                        json_or_none(level.targeting),
+                        json_or_none(level.immunities),
+                        json_or_none(level.abilities),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
