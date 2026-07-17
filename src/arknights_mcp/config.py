@@ -58,7 +58,16 @@ class DatabaseConfig(_Model):
 
 class SyncSourceConfig(_Model):
     base_url: str = ""
+    # Optional per-region overrides. A region without an explicit entry falls back
+    # to ``base_url``; a ``{server}`` token in either is substituted per region so a
+    # single region-partitioned repo can serve distinct en/cn trees (§V5).
+    base_urls: dict[str, str] = Field(default_factory=dict)
     servers: list[str] = Field(default_factory=lambda: ["en", "cn"])
+
+    def base_url_for(self, server: str) -> str:
+        """Resolve the upstream base URL for ``server`` (§V5: en/cn never mixed)."""
+        url = self.base_urls.get(server, self.base_url)
+        return url.replace("{server}", server)
 
 
 class SyncConfig(_Model):

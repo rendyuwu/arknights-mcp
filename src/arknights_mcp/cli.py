@@ -33,7 +33,12 @@ from arknights_mcp.db.validate import format_report, validate_database
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.services.status import get_data_status
-from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter, Fetcher
+from arknights_mcp.sources.arknights_assets import (
+    ArknightsAssetsAdapter,
+    DownloadBudget,
+    DownloadLimits,
+    Fetcher,
+)
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import (
@@ -78,6 +83,16 @@ def _out(message: str) -> None:
 
 def _resolve_servers(server: str) -> list[str]:
     return ["en", "cn"] if server == "all" else [server]
+
+
+def _download_limits(config: AppConfig) -> DownloadLimits:
+    """Derive the sync download caps from config so the operator knob is live.
+
+    ``[sync].max_total_download_mb`` bounds the *whole run* (all servers), in MiB,
+    replacing the hardcoded default so the configured value actually takes effect
+    (PRD §17.4).
+    """
+    return DownloadLimits(max_total_bytes=config.sync.max_total_download_mb * 1024 * 1024)
 
 
 def _load(args: argparse.Namespace) -> tuple[AppConfig, SourceRegistry]:
@@ -163,20 +178,42 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
         _err(f"source {_PRIMARY_SOURCE_ID!r} is disabled; enable it before syncing (§V20)")
         return 1
     source_cfg = config.sync.sources.get(_PRIMARY_SOURCE_ID)
-    base_url = source_cfg.base_url if source_cfg is not None else ""
-    if _is_placeholder(base_url):
+    servers = _resolve_servers(args.server)
+
+    # Resolve a per-region base_url; each region must point at a distinct upstream
+    # tree so en/cn data is never silently mixed (§V5).
+    resolved: dict[str, str] = {}
+    for server in servers:
+        url = source_cfg.base_url_for(server) if source_cfg is not None else ""
+        if _is_placeholder(url):
+            _err(
+                f"no allowlisted base_url configured for {_PRIMARY_SOURCE_ID!r} "
+                f"server {server!r} ([sync.{_PRIMARY_SOURCE_ID}])"
+            )
+            return 1
+        resolved[server] = url
+    if len(set(resolved.values())) != len(resolved):
         _err(
-            f"no allowlisted base_url configured for {_PRIMARY_SOURCE_ID!r} "
-            f"([sync.{_PRIMARY_SOURCE_ID}])"
+            "multiple servers resolve to the same base_url; refusing to import "
+            "identical upstream data under different region labels (§V5). "
+            "Configure a distinct [sync."
+            f"{_PRIMARY_SOURCE_ID}].base_urls entry per region or use a {{server}} token."
         )
         return 1
 
-    servers = _resolve_servers(args.server)
+    limits = _download_limits(config)
+    budget = DownloadBudget(limits.max_total_bytes)
     _out(f"sync: {_PRIMARY_SOURCE_ID} servers={','.join(servers)}")
     with tempfile.TemporaryDirectory(prefix="arkmcp-staging-") as staging:
         imports: list[ServerImport] = []
         for server in servers:
-            adapter = ArknightsAssetsAdapter(base_url, server, fetcher=ctx.fetcher)
+            adapter = ArknightsAssetsAdapter(
+                resolved[server],
+                server,
+                fetcher=ctx.fetcher,
+                limits=limits,
+                budget=budget,
+            )
             local: LocalSnapshotAdapter = adapter.stage(Path(staging) / server)
             imports.append(ServerImport(server=server, adapter=local, source_id=_PRIMARY_SOURCE_ID))
         return _build_validate_promote(config, registry, imports, servers=servers)

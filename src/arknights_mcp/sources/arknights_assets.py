@@ -20,6 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -53,6 +54,24 @@ class DownloadLimits:
 DEFAULT_LIMITS = DownloadLimits()
 
 
+class DownloadBudget:
+    """Mutable run-level total-byte accumulator (PRD §11.2 total-download cap).
+
+    Shared across every adapter in one ``sync`` run so the cap bounds the whole
+    run, not each server independently: ``sync --server all`` may not exceed
+    ``max_total_bytes`` in aggregate.
+    """
+
+    def __init__(self, max_total_bytes: int) -> None:
+        self._max = max_total_bytes
+        self._used = 0
+
+    def charge(self, nbytes: int) -> None:
+        self._used += nbytes
+        if self._used > self._max:
+            raise SourceAdapterError(f"sync exceeds total download cap ({self._max} bytes)")
+
+
 class Fetcher(Protocol):
     """Fetches the bytes at an HTTPS URL, honoring a per-file byte cap."""
 
@@ -60,16 +79,33 @@ class Fetcher(Protocol):
 
 
 class HttpsFetcher:
-    """Default :class:`Fetcher`: HTTPS-only, redirect-capped, size-capped (§V1)."""
+    """Default :class:`Fetcher`: HTTPS-only, redirect-capped, size-capped (§V1).
 
-    def __init__(self, *, max_redirects: int = DEFAULT_LIMITS.max_redirects, timeout: float = 30.0):
+    Redirects are same-domain by default (PRD §17.4): a redirect that leaves the
+    original request's host is refused unless ``allow_cross_domain`` is explicitly
+    set, so the domain allowlist cannot be escaped via a 302.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_redirects: int = DEFAULT_LIMITS.max_redirects,
+        timeout: float = 30.0,
+        allow_cross_domain: bool = False,
+    ):
         self._max_redirects = max_redirects
         self._timeout = timeout
+        self._allow_cross_domain = allow_cross_domain
 
     def fetch(self, url: str, *, max_bytes: int) -> bytes:  # pragma: no cover - live network
         if not url.lower().startswith("https://"):
             raise SourceAdapterError(f"refusing non-HTTPS URL: {url!r}")
-        opener = urllib.request.build_opener(_BoundedRedirectHandler(self._max_redirects))
+        handler = _BoundedRedirectHandler(
+            self._max_redirects,
+            allowed_host=urlsplit(url).hostname,
+            allow_cross_domain=self._allow_cross_domain,
+        )
+        opener = urllib.request.build_opener(handler)
         with opener.open(url, timeout=self._timeout) as response:  # noqa: S310 - https enforced above
             data: bytes = response.read(max_bytes + 1)
         if len(data) > max_bytes:
@@ -78,13 +114,21 @@ class HttpsFetcher:
 
 
 class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Caps redirect depth and refuses non-HTTPS redirect targets."""
+    """Caps redirect depth; refuses non-HTTPS and (by default) cross-domain targets."""
 
-    def __init__(self, max_redirects: int) -> None:
+    def __init__(
+        self,
+        max_redirects: int,
+        *,
+        allowed_host: str | None = None,
+        allow_cross_domain: bool = False,
+    ) -> None:
         self._max = max_redirects
         self._count = 0
+        self._allowed_host = (allowed_host or "").lower()
+        self._allow_cross_domain = allow_cross_domain
 
-    def redirect_request(  # pragma: no cover - live network
+    def redirect_request(
         self,
         req: urllib.request.Request,
         fp: Any,
@@ -95,10 +139,20 @@ class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
     ) -> urllib.request.Request | None:
         if not newurl.lower().startswith("https://"):
             raise SourceAdapterError(f"refusing non-HTTPS redirect: {newurl!r}")
+        if not self._allow_cross_domain and self._allowed_host:
+            target_host = (urlsplit(newurl).hostname or "").lower()
+            if target_host != self._allowed_host:
+                raise SourceAdapterError(
+                    f"refusing cross-domain redirect to {target_host!r} "
+                    f"(allowlisted host is {self._allowed_host!r}); "
+                    f"same-domain policy (PRD §17.4)"
+                )
         self._count += 1
         if self._count > self._max:
             raise SourceAdapterError(f"too many redirects (> {self._max})")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        return super().redirect_request(  # pragma: no cover - live network
+            req, fp, code, msg, headers, newurl
+        )
 
 
 def _validate_relative_path(relative_path: str) -> str:
@@ -149,6 +203,7 @@ class ArknightsAssetsAdapter:
         fetcher: Fetcher | None = None,
         limits: DownloadLimits = DEFAULT_LIMITS,
         source_id: str = DEFAULT_SOURCE_ID,
+        budget: DownloadBudget | None = None,
     ) -> None:
         cleaned = base_url.strip()
         if not cleaned.lower().startswith("https://"):
@@ -160,20 +215,23 @@ class ArknightsAssetsAdapter:
             fetcher if fetcher is not None else HttpsFetcher(max_redirects=limits.max_redirects)
         )
         self._limits = limits
-        self._total_bytes = 0
+        # A per-run budget may be injected so a multi-server sync shares one cap;
+        # standalone use falls back to a per-adapter budget from ``limits``.
+        self._budget = budget if budget is not None else DownloadBudget(limits.max_total_bytes)
 
     def _download(self, relative_path: str, staging_root: Path) -> Any:
         """Fetch one allowlisted file into staging (enforcing caps); return parsed JSON."""
         normalized = _validate_relative_path(relative_path)
         url = f"{self.base_url}/{normalized}"
         data = self._fetcher.fetch(url, max_bytes=self._limits.max_file_bytes)
-        self._total_bytes += len(data)
-        if self._total_bytes > self._limits.max_total_bytes:
-            raise SourceAdapterError(
-                f"sync exceeds total download cap ({self._limits.max_total_bytes} bytes)"
-            )
+        self._budget.charge(len(data))
         try:
             parsed = json.loads(data.decode("utf-8"))
+        except RecursionError as exc:
+            # Pathologically deep JSON blows the parser's stack before the depth
+            # cap below can reject it; surface a graceful capped error instead of
+            # an uncaught traceback (the file never gets staged/imported).
+            raise SourceAdapterError(f"JSON exceeds safe nesting depth from {url!r}") from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise SourceAdapterError(f"invalid JSON downloaded from {url!r}: {exc}") from exc
         _json_within_limits(

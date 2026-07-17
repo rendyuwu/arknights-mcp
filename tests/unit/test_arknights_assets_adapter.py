@@ -16,8 +16,10 @@ import pytest
 from arknights_mcp.sources.arknights_assets import (
     ArknightsAssetsAdapter,
     DictFetcher,
+    DownloadBudget,
     DownloadLimits,
     HttpsFetcher,
+    _BoundedRedirectHandler,
     _validate_relative_path,
     dict_fetcher_from_snapshot,
 )
@@ -127,3 +129,38 @@ def test_json_node_cap(tmp_path: Path) -> None:
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher, limits=limits)
     with pytest.raises(SourceAdapterError, match="node cap"):
         adapter.stage(tmp_path / "staging")
+
+
+def test_deeply_nested_json_capped_gracefully(tmp_path: Path) -> None:
+    """Pathologically deep JSON is rejected as a capped error, not a RecursionError."""
+    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
+    payload = b"[" * 100_000 + b"]" * 100_000  # ~200 KB, under the per-file cap
+    fetcher = DictFetcher({url: payload})
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher)
+    with pytest.raises(SourceAdapterError, match="nesting depth"):
+        adapter.stage(tmp_path / "staging")
+
+
+# --- run-level total-download budget (PRD §11.2; shared across servers) --------
+
+
+def test_download_budget_accumulates_run_level() -> None:
+    budget = DownloadBudget(100)
+    budget.charge(60)  # under cap
+    with pytest.raises(SourceAdapterError, match="total download cap"):
+        budget.charge(50)  # 110 > 100 across the run
+
+
+# --- redirect same-domain policy (PRD §17.4) ----------------------------------
+
+
+def test_redirect_refuses_cross_domain() -> None:
+    handler = _BoundedRedirectHandler(5, allowed_host="example.test")
+    with pytest.raises(SourceAdapterError, match="cross-domain"):
+        handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/x.json")
+
+
+def test_redirect_refuses_non_https_target() -> None:
+    handler = _BoundedRedirectHandler(5, allowed_host="example.test")
+    with pytest.raises(SourceAdapterError, match="non-HTTPS"):
+        handler.redirect_request(None, None, 302, "Found", {}, "http://example.test/x.json")

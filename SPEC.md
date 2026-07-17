@@ -156,3 +156,8 @@ T65|.|M7 tag private-alpha v0.1.0 release|-
 ## §B BUGS
 
 id|date|cause|fix
+B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
+B2|2026-07-17|V1/PRD17.4: `max_total_download_mb` loaded but never wired → adapter always used hardcoded 512 MiB; operator cap dead|`_download_limits(config)` builds `DownloadLimits(max_total_bytes=mb*1024*1024)`, passed to adapter
+B3|2026-07-17|V1/PRD17.4: redirect handler checked HTTPS+count only, no same-domain → 302 to foreign host followed, domain allowlist bypassed|`_BoundedRedirectHandler` default-deny cross-domain vs original host; `allow_cross_domain` opt-out
+B4|2026-07-17|V1/PRD17.4: `_total_bytes` per-adapter + fresh adapter per server → `sync --server all` allowed ~2x total cap|shared run-level `DownloadBudget` injected into all adapters in the run
+B5|2026-07-17|`json.loads` ran before depth cap → deep-nested JSON raised uncaught `RecursionError` traceback not graceful reject|catch `RecursionError` in `_download` → `SourceAdapterError("JSON exceeds safe nesting depth")`

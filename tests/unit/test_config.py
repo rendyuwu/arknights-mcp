@@ -15,6 +15,7 @@ from arknights_mcp.config import (
     ENV_OIDC_ISSUER,
     AppConfig,
     ConfigError,
+    SyncSourceConfig,
     load_config,
 )
 
@@ -40,6 +41,23 @@ def test_sync_source_subtable_folds() -> None:
     assert "arknights_assets_gamedata" in cfg.sync.sources
     src = cfg.sync.sources["arknights_assets_gamedata"]
     assert src.servers == ["en", "cn"]
+
+
+def test_base_url_for_substitutes_server_token() -> None:
+    src = SyncSourceConfig(base_url="https://repo.test/{server}/data")
+    assert src.base_url_for("en") == "https://repo.test/en/data"
+    assert src.base_url_for("cn") == "https://repo.test/cn/data"
+    # Distinct per region → the §V5 same-URL guard never trips.
+    assert src.base_url_for("en") != src.base_url_for("cn")
+
+
+def test_base_urls_override_takes_precedence() -> None:
+    src = SyncSourceConfig(
+        base_url="https://fallback.test",
+        base_urls={"cn": "https://cn.repo.test/data"},
+    )
+    assert src.base_url_for("cn") == "https://cn.repo.test/data"
+    assert src.base_url_for("en") == "https://fallback.test"
 
 
 def test_missing_file_yields_defaults() -> None:

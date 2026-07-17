@@ -83,3 +83,23 @@ def test_sync_refuses_placeholder_base_url(tmp_path: Path) -> None:
     rc = main(["--config", str(config), "sync", "--server", "en"], fetcher=_fetcher())
     assert rc == 1
     assert not (tmp_path / "data" / "current.json").exists()
+
+
+def test_sync_all_same_base_url_refused(tmp_path: Path) -> None:
+    """--server all with one region-agnostic base_url refuses: en/cn must differ (§V5)."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        "[database]\n"
+        f'data_dir = "{data_dir.as_posix()}"\n'
+        f'current_manifest = "{(data_dir / "current.json").as_posix()}"\n'
+        "\n[sync]\nallow_remote_download = true\nretain_versions = 3\n"
+        f'\n[sync.arknights_assets_gamedata]\nbase_url = "{BASE_URL}"\nservers = ["en", "cn"]\n'
+        "\n[source_registry]\n"
+        f'machine_registry = "{REGISTRY.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    rc = main(["--config", str(config), "sync", "--server", "all"], fetcher=_fetcher())
+    assert rc == 1
+    assert not (data_dir / "current.json").exists()

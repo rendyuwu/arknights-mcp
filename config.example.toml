@@ -17,8 +17,15 @@ retain_versions = 3
 max_total_download_mb = 500
 
 [sync.arknights_assets_gamedata]
-base_url = "<configured allowlisted repository endpoint>"
+# Each region must point at a DISTINCT upstream tree so en/cn data is never
+# silently mixed (SPEC §V5). Either use a "{server}" token in base_url (below,
+# substituted per region), or give each region its own entry in [.base_urls].
+base_url = "<configured allowlisted repository endpoint>/{server}"
 servers = ["en", "cn"]
+
+# [sync.arknights_assets_gamedata.base_urls]
+# en = "<allowlisted EN repository endpoint>"
+# cn = "<allowlisted CN repository endpoint>"
 
 [source_registry]
 policy_file = "./DATA_SOURCES.md"
