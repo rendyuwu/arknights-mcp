@@ -51,6 +51,10 @@ jobs:
     # data; nothing fetched is committed (§V16, fetch -> discard).
     name: live-upstream real-shape (§T68)
     runs-on: ubuntu-latest
+    # Non-blocking: a flaky/unreachable/rate-limited upstream must not turn CI red
+    # for unrelated changes. The job still runs and reports its own status; it just
+    # does not fail the overall workflow. Promote to a hard gate if flakiness is low.
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
