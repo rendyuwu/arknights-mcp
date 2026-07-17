@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Read-only Arknights Intelligence MCP server: one shared core, local stdio + private OAuth/OIDC Streamable HTTP, over versioned SQLite snapshots."
 requires-python = ">=3.12,<3.13"
 # Runtime dependencies are declared and locked in task T3 (V25: mcp>=1.28.1,<2).
-dependencies = []
+dependencies = [
+    "mcp>=1.28.1,<2",
+    "pydantic>=2,<3",
+    "sqlalchemy>=2,<3",
+]
 keywords = ["arknights", "mcp", "model-context-protocol", "intelligence"]
 classifiers = [
     "Private :: Do Not Upload",
@@ -40,3 +44,12 @@ warn_unused_configs = true
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.156.6",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.22",
+]
