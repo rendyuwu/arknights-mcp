@@ -42,46 +42,31 @@ class ActiveSnapshotInfo:
 
 @dataclass(frozen=True)
 class SourceInfo:
-    """Public-safe registry projection for one source (§V27; PRD §13.10)."""
+    """Public-safe registry projection for one source (§V27; PRD §13.10).
 
-    source_id: str
-    display_name: str
-    owner_name: str
-    canonical_url: str
-    source_type: str
-    regions: tuple[str, ...]
-    purpose: str
-    fields_consumed: tuple[str, ...]
-    license_identifier: str
-    license_status: str
-    permission_status: str
-    private_hosting_status: str
-    redistribution_status: str
-    attribution_text: str
-    contact_url: str
-    enabled: bool
-    last_reviewed_at: str
+    The public field set is defined solely by
+    :meth:`SourceRegistryEntry.public_view` (§V34): this wrapper adds only the
+    DB-derived ``active_snapshots`` enrichment and never re-enumerates the
+    registry allowlist. Routing both this service and the CLI ``source list
+    --json`` view through the single ``public_view`` projection is what keeps the
+    two surfaces from diverging (B18).
+    """
+
+    entry: SourceRegistryEntry
     active_snapshots: tuple[ActiveSnapshotInfo, ...]
 
+    @property
+    def source_id(self) -> str:
+        return self.entry.source_id
+
+    @property
+    def enabled(self) -> bool:
+        return self.entry.enabled
+
     def to_dict(self) -> dict[str, object]:
+        # public_view() is the sole allowlist; active_snapshots is DB-only (§V34).
         return {
-            "source_id": self.source_id,
-            "display_name": self.display_name,
-            "owner_name": self.owner_name,
-            "canonical_url": self.canonical_url,
-            "source_type": self.source_type,
-            "regions": list(self.regions),
-            "purpose": self.purpose,
-            "fields_consumed": list(self.fields_consumed),
-            "license_identifier": self.license_identifier,
-            "license_status": self.license_status,
-            "permission_status": self.permission_status,
-            "private_hosting_status": self.private_hosting_status,
-            "redistribution_status": self.redistribution_status,
-            "attribution_text": self.attribution_text,
-            "contact_url": self.contact_url,
-            "enabled": self.enabled,
-            "last_reviewed_at": self.last_reviewed_at,
+            **self.entry.public_view(),
             "active_snapshots": [s.to_dict() for s in self.active_snapshots],
         }
 
@@ -115,29 +100,6 @@ def _latest_per_server(snapshots: list[SnapshotRow]) -> tuple[ActiveSnapshotInfo
     )
 
 
-def _source_info(entry: SourceRegistryEntry, active: tuple[ActiveSnapshotInfo, ...]) -> SourceInfo:
-    return SourceInfo(
-        source_id=entry.source_id,
-        display_name=entry.display_name,
-        owner_name=entry.owner_name,
-        canonical_url=entry.canonical_url,
-        source_type=entry.source_type,
-        regions=tuple(entry.regions),
-        purpose=entry.purpose,
-        fields_consumed=tuple(entry.fields_consumed),
-        license_identifier=entry.license_identifier,
-        license_status=entry.license_status,
-        permission_status=entry.permission_status,
-        private_hosting_status=entry.private_hosting_status,
-        redistribution_status=entry.redistribution_status,
-        attribution_text=entry.attribution_text,
-        contact_url=entry.contact_url,
-        enabled=entry.enabled,
-        last_reviewed_at=entry.last_reviewed_at,
-        active_snapshots=active,
-    )
-
-
 def get_data_sources(
     registry: SourceRegistry,
     conn: sqlite3.Connection | None = None,
@@ -155,9 +117,9 @@ def get_data_sources(
             snapshots_by_source.setdefault(row.source_id, []).append(row)
 
     sources = tuple(
-        _source_info(
-            registry.entries[source_id],
-            _latest_per_server(snapshots_by_source.get(source_id, [])),
+        SourceInfo(
+            entry=registry.entries[source_id],
+            active_snapshots=_latest_per_server(snapshots_by_source.get(source_id, [])),
         )
         for source_id in sorted(registry.entries)
     )

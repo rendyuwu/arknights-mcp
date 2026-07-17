@@ -75,17 +75,21 @@ def test_public_view_omits_internal_fields() -> None:
 
 
 def test_public_projections_do_not_diverge() -> None:
-    # M4: the CLI `source list --json` view and the get_data_sources service must
-    # exclude exactly the internal-only fields and agree on the intended-public
-    # posture, so a field added to only one path can't silently leak or vanish.
+    # §V34/B18: the CLI `source list --json` view and the get_data_sources service
+    # must emit an IDENTICAL public field set -- both route through the single
+    # registry.public_view() projection -- apart from the DB-only active_snapshots
+    # enrichment the service adds. A set-equality assert (not a named-field spot
+    # check) is what catches a re-forked allowlist: B18 slipped through precisely
+    # because the service re-enumerated fields and dropped adapter_version /
+    # transform_version while the CLI view kept them.
     reg = load_source_registry(REGISTRY)
     cli_keys: set[str] = set().union(*(e.keys() for e in reg.public_registry()))
     svc_keys: set[str] = set().union(*(s.to_dict().keys() for s in get_data_sources(reg).sources))
     assert _INTERNAL_ONLY_FIELDS.isdisjoint(cli_keys)
     assert _INTERNAL_ONLY_FIELDS.isdisjoint(svc_keys)
-    for field in ("private_hosting_status", "redistribution_status", "license_status"):
-        assert field in cli_keys, field
-        assert field in svc_keys, field
+    # The service adds exactly the DB-only enrichment and re-forks nothing else.
+    assert svc_keys - cli_keys == {"active_snapshots"}
+    assert cli_keys == svc_keys - {"active_snapshots"}
 
 
 def test_incomplete_enabled_source_rejected() -> None:
