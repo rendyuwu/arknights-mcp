@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.support import DictFetcher, dict_fetcher_from_snapshot
+
 from arknights_mcp.cli import main
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.promotion import resolve_active_database
-from arknights_mcp.sources.arknights_assets import DictFetcher, dict_fetcher_from_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"

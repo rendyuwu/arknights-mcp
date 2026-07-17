@@ -237,7 +237,12 @@ def load_config(
     if path is not None:
         p = Path(path)
         if p.is_file():
-            raw = tomllib.loads(p.read_text(encoding="utf-8"))
+            try:
+                raw = tomllib.loads(p.read_text(encoding="utf-8"))
+            except tomllib.TOMLDecodeError as exc:
+                # Surface a clean ConfigError (still fails closed) rather than an
+                # unwrapped TOMLDecodeError callers catching ConfigError would miss (L12).
+                raise ConfigError(f"invalid config TOML in {p.name}: {exc}") from exc
     config = AppConfig.model_validate(raw)
     if env is not None:
         config = config.model_copy(update={"auth": config.auth.with_env_overrides(env)})

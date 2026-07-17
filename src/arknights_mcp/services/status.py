@@ -115,6 +115,10 @@ def get_data_status(
     deterministic age reporting; it defaults to the current UTC time.
     """
     clock = now if now is not None else datetime.now(tz=UTC)
+    # Normalize an injected naive datetime to aware UTC so the age subtraction
+    # never mixes naive/aware operands and raises TypeError (L11).
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=UTC)
     repo = MetadataRepository(conn)
 
     snapshots = tuple(_to_status(row, clock) for row in repo.all_snapshots())

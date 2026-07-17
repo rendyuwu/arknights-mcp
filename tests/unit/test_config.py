@@ -150,3 +150,12 @@ def test_nonloopback_remote_with_https_and_oauth_ok() -> None:
 def test_env_overlays_oidc_issuer() -> None:
     cfg = load_config(EXAMPLE, env={ENV_OIDC_ISSUER: "https://issuer.example.com"})
     assert cfg.auth.issuer == "https://issuer.example.com"
+
+
+def test_invalid_toml_raises_config_error(tmp_path: Path) -> None:
+    # L12: a syntactically invalid config.toml surfaces as ConfigError (still fails
+    # closed), not an unwrapped tomllib.TOMLDecodeError.
+    bad = tmp_path / "config.toml"
+    bad.write_text("[database\nthis is not valid = = toml", encoding="utf-8")
+    with pytest.raises(ConfigError, match="invalid config TOML"):
+        load_config(bad)

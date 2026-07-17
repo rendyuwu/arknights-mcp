@@ -106,12 +106,16 @@ class AerialThreatRule:
         if not evidence:
             return RuleResult(warnings=tuple(warnings))
 
+        # One enemy that appears at several level variants yields several evidence
+        # items with the same ``ref``; the headline counts *distinct* enemies, not
+        # evidence rows, so a single flyer is not reported as multiple types (§V6).
+        distinct_flyers = len({e.ref for e in evidence})
         observation = Observation(
             rule_id=RULE_ID,
             category="threat",
             tag="aerial",
             title="Aerial enemies present",
-            summary=_summary(len(evidence), total_spawns),
+            summary=_summary(distinct_flyers, total_spawns),
             confidence=confidence,
             evidence=tuple(evidence),
             limitations=tuple(limitations),

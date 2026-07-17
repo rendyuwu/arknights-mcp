@@ -30,8 +30,13 @@ _MANDATORY_FOR_ENABLED = (
     "last_reviewed_at",
 )
 
-# Fields excluded from the public-safe view exposed by get_data_sources (§V27).
-_INTERNAL_ONLY_FIELDS = frozenset({"policy_notes", "private_hosting_status"})
+# Fields excluded from every public-safe projection (§V27). This is the single
+# source of truth for "internal-only": both the CLI ``source list --json`` view
+# (:meth:`SourceRegistryEntry.public_view`) and the ``get_data_sources`` service
+# must exclude exactly these and nothing more. ``policy_notes`` may carry takedown
+# correspondence, so it is internal; ``private_hosting_status``/
+# ``redistribution_status`` are intended-public posture fields (PRD §13.10).
+_INTERNAL_ONLY_FIELDS = frozenset({"policy_notes"})
 
 
 class RegistryError(ValueError):

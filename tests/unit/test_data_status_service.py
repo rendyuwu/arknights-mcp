@@ -46,6 +46,16 @@ def _active_db(tmp_path: Path) -> Path:
 # --- get_data_status ----------------------------------------------------------
 
 
+def test_data_status_accepts_naive_now(tmp_path: Path) -> None:
+    # L11: an injected timezone-naive ``now`` is normalized to UTC instead of
+    # raising TypeError in the age subtraction.
+    naive = datetime(2026, 7, 17)  # noqa: DTZ001 - intentionally naive for the test
+    with read_only_connection(_active_db(tmp_path)) as conn:
+        status = get_data_status(conn, mode="local", now=naive)
+    assert status.snapshots
+    assert all(s.age_days is not None and s.age_days >= 0 for s in status.snapshots)
+
+
 def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     with read_only_connection(_active_db(tmp_path)) as conn:
         status = get_data_status(conn, mode="local", now=NOW)

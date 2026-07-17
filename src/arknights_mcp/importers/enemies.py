@@ -91,8 +91,11 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
     database: dict[str, Any] = database_raw["enemies"]
     parsed: list[ParsedEnemy] = []
 
-    for game_id in sorted(handbook):
-        entry = handbook[game_id]
+    # Drive from the union of both key sets so an enemy present only in the stats
+    # database (no handbook entry) is still imported with its levels; otherwise a
+    # stage spawn referencing it fails closed with "unknown enemy" (§21.2).
+    for game_id in sorted(set(handbook) | set(database)):
+        entry = handbook.get(game_id, {})
         if not isinstance(entry, dict):
             continue
         kept_hb = apply_allowlist(entry, ENEMY_HANDBOOK_ALLOWLIST).kept
@@ -193,30 +196,39 @@ def insert_enemies(
         enemy_pk = cur.lastrowid
         enemies_inserted += 1
         for level in enemy.levels:
-            conn.execute(
-                "INSERT INTO enemy_levels "
-                "(enemy_pk, level_variant, hp, atk, def, res, attack_interval, "
-                "attack_range, move_speed, weight, life_point_reduction, block_behavior, "
-                "targeting_json, immunities_json, abilities_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    enemy_pk,
-                    level.level_variant,
-                    level.hp,
-                    level.atk,
-                    level.def_,
-                    level.res,
-                    level.attack_interval,
-                    level.attack_range,
-                    level.move_speed,
-                    level.weight,
-                    level.life_point_reduction,
-                    level.block_behavior,
-                    _json_or_none(level.targeting),
-                    _json_or_none(level.immunities),
-                    _json_or_none(level.abilities),
-                ),
-            )
+            try:
+                conn.execute(
+                    "INSERT INTO enemy_levels "
+                    "(enemy_pk, level_variant, hp, atk, def, res, attack_interval, "
+                    "attack_range, move_speed, weight, life_point_reduction, block_behavior, "
+                    "targeting_json, immunities_json, abilities_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        enemy_pk,
+                        level.level_variant,
+                        level.hp,
+                        level.atk,
+                        level.def_,
+                        level.res,
+                        level.attack_interval,
+                        level.attack_range,
+                        level.move_speed,
+                        level.weight,
+                        level.life_point_reduction,
+                        level.block_behavior,
+                        _json_or_none(level.targeting),
+                        _json_or_none(level.immunities),
+                        _json_or_none(level.abilities),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                # A repeated or absent level index collides on UNIQUE(enemy_pk,
+                # level_variant); fail closed with a clear message instead of an
+                # uncaught traceback that tears down the whole build (§V3).
+                raise ImporterError(
+                    f"enemy {enemy.game_id!r} has a duplicate level_variant "
+                    f"{level.level_variant}: {exc}"
+                ) from exc
             levels_inserted += 1
     return EnemyImportResult(enemies_inserted=enemies_inserted, levels_inserted=levels_inserted)
 

@@ -186,9 +186,20 @@ def _versioned_filename(builds_dir: Path, timestamp: datetime, servers: Sequence
 
 
 def _prune_old_builds(builds_dir: Path, keep_name: str, retain_versions: int) -> list[str]:
-    """Keep the newest ``retain_versions`` builds (always ``keep_name``); prune the rest."""
+    """Keep the newest ``retain_versions`` builds (always ``keep_name``); prune the rest.
+
+    Ordered by modification time (newest first), not by filename: a same-second
+    collision suffix (``...-en-cn-2.sqlite``) sorts *before* the un-suffixed name
+    lexicographically, which would treat the newest build in a second as the
+    oldest and prune it first (L5). mtime reflects true write order; the name is
+    the deterministic tie-break.
+    """
     retain = max(1, retain_versions)
-    all_builds = sorted(builds_dir.glob(f"*{BUILD_SUFFIX}"), key=lambda p: p.name, reverse=True)
+    all_builds = sorted(
+        builds_dir.glob(f"*{BUILD_SUFFIX}"),
+        key=lambda p: (p.stat().st_mtime_ns, p.name),
+        reverse=True,
+    )
     keep: set[str] = {keep_name}
     for build in all_builds:
         if len(keep) >= retain:

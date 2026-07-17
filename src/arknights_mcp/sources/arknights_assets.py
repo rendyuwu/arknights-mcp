@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -30,6 +30,11 @@ DEFAULT_SOURCE_ID = "arknights_assets_gamedata"
 
 #: Relative paths only under these prefixes may be fetched (allowlist, §V18).
 ALLOWED_PREFIXES: tuple[str, ...] = ("gamedata/excel/", "gamedata/levels/")
+
+#: Discovered stage level files may only live under these prefixes -- narrower
+#: than ``ALLOWED_PREFIXES`` so a crafted ``stage_table.levelId`` cannot enqueue an
+#: arbitrary excel table as a "level" file (L8).
+LEVEL_PREFIXES: tuple[str, ...] = ("gamedata/levels/",)
 
 #: The fixed core files fetched every sync (enemy + stage/zone tables).
 CORE_FILES: tuple[str, ...] = (
@@ -155,17 +160,25 @@ class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
         )
 
 
-def _validate_relative_path(relative_path: str) -> str:
-    """Reject absolute paths, traversal, and paths outside the allowlist (§V18)."""
-    if relative_path.startswith("/") or (len(relative_path) > 1 and relative_path[1] == ":"):
-        raise SourceAdapterError(f"absolute paths are not allowed: {relative_path!r}")
-    posix = PurePosixPath(relative_path)
-    if any(part == ".." for part in posix.parts):
-        raise SourceAdapterError(f"path traversal is not allowed: {relative_path!r}")
-    normalized = posix.as_posix()
-    if not any(normalized.startswith(prefix) for prefix in ALLOWED_PREFIXES):
-        raise SourceAdapterError(f"path not in allowlist: {relative_path!r}")
-    return normalized
+def _validate_relative_path(
+    relative_path: str, *, allowed_prefixes: tuple[str, ...] = ALLOWED_PREFIXES
+) -> str:
+    """Reject absolute paths, traversal, and paths outside the allowlist (§V18).
+
+    Both the literal path and its percent-decoded form are checked: the remote
+    server decodes ``%2f`` back to ``/``, so ``a/..%2f..%2fsecret`` would escape the
+    allowlist on the wire even though its literal ``.`` parts look clean (L7).
+    """
+    decoded = unquote(relative_path)
+    for candidate in (relative_path, decoded):
+        if candidate.startswith("/") or (len(candidate) > 1 and candidate[1] == ":"):
+            raise SourceAdapterError(f"absolute paths are not allowed: {relative_path!r}")
+        if any(part == ".." for part in PurePosixPath(candidate).parts):
+            raise SourceAdapterError(f"path traversal is not allowed: {relative_path!r}")
+        normalized_candidate = PurePosixPath(candidate).as_posix()
+        if not any(normalized_candidate.startswith(prefix) for prefix in allowed_prefixes):
+            raise SourceAdapterError(f"path not in allowlist: {relative_path!r}")
+    return PurePosixPath(relative_path).as_posix()
 
 
 def _json_within_limits(obj: Any, *, max_depth: int, max_nodes: int) -> None:
@@ -258,7 +271,9 @@ class ArknightsAssetsAdapter:
             if not isinstance(level_id, str) or level_id in seen:
                 continue
             seen.add(level_id)
-            if any(level_id.startswith(prefix) for prefix in ALLOWED_PREFIXES):
+            # Only accept level-file paths, not the full fetch allowlist, so a
+            # crafted levelId can't point at an excel table (L8).
+            if any(level_id.startswith(prefix) for prefix in LEVEL_PREFIXES):
                 paths.append(level_id)
         return sorted(paths)
 
@@ -279,30 +294,3 @@ class ArknightsAssetsAdapter:
         for level_path in self._discover_level_paths(stage_table):
             self._download(level_path, root)
         return LocalSnapshotAdapter(root, self.server, source_id=self.source_id)
-
-
-class DictFetcher:
-    """In-memory :class:`Fetcher` backed by a ``{url: bytes}`` map (tests only)."""
-
-    def __init__(self, files: dict[str, bytes]) -> None:
-        self._files = dict(files)
-
-    def fetch(self, url: str, *, max_bytes: int) -> bytes:
-        if url not in self._files:
-            raise SourceAdapterError(f"not found: {url!r}")
-        data = self._files[url]
-        if len(data) > max_bytes:
-            raise SourceAdapterError(f"download exceeds per-file cap ({max_bytes} bytes): {url!r}")
-        return data
-
-
-def dict_fetcher_from_snapshot(base_url: str, root: str | Path) -> DictFetcher:
-    """Build a :class:`DictFetcher` mapping ``base_url``/<rel> to a local tree's bytes."""
-    base = base_url.rstrip("/")
-    root_path = Path(root)
-    files: dict[str, bytes] = {}
-    for path in root_path.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(root_path).as_posix()
-            files[f"{base}/{rel}"] = path.read_bytes()
-    return DictFetcher(files)

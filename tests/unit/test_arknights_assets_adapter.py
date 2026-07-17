@@ -12,16 +12,15 @@ import json
 from pathlib import Path
 
 import pytest
+from tests.support import DictFetcher, dict_fetcher_from_snapshot
 
 from arknights_mcp.sources.arknights_assets import (
     ArknightsAssetsAdapter,
-    DictFetcher,
     DownloadBudget,
     DownloadLimits,
     HttpsFetcher,
     _BoundedRedirectHandler,
     _validate_relative_path,
-    dict_fetcher_from_snapshot,
 )
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -86,6 +85,26 @@ def test_level_discovery_respects_allowlist(tmp_path: Path) -> None:
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
     poisoned = {"stages": {"x": {"stageId": "x", "levelId": "secret/evil.json"}}}
     assert adapter._discover_level_paths(poisoned) == []
+
+
+def test_level_discovery_rejects_excel_paths() -> None:
+    """L8: a crafted levelId pointing at an excel table is not enqueued as a level."""
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
+    poisoned = {"stages": {"x": {"stageId": "x", "levelId": "gamedata/excel/character_table.json"}}}
+    assert adapter._discover_level_paths(poisoned) == []
+
+
+@pytest.mark.parametrize(
+    "encoded",
+    [
+        "gamedata/levels/..%2f..%2fsecret.json",
+        "gamedata/levels/%2e%2e/%2e%2e/secret.json",
+    ],
+)
+def test_percent_encoded_traversal_rejected(encoded: str) -> None:
+    """L7: percent-encoded traversal is rejected (the server would decode %2f->/)."""
+    with pytest.raises(SourceAdapterError):
+        _validate_relative_path(encoded)
 
 
 # --- resource caps (PRD §11.2) ------------------------------------------------

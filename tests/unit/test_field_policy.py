@@ -49,6 +49,22 @@ def test_allowlist_keeps_nonstring_values() -> None:
     assert result.kept["abilities"] == ["fly"]
 
 
+def test_allowlist_sanitizes_nested_string_leaves() -> None:
+    # H3/§V18: control + bidi chars nested inside kept dict/list values are
+    # stripped too, not only top-level strings.
+    from arknights_mcp.importers.field_policy import ENEMY_LEVEL_ALLOWLIST
+
+    raw = {
+        "abilities": ["fl‮y\x00", {"note": "wat\x00ch"}],
+        "immunities": {"‮key": "v\x00al"},
+    }
+    result = apply_allowlist(raw, ENEMY_LEVEL_ALLOWLIST)
+    blob = str(result.kept)
+    assert "‮" not in blob  # bidi override stripped at every depth
+    assert "\x00" not in blob  # NUL stripped at every depth
+    assert "fly" in blob  # benign content preserved
+
+
 def test_sanitize_caps_length() -> None:
     long = "x" * (DEFAULT_MAX_TEXT_LENGTH + 50)
     assert len(sanitize_text(long)) == DEFAULT_MAX_TEXT_LENGTH

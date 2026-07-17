@@ -16,17 +16,19 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import os
 import sqlite3
 import sys
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from arknights_mcp.config import AppConfig, ConfigError, load_config
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.migrations import default_migrations_dir
-from arknights_mcp.db.policy_events import append_event, read_events
+from arknights_mcp.db.policy_events import PolicyEvent, append_event, read_events
 from arknights_mcp.db.promotion import PromotionError, promote_candidate, resolve_active_database
 from arknights_mcp.db.purge import PurgeError, purge_and_rebuild
 from arknights_mcp.db.validate import format_report, validate_database
@@ -96,7 +98,10 @@ def _download_limits(config: AppConfig) -> DownloadLimits:
 
 
 def _load(args: argparse.Namespace) -> tuple[AppConfig, SourceRegistry]:
-    config = load_config(args.config)
+    # Overlay the non-secret OIDC descriptors from the environment (§I env): they
+    # are designed to come from env, so remote-safety / auth reporting in doctor
+    # must see them, not TOML alone (L1).
+    config = load_config(args.config, env=os.environ)
     registry = load_source_registry(config.source_registry.machine_registry)
     return config, registry
 
@@ -230,6 +235,11 @@ def _cmd_import(args: argparse.Namespace, ctx: CliContext) -> int:
         return 1
 
     server = args.server
+    # NOTE (L9/§V5): local import trusts --server; it stamps the region on every
+    # row without verifying the snapshot *is* that region (validate only checks
+    # server ∈ {en,cn} + cross-region join consistency). An operator pointing a CN
+    # snapshot at `--server en` silently mislabels it — an inherent limitation of
+    # user-supplied local snapshots (B1's guard is scoped to `sync`).
     # Raises SourceAdapterError (caught -> exit 1) if the path is not a directory.
     adapter = LocalSnapshotAdapter(args.source_path, server, source_id=_LOCAL_SOURCE_ID)
     _out(f"import: {_LOCAL_SOURCE_ID} server={server} from local snapshot")
@@ -440,8 +450,21 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
         return 1
 
     data_dir = config.database.data_dir
-    # Journal the purge before rebuilding so it materializes into this build.
-    append_event(data_dir, source_id=source_id, event_type="purge", reason=args.reason)
+    # Takedown: also flip the registry kill switch so a later `sync` cannot
+    # repopulate the purged source (M6). Disabling keeps current data (§V20) and
+    # is truthful even if the rebuild below fails, so it is journaled immediately.
+    if set_source_enabled(config.source_registry.machine_registry, source_id, False):
+        append_event(data_dir, source_id=source_id, event_type="disable", reason=args.reason)
+
+    # Build the purge event in memory so the rebuild materializes it, but journal
+    # it durably only after the rebuild validates + promotes (M5): a rebuild that
+    # fails validation must not leave a phantom purge in the operational journal.
+    purge_event = PolicyEvent(
+        source_id=source_id,
+        event_type="purge",
+        created_at=datetime.now(tz=UTC).isoformat(),
+        reason=args.reason,
+    )
     _out(
         f"purge: rebuilding without {source_id!r}; "
         f"current database stays active until validated (§V20)"
@@ -453,7 +476,7 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
         servers=("en", "cn"),
         retain_versions=config.sync.retain_versions,
         current_manifest_path=config.database.current_manifest,
-        policy_events=read_events(data_dir),
+        policy_events=[*read_events(data_dir), purge_event],
         expected_schema_version=_expected_schema_version(),
     )
     affected = result.affected
@@ -465,6 +488,14 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
         _err("rebuilt candidate failed validation; current database left active (§V20)")
         print(format_report(result.report), file=sys.stderr)
         return 1
+    # Rebuild validated + promoted: the purge really happened, so record it now.
+    append_event(
+        data_dir,
+        source_id=source_id,
+        event_type="purge",
+        reason=args.reason,
+        created_at=purge_event.created_at,
+    )
     promotion = result.promotion
     assert promotion is not None  # validation passed -> promotion attempted
     if promotion.status == "noop":

@@ -16,6 +16,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from arknights_mcp.importers.enemies import ImporterError
+from arknights_mcp.importers.field_policy import (
+    SPAWN_ACTION_ALLOWLIST,
+    apply_allowlist,
+    sanitize_value,
+)
 from arknights_mcp.util.text import sanitize_text
 
 
@@ -119,7 +124,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
                 height_type=_as_str(raw.get("heightType")),
                 buildable_type=_as_str(raw.get("buildableType")),
                 passable=bool(passable) if isinstance(passable, bool) else None,
-                special_properties=raw.get("specialProperties"),
+                special_properties=sanitize_value(raw.get("specialProperties")),
             )
         )
 
@@ -133,9 +138,9 @@ def parse_level(level_raw: Any) -> ParsedLevel:
         routes.append(
             ParsedRoute(
                 route_index=idx,
-                start_position=raw.get("startPosition"),
-                end_position=raw.get("endPosition"),
-                checkpoints=raw.get("checkpoints"),
+                start_position=sanitize_value(raw.get("startPosition")),
+                end_position=sanitize_value(raw.get("endPosition")),
+                checkpoints=sanitize_value(raw.get("checkpoints")),
             )
         )
 
@@ -166,7 +171,10 @@ def parse_level(level_raw: Any) -> ParsedLevel:
                         interval=_as_float(action.get("interval")),
                         spawn_group=_as_str(action.get("spawnGroup")),
                         hidden=bool(action.get("hidden", False)),
-                        source_fragment=action,
+                        # V18: keep only the allowlisted structural spawn fields
+                        # (sanitized), never the whole raw action (which may carry
+                        # prose/injection fields).
+                        source_fragment=apply_allowlist(action, SPAWN_ACTION_ALLOWLIST).kept,
                     )
                 )
         waves.append(
@@ -182,7 +190,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
         width=_as_int(map_data.get("width")),
         height=_as_int(map_data.get("height")),
         map_version=_as_str(map_data.get("mapVersion")),
-        environment=map_data.get("environment"),
+        environment=sanitize_value(map_data.get("environment")),
         tiles=tiles,
         routes=routes,
         waves=waves,
@@ -202,19 +210,52 @@ def insert_level(
     stage_pk: int,
     level: ParsedLevel,
     enemy_pk_by_game_id: dict[str, int],
+    *,
+    provenance_id: int,
 ) -> LevelImportResult:
-    """Insert a stage's map/tiles/routes/waves/spawns and derive stage_enemies."""
+    """Insert a stage's map/tiles/routes/waves/spawns and derive stage_enemies.
+
+    Every level-derived row carries ``provenance_id`` (§V17): all rows originate
+    from the same level file, whose provenance is created once by the caller. A
+    duplicate/absent structural index (a UNIQUE/PK collision) is surfaced as a
+    graceful :class:`ImporterError` rather than an uncaught ``IntegrityError`` that
+    would tear down the whole candidate build with a raw traceback (§V3).
+    """
+    try:
+        return _insert_level(conn, stage_pk, level, enemy_pk_by_game_id, provenance_id)
+    except sqlite3.IntegrityError as exc:
+        raise ImporterError(
+            f"level import for stage_pk={stage_pk} violates a uniqueness constraint "
+            f"(duplicate or missing structural index): {exc}"
+        ) from exc
+
+
+def _insert_level(
+    conn: sqlite3.Connection,
+    stage_pk: int,
+    level: ParsedLevel,
+    enemy_pk_by_game_id: dict[str, int],
+    provenance_id: int,
+) -> LevelImportResult:
     conn.execute(
-        "INSERT INTO stage_maps (stage_pk, width, height, map_version, environment_json) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (stage_pk, level.width, level.height, level.map_version, _json_or_none(level.environment)),
+        "INSERT INTO stage_maps "
+        "(stage_pk, width, height, map_version, environment_json, provenance_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            stage_pk,
+            level.width,
+            level.height,
+            level.map_version,
+            _json_or_none(level.environment),
+            provenance_id,
+        ),
     )
 
     for tile in level.tiles:
         conn.execute(
             "INSERT INTO stage_tiles "
             "(stage_pk, x, y, tile_key, height_type, buildable_type, passable, "
-            "special_properties_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "special_properties_json, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 stage_pk,
                 tile.x,
@@ -224,6 +265,7 @@ def insert_level(
                 tile.buildable_type,
                 None if tile.passable is None else int(tile.passable),
                 _json_or_none(tile.special_properties),
+                provenance_id,
             ),
         )
 
@@ -231,14 +273,15 @@ def insert_level(
     for route in level.routes:
         cur = conn.execute(
             "INSERT INTO stage_routes "
-            "(stage_pk, route_index, start_position_json, end_position_json, checkpoints_json) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(stage_pk, route_index, start_position_json, end_position_json, checkpoints_json, "
+            "provenance_id) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 stage_pk,
                 route.route_index,
                 _json_or_none(route.start_position),
                 _json_or_none(route.end_position),
                 _json_or_none(route.checkpoints),
+                provenance_id,
             ),
         )
         route_pk_by_index[route.route_index] = int(cur.lastrowid or 0)
@@ -247,9 +290,10 @@ def insert_level(
     spawns_inserted = 0
     for wave in level.waves:
         cur = conn.execute(
-            "INSERT INTO stage_waves (stage_pk, wave_index, pre_delay, max_time_waiting) "
-            "VALUES (?, ?, ?, ?)",
-            (stage_pk, wave.wave_index, wave.pre_delay, wave.max_time_waiting),
+            "INSERT INTO stage_waves "
+            "(stage_pk, wave_index, pre_delay, max_time_waiting, provenance_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (stage_pk, wave.wave_index, wave.pre_delay, wave.max_time_waiting, provenance_id),
         )
         wave_pk = int(cur.lastrowid or 0)
         for spawn in wave.spawns:
@@ -264,8 +308,8 @@ def insert_level(
             conn.execute(
                 "INSERT INTO stage_spawns "
                 "(wave_pk, enemy_pk, enemy_level_variant, route_pk, spawn_time, count, "
-                "interval, spawn_group, hidden_or_scripted, source_fragment_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "interval, spawn_group, hidden_or_scripted, source_fragment_json, provenance_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     wave_pk,
                     enemy_pk,
@@ -277,6 +321,7 @@ def insert_level(
                     spawn.spawn_group,
                     int(spawn.hidden),
                     _json_or_none(spawn.source_fragment),
+                    provenance_id,
                 ),
             )
             spawns_inserted += 1
@@ -295,7 +340,7 @@ def insert_level(
         conn.execute(
             "INSERT INTO stage_enemies "
             "(stage_pk, enemy_pk, enemy_level_variant, total_count, first_spawn_time, "
-            "last_spawn_time, route_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "last_spawn_time, route_count, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 stage_pk,
                 enemy_pk,
@@ -304,6 +349,7 @@ def insert_level(
                 bucket.first_spawn_time,
                 bucket.last_spawn_time,
                 len(bucket.route_pks),
+                provenance_id,
             ),
         )
 

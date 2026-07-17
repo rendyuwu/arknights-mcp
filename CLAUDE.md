@@ -22,7 +22,7 @@ toolchain. This file adds Claude-Code-specific context only.
 | Source adapters | `src/arknights_mcp/sources/` |
 | Field allowlist | `src/arknights_mcp/importers/field_policy.py` |
 | Parsers / importers | `src/arknights_mcp/importers/` |
-| Migrations (SQL) | `migrations/*.sql` + runner `src/arknights_mcp/db/migrations.py` |
+| Migrations (SQL) | `src/arknights_mcp/migrations/*.sql` + runner `src/arknights_mcp/db/migrations.py` |
 | Data access (read-only) | `src/arknights_mcp/db/`, `db/repositories/` |
 | Analyzers / rules | `src/arknights_mcp/analyzers/`, `analyzers/rules/` |
 | Domain services (shared by both transports) | `src/arknights_mcp/services/` |

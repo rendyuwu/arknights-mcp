@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from arknights_mcp.services.source_status import get_data_sources
 from arknights_mcp.sources.registry import (
+    _INTERNAL_ONLY_FIELDS,
     RegistryError,
     SourceRegistry,
     SourceRegistryEntry,
@@ -60,12 +62,30 @@ def test_registry_mirror_lists_every_source_id() -> None:
 def test_public_view_omits_internal_fields() -> None:
     reg = load_source_registry(REGISTRY)
     for entry in reg.public_registry():
+        # policy_notes (may carry takedown correspondence) is the only internal field.
         assert "policy_notes" not in entry
-        assert "private_hosting_status" not in entry
         # Public-safe fields are present (name, URL, status, attribution, review).
         assert entry["source_id"]
         assert "attribution_text" in entry
         assert "last_reviewed_at" in entry
+        # PRD §13.10 posture is intended-public and must appear (aligns with the
+        # get_data_sources service so the two projections cannot diverge, M4).
+        assert "private_hosting_status" in entry
+        assert "redistribution_status" in entry
+
+
+def test_public_projections_do_not_diverge() -> None:
+    # M4: the CLI `source list --json` view and the get_data_sources service must
+    # exclude exactly the internal-only fields and agree on the intended-public
+    # posture, so a field added to only one path can't silently leak or vanish.
+    reg = load_source_registry(REGISTRY)
+    cli_keys: set[str] = set().union(*(e.keys() for e in reg.public_registry()))
+    svc_keys: set[str] = set().union(*(s.to_dict().keys() for s in get_data_sources(reg).sources))
+    assert _INTERNAL_ONLY_FIELDS.isdisjoint(cli_keys)
+    assert _INTERNAL_ONLY_FIELDS.isdisjoint(svc_keys)
+    for field in ("private_hosting_status", "redistribution_status", "license_status"):
+        assert field in cli_keys, field
+        assert field in svc_keys, field
 
 
 def test_incomplete_enabled_source_rejected() -> None:

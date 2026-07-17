@@ -244,6 +244,63 @@ def test_no_stage_prose_in_db(tmp_path: Path) -> None:
     assert STAGE_PROSE not in dump
 
 
+def test_level_rows_carry_provenance(tmp_path: Path) -> None:
+    # H2/§V17: rows derived from the level file link to a provenance row whose
+    # source_path is the level file (distinct from the stage table's source_path).
+    conn, _ = _import_all(tmp_path)
+    prov = conn.execute(
+        "SELECT provenance_id FROM record_provenance "
+        "WHERE source_path = 'gamedata/levels/main/level_main_04-04.json'"
+    ).fetchall()
+    assert len(prov) == 1  # one provenance row for the level file
+    level_prov_id = prov[0][0]
+    for table in (
+        "stage_maps",
+        "stage_tiles",
+        "stage_routes",
+        "stage_waves",
+        "stage_spawns",
+        "stage_enemies",
+    ):
+        unstamped = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE provenance_id IS NOT ?",  # noqa: S608 - fixed names
+            (level_prov_id,),
+        ).fetchone()[0]
+        assert unstamped == 0, f"{table} has rows without the level provenance_id"
+
+
+def test_zone_carries_provenance(tmp_path: Path) -> None:
+    # L4/§V17: zone rows link to their own provenance row (was discarded before).
+    conn, _ = _import_all(tmp_path)
+    prov_id = conn.execute("SELECT provenance_id FROM zones").fetchone()[0]
+    assert prov_id is not None
+
+
+def test_spawn_source_fragment_is_allowlisted(tmp_path: Path) -> None:
+    # M1/§V18: only allowlisted structural spawn keys reach source_fragment_json;
+    # an injected prose field is dropped.
+    root = tmp_path / "en"
+    _write(root, "gamedata/excel/enemy_handbook_table.json", HANDBOOK)
+    _write(root, "gamedata/levels/enemydata/enemy_database.json", DATABASE)
+    _write(root, "gamedata/excel/zone_table.json", ZONE_TABLE)
+    _write(root, "gamedata/excel/stage_table.json", STAGE_TABLE)
+    level = json.loads(json.dumps(LEVEL))
+    level["waves"][0]["fragments"][0]["actions"][0]["loreBlurb"] = "SECRET_PROSE_IN_ACTION_V18"
+    _write(root, "gamedata/levels/main/level_main_04-04.json", level)
+    conn = build_database(tmp_path / "cand.sqlite")
+    snapshot_id = _seed_snapshot(conn)
+    adapter = LocalSnapshotAdapter(root, server="en")
+    import_enemies(conn, adapter, snapshot_id)
+    import_stages(conn, adapter, snapshot_id)
+    conn.commit()
+    blob = "\n".join(
+        r[0] for r in conn.execute("SELECT source_fragment_json FROM stage_spawns") if r[0]
+    )
+    assert "SECRET_PROSE_IN_ACTION_V18" not in blob
+    assert "loreBlurb" not in blob
+    assert "enemyId" in blob  # allowlisted structural field retained
+
+
 def test_unresolved_enemy_fails_closed(tmp_path: Path) -> None:
     root = tmp_path / "en"
     _write(root, "gamedata/excel/enemy_handbook_table.json", HANDBOOK)

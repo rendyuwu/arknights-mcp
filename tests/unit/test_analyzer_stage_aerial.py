@@ -118,6 +118,23 @@ def test_conflicting_fields_omit_conclusion_and_warn() -> None:
     assert any("conflict" in w for w in result.warnings)  # §V26: warn
 
 
+def test_same_flyer_at_two_variants_counts_as_one_type() -> None:
+    # M3/§V6: one enemy appearing at two level variants yields two evidence items
+    # with the same ref; the headline must count distinct enemies, not evidence.
+    drone_v1 = EnemyOccurrence(
+        game_id="enemy_1105_drone",
+        display_name="Recon Drone",
+        motion_type="FLY",
+        attack_type="physical",
+        abilities=("aerial",),
+        total_count=1,
+    )
+    result = analyze_stage(_ctx(DRONE, drone_v1))
+    obs = result.observations[0]
+    assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
+    assert "1 aerial enemy type" in obs.summary  # not "2 ... types"
+
+
 def test_output_is_deterministic_regardless_of_input_order() -> None:
     a = analyze_stage(_ctx(DRONE, SLUG))
     b = analyze_stage(_ctx(SLUG, DRONE))

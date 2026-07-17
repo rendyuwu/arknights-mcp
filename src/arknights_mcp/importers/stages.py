@@ -7,6 +7,7 @@ provenance (§V17). Spawns resolve to enemies already imported for the region.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,8 @@ from arknights_mcp.importers.field_policy import (
 from arknights_mcp.importers.levels import LevelImportResult, insert_level, parse_level
 from arknights_mcp.importers.manifest import make_record_provenance
 from arknights_mcp.sources.base import SourceAdapter
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -171,12 +174,10 @@ def import_stages(
             source_record_key=zone.game_id,
             record=zone.provenance_record,
         )
-        # provenance retained via record_provenance; zones link stages, which carry
-        # their own provenance_id. Keep the row for auditability.
-        _ = provenance_id
         cur = conn.execute(
-            "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?, ?, ?, ?)",
-            (server, zone.game_id, zone.display_name, zone.zone_type),
+            "INSERT INTO zones (server, game_id, display_name, zone_type, provenance_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (server, zone.game_id, zone.display_name, zone.zone_type, provenance_id),
         )
         zone_pk_by_game_id[zone.game_id] = int(cur.lastrowid or 0)
 
@@ -217,14 +218,36 @@ def import_stages(
         stages_inserted += 1
 
         if stage.level_id and adapter.exists(stage.level_id):
-            level = parse_level(adapter.read_json(stage.level_id))
-            result = insert_level(conn, stage_pk, level, enemy_pk_by_game_id)
+            raw_level = adapter.read_json(stage.level_id)
+            # The level file is a distinct source_path from the stage table, so it
+            # gets its own provenance row; every level-derived row links to it (§V17).
+            level_provenance_id = _insert_provenance(
+                conn,
+                snapshot_id=snapshot_id,
+                source_path=stage.level_id,
+                source_record_key=stage.game_id,
+                record=raw_level,
+            )
+            level = parse_level(raw_level)
+            result = insert_level(
+                conn, stage_pk, level, enemy_pk_by_game_id, provenance_id=level_provenance_id
+            )
             totals = LevelImportResult(
                 tiles=totals.tiles + result.tiles,
                 routes=totals.routes + result.routes,
                 waves=totals.waves + result.waves,
                 spawns=totals.spawns + result.spawns,
                 stage_enemies=totals.stage_enemies + result.stage_enemies,
+            )
+        elif stage.level_id:
+            # A stage that names a level file we cannot resolve is imported with no
+            # map/waves/spawns; record it rather than silently returning an empty,
+            # wrong picture to analysis (§21.2 unresolved cross-reference).
+            _LOG.warning(
+                "stage %s references level file %r which is absent; "
+                "imported with no map/tiles/routes/waves/spawns",
+                stage.game_id,
+                stage.level_id,
             )
 
     return StageImportResult(

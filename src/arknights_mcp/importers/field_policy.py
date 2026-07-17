@@ -60,6 +60,22 @@ STAGE_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
+#: Structural spawn-action fields kept in ``stage_spawns.source_fragment_json``.
+#: The raw wave action is untrusted and may carry prose/injection fields; only
+#: these known structural keys are retained (§V18 "known keys only, no prose").
+SPAWN_ACTION_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "enemyId",
+        "levelVariant",
+        "routeIndex",
+        "spawnTime",
+        "count",
+        "interval",
+        "spawnGroup",
+        "hidden",
+    }
+)
+
 
 @dataclass(frozen=True)
 class AllowlistResult:
@@ -69,24 +85,45 @@ class AllowlistResult:
     dropped: list[str]
 
 
+def sanitize_value(value: Any, *, max_length: int = DEFAULT_MAX_TEXT_LENGTH) -> Any:
+    """Recursively sanitize every string leaf (and key) of a kept value (§V18).
+
+    A kept value may be a structured dict/list (e.g. ``abilities``, ``immunities``,
+    ``specialProperties``, route ``checkpoints``) whose nested strings are just as
+    untrusted as top-level ones: control/format/bidi chars must be stripped and
+    every string length-capped before the value is JSON-encoded into a ``*_json``
+    column and later surfaced to a client. Non-string scalars pass through.
+    """
+    if isinstance(value, str):
+        return sanitize_text(value, max_length=max_length)
+    if isinstance(value, Mapping):
+        return {
+            sanitize_text(str(k), max_length=max_length): sanitize_value(v, max_length=max_length)
+            for k, v in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [sanitize_value(item, max_length=max_length) for item in value]
+    return value
+
+
 def apply_allowlist(
     raw: Mapping[str, Any],
     allowed: Collection[str],
     *,
     max_length: int = DEFAULT_MAX_TEXT_LENGTH,
 ) -> AllowlistResult:
-    """Keep only ``allowed`` keys from ``raw``; sanitize kept string values.
+    """Keep only ``allowed`` keys from ``raw``; sanitize kept values (§V18).
 
-    Non-string values are kept as-is (typed data). Keys outside the allowlist
-    are dropped and reported (§21.2 unknown-field logging; §V18 exclusion).
+    Every kept value is sanitized recursively (:func:`sanitize_value`): string
+    leaves nested inside kept dict/list values are stripped of control chars and
+    length-capped, not just top-level strings. Keys outside the allowlist are
+    dropped and reported (§21.2 unknown-field logging; §V18 exclusion).
     """
     kept: dict[str, Any] = {}
     dropped: list[str] = []
     for key, value in raw.items():
         if key not in allowed:
             dropped.append(key)
-        elif isinstance(value, str):
-            kept[key] = sanitize_text(value, max_length=max_length)
         else:
-            kept[key] = value
+            kept[key] = sanitize_value(value, max_length=max_length)
     return AllowlistResult(kept=kept, dropped=sorted(dropped))

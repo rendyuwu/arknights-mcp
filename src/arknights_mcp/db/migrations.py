@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
+from importlib import resources
 from pathlib import Path
 
 from arknights_mcp.util.hashing import sha256_hex
 
-# Repository-root migrations directory (source tree). Packaging moves these into
-# the wheel in a later milestone (T47); tests pass an explicit directory.
-DEFAULT_MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+# Packaged migrations directory (``src/arknights_mcp/migrations``). Living inside
+# the package means the ``.sql`` files ship in the wheel, so a non-editable install
+# finds them via ``importlib.resources`` -- not only an editable/source checkout
+# (fixes M7). Tests may still pass an explicit directory.
+DEFAULT_MIGRATIONS_DIR = Path(str(resources.files("arknights_mcp").joinpath("migrations")))
 
 
 class MigrationError(RuntimeError):

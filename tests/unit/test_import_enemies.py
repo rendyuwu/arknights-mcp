@@ -7,8 +7,15 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from arknights_mcp.db.migrations import build_database
-from arknights_mcp.importers.enemies import import_enemies, insert_enemies, parse_enemies
+from arknights_mcp.importers.enemies import (
+    ImporterError,
+    import_enemies,
+    insert_enemies,
+    parse_enemies,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
@@ -177,6 +184,39 @@ def test_no_prose_anywhere_in_db(tmp_path: Path) -> None:
         for row in conn.execute(f"SELECT * FROM {table}")
     )
     assert DESCRIPTION_PROSE not in dump
+
+
+def test_duplicate_level_variant_fails_gracefully(tmp_path: Path) -> None:
+    # M2: a repeated level index collides on UNIQUE(enemy_pk, level_variant) and
+    # must raise a graceful ImporterError, not an uncaught sqlite3.IntegrityError.
+    conn = build_database(tmp_path / "cand.sqlite")
+    snapshot_id = _seed_snapshot(conn)
+    handbook = {"enemyData": {"e1": {"enemyId": "e1", "name": "Dup"}}}
+    database = {"enemies": {"e1": {"levels": [{"level": 0, "hp": 1}, {"level": 0, "hp": 2}]}}}
+    with pytest.raises(ImporterError, match="duplicate level_variant"):
+        insert_enemies(
+            conn,
+            parse_enemies(handbook, database),
+            server="en",
+            snapshot_id=snapshot_id,
+            handbook_source_path="gamedata/excel/enemy_handbook_table.json",
+        )
+
+
+def test_database_only_enemy_is_imported() -> None:
+    # L3: an enemy present only in the stats database (no handbook entry) is still
+    # imported with its levels so a stage spawn referencing it does not fail closed.
+    handbook = {"enemyData": {"enemy_1007_slime": HANDBOOK["enemyData"]["enemy_1007_slime"]}}
+    database = {
+        "enemies": {
+            "enemy_1007_slime": DATABASE["enemies"]["enemy_1007_slime"],
+            "enemy_db_only": {"levels": [{"level": 0, "hp": 500}]},
+        }
+    }
+    parsed = {e.game_id: e for e in parse_enemies(handbook, database)}
+    assert "enemy_db_only" in parsed
+    assert parsed["enemy_db_only"].display_name is None  # no handbook fields
+    assert parsed["enemy_db_only"].levels[0].hp == 500
 
 
 def test_import_via_adapter(tmp_path: Path) -> None:

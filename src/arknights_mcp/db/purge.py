@@ -62,7 +62,14 @@ def _delete_in(conn: sqlite3.Connection, table: str, column: str, ids: Sequence[
 
 
 def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, int]:
-    """Delete every row attributable to ``source_id`` (children first, FKs on)."""
+    """Delete every row attributable to ``source_id`` (children first, FKs on).
+
+    Deletes only rows that trace to the source's own snapshots. A shared entity
+    still referenced by a *non-purged* source is deleted here only via its own
+    (purged-source) parent; if a non-purged row still references it, the parent
+    delete raises ``IntegrityError`` and the caller aborts (fail-closed, §V20) --
+    it never strips occurrences from a non-purged stage.
+    """
     snapshot_ids = [
         row[0]
         for row in conn.execute(
@@ -81,20 +88,50 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     wave_pks = _select_ids(
         conn, "SELECT wave_pk FROM stage_waves WHERE stage_pk IN (%s)", stage_pks
     )
+    operator_pks = _select_ids(
+        conn, "SELECT operator_pk FROM operators WHERE provenance_id IN (%s)", prov_ids
+    )
+    skill_pks = _select_ids(
+        conn, "SELECT skill_pk FROM skills WHERE provenance_id IN (%s)", prov_ids
+    )
+    module_pks = _select_ids(
+        conn, "SELECT module_pk FROM modules WHERE provenance_id IN (%s)", prov_ids
+    )
+    talent_pks = _select_ids(
+        conn, "SELECT talent_pk FROM talents WHERE operator_pk IN (%s)", operator_pks
+    )
 
-    # children -> parents
+    # stage domain: children -> parents. stage_spawns / stage_enemies are removed
+    # only within the purged source's own waves/stages (by wave_pk / stage_pk),
+    # never by enemy_pk -- deleting by enemy_pk would silently strip a purged
+    # enemy's occurrences from a *non-purged* stage (L6). If a non-purged stage
+    # still references a purged enemy, deleting that enemy below raises (§V20).
     _delete_in(conn, "stage_spawns", "wave_pk", wave_pks)
-    _delete_in(conn, "stage_spawns", "enemy_pk", enemy_pks)
     _delete_in(conn, "stage_enemies", "stage_pk", stage_pks)
-    _delete_in(conn, "stage_enemies", "enemy_pk", enemy_pks)
     _delete_in(conn, "stage_tiles", "stage_pk", stage_pks)
     _delete_in(conn, "stage_maps", "stage_pk", stage_pks)
     _delete_in(conn, "stage_routes", "stage_pk", stage_pks)
     _delete_in(conn, "stage_waves", "stage_pk", stage_pks)
+    _delete_in(conn, "stages", "stage_pk", stage_pks)
+
+    # operator domain: children -> parents (each core row carries its own
+    # provenance; sub-tables link through the parent, §12.3).
+    _delete_in(conn, "module_levels", "module_pk", module_pks)
+    _delete_in(conn, "modules", "module_pk", module_pks)
+    _delete_in(conn, "talent_levels", "talent_pk", talent_pks)
+    _delete_in(conn, "talents", "talent_pk", talent_pks)
+    _delete_in(conn, "operator_skills", "operator_pk", operator_pks)
+    _delete_in(conn, "skill_levels", "skill_pk", skill_pks)
+    _delete_in(conn, "skills", "skill_pk", skill_pks)
+    _delete_in(conn, "operator_phases", "operator_pk", operator_pks)
+    _delete_in(conn, "operator_aliases", "operator_pk", operator_pks)
+    _delete_in(conn, "operators", "operator_pk", operator_pks)
+
+    # enemy domain + zones + provenance.
     _delete_in(conn, "enemy_levels", "enemy_pk", enemy_pks)
     _delete_in(conn, "enemy_aliases", "enemy_pk", enemy_pks)
-    _delete_in(conn, "stages", "stage_pk", stage_pks)
     _delete_in(conn, "enemies", "enemy_pk", enemy_pks)
+    _delete_in(conn, "zones", "provenance_id", prov_ids)
     _delete_in(conn, "record_provenance", "provenance_id", prov_ids)
     _delete_in(conn, "source_snapshots", "snapshot_id", snapshot_ids)
 
@@ -105,6 +142,7 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
         "snapshots": len(snapshot_ids),
         "enemies": len(enemy_pks),
         "stages": len(stage_pks),
+        "operators": len(operator_pks),
     }
 
 
@@ -138,6 +176,15 @@ def purge_and_rebuild(
             affected = _purge_source_rows(conn, source_id)
             materialize_policy_events(conn, policy_events)
             conn.commit()
+        except sqlite3.IntegrityError as exc:
+            # A shared entity is still referenced by a non-purged source: fail
+            # closed rather than corrupt the graph. The current build stays active
+            # because promotion never runs (§V20).
+            conn.rollback()
+            raise PurgeError(
+                f"cannot purge {source_id!r}: a row it owns is still referenced by "
+                f"another source (shared entity); resolve before purging ({exc})"
+            ) from exc
         finally:
             conn.close()
 
