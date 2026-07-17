@@ -101,7 +101,7 @@ def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
     return out
 
 
-def _normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[str, str]]:
+def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[str, str]]:
     """Real id-keyed enemy DB → normalized ``{"enemies": {...}}`` + ``{id: motion}``.
 
     Returns the normalized database and a map of enemy id → motion string extracted
@@ -169,9 +169,43 @@ def normalize_enemy_sources(handbook_raw: Any, database_raw: Any) -> tuple[Any, 
     :func:`arknights_mcp.importers.enemies.parse_enemies`. Idempotent on
     already-normalized input (§V29, §V30).
     """
-    database_norm, motion_by_id = _normalize_enemy_database(database_raw)
+    database_norm, motion_by_id = normalize_enemy_database(database_raw)
     handbook_norm = _inject_motion(handbook_raw, motion_by_id)
     return handbook_norm, database_norm
+
+
+def normalize_kengxxiao_enemy_database(
+    database_raw: Any,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Kengxxiao CN enemy DB (KV-list shape) → normalized ``{"enemies": {...}}`` + motion.
+
+    Kengxxiao's ``enemy_database.json`` wraps its enemies as a list of
+    ``{"Key": <id>, "Value": [<levels>]}`` pairs (§T69), not the top-level id-keyed
+    dict ``arknights_assets_gamedata`` uses (§V29). The *inner* level shape
+    (``enemyData.attributes.<stat>.m_value``, ``enemyData.motion.m_value``) is the
+    same, so this reshapes the KV list into the id-keyed dict and delegates to the
+    shared per-level normalizer (§V30: the one raw→normalized bridge home). Pure
+    JSON→JSON — never persisted into a build (§C: kengxxiao is CI-only, never a
+    runtime dep, never overrides the primary source). Idempotent on
+    already-normalized input.
+    """
+    if _database_is_normalized(database_raw):
+        return database_raw, {}
+    if not isinstance(database_raw, dict):
+        return {"enemies": {}}, {}
+    pairs = database_raw.get("enemies")
+    if not isinstance(pairs, list):
+        return {"enemies": {}}, {}
+    id_keyed: dict[str, Any] = {}
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            continue
+        game_id = pair.get("Key")
+        raw_levels = pair.get("Value")
+        if not isinstance(game_id, str) or not game_id or not isinstance(raw_levels, list):
+            continue
+        id_keyed[game_id] = raw_levels
+    return normalize_enemy_database(id_keyed)
 
 
 # --- stage levelId → resolvable snapshot path ---------------------------------
@@ -409,6 +443,8 @@ def normalize_level(level_raw: Any) -> Any:
 
 __all__ = [
     "normalize_enemy_sources",
+    "normalize_enemy_database",
+    "normalize_kengxxiao_enemy_database",
     "normalize_level_id",
     "normalize_level",
 ]
