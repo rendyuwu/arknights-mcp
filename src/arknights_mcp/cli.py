@@ -144,6 +144,12 @@ def _build_validate_promote(
                 f"  imported {snap.server}: {snap.enemies} enemies, "
                 f"{snap.stages} stages, {snap.zones} zones ({snap.snapshot_id})"
             )
+            # Per-stage combat import counts (§V30): make a silent empty build
+            # visible even when it would still pass validation.
+            _out(
+                f"    levels {snap.levels_imported}, tiles {snap.tiles}, "
+                f"spawns {snap.spawns}, stage_enemies {snap.stage_enemies}"
+            )
         report = validate_database(
             candidate,
             expected_schema_version=_expected_schema_version(),

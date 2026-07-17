@@ -80,17 +80,28 @@ def test_stage_downloads_allowlisted_into_local_adapter(tmp_path: Path) -> None:
     assert "main_04-04" in stage_table["stages"]
 
 
-def test_level_discovery_respects_allowlist(tmp_path: Path) -> None:
-    """A stage referencing an out-of-allowlist level path never gets fetched."""
+def test_level_discovery_normalizes_real_levelid() -> None:
+    """§V29/§V36: a real Title-case levelId is rewritten to its snapshot path and
+    enqueued (the old raw-prefix gate collected 0 real level files, B6b)."""
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
-    poisoned = {"stages": {"x": {"stageId": "x", "levelId": "secret/evil.json"}}}
-    assert adapter._discover_level_paths(poisoned) == []
+    real = {"stages": {"x": {"stageId": "x", "levelId": "Obt/Main/level_main_04-04"}}}
+    assert adapter._discover_level_paths(real) == ["gamedata/levels/obt/main/level_main_04-04.json"]
 
 
 def test_level_discovery_rejects_excel_paths() -> None:
-    """L8: a crafted levelId pointing at an excel table is not enqueued as a level."""
+    """L8/§V36: a crafted levelId aimed at an excel table is never enqueued; after
+    normalization it folds under the levels prefix but the nested ``excel`` segment
+    is refused, so the excel table is never fetched."""
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
     poisoned = {"stages": {"x": {"stageId": "x", "levelId": "gamedata/excel/character_table.json"}}}
+    assert adapter._discover_level_paths(poisoned) == []
+
+
+def test_level_discovery_rejects_traversal_levelid() -> None:
+    """§V36: a levelId carrying a traversal fragment is dropped at discovery, so it
+    can never escape the levels tree."""
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
+    poisoned = {"stages": {"x": {"stageId": "x", "levelId": "../../secret"}}}
     assert adapter._discover_level_paths(poisoned) == []
 
 

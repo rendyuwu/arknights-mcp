@@ -20,6 +20,7 @@ from arknights_mcp.importers.field_policy import (
 )
 from arknights_mcp.importers.levels import LevelImportResult, insert_level, parse_level
 from arknights_mcp.importers.manifest import make_record_provenance
+from arknights_mcp.importers.normalization import normalize_level, normalize_level_id
 from arknights_mcp.sources.base import SourceAdapter
 
 _LOG = logging.getLogger(__name__)
@@ -53,6 +54,11 @@ class StageImportResult:
     zones_inserted: int
     stages_inserted: int
     levels: LevelImportResult
+    #: Stages that named a level file, and of those how many were resolved+imported.
+    #: A non-empty combat source with references but 0 imports (or 0 downstream
+    #: rows) is a silent-empty regression the pipeline fails closed on (§V30).
+    levels_referenced: int = 0
+    levels_imported: int = 0
 
 
 def _as_int(value: Any) -> int | None:
@@ -183,6 +189,8 @@ def import_stages(
 
     totals = LevelImportResult()
     stages_inserted = 0
+    levels_referenced = 0
+    levels_imported = 0
     for stage in stages:
         provenance_id = _insert_provenance(
             conn,
@@ -191,6 +199,9 @@ def import_stages(
             source_record_key=stage.game_id,
             record=stage.provenance_record,
         )
+        # Real levelId is a Title-case, extension-less reference; rewrite it to the
+        # actual snapshot path (§V29/§V30). A no-op for an already-resolvable path.
+        level_path = normalize_level_id(stage.level_id)
         zone_pk = (
             zone_pk_by_game_id.get(stage.zone_game_id) if stage.zone_game_id is not None else None
         )
@@ -210,21 +221,23 @@ def import_stages(
                 stage.sanity_cost,
                 stage.recommended_level,
                 stage.max_life_points,
-                stage.level_id,
+                level_path,
                 provenance_id,
             ),
         )
         stage_pk = int(cur.lastrowid or 0)
         stages_inserted += 1
 
-        if stage.level_id and adapter.exists(stage.level_id):
-            raw_level = adapter.read_json(stage.level_id)
+        if level_path:
+            levels_referenced += 1
+        if level_path and adapter.exists(level_path):
+            raw_level = normalize_level(adapter.read_json(level_path))
             # The level file is a distinct source_path from the stage table, so it
             # gets its own provenance row; every level-derived row links to it (§V17).
             level_provenance_id = _insert_provenance(
                 conn,
                 snapshot_id=snapshot_id,
-                source_path=stage.level_id,
+                source_path=level_path,
                 source_record_key=stage.game_id,
                 record=raw_level,
             )
@@ -232,6 +245,7 @@ def import_stages(
             result = insert_level(
                 conn, stage_pk, level, enemy_pk_by_game_id, provenance_id=level_provenance_id
             )
+            levels_imported += 1
             totals = LevelImportResult(
                 tiles=totals.tiles + result.tiles,
                 routes=totals.routes + result.routes,
@@ -239,14 +253,15 @@ def import_stages(
                 spawns=totals.spawns + result.spawns,
                 stage_enemies=totals.stage_enemies + result.stage_enemies,
             )
-        elif stage.level_id:
+        elif level_path:
             # A stage that names a level file we cannot resolve is imported with no
             # map/waves/spawns; record it rather than silently returning an empty,
             # wrong picture to analysis (§21.2 unresolved cross-reference).
             _LOG.warning(
-                "stage %s references level file %r which is absent; "
+                "stage %s references level file %r (from levelId %r) which is absent; "
                 "imported with no map/tiles/routes/waves/spawns",
                 stage.game_id,
+                level_path,
                 stage.level_id,
             )
 
@@ -254,4 +269,6 @@ def import_stages(
         zones_inserted=len(zones),
         stages_inserted=stages_inserted,
         levels=totals,
+        levels_referenced=levels_referenced,
+        levels_imported=levels_imported,
     )

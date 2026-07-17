@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import unquote, urlsplit
 
+from arknights_mcp.importers.normalization import normalize_level_id
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
@@ -35,6 +36,29 @@ ALLOWED_PREFIXES: tuple[str, ...] = ("gamedata/excel/", "gamedata/levels/")
 #: than ``ALLOWED_PREFIXES`` so a crafted ``stage_table.levelId`` cannot enqueue an
 #: arbitrary excel table as a "level" file (L8).
 LEVEL_PREFIXES: tuple[str, ...] = ("gamedata/levels/",)
+
+
+def _is_clean_level_path(path: str) -> bool:
+    """Whether a *normalized* levelId path is a safe level-file reference (§V36).
+
+    ``normalize_level_id`` always forces the ``gamedata/levels/`` prefix, so after
+    normalization a crafted ``levelId`` can neither point at an excel table nor
+    escape the tree -- but a mangled reference (e.g. ``gamedata/excel/...`` folded
+    under the levels prefix, or a traversal fragment) must still be dropped rather
+    than fetched. A clean path is under ``gamedata/levels/`` with a ``.json`` suffix,
+    a non-empty body, no traversal segment, and no nested ``gamedata``/``excel``
+    segment.
+    """
+    if not path.startswith("gamedata/levels/") or not path.endswith(".json"):
+        return False
+    body = path[len("gamedata/levels/") : -len(".json")]
+    if not body:
+        return False
+    segments = body.split("/")
+    if any(seg in ("", ".", "..") for seg in segments):
+        return False
+    return not any(seg in ("gamedata", "excel") for seg in segments)
+
 
 #: The fixed core files fetched every sync (enemy + stage/zone tables).
 CORE_FILES: tuple[str, ...] = (
@@ -256,7 +280,16 @@ class ArknightsAssetsAdapter:
         return parsed
 
     def _discover_level_paths(self, stage_table: Any) -> list[str]:
-        """Collect allowlisted level-file paths referenced by the stage table."""
+        """Collect allowlisted level-file paths referenced by the stage table.
+
+        The real ``levelId`` is a Title-case, extension-less reference
+        (``Obt/Main/level_main_04-04``); it is rewritten to the actual snapshot
+        path before the allowlist check (§V29/§V30) so the level file is actually
+        fetched. ``normalize_level_id`` always forces the result under
+        ``gamedata/levels/``, so a crafted ``levelId`` still cannot enqueue an excel
+        table (L8), and traversal is rejected by ``_validate_relative_path`` at
+        download time.
+        """
         paths: list[str] = []
         if not isinstance(stage_table, dict):
             return paths
@@ -268,13 +301,16 @@ class ArknightsAssetsAdapter:
             if not isinstance(entry, dict):
                 continue
             level_id = entry.get("levelId")
-            if not isinstance(level_id, str) or level_id in seen:
+            if not isinstance(level_id, str):
                 continue
-            seen.add(level_id)
-            # Only accept level-file paths, not the full fetch allowlist, so a
-            # crafted levelId can't point at an excel table (L8).
-            if any(level_id.startswith(prefix) for prefix in LEVEL_PREFIXES):
-                paths.append(level_id)
+            resolved = normalize_level_id(level_id)
+            if resolved is None or resolved in seen:
+                continue
+            seen.add(resolved)
+            # Confine discovery to the levels tree post-normalization (§V36): a
+            # crafted levelId must not fetch an excel table or escape the tree.
+            if _is_clean_level_path(resolved):
+                paths.append(resolved)
         return sorted(paths)
 
     def stage(self, staging_root: str | Path) -> LocalSnapshotAdapter:

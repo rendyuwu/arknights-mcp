@@ -90,6 +90,7 @@ V32: `purge --rebuild` cascade-deletes ∀ table tracing to purged source (child
 V33: importer maps source constraint anomaly (dup PK | variant | index) → typed `ImporterError`; ⊥ uncaught sqlite `IntegrityError` tearing down multi-region build.
 V34: 1 public-safe source projection fn shared by `source list` + `get_data_sources`; ⊥ divergent field allowlists across the 2 surfaces.
 V35: analyzer summary count = distinct `evidence.ref`, ⊥ raw occurrence rows → 1 entity across ≥2 level variants counts once.
+V36: stage `levelId` → level-file discovery confined to levels tree: normalized path ! startswith `gamedata/levels/` + endswith `.json`; ⊥ `.`|`..` segment; ⊥ nested `gamedata`|`excel` segment. `normalize_level_id` ! force `gamedata/levels/` prefix ∴ crafted `levelId` ⊥ fetch excel table | escape tree (L8 post-T66-normalize).
 
 ## §T TASKS
 
@@ -159,8 +160,8 @@ T62|.|M7 privacy log scan (no token/prompt/args/body)|V12
 T63|.|M7 no-bulk-reconstruction test|V19
 T64|.|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
 T65|.|M7 tag private-alpha v0.1.0 release|-
-T66|.|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18
-T67|.|M1 real-shape contract test: fixture built from real enemy_database/stage_table/level shapes (⊥ synthetic-only); assert `sync`/`import` 4-4 → non-empty enemies+tiles+spawns+`stage_enemies`|V29,V30
+T66|x|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18,V36
+T67|~|M1 real-shape contract test: fixture built from real enemy_database/stage_table/level shapes (⊥ synthetic-only); assert `sync`/`import` 4-4 → non-empty enemies+tiles+spawns+`stage_enemies`|V29,V30
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
@@ -179,3 +180,4 @@ B13|2026-07-17|`enemy_levels UNIQUE(enemy_pk, level_variant)` (+ stage_waves/rou
 B14|2026-07-17|V6: aerial rule `_summary(len(evidence))` counted one `EvidenceItem` per (enemy, level_variant); a flyer at 2 variants reported "2 aerial enemy types" for 1 enemy + duplicate evidence refs|`analyzers/rules/aerial.py` counts distinct `evidence.ref` (test_same_flyer_at_two_variants_counts_as_one_type) ∴ V35
 B15|2026-07-17|V27: two divergent public projections — `registry.public_view()` dropped `private_hosting_status` via `_INTERNAL_ONLY_FIELDS` but the `get_data_sources` service included it + bypassed `public_view()` → `source list` and the MCP tool emitted different field sets; the allowlist was maintained in 2 places|single `_INTERNAL_ONLY_FIELDS={"policy_notes"}` projection (private_hosting_status intended-public, PRD §13.10); `get_data_sources` routes through it (test_public_projections_do_not_diverge) ∴ V34
 B16|2026-07-17|V16/D4: `DEFAULT_MIGRATIONS_DIR = parents[3]/"migrations"` resolved to the repo root, outside the packaged `src/arknights_mcp` tree → a non-editable install found 0 `.sql` files and `build_database`/`_expected_schema_version` broke (unexercised: T47 install-smoke not done)|moved `migrations/*.sql`→`src/arknights_mcp/migrations/`; `db/migrations.py` resolves via `importlib.resources` (ships in wheel); enforcing test deferred to T47
+B17|2026-07-18|T66 normalizes `levelId` (real `Obt/Main/level_main_04-04`→`gamedata/levels/obt/main/level_main_04-04.json`) ∴ real level files fetch; but old `_discover_level_paths` L8 gate accepted a levelId only if its *raw* value startswith `gamedata/levels/` → real Title-case ⊥ prefix → collected 0/3264 files (B6b), & post-normalize every levelId maps under `gamedata/levels/` ∴ raw-prefix check ⊥ valid L8 boundary; excel craft `gamedata/excel/character_table.json` + traversal must reject *after* normalize|`_discover_level_paths` confines the *normalized* path to a clean level path (under `gamedata/levels/`+`.json`, ⊥ `.`/`..` seg, ⊥ nested `gamedata`/`excel` seg); `normalize_level_id` always forces the `gamedata/levels/` prefix ∴ V36

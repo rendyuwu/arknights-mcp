@@ -31,9 +31,9 @@ from pathlib import Path
 
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
-from arknights_mcp.importers.enemies import import_enemies
+from arknights_mcp.importers.enemies import ImporterError, import_enemies
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
-from arknights_mcp.importers.stages import import_stages
+from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.sources.registry import SourceRegistry, SourceRegistryEntry
 
@@ -50,7 +50,12 @@ class ServerImport:
 
 @dataclass(frozen=True)
 class SnapshotSummary:
-    """Per-server outcome recorded for CLI reporting (no game content)."""
+    """Per-server outcome recorded for CLI reporting (no game content).
+
+    Carries the per-stage import counts (§V30): tiles/spawns/stage_enemies plus how
+    many referenced level files actually imported, so a silent empty combat build
+    is both reported and refused.
+    """
 
     snapshot_id: str
     source_id: str
@@ -60,6 +65,10 @@ class SnapshotSummary:
     enemy_levels: int
     zones: int
     stages: int
+    levels_imported: int = 0
+    tiles: int = 0
+    spawns: int = 0
+    stage_enemies: int = 0
 
 
 @dataclass(frozen=True)
@@ -147,6 +156,8 @@ def _import_one(
     )
     enemies = import_enemies(conn, job.adapter, record.snapshot_id)
     stages = import_stages(conn, job.adapter, record.snapshot_id)
+    _guard_not_silently_empty(job.server, stages)
+    lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
         source_id=job.source_id,
@@ -156,7 +167,34 @@ def _import_one(
         enemy_levels=enemies.levels_inserted,
         zones=stages.zones_inserted,
         stages=stages.stages_inserted,
+        levels_imported=stages.levels_imported,
+        tiles=lv.tiles,
+        spawns=lv.spawns,
+        stage_enemies=lv.stage_enemies,
     )
+
+
+def _guard_not_silently_empty(server: str, stages: StageImportResult) -> None:
+    """Fail closed if a non-empty combat source yielded no combat rows (§V30).
+
+    Two silent-empty regressions B6 warns of: every stage names a level file but
+    none resolves (a schema/path mismatch), or level files import yet produce zero
+    tiles/spawns/stage_enemies (a shape mismatch). Either raises so the candidate is
+    discarded and the active database stays untouched (§V3) — never a promoted
+    build with empty combat data.
+    """
+    lv = stages.levels
+    if stages.levels_referenced and stages.levels_imported == 0:
+        raise ImporterError(
+            f"{server}: {stages.levels_referenced} stage(s) reference a level file but none "
+            "resolved; refusing a silent empty combat build (§V30)"
+        )
+    if stages.levels_imported and (lv.tiles == 0 or lv.spawns == 0 or lv.stage_enemies == 0):
+        raise ImporterError(
+            f"{server}: imported {stages.levels_imported} level file(s) but produced "
+            f"tiles={lv.tiles} spawns={lv.spawns} stage_enemies={lv.stage_enemies}; "
+            "refusing a silent empty combat build (§V30)"
+        )
 
 
 def build_candidate(

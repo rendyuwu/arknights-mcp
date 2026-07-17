@@ -18,6 +18,7 @@ from arknights_mcp.importers.field_policy import (
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import make_record_provenance
+from arknights_mcp.importers.normalization import normalize_enemy_sources
 from arknights_mcp.sources.base import SourceAdapter
 
 
@@ -244,6 +245,9 @@ def import_enemies(
     """Read enemy files via the adapter and import them for ``adapter.server``."""
     handbook_raw = adapter.read_json(handbook_path)
     database_raw = adapter.read_json(database_path)
+    # Bridge the real arknights_assets_gamedata shapes to the normalized shapes the
+    # parser consumes (§V29/§V30); a no-op on already-normalized fixtures.
+    handbook_raw, database_raw = normalize_enemy_sources(handbook_raw, database_raw)
     parsed = parse_enemies(handbook_raw, database_raw)
     return insert_enemies(
         conn,
