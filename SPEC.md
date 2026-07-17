@@ -171,7 +171,7 @@ T71|x|DRY: unify `_is_placeholder` (2 copies: `cli.py:114` `(str)` + `config.py:
 T72|x|DRY: dedup `INSERT INTO record_provenance` (`enemies.py:167` inline vs `stages.py:121` `_insert_provenance` helper) → shared helper in `importers/manifest.py`; both importers route through it|V37,V17
 T73|x|DRY: extract repeated `sqlite3.IntegrityError`→`ImporterError` guard (3 sites: `enemies.py:225` + `levels.py:226` + `db/purge.py`) → 1 shared guard (ctx mgr\|decorator)|V37,V33
 T74|x|fix B18: `get_data_sources`/service `SourceInfo` route through single `registry.public_view()` projection ∴ `source list --json` + MCP tool emit identical field set (minus DB-only `active_snapshots`); strengthen `test_public_projections_do_not_diverge` → assert `cli_keys == svc_keys - {active_snapshots}`, ⊥ weak named-field check|V34,V27
-T75|.|V38: split `cli.py` (604 ln, ≥3 cmd groups) → `cli/` package: 1 module/command-group (`sync`\|`import`\|`validate`\|`status`+`doctor`\|`source`) + shared `cli/_shared.py` helpers; pure structural move, ⊥ behavior change|V38
+T75|x|V38: split `cli.py` (604 ln, ≥3 cmd groups) → `cli/` package: 1 module/command-group (`sync`\|`import`\|`validate`\|`status`+`doctor`\|`source`) + shared `cli/_shared.py` helpers; pure structural move, ⊥ behavior change|V38
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL

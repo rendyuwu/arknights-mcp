@@ -31,8 +31,9 @@ EXPECTED_SUBPACKAGES = [
 ]
 
 # A representative slice of the PRD Section 20 module tree (relative to the package root).
+# ``cli`` is a package (one module per command group) after the §V38 split (T75).
 EXPECTED_MODULE_FILES = [
-    "cli.py",
+    "cli/__init__.py",
     "config.py",
     "instructions.py",
     "app.py",
