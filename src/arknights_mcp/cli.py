@@ -170,6 +170,24 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
         return _build_validate_promote(config, registry, imports, servers=servers)
 
 
+# --- import (§T22) ------------------------------------------------------------
+
+
+def _cmd_import(args: argparse.Namespace, ctx: CliContext) -> int:
+    config, registry = _load(args)
+    entry = registry.get(_LOCAL_SOURCE_ID)
+    if entry is None or not entry.enabled:
+        _err(f"source {_LOCAL_SOURCE_ID!r} is disabled; enable it before importing (§V20)")
+        return 1
+
+    server = args.server
+    # Raises SourceAdapterError (caught -> exit 1) if the path is not a directory.
+    adapter = LocalSnapshotAdapter(args.source_path, server, source_id=_LOCAL_SOURCE_ID)
+    _out(f"import: {_LOCAL_SOURCE_ID} server={server} from local snapshot")
+    job = ServerImport(server=server, adapter=adapter, source_id=_LOCAL_SOURCE_ID)
+    return _build_validate_promote(config, registry, [job], servers=[server])
+
+
 # --- parser + dispatch --------------------------------------------------------
 
 
@@ -188,6 +206,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sync = sub.add_parser("sync", help="build a candidate from an allowlisted remote source")
     p_sync.add_argument("--server", required=True, choices=["en", "cn", "all"])
     p_sync.set_defaults(func=_cmd_sync)
+
+    p_import = sub.add_parser("import", help="build a candidate from a local snapshot directory")
+    p_import.add_argument("--server", required=True, choices=["en", "cn"])
+    p_import.add_argument("--source-path", required=True, help="path to the snapshot directory")
+    p_import.set_defaults(func=_cmd_import)
 
     return parser
 

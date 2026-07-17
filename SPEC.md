@@ -108,7 +108,7 @@ T18|x|M0 accept test: 4-4 → stage + enemy occurrence + provenance + threat fin
 T19|x|M1 full migrations operator+enemy+stage+analysis tables per PRD §12|-
 T20|x|M1 read-only db/connection.py + db/repositories parameterized queries|V2
 T21|x|M1 CLI sync + arknights_assets.py adapter (allowlist, HTTPS, size/depth/count/redirect limits)|V1,I.cmd
-T22|.|M1 CLI import (local snapshot)|V1,I.cmd
+T22|x|M1 CLI import (local snapshot)|V1,I.cmd
 T23|.|M1 CLI validate (integrity_check, foreign_key_check, critical-table, orphan, FTS smoke, golden)|V4,I.cmd
 T24|x|M1 versioned data/builds/*.sqlite + atomic current.json promote; retain N prev; unchanged→no-op|V3,V4
 T25|.|M1 CLI status + doctor|I.cmd
