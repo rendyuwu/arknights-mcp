@@ -1,0 +1,43 @@
+{
+  "mapData": {
+    "map": [
+      [0, 1],
+      [1, 2]
+    ],
+    "tiles": [
+      {"tileKey": "tile_start", "heightType": "LOWLAND", "buildableType": "NONE", "passableMask": "ALL", "blackboard": null},
+      {"tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "MELEE", "passableMask": "ALL", "blackboard": null},
+      {"tileKey": "tile_end", "heightType": "LOWLAND", "buildableType": "NONE", "passableMask": "ALL", "blackboard": null}
+    ]
+  },
+  "routes": [
+    {
+      "motionMode": "WALK",
+      "startPosition": {"row": 0, "col": 0},
+      "endPosition": {"row": 1, "col": 1},
+      "spawnRandomRange": {"x": 0.0, "y": 0.0},
+      "checkpoints": []
+    }
+  ],
+  "enemyDbRefs": [
+    {"useDb": true, "id": "enemy_1007_slime", "level": 0},
+    {"useDb": true, "id": "enemy_1105_drone", "level": 0}
+  ],
+  "waves": [
+    {
+      "preDelay": 1.0,
+      "postDelay": 1.0,
+      "maxTimeWaitingForNextWave": 10.0,
+      "fragments": [
+        {
+          "preDelay": 0.0,
+          "actions": [
+            {"actionType": "SPAWN", "key": "enemy_1007_slime", "count": 3, "preDelay": 2.0, "interval": 1.5, "routeIndex": 0, "hiddenGroup": ""},
+            {"actionType": "SPAWN", "key": "enemy_1105_drone", "count": 2, "preDelay": 8.0, "interval": 2.0, "routeIndex": 0, "hiddenGroup": ""},
+            {"actionType": "STORY", "key": "", "loreBlurb": "REALPROSE action lore that must never be imported."}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "levelInfoList": [],
+  "enemyData": {
+    "enemy_1007_slime": {
+      "enemyId": "enemy_1007_slime",
+      "name": "Originium Slug",
+      "enemyLevel": "NORMAL",
+      "attackType": "physical",
+      "description": "REALPROSE handbook lore that must never be imported."
+    },
+    "enemy_1105_drone": {
+      "enemyId": "enemy_1105_drone",
+      "name": "Recon Drone",
+      "enemyLevel": "ELITE",
+      "attackType": "physical",
+      "description": "REALPROSE handbook lore that must never be imported."
+    }
+  }
+}

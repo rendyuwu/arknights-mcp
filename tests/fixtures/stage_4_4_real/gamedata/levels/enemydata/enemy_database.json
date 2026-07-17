@@ -1,0 +1,42 @@
+{
+  "enemy_1007_slime": [
+    {
+      "level": 0,
+      "enemyData": {
+        "name": {"m_defined": true, "m_value": "Originium Slug"},
+        "description": {"m_defined": true, "m_value": "REALPROSE enemy lore that must never be imported."},
+        "attributes": {
+          "maxHp": {"m_defined": true, "m_value": 1650},
+          "atk": {"m_defined": true, "m_value": 320},
+          "def": {"m_defined": true, "m_value": 100},
+          "magicResistance": {"m_defined": true, "m_value": 0},
+          "moveSpeed": {"m_defined": true, "m_value": 0.7},
+          "baseAttackTime": {"m_defined": true, "m_value": 2.0},
+          "massLevel": {"m_defined": true, "m_value": 2}
+        },
+        "lifePointReduce": {"m_defined": true, "m_value": 1},
+        "motion": {"m_defined": true, "m_value": "WALK"}
+      }
+    }
+  ],
+  "enemy_1105_drone": [
+    {
+      "level": 0,
+      "enemyData": {
+        "name": {"m_defined": true, "m_value": "Recon Drone"},
+        "description": {"m_defined": true, "m_value": "REALPROSE enemy lore that must never be imported."},
+        "attributes": {
+          "maxHp": {"m_defined": true, "m_value": 900},
+          "atk": {"m_defined": true, "m_value": 260},
+          "def": {"m_defined": true, "m_value": 0},
+          "magicResistance": {"m_defined": true, "m_value": 10},
+          "moveSpeed": {"m_defined": true, "m_value": 1.0},
+          "baseAttackTime": {"m_defined": true, "m_value": 1.6},
+          "massLevel": {"m_defined": true, "m_value": 1}
+        },
+        "lifePointReduce": {"m_defined": true, "m_value": 1},
+        "motion": {"m_defined": true, "m_value": "FLY"}
+      }
+    }
+  ]
+}
