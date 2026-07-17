@@ -188,6 +188,19 @@ def _cmd_import(args: argparse.Namespace, ctx: CliContext) -> int:
     return _build_validate_promote(config, registry, [job], servers=[server])
 
 
+# --- validate (§T23) ----------------------------------------------------------
+
+
+def _cmd_validate(args: argparse.Namespace, ctx: CliContext) -> int:
+    report = validate_database(
+        args.database,
+        expected_schema_version=_expected_schema_version(),
+        min_snapshots=0 if args.allow_empty else 1,
+    )
+    _out(format_report(report))
+    return 0 if report.passed else 1
+
+
 # --- parser + dispatch --------------------------------------------------------
 
 
@@ -211,6 +224,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("--server", required=True, choices=["en", "cn"])
     p_import.add_argument("--source-path", required=True, help="path to the snapshot directory")
     p_import.set_defaults(func=_cmd_import)
+
+    p_validate = sub.add_parser("validate", help="run the validation gate against a database")
+    p_validate.add_argument("--database", required=True, help="path to the database to validate")
+    p_validate.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="do not require at least one imported snapshot (schema-only check)",
+    )
+    p_validate.set_defaults(func=_cmd_validate)
 
     return parser
 

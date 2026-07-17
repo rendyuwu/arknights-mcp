@@ -16,10 +16,11 @@ Read-only: the candidate is opened through the read-only connection factory
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from arknights_mcp.db.connection import DatabaseUnavailable, read_only_connection
+from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 
 #: Tables that must exist for a build to be usable (the M1 domains + metadata).
 CRITICAL_TABLES: tuple[str, ...] = (
@@ -187,6 +188,19 @@ def _schema_version(conn: sqlite3.Connection) -> str | None:
     return str(rows[-1][0]) if rows else None
 
 
+def _safe(name: str, run: Callable[[], CheckResult]) -> CheckResult:
+    """Run one check, converting a SQLite error into a failed result.
+
+    Each check is independent: a check that raises (e.g. a dropped critical table
+    makes the orphan join fail) becomes its own FAIL rather than aborting the whole
+    gate, so the report stays complete and actionable.
+    """
+    try:
+        return run()
+    except sqlite3.Error as exc:
+        return CheckResult(name, False, f"check error: {exc}")
+
+
 def validate_database(
     db_path: str | Path,
     *,
@@ -202,23 +216,26 @@ def validate_database(
     """
     path = Path(db_path)
     try:
-        with read_only_connection(path) as conn:
-            checks: list[CheckResult] = [
-                _integrity_check(conn),
-                _foreign_key_check(conn),
-                _critical_tables(conn),
-                _row_counts(conn, min_snapshots=min_snapshots),
-                _orphans(conn),
-                _fts_smoke(conn),
-                _golden(conn, expected_schema_version=expected_schema_version),
-            ]
-            schema_version = _schema_version(conn)
-    except (DatabaseUnavailable, sqlite3.DatabaseError) as exc:
+        conn = open_read_only(path)
+    except DatabaseUnavailable as exc:
         return ValidationReport(
             passed=False,
             schema_version=None,
             checks=(CheckResult("integrity_check", False, f"unreadable database: {exc}"),),
         )
+    try:
+        checks: list[CheckResult] = [
+            _safe("integrity_check", lambda: _integrity_check(conn)),
+            _safe("foreign_key_check", lambda: _foreign_key_check(conn)),
+            _safe("critical_tables", lambda: _critical_tables(conn)),
+            _safe("row_counts", lambda: _row_counts(conn, min_snapshots=min_snapshots)),
+            _safe("orphans", lambda: _orphans(conn)),
+            _safe("fts_smoke", lambda: _fts_smoke(conn)),
+            _safe("golden", lambda: _golden(conn, expected_schema_version=expected_schema_version)),
+        ]
+        schema_version = _schema_version(conn)
+    finally:
+        conn.close()
     passed = all(c.passed for c in checks)
     return ValidationReport(passed=passed, schema_version=schema_version, checks=tuple(checks))
 
