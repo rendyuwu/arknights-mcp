@@ -73,9 +73,7 @@ def apply_migrations(
 
         if version in applied:
             if applied[version] != checksum:
-                raise MigrationError(
-                    f"checksum drift for already-applied migration {version!r}"
-                )
+                raise MigrationError(f"checksum drift for already-applied migration {version!r}")
             continue
 
         try:
