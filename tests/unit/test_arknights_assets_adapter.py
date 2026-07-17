@@ -1,0 +1,129 @@
+"""T21: the network source adapter/stager (§V1, §V18 allowlist + limits).
+
+Exercises the safety machinery of :class:`ArknightsAssetsAdapter` with an
+in-memory fetcher (no live network): HTTPS enforcement, the path allowlist, and
+the per-file / total-size / JSON-depth / JSON-node caps. Staging turns a remote
+snapshot into an ordinary local read-only adapter the import pipeline consumes.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from arknights_mcp.sources.arknights_assets import (
+    ArknightsAssetsAdapter,
+    DictFetcher,
+    DownloadLimits,
+    HttpsFetcher,
+    _validate_relative_path,
+    dict_fetcher_from_snapshot,
+)
+from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
+
+FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
+BASE_URL = "https://example.test/repo"
+
+
+def _fetcher() -> DictFetcher:
+    return dict_fetcher_from_snapshot(BASE_URL, FIXTURE_ROOT)
+
+
+# --- HTTPS enforcement (§V1) --------------------------------------------------
+
+
+def test_base_url_must_be_https() -> None:
+    with pytest.raises(SourceAdapterError, match="https"):
+        ArknightsAssetsAdapter("http://example.test/repo", "en", fetcher=_fetcher())
+
+
+def test_default_fetcher_refuses_non_https_url() -> None:
+    with pytest.raises(SourceAdapterError, match="non-HTTPS"):
+        HttpsFetcher().fetch("http://example.test/x.json", max_bytes=1024)
+
+
+# --- path allowlist / traversal (§V18) ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["/etc/passwd", "../secrets.json", "gamedata/../../x", "config/secret.json", "notallowed/x"],
+)
+def test_paths_outside_allowlist_rejected(bad: str) -> None:
+    with pytest.raises(SourceAdapterError):
+        _validate_relative_path(bad)
+
+
+def test_allowlisted_paths_accepted() -> None:
+    assert _validate_relative_path("gamedata/excel/stage_table.json")
+    assert _validate_relative_path("gamedata/levels/main/level_main_04-04.json")
+
+
+# --- staging turns a remote snapshot into a local adapter ----------------------
+
+
+def test_stage_downloads_allowlisted_into_local_adapter(tmp_path: Path) -> None:
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
+    local = adapter.stage(tmp_path / "staging")
+
+    assert isinstance(local, LocalSnapshotAdapter)
+    assert local.server == "en"
+    assert local.source_id == "arknights_assets_gamedata"
+    # core files + the discovered level file were all staged
+    assert local.exists("gamedata/excel/stage_table.json")
+    assert local.exists("gamedata/levels/main/level_main_04-04.json")
+    stage_table = local.read_json("gamedata/excel/stage_table.json")
+    assert "main_04-04" in stage_table["stages"]
+
+
+def test_level_discovery_respects_allowlist(tmp_path: Path) -> None:
+    """A stage referencing an out-of-allowlist level path never gets fetched."""
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
+    poisoned = {"stages": {"x": {"stageId": "x", "levelId": "secret/evil.json"}}}
+    assert adapter._discover_level_paths(poisoned) == []
+
+
+# --- resource caps (PRD §11.2) ------------------------------------------------
+
+
+def test_per_file_size_cap(tmp_path: Path) -> None:
+    limits = DownloadLimits(max_file_bytes=8)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), limits=limits)
+    with pytest.raises(SourceAdapterError, match="per-file cap"):
+        adapter.stage(tmp_path / "staging")
+
+
+def test_total_size_cap(tmp_path: Path) -> None:
+    # Large enough for any single file, small enough to trip on the running total.
+    limits = DownloadLimits(max_file_bytes=10_000, max_total_bytes=64)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), limits=limits)
+    with pytest.raises(SourceAdapterError, match="total download cap"):
+        adapter.stage(tmp_path / "staging")
+
+
+def test_json_depth_cap(tmp_path: Path) -> None:
+    deep: dict[str, object] = {"enemyData": {}}
+    node: dict[str, object] = deep
+    for _ in range(20):
+        child: dict[str, object] = {}
+        node["nest"] = child
+        node = child
+    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
+    fetcher = DictFetcher({url: json.dumps(deep).encode("utf-8")})
+    limits = DownloadLimits(max_json_depth=4)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher, limits=limits)
+    with pytest.raises(SourceAdapterError, match="depth cap"):
+        adapter.stage(tmp_path / "staging")
+
+
+def test_json_node_cap(tmp_path: Path) -> None:
+    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
+    payload = {"enemyData": {f"e{i}": {"name": i} for i in range(50)}}
+    fetcher = DictFetcher({url: json.dumps(payload).encode("utf-8")})
+    limits = DownloadLimits(max_json_nodes=5)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher, limits=limits)
+    with pytest.raises(SourceAdapterError, match="node cap"):
+        adapter.stage(tmp_path / "staging")
