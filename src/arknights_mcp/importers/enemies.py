@@ -16,7 +16,7 @@ from arknights_mcp.importers.field_policy import (
     ENEMY_LEVEL_ALLOWLIST,
     apply_allowlist,
 )
-from arknights_mcp.importers.manifest import make_record_provenance
+from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.normalization import normalize_enemy_sources
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
@@ -140,26 +140,13 @@ def insert_enemies(
     enemies_inserted = 0
     levels_inserted = 0
     for enemy in parsed:
-        prov = make_record_provenance(
+        provenance_id = insert_record_provenance(
+            conn,
             snapshot_id=snapshot_id,
             source_path=handbook_source_path,
             source_record_key=enemy.game_id,
             record=enemy.provenance_record,
         )
-        cur = conn.execute(
-            "INSERT INTO record_provenance "
-            "(snapshot_id, source_path, source_record_key, record_hash, "
-            "transform_version, field_policy_version) VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                prov.snapshot_id,
-                prov.source_path,
-                prov.source_record_key,
-                prov.record_hash,
-                prov.transform_version,
-                prov.field_policy_version,
-            ),
-        )
-        provenance_id = cur.lastrowid
         cur = conn.execute(
             "INSERT INTO enemies "
             "(server, game_id, display_name, enemy_class, is_boss, is_elite, "

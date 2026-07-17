@@ -8,6 +8,7 @@ records every imported row must carry: ``snapshot_id`` + ``source_path`` /
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -125,3 +126,42 @@ def make_record_provenance(
         transform_version=transform_version,
         field_policy_version=field_policy_version,
     )
+
+
+def insert_record_provenance(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_id: str,
+    source_path: str,
+    source_record_key: str,
+    record: Any,
+    transform_version: str = TRANSFORM_VERSION,
+    field_policy_version: str = FIELD_POLICY_VERSION,
+) -> int:
+    """Insert one ``record_provenance`` row (§V17) and return its ``provenance_id``.
+
+    The single home for the provenance INSERT (§V37): both the enemy and stage
+    importers route through it, so the V17 column set lives in exactly one place.
+    """
+    prov = make_record_provenance(
+        snapshot_id=snapshot_id,
+        source_path=source_path,
+        source_record_key=source_record_key,
+        record=record,
+        transform_version=transform_version,
+        field_policy_version=field_policy_version,
+    )
+    cur = conn.execute(
+        "INSERT INTO record_provenance "
+        "(snapshot_id, source_path, source_record_key, record_hash, "
+        "transform_version, field_policy_version) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            prov.snapshot_id,
+            prov.source_path,
+            prov.source_record_key,
+            prov.record_hash,
+            prov.transform_version,
+            prov.field_policy_version,
+        ),
+    )
+    return int(cur.lastrowid or 0)

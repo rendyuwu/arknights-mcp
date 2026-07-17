@@ -168,7 +168,7 @@ T68|x|M1 CI-only real-shape validation vs LIVE upstream (T67 is fixture-only ∴
 T69|x|M1 CI-only `kengxxiao_gamedata` CN cross-validator (deferred from T68): kengxxiao CN `enemy_database.json` = `{"enemies":[{"Key":<id>,"Value":[levels]}]}` (list, ⊥ id-keyed dict of `arknights_assets`) ∴ needs own normalization bridge before pipeline import. fetch pinned kengxxiao CN commit `6b6ac60f` + primary CN, cross-check shared enemy stats (`maxHp`/`baseAttackTime`/`massLevel`/`motion`) agree EN-source-CN vs kengxxiao-CN; ⊥ runtime dep; ⊥ override primary; ⊥ commit fetched raw data|V29,V30,C
 T70|x|DRY: extract dup coerce helpers `_as_int`/`_as_float`/`_as_str`/`_json_or_none` (3 copies: `importers/enemies.py:66-81` + `levels.py:87-100` + `stages.py:64-69`) → 1 shared home (`util/coerce.py`); resolve `_as_str` divergence (levels `sanitize_text` vs enemies/stages raw) via explicit `sanitize=` param, ⊥ silent variant copies|V37
 T71|x|DRY: unify `_is_placeholder` (2 copies: `cli.py:114` `(str)` + `config.py:41` `(str\|None)`) → 1 shared fn (`str\|None` signature)|V37
-T72|.|DRY: dedup `INSERT INTO record_provenance` (`enemies.py:167` inline vs `stages.py:121` `_insert_provenance` helper) → shared helper in `importers/manifest.py`; both importers route through it|V37,V17
+T72|x|DRY: dedup `INSERT INTO record_provenance` (`enemies.py:167` inline vs `stages.py:121` `_insert_provenance` helper) → shared helper in `importers/manifest.py`; both importers route through it|V37,V17
 T73|.|DRY: extract repeated `sqlite3.IntegrityError`→`ImporterError` guard (3 sites: `enemies.py:225` + `levels.py:226` + `db/purge.py`) → 1 shared guard (ctx mgr\|decorator)|V37,V33
 
 id|date|cause|fix

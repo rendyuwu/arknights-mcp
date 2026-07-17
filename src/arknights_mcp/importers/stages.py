@@ -19,7 +19,7 @@ from arknights_mcp.importers.field_policy import (
     apply_allowlist,
 )
 from arknights_mcp.importers.levels import LevelImportResult, insert_level, parse_level
-from arknights_mcp.importers.manifest import make_record_provenance
+from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.normalization import normalize_level, normalize_level_id
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_int, as_str
@@ -111,36 +111,6 @@ def parse_stages(stage_raw: Any) -> list[ParsedStage]:
     return out
 
 
-def _insert_provenance(
-    conn: sqlite3.Connection,
-    *,
-    snapshot_id: str,
-    source_path: str,
-    source_record_key: str,
-    record: dict[str, Any],
-) -> int:
-    prov = make_record_provenance(
-        snapshot_id=snapshot_id,
-        source_path=source_path,
-        source_record_key=source_record_key,
-        record=record,
-    )
-    cur = conn.execute(
-        "INSERT INTO record_provenance "
-        "(snapshot_id, source_path, source_record_key, record_hash, "
-        "transform_version, field_policy_version) VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            prov.snapshot_id,
-            prov.source_path,
-            prov.source_record_key,
-            prov.record_hash,
-            prov.transform_version,
-            prov.field_policy_version,
-        ),
-    )
-    return int(cur.lastrowid or 0)
-
-
 def _enemy_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
     return {
         game_id: enemy_pk
@@ -166,7 +136,7 @@ def import_stages(
 
     zone_pk_by_game_id: dict[str, int] = {}
     for zone in zones:
-        provenance_id = _insert_provenance(
+        provenance_id = insert_record_provenance(
             conn,
             snapshot_id=snapshot_id,
             source_path=zone_table_path,
@@ -185,7 +155,7 @@ def import_stages(
     levels_referenced = 0
     levels_imported = 0
     for stage in stages:
-        provenance_id = _insert_provenance(
+        provenance_id = insert_record_provenance(
             conn,
             snapshot_id=snapshot_id,
             source_path=stage_table_path,
@@ -227,7 +197,7 @@ def import_stages(
             raw_level = normalize_level(adapter.read_json(level_path))
             # The level file is a distinct source_path from the stage table, so it
             # gets its own provenance row; every level-derived row links to it (§V17).
-            level_provenance_id = _insert_provenance(
+            level_provenance_id = insert_record_provenance(
                 conn,
                 snapshot_id=snapshot_id,
                 source_path=level_path,
