@@ -98,7 +98,7 @@ T8|x|M0 config.py + config.example.toml loader; refuse non-loopback remote w/o H
 T9|x|M0 machine source registry config/data_sources.toml + sources/registry.py loader|V27
 T10|x|M0 local snapshot adapter sources/base.py + local_snapshot.py|V1
 T11|x|M0 field allowlist importers/field_policy.py + manifest/checksum importers/manifest.py|V17,V18
-T12|.|M0 minimal migrations: schema_migrations data_sources source_snapshots record_provenance source_policy_events|V17
+T12|x|M0 minimal migrations: schema_migrations data_sources source_snapshots record_provenance source_policy_events|V17
 T13|.|M0 enemy parser importers/enemies.py → enemies + enemy_levels|V18
 T14|.|M0 stage + level/map/wave/spawn parser importers/stages.py+levels.py for pinned 4-4|V18
 T15|.|M0 minimal 4-4 fixture tests/fixtures/stage_4_4 (only test-required fields; no full dump)|V16
