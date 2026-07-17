@@ -1,0 +1,145 @@
+# Machine-readable source registry (SPEC §V27; PRD Section 10.1).
+#
+# One [<source_id>] table per source. This is the authoritative registry loaded
+# at runtime; DATA_SOURCES.md is the human-readable mirror and must be kept in
+# sync. Contains NO secrets, no local filesystem paths, no OAuth config, and no
+# takedown correspondence. The active snapshot commit/version per region is
+# tracked at runtime in the `source_snapshots` table, not here.
+
+[arknights_assets_gamedata]
+display_name = "ArknightsAssets / ArknightsGamedata"
+owner_name = "ArknightsAssets / ArknightsGamedata project"
+canonical_url = "https://github.com/ArknightsAssets/ArknightsGamedata"
+source_type = "structured_game_data_snapshot"
+regions = ["en", "cn"]
+purpose = "Primary EN/CN structured gameplay snapshot (stages, enemies, operators, modules)."
+fields_consumed = [
+    "character_table.json",
+    "skill_table.json",
+    "uniequip_table.json",
+    "uniequip_data.json",
+    "battle_equip_table.json",
+    "enemy_handbook_table.json",
+    "enemy_database.json",
+    "stage_table.json",
+    "zone_table.json",
+    "range_table.json",
+    "levels/**",
+]
+adapter_version = "0.1"
+transform_version = "1"
+license_identifier = ""
+license_status = "no_explicit_dataset_license_assumed"
+permission_status = "not_granted_cautious_private_mvp"
+private_hosting_status = "permitted_private_authenticated_with_attribution_and_kill_switch"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Game data snapshots courtesy of the ArknightsAssets/ArknightsGamedata project. Arknights game content (c) Hypergryph / Yostar."
+contact_url = "https://github.com/ArknightsAssets/ArknightsGamedata/issues"
+policy_notes = "Imported game content may be governed by rights holders; status recorded, not assumed. Import only allowlisted gameplay fields; no bundled snapshots."
+enabled = true
+last_reviewed_at = "2026-07-17"
+
+[local_snapshot]
+display_name = "User-supplied local snapshot"
+owner_name = "Local operator (user-supplied files)"
+canonical_url = "local://user-supplied-snapshot"
+source_type = "local_snapshot_adapter"
+regions = ["en", "cn"]
+purpose = "User-supplied snapshot directory matching the primary snapshot layout, for personal import."
+fields_consumed = ["same allowlist as arknights_assets_gamedata"]
+adapter_version = "0.1"
+transform_version = "1"
+license_identifier = ""
+license_status = "inherits_underlying_source"
+permission_status = "local_possession_is_not_proof_of_permission"
+private_hosting_status = "personal_import_only_with_provenance"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Inherits the attribution of the underlying source snapshot."
+contact_url = "local://user-supplied-snapshot"
+policy_notes = "Adapter capability; local possession is not proof of permission."
+enabled = true
+last_reviewed_at = "2026-07-17"
+
+[kengxxiao_gamedata]
+display_name = "Kengxxiao / ArknightsGameData"
+owner_name = "Kengxxiao / ArknightsGameData project"
+canonical_url = "https://github.com/Kengxxiao/ArknightsGameData"
+source_type = "structured_game_data_snapshot"
+regions = ["cn"]
+purpose = "CN parser validation only; never a runtime dependency; never overrides primary values."
+fields_consumed = ["selected CN entities for cross-check"]
+adapter_version = "0.1"
+transform_version = "1"
+license_identifier = ""
+license_status = "no_explicit_dataset_license_assumed"
+permission_status = "not_granted"
+private_hosting_status = "not_hosted_dev_ci_only"
+redistribution_status = "prohibited_code_only"
+attribution_text = "CN validation data courtesy of the Kengxxiao/ArknightsGameData project."
+contact_url = "https://github.com/Kengxxiao/ArknightsGameData/issues"
+policy_notes = "Development / CI validation only; disabled by default in production."
+enabled = false
+last_reviewed_at = "2026-07-17"
+
+[penguin_statistics]
+display_name = "Penguin Statistics"
+owner_name = "Penguin Statistics"
+canonical_url = "https://penguin-stats.io"
+source_type = "statistics_api"
+regions = ["en", "cn"]
+purpose = "Future observed drop-rate statistics (Phase 2)."
+fields_consumed = []
+adapter_version = "0.0"
+transform_version = "0"
+license_identifier = "CC-BY-NC-4.0"
+license_status = "cc_by_nc_4_0_per_api_docs"
+permission_status = "noncommercial_attribution_required"
+private_hosting_status = "deferred"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Drop-rate statistics (c) Penguin Statistics, licensed CC BY-NC 4.0."
+contact_url = "https://penguin-stats.io"
+policy_notes = "Disabled in v0.1; future cached observations must record server, interval, sample size, fetched time, expiry, attribution, and source URL."
+enabled = false
+last_reviewed_at = "2026-07-17"
+
+[arknights_global_official_news]
+display_name = "Official Arknights (Global) news"
+owner_name = "Hypergryph / Yostar"
+canonical_url = "https://www.arknights.global/"
+source_type = "official_announcement_website"
+regions = ["en"]
+purpose = "Future event/banner/maintenance date metadata (metadata-only maximum scope)."
+fields_consumed = []
+adapter_version = "0.0"
+transform_version = "0"
+license_identifier = ""
+license_status = "first_party_copyrighted_website"
+permission_status = "metadata_only_pending_review"
+private_hosting_status = "deferred"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph / Yostar."
+contact_url = "https://www.arknights.global/"
+policy_notes = "Disabled by default; if enabled later, store only title, publication time, event start/end, region, announcement type, and canonical link. Never article bodies."
+enabled = false
+last_reviewed_at = "2026-07-17"
+
+[arknights_cn_official_news]
+display_name = "Official Arknights (CN) news"
+owner_name = "Hypergryph"
+canonical_url = "https://ak.hypergryph.com/"
+source_type = "official_announcement_website"
+regions = ["cn"]
+purpose = "Future CN event/banner/maintenance date metadata (metadata-only maximum scope)."
+fields_consumed = []
+adapter_version = "0.0"
+transform_version = "0"
+license_identifier = ""
+license_status = "first_party_copyrighted_website"
+permission_status = "metadata_only_pending_review"
+private_hosting_status = "deferred"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph."
+contact_url = "https://ak.hypergryph.com/"
+policy_notes = "Disabled by default; same metadata-only posture as the Global news source."
+enabled = false
+last_reviewed_at = "2026-07-17"
