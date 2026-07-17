@@ -110,7 +110,7 @@ T20|x|M1 read-only db/connection.py + db/repositories parameterized queries|V2
 T21|.|M1 CLI sync + arknights_assets.py adapter (allowlist, HTTPS, size/depth/count/redirect limits)|V1,I.cmd
 T22|.|M1 CLI import (local snapshot)|V1,I.cmd
 T23|.|M1 CLI validate (integrity_check, foreign_key_check, critical-table, orphan, FTS smoke, golden)|V4,I.cmd
-T24|.|M1 versioned data/builds/*.sqlite + atomic current.json promote; retain N prev; unchanged→no-op|V3,V4
+T24|x|M1 versioned data/builds/*.sqlite + atomic current.json promote; retain N prev; unchanged→no-op|V3,V4
 T25|.|M1 CLI status + doctor|I.cmd
 T26|.|M1 source list/enable/disable/purge --rebuild + source_policy_events|V20,V28,I.cmd
 T27|.|M1 get_data_status + get_data_sources services|V27
