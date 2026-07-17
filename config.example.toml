@@ -1,0 +1,68 @@
+# Example configuration for Arknights Intelligence MCP (PRD Section 19).
+#
+# Copy to config.toml and adjust. Secrets are NEVER placed in this file:
+# supply OAuth/OIDC secrets via environment variables or a secret manager.
+# Remote mode is disabled here; enabling non-loopback remote without HTTPS and
+# valid OAuth/OIDC settings will refuse startup (SPEC §V9).
+
+[database]
+data_dir = "./data"
+current_manifest = "./data/current.json"
+read_only = true
+
+[sync]
+enabled_sources = ["arknights_assets_gamedata"]
+allow_remote_download = true
+retain_versions = 3
+max_total_download_mb = 500
+
+[sync.arknights_assets_gamedata]
+base_url = "<configured allowlisted repository endpoint>"
+servers = ["en", "cn"]
+
+[source_registry]
+policy_file = "./DATA_SOURCES.md"
+machine_registry = "./config/data_sources.toml"
+
+[analysis]
+def_high = 800
+res_high = 50
+pressure_window_seconds = 15
+max_findings = 30
+
+[mcp]
+default_server = "en"
+max_tool_response_kb = 200
+schema_version = "1.0"
+
+[mcp.local]
+enabled = true
+transport = "stdio"
+log_level = "INFO"
+
+[mcp.remote]
+enabled = false
+transport = "streamable-http"
+bind_host = "127.0.0.1"
+bind_port = 8000
+path = "/mcp"
+public_base_url = "https://mcp.example.com"
+trust_proxy_headers = true
+
+[auth]
+mode = "oidc"
+issuer = "<OIDC issuer>"
+audience = "<MCP audience>"
+jwks_url = "<JWKS endpoint or discovery-derived value>"
+required_scopes = ["arknights:read"]
+
+[limits]
+requests_per_minute_per_principal = 60
+max_concurrent_requests_per_principal = 4
+request_timeout_seconds = 30
+max_page_size = 100
+
+[privacy]
+log_tool_arguments = false
+log_tool_results = false
+operational_log_retention_days = 14

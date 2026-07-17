@@ -25,8 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     _ = sys.argv if argv is None else argv
     print(
-        "arknights-mcp: CLI not implemented yet (M0 scaffold). "
-        "See SPEC.md §T for the build order.",
+        "arknights-mcp: CLI not implemented yet (M0 scaffold). See SPEC.md §T for the build order.",
         file=sys.stderr,
     )
     return 1
