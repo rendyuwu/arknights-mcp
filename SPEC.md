@@ -104,7 +104,7 @@ T14|x|M0 stage + level/map/wave/spawn parser importers/stages.py+levels.py for p
 T15|x|M0 minimal 4-4 fixture tests/fixtures/stage_4_4 (only test-required fields; no full dump)|V16
 T16|x|M0 one deterministic threat rule + evidence analyzers/rules + analyzers/stage.py|V6,V26
 T17|x|M0 internal analyze_stage service services/stages.py|V6,V14
-T18|.|M0 accept test: 4-4 → stage + enemy occurrence + provenance + threat finding; no wiki text|V5,V6,V16
+T18|x|M0 accept test: 4-4 → stage + enemy occurrence + provenance + threat finding; no wiki text|V5,V6,V16
 T19|.|M1 full migrations operator+enemy+stage+analysis tables per PRD §12|-
 T20|.|M1 read-only db/connection.py + db/repositories parameterized queries|V2
 T21|.|M1 CLI sync + arknights_assets.py adapter (allowlist, HTTPS, size/depth/count/redirect limits)|V1,I.cmd
