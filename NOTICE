@@ -1,0 +1,41 @@
+Arknights Intelligence MCP
+Copyright 2026 The Arknights Intelligence MCP Authors
+
+This product includes software developed by the Arknights Intelligence MCP
+project, licensed under the Apache License, Version 2.0 (see the LICENSE file).
+
+------------------------------------------------------------------------------
+Scope of the Apache-2.0 license (D11; PRD Section 10.9)
+------------------------------------------------------------------------------
+
+The Apache License, Version 2.0 applies ONLY to the project's own source code,
+database schema, migrations, tests, parsers, and documentation contained in
+this repository.
+
+It does NOT apply to, and does NOT relicense, any imported game data or
+third-party game content. Imported data and game content remain separately
+governed by the rights of their respective owners and by the terms of the
+sources from which they originate. See DATA_POLICY.md and DATA_SOURCES.md.
+
+------------------------------------------------------------------------------
+Unofficial project / trademarks
+------------------------------------------------------------------------------
+
+"Arknights" and all related names, logos, characters, artwork, audio, story
+text, voice lines, and other game content are trademarks and/or copyrights of
+their respective rights holders (including Hypergryph and Yostar).
+
+This project is an unofficial, non-commercial, fan-made intelligence tool. It
+is not affiliated with, endorsed by, or sponsored by Hypergryph, Yostar, the
+maintainers of any upstream data source, Anthropic, or OpenAI.
+
+------------------------------------------------------------------------------
+No bundled game data (V16; PRD Section 10.9)
+------------------------------------------------------------------------------
+
+Source releases of this project distribute code, schema, migrations, tests,
+and parsers only. They do NOT distribute raw game-data snapshots, prebuilt
+databases, artwork, audio, story scripts, voice lines, wiki/community prose,
+or full announcement bodies. Users build their own local database from
+approved snapshots via the `arknights-mcp import` / `arknights-mcp sync`
+commands.
