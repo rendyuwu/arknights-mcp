@@ -25,6 +25,15 @@ normalized shape (the minimal synthetic fixture, or inline parser tests) it
 returns the input unchanged, so only genuinely-real snapshots take the transform
 branch. Prose/unknown fields are dropped here and re-checked by the parsers'
 allowlist + sanitize step (§V18) — normalization never widens the field policy.
+
+The field mappings below (``massLevel``→``weight``,
+``lifePointReduce``→``lifePointReduction``, ``preDelay``→``spawnTime``,
+``maxTimeWaitingForNextWave``→``maxTimeWaiting``, and the positional route/wave
+index fallbacks) are **verified against live upstream**, not merely inferred from
+the fixture: the CI-only ``tests/contract/test_live_upstream.py`` (§T68) imports a
+pinned ``arknights_assets_gamedata`` commit and asserts real 4-4 yields non-null
+``hp``/``res``/``attackInterval``/``weight``/``lifePointReduction``/``motion`` plus
+non-empty tiles/spawns/``stage_enemies`` (§V29, §V30).
 """
 
 from __future__ import annotations

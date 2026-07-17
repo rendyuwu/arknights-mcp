@@ -42,3 +42,29 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q --cov=arknights_mcp --cov-report=term-missing
+
+  live-upstream:
+    # SPEC §T68 / §C: real-shape validation against LIVE upstream. Needs network,
+    # so it is a dedicated Linux-only job gated by ARKMCP_LIVE_UPSTREAM (the test
+    # module skips itself unless the flag is set). Fetches a pinned
+    # arknights_assets_gamedata commit, imports it, and asserts real 4-4 combat
+    # data; nothing fetched is committed (§V16, fetch -> discard).
+    name: live-upstream real-shape (§T68)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies (locked)
+        run: uv sync --locked --dev
+
+      - name: Real-shape validation vs live upstream
+        env:
+          ARKMCP_LIVE_UPSTREAM: "1"
+        run: uv run pytest tests/contract/test_live_upstream.py -q
