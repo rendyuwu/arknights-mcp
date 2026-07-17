@@ -1,0 +1,49 @@
+# --- Data & build artifacts (V16: no raw snapshots / prebuilt DB in releases) ---
+# Never commit built or promoted databases.
+*.sqlite
+*.sqlite3
+*.db
+data/builds/
+data/current.json
+# Keep the data/ directory itself present but empty in git.
+data/*
+!data/.gitkeep
+
+# Imported raw snapshots (user-local acquisition; never distributed)
+snapshot/
+snapshots/
+/snapshot-*/
+
+# --- Source PRD / spec input docs (not distributed) ---
+Arknights_MCP_PRD_v0.1_FINAL.md
+Arknights_MCP_Agent_Execution_Prompt_FINAL.md
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# --- Secrets / local env (auth secrets are env-only, never committed) ---
+.env
+.env.*
+!.env.example
+
+# --- Editor / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
