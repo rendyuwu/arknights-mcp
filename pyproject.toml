@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arknights-mcp"
+version = "0.1.0"
+description = "Read-only Arknights Intelligence MCP server: one shared core, local stdio + private OAuth/OIDC Streamable HTTP, over versioned SQLite snapshots."
+requires-python = ">=3.12,<3.13"
+# Runtime dependencies are declared and locked in task T3 (V25: mcp>=1.28.1,<2).
+dependencies = []
+keywords = ["arknights", "mcp", "model-context-protocol", "intelligence"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.scripts]
+arknights-mcp = "arknights_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arknights_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["arknights_mcp"]
+strict = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra"

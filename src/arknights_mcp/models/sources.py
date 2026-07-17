@@ -1,0 +1,4 @@
+"""Data-source status and registry I/O models.
+
+Stub scaffold (PRD Section 20). Implemented in a later SPEC.md §T task.
+"""
