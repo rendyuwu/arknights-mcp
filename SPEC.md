@@ -112,7 +112,7 @@ T22|x|M1 CLI import (local snapshot)|V1,I.cmd
 T23|x|M1 CLI validate (integrity_check, foreign_key_check, critical-table, orphan, FTS smoke, golden)|V4,I.cmd
 T24|x|M1 versioned data/builds/*.sqlite + atomic current.json promote; retain N prev; unchanged→no-op|V3,V4
 T25|x|M1 CLI status + doctor|I.cmd
-T26|.|M1 source list/enable/disable/purge --rebuild + source_policy_events|V20,V28,I.cmd
+T26|x|M1 source list/enable/disable/purge --rebuild + source_policy_events|V20,V28,I.cmd
 T27|x|M1 get_data_status + get_data_sources services|V27
 T28|.|M1 takedown drill test: disable+purge+rebuild, current DB stays until validate|V20
 T29|.|M2 mcp/tool_registry.py + envelopes.py (schema_version, status, provenance, read-only hints)|V21,V22,V23

@@ -26,8 +26,9 @@ from pathlib import Path
 from arknights_mcp.config import AppConfig, ConfigError, load_config
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.migrations import default_migrations_dir
-from arknights_mcp.db.policy_events import read_events
+from arknights_mcp.db.policy_events import append_event, read_events
 from arknights_mcp.db.promotion import PromotionError, promote_candidate, resolve_active_database
+from arknights_mcp.db.purge import PurgeError, purge_and_rebuild
 from arknights_mcp.db.validate import format_report, validate_database
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
@@ -35,7 +36,12 @@ from arknights_mcp.services.status import get_data_status
 from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter, Fetcher
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
-from arknights_mcp.sources.registry import RegistryError, SourceRegistry, load_source_registry
+from arknights_mcp.sources.registry import (
+    RegistryError,
+    SourceRegistry,
+    load_source_registry,
+    set_source_enabled,
+)
 
 DEFAULT_CONFIG_PATH = "config.toml"
 _PRIMARY_SOURCE_ID = "arknights_assets_gamedata"
@@ -48,6 +54,7 @@ _HANDLED_ERRORS = (
     RegistryError,
     SourceAdapterError,
     PromotionError,
+    PurgeError,
     ImporterError,
     ValueError,
     FileNotFoundError,
@@ -317,6 +324,121 @@ def _print_doctor(lines: list[tuple[str, str, str]]) -> None:
         _out(f"  [{level:<4}] {name}: {detail}")
 
 
+# --- source list/enable/disable/purge (§T26; §V20; §V28) ----------------------
+
+
+def _cmd_source_list(args: argparse.Namespace, ctx: CliContext) -> int:
+    _, registry = _load(args)
+    if args.json:
+        # Public-safe projection only (no policy notes / private hosting, §V27).
+        _out(json.dumps(registry.public_registry(), indent=2, sort_keys=True))
+        return 0
+    _out("sources:")
+    for source_id in sorted(registry.entries):
+        entry = registry.entries[source_id]
+        flag = "enabled " if entry.enabled else "disabled"
+        regions = ",".join(entry.regions) or "-"
+        _out(
+            f"  [{flag}] {source_id:<28} {regions:<7} "
+            f"{entry.license_status or '-'}/{entry.permission_status or '-'}"
+        )
+    return 0
+
+
+def _toggle_source(args: argparse.Namespace, *, enabled: bool) -> int:
+    """Flip a source's registry kill switch and journal the policy event (§V20).
+
+    ``enable``/``disable`` only touch the registry (the mutable kill switch) and
+    the operational journal -- they never rebuild or mutate the active database,
+    so current data stays served until the next explicit build (§V4/§V20).
+    """
+    config, registry = _load(args)
+    source_id = args.source_id
+    if registry.get(source_id) is None:
+        _err(f"source {source_id!r} not in registry")
+        return 1
+    event_type = "enable" if enabled else "disable"
+    changed = set_source_enabled(config.source_registry.machine_registry, source_id, enabled)
+    if not changed:
+        _out(f"source {source_id!r} already {event_type}d")
+        return 0
+    append_event(
+        config.database.data_dir,
+        source_id=source_id,
+        event_type=event_type,
+        reason=args.reason,
+    )
+    if enabled:
+        _out(f"enabled {source_id!r}: sync resumes on next `sync`")
+    else:
+        _out(f"disabled {source_id!r}: new sync stopped; current data stays active (§V20)")
+    return 0
+
+
+def _cmd_source_enable(args: argparse.Namespace, ctx: CliContext) -> int:
+    return _toggle_source(args, enabled=True)
+
+
+def _cmd_source_disable(args: argparse.Namespace, ctx: CliContext) -> int:
+    return _toggle_source(args, enabled=False)
+
+
+def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
+    """Rebuild the active DB with a source's rows removed, promote iff valid (§V20).
+
+    Fail-closed: the current build stays active until the rebuilt candidate passes
+    validation and is promoted atomically; a failing rebuild leaves it untouched.
+    """
+    config, registry = _load(args)
+    if not args.rebuild:
+        _err("purge requires --rebuild in v0.1 (§I.cmd/§V20)")
+        return 1
+    source_id = args.source_id
+    if registry.get(source_id) is None:
+        _err(f"source {source_id!r} not in registry")
+        return 1
+    active = _active_database(config)
+    if active is None:
+        _err("no active database to purge from — nothing to rebuild")
+        return 1
+
+    data_dir = config.database.data_dir
+    # Journal the purge before rebuilding so it materializes into this build.
+    append_event(data_dir, source_id=source_id, event_type="purge", reason=args.reason)
+    _out(
+        f"purge: rebuilding without {source_id!r}; "
+        f"current database stays active until validated (§V20)"
+    )
+    result = purge_and_rebuild(
+        active,
+        source_id,
+        data_dir=data_dir,
+        servers=("en", "cn"),
+        retain_versions=config.sync.retain_versions,
+        current_manifest_path=config.database.current_manifest,
+        policy_events=read_events(data_dir),
+        expected_schema_version=_expected_schema_version(),
+    )
+    affected = result.affected
+    _out(
+        f"  removed {affected['snapshots']} snapshot(s), "
+        f"{affected['enemies']} enemies, {affected['stages']} stages"
+    )
+    if not result.validation_passed:
+        _err("rebuilt candidate failed validation; current database left active (§V20)")
+        print(format_report(result.report), file=sys.stderr)
+        return 1
+    promotion = result.promotion
+    assert promotion is not None  # validation passed -> promotion attempted
+    if promotion.status == "noop":
+        _out(f"unchanged: active build stays {promotion.manifest.database_filename} (no-op)")
+    else:
+        _out(f"promoted: {promotion.manifest.database_filename}")
+        if promotion.pruned:
+            _out(f"  pruned {len(promotion.pruned)} old build(s)")
+    return 0
+
+
 # --- parser + dispatch --------------------------------------------------------
 
 
@@ -356,6 +478,35 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser("doctor", help="report environment/config/database health")
     p_doctor.set_defaults(func=_cmd_doctor)
+
+    p_source = sub.add_parser("source", help="manage data sources (list/enable/disable/purge)")
+    source_sub = p_source.add_subparsers(dest="source_command", metavar="<action>")
+
+    p_src_list = source_sub.add_parser("list", help="list registered sources + enabled status")
+    p_src_list.add_argument("--json", action="store_true", help="emit public-safe JSON")
+    p_src_list.set_defaults(func=_cmd_source_list)
+
+    p_src_enable = source_sub.add_parser("enable", help="resume sync for a source (keeps data)")
+    p_src_enable.add_argument("source_id")
+    p_src_enable.add_argument("--reason", help="note recorded in the policy-event journal")
+    p_src_enable.set_defaults(func=_cmd_source_enable)
+
+    p_src_disable = source_sub.add_parser(
+        "disable", help="stop new sync for a source; keep current data (§V20)"
+    )
+    p_src_disable.add_argument("source_id")
+    p_src_disable.add_argument("--reason", help="note recorded in the policy-event journal")
+    p_src_disable.set_defaults(func=_cmd_source_disable)
+
+    p_src_purge = source_sub.add_parser(
+        "purge", help="rebuild without a source's rows; current DB active until validated (§V20)"
+    )
+    p_src_purge.add_argument("source_id")
+    p_src_purge.add_argument(
+        "--rebuild", action="store_true", help="required: rebuild + validate before promoting"
+    )
+    p_src_purge.add_argument("--reason", help="note recorded in the policy-event journal")
+    p_src_purge.set_defaults(func=_cmd_source_purge)
 
     return parser
 

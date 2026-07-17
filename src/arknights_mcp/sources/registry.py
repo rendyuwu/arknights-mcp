@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from arknights_mcp.util.atomic import atomic_write_text
+
 # Mandatory fields every enabled source must populate (§V27 / PRD 10.1). The
 # active snapshot commit/version is tracked at runtime (source_snapshots), not
 # in this static registry.
@@ -133,3 +135,36 @@ def load_source_registry(path: str | Path, *, validate: bool = True) -> SourceRe
     if validate:
         registry.assert_complete()
     return registry
+
+
+def set_source_enabled(path: str | Path, source_id: str, enabled: bool) -> bool:
+    """Flip a source's ``enabled`` flag in the machine registry TOML in place.
+
+    The registry is the mutable kill switch for ``source enable``/``disable``
+    (§V20): a targeted line edit preserves comments and formatting rather than
+    re-serializing the whole file (stdlib has no TOML writer). Returns ``True`` if
+    the flag was changed. Raises :class:`RegistryError` if the source or its
+    ``enabled`` line is absent.
+    """
+    p = Path(path)
+    if not p.is_file():
+        raise RegistryError(f"source registry not found: {p.name}")
+    lines = p.read_text(encoding="utf-8").splitlines()
+    header = f"[{source_id}]"
+    in_target = False
+    new_value = "true" if enabled else "false"
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_target = stripped == header
+            continue
+        if in_target and stripped.replace(" ", "").startswith("enabled="):
+            if stripped.split("=", 1)[1].strip() == new_value:
+                return False
+            indent = line[: len(line) - len(line.lstrip())]
+            lines[index] = f"{indent}enabled = {new_value}"
+            atomic_write_text(p, "\n".join(lines) + "\n")
+            return True
+    if not any(ln.strip() == header for ln in lines):
+        raise RegistryError(f"source {source_id!r} not in registry")
+    raise RegistryError(f"source {source_id!r} has no 'enabled' line in registry")
