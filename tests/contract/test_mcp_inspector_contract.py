@@ -58,8 +58,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The M2 tool set the assembled registry exposes, in registration order (§V14).
-_EXPECTED_TOOLS = ("search_entities", "search_stages", "get_stage", "get_enemy")
+#: The tool set the assembled registry exposes, in registration order (§V14).
+_EXPECTED_TOOLS = (
+    "search_entities",
+    "search_stages",
+    "get_stage",
+    "get_enemy",
+    "analyze_stage",
+)
 
 #: One well-formed call per tool -> an ``ok`` result (the "valid" archetype).
 _VALID_CALLS: dict[str, dict[str, object]] = {
@@ -67,6 +73,7 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "search_stages": {"query": "4-4"},
     "get_stage": {"server": "en", "stage_code": "4-4"},
     "get_enemy": {"server": "en", "game_id": "enemy_1007_slime"},
+    "analyze_stage": {"server": "en", "stage_code": "4-4"},
 }
 
 #: One well-formed-but-unmatched call per tool -> the typed ``not_found`` status.
@@ -75,6 +82,7 @@ _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "search_stages": {"query": "zzzznotastage"},
     "get_stage": {"server": "en", "stage_code": "99-99"},
     "get_enemy": {"server": "en", "game_id": "enemy_9999_ghost"},
+    "analyze_stage": {"server": "en", "stage_code": "99-99"},
 }
 
 
@@ -139,7 +147,7 @@ def test_valid_call_returns_ok_envelope(registry: ToolRegistry, name: str) -> No
 def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> None:
     # §V5: a factual tool result is region-attributed via provenance; en/cn are
     # never silently mixed. (Search returns region-tagged locators, not facts.)
-    for name in ("get_stage", "get_enemy"):
+    for name in ("get_stage", "get_enemy", "analyze_stage"):
         env = _call(registry, name, **_VALID_CALLS[name])
         assert env.provenance and all(p.server == "en" for p in env.provenance)
 

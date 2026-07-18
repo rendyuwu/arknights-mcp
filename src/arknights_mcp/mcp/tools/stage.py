@@ -1,13 +1,21 @@
-"""``get_stage`` MCP tool (§T34; §V19/§V22/§V23; §I.tool).
+"""``get_stage`` + ``analyze_stage`` MCP tools (§T34/§T40; §V6/§V19/§V22/§V23;
+§I.tool).
 
-Bridges the bounded :class:`~arknights_mcp.models.stages.GetStageInput` (§T30) to
-the shared :func:`~arknights_mcp.services.stages.get_stage` service (§V14) and
-wraps the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29). The tool owns no
-query logic -- only the model -> service -> envelope mapping -- so both transports
-dispatch identical read-only (§V2) behaviour from the single registry.
+Both bridge a bounded input model (§T30) to a shared
+:mod:`~arknights_mcp.services.stages` service (§V14) and wrap the outcome in the
+typed :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29). A tool owns
+no query logic -- only the model -> service -> envelope mapping -- so both
+transports dispatch identical read-only (§V2) behaviour from the single registry.
+They share this module (and its ``_stage_to_dict`` shaper, §V37) because both act
+on one stage.
 
-Two invariants are load-bearing here:
+``get_stage`` returns facts (+ opt-in map/routes/spawns); ``analyze_stage`` (§T40)
+returns the deterministic threat **observations**, each carrying every §V6 field
+(``rule_id`` + evidence + confidence + limitations + ``analyzer_version``), scaled
+by a ``depth`` lever (summary / standard / detailed). It emits facts + evidence-
+backed observations only -- never a mandatory or best-in-slot recommendation (§V7).
+
+Two invariants are load-bearing for ``get_stage``:
 
 * **§V22** -- the default response is stage facts + provenance only. The heavy
   ``map`` (tile grid), ``routes`` and ``spawns`` sections are opt-in include flags
@@ -24,19 +32,23 @@ shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
 
 from __future__ import annotations
 
+from arknights_mcp.analyzers import EvidenceItem, Observation
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
 from arknights_mcp.models.common import tool_input_schema
-from arknights_mcp.models.stages import GetStageInput
+from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stages import (
+    EnemyOccurrenceFacts,
     RouteFacts,
     SectionPage,
     SpawnFacts,
+    StageAnalysisResult,
     StageDetailResult,
     StageFacts,
     StageMapFacts,
     TileFacts,
+    analyze_stage,
     get_stage,
 )
 
@@ -199,4 +211,145 @@ def build_get_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
         description=_TOOL_DESCRIPTION,
         handler=handler,
         input_schema=tool_input_schema(GetStageInput),
+    )
+
+
+# --- analyze_stage (§T40): deterministic threat observations, depth-scaled. ----
+
+_ANALYZE_TOOL_NAME = "analyze_stage"
+_ANALYZE_TOOL_TITLE = "Analyze stage"
+_ANALYZE_TOOL_DESCRIPTION = (
+    "Analyze one Arknights stage (by region + stage_code, e.g. 4-4, or game_id) "
+    "into deterministic, evidence-backed threat observations: each carries a "
+    "rule_id, typed evidence, a confidence score, and limitations -- facts and "
+    "observations only, never a mandatory or best-in-slot recommendation. depth "
+    "scales the surrounding facts: summary (observations only), standard (+ enemy "
+    "roster + analyzer warnings), detailed (+ full per-enemy stat/timing context). "
+    "en/cn are never mixed."
+)
+
+
+def _evidence_to_dict(item: EvidenceItem) -> dict[str, object]:
+    """One typed datum that drove an observation (§V6 evidence)."""
+    return {"ref": item.ref, "field": item.field, "value": item.value, "note": item.note}
+
+
+def _observation_to_dict(obs: Observation) -> dict[str, object]:
+    """One evidence-backed observation with every §V6 field intact.
+
+    Emitted in full at *every* depth: a surfaced inference always carries its
+    ``rule_id`` + evidence + confidence + limitations + ``analyzer_version``, never
+    a bare verdict (§V6). ``depth`` scales the surrounding facts, not the evidence.
+    """
+    return {
+        "rule_id": obs.rule_id,
+        "category": obs.category,
+        "tag": obs.tag,
+        "title": obs.title,
+        "summary": obs.summary,
+        "confidence": obs.confidence,
+        "evidence": [_evidence_to_dict(e) for e in obs.evidence],
+        "limitations": list(obs.limitations),
+        "analyzer_version": obs.analyzer_version,
+    }
+
+
+def _occurrence_compact(occ: EnemyOccurrenceFacts) -> dict[str, object]:
+    """The enemy-roster row for ``depth=standard``: identity + how many, no stats."""
+    return {
+        "game_id": occ.game_id,
+        "display_name": occ.display_name,
+        "is_boss": occ.is_boss,
+        "is_elite": occ.is_elite,
+        "total_count": occ.total_count,
+    }
+
+
+def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
+    """The full typed occurrence for ``depth=detailed`` (class/motion/attack + timing)."""
+    return {
+        "game_id": occ.game_id,
+        "display_name": occ.display_name,
+        "enemy_class": occ.enemy_class,
+        "is_boss": occ.is_boss,
+        "is_elite": occ.is_elite,
+        "motion_type": occ.motion_type,
+        "attack_type": occ.attack_type,
+        "level_variant": occ.level_variant,
+        "total_count": occ.total_count,
+        "first_spawn_time": occ.first_spawn_time,
+        "last_spawn_time": occ.last_spawn_time,
+        "route_count": occ.route_count,
+    }
+
+
+def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> ResponseEnvelope:
+    """Map the analysis result to a typed §V23 envelope, scaled by ``depth``.
+
+    Every depth emits full §V6 observations (evidence never dropped) + region +
+    provenance (§V5) + the analyzer version. The ``depth`` lever only widens the
+    surrounding *facts*: ``summary`` is observations-only; ``standard`` adds the
+    compact enemy roster + the analyzer's §V26 conflict warnings; ``detailed`` swaps
+    in the full per-enemy typed context. The §V22 cap still fails closed on any
+    oversized payload.
+    """
+    if result.status == "not_found" or result.stage is None:
+        return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
+
+    data: dict[str, object] = {
+        "depth": depth,
+        "stage": _stage_to_dict(result.stage),
+        "observations": [_observation_to_dict(o) for o in result.observations],
+    }
+    if depth != "summary":
+        shaper = _occurrence_full if depth == "detailed" else _occurrence_compact
+        data["occurrences"] = [shaper(o) for o in result.occurrences]
+        data["warnings"] = list(result.warnings)
+
+    prov = result.stage.provenance
+    return ok(
+        data,
+        provenance=[
+            Provenance(
+                server=result.stage.server,
+                snapshot_id=prov.snapshot_id,
+                imported_at=prov.imported_at,
+            )
+        ],
+        analyzer_version=result.analyzer_version,
+    )
+
+
+def build_analyze_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
+    """Build the ``analyze_stage`` :class:`ToolSpec` (§T40; §V6/§V7/§V14).
+
+    ``get_conn`` returns the process-wide read-only connection to the promoted
+    build. The spec is read-only (§V2) for the single shared registry both
+    transports dispatch from (§V14); its ``input_schema`` is the bounded model's
+    JSON Schema, so the §V5 required ``server``, the exactly-one selector, and the
+    ``depth`` enum land on the wire exactly as validated.
+    """
+
+    def handler(**params: object) -> ResponseEnvelope:
+        # §V5/§V18 gate: the bounded model requires a region + exactly one selector,
+        # constrains ``depth`` to the enum, and rejects an unknown parameter *before*
+        # any query runs -- a ValidationError propagates as a protocol-level rejection.
+        parsed = AnalyzeStageInput.model_validate(params)
+        return run_guarded(
+            get_conn,
+            lambda conn: analyze_stage(
+                conn,
+                server=parsed.server,
+                stage_code=parsed.stage_code,
+                game_id=parsed.game_id,
+            ),
+            lambda result: _shape_analysis(parsed.depth, result),
+        )
+
+    return ToolSpec(
+        name=_ANALYZE_TOOL_NAME,
+        title=_ANALYZE_TOOL_TITLE,
+        description=_ANALYZE_TOOL_DESCRIPTION,
+        handler=handler,
+        input_schema=tool_input_schema(AnalyzeStageInput),
     )
