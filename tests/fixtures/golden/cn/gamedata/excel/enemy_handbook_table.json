@@ -1,0 +1,11 @@
+{
+  "enemyData": {
+    "enemy_cn_drone": {
+      "enemyId": "enemy_cn_drone",
+      "name": "侦察机",
+      "enemyLevel": "ELITE",
+      "attackType": "physical",
+      "motionType": "FLY"
+    }
+  }
+}

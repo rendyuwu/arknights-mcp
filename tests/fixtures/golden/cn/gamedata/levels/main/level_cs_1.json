@@ -1,0 +1,30 @@
+{
+  "mapData": {
+    "width": 6,
+    "height": 3,
+    "mapVersion": "1",
+    "environment": {},
+    "tiles": [
+      { "x": 0, "y": 0, "tileKey": "tile_start", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 5, "y": 2, "tileKey": "tile_end", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 2, "y": 1, "tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true }
+    ]
+  },
+  "routes": [
+    { "routeIndex": 0, "startPosition": { "row": 0, "col": 0 }, "endPosition": { "row": 2, "col": 5 }, "checkpoints": [] }
+  ],
+  "waves": [
+    {
+      "waveIndex": 0,
+      "preDelay": 1.0,
+      "maxTimeWaiting": 10.0,
+      "fragments": [
+        {
+          "actions": [
+            { "enemyId": "enemy_cn_drone", "levelVariant": 0, "routeIndex": 0, "spawnTime": 4.0, "count": 2, "interval": 2.0, "spawnGroup": "g0", "hidden": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

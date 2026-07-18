@@ -1,0 +1,58 @@
+{
+  "analyzer_version": "1",
+  "observations": [
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "field": "attack_range",
+          "note": "arts damage at range (total_count=2)",
+          "ref": "enemy_caster",
+          "value": 2.5
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.ranged_arts",
+      "summary": "Stage fields 1 enemy type dealing ranged arts damage, which ignores physical armor and strikes from a distance.",
+      "tag": "ranged_arts",
+      "title": "Ranged arts damage present"
+    }
+  ],
+  "occurrences": [
+    {
+      "attack_type": "magical",
+      "display_name": "Arts Caster",
+      "enemy_class": "ELITE",
+      "first_spawn_time": 5.0,
+      "game_id": "enemy_caster",
+      "is_boss": false,
+      "is_elite": true,
+      "last_spawn_time": 5.0,
+      "level_variant": 0,
+      "motion_type": "WALK",
+      "route_count": 1,
+      "total_count": 2
+    }
+  ],
+  "server": "en",
+  "stage": {
+    "difficulty": "NORMAL",
+    "display_name": "Arts Barrage",
+    "game_id": "gs_arts",
+    "max_life_points": 3,
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "en:465bb705512f"
+    },
+    "recommended_level": 42,
+    "sanity_cost": 15,
+    "server": "en",
+    "stage_code": "GS-2",
+    "stage_type": "MAIN",
+    "zone_game_id": "gz_1"
+  },
+  "status": "ok",
+  "warnings": []
+}

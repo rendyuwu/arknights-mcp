@@ -1,0 +1,9 @@
+{
+  "zones": {
+    "cz_1": {
+      "zoneId": "cz_1",
+      "zoneName": "监测站",
+      "type": "MAINLINE"
+    }
+  }
+}

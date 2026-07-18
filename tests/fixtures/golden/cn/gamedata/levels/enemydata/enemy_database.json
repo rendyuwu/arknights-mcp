@@ -1,0 +1,22 @@
+{
+  "enemies": {
+    "enemy_cn_drone": {
+      "levels": [
+        {
+          "level": 0,
+          "hp": 850,
+          "atk": 240,
+          "def": 0,
+          "res": 10,
+          "attackInterval": 1.6,
+          "attackRange": 1.1,
+          "moveSpeed": 1.0,
+          "weight": 1,
+          "lifePointReduction": 1,
+          "blockBehavior": "unblockable_flying",
+          "abilities": ["aerial"]
+        }
+      ]
+    }
+  }
+}

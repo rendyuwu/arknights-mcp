@@ -1,0 +1,40 @@
+{
+  "stages": {
+    "gs_drones": {
+      "stageId": "gs_drones",
+      "code": "GS-1",
+      "name": "Drone Swarm",
+      "zoneId": "gz_1",
+      "stageType": "MAIN",
+      "difficulty": "NORMAL",
+      "apCost": 15,
+      "recommendedLevel": 40,
+      "maxLifePoints": 3,
+      "levelId": "gamedata/levels/main/level_gs_drones.json"
+    },
+    "gs_arts": {
+      "stageId": "gs_arts",
+      "code": "GS-2",
+      "name": "Arts Barrage",
+      "zoneId": "gz_1",
+      "stageType": "MAIN",
+      "difficulty": "NORMAL",
+      "apCost": 15,
+      "recommendedLevel": 42,
+      "maxLifePoints": 3,
+      "levelId": "gamedata/levels/main/level_gs_arts.json"
+    },
+    "gs_multi": {
+      "stageId": "gs_multi",
+      "code": "GS-3",
+      "name": "Split Lanes",
+      "zoneId": "gz_1",
+      "stageType": "MAIN",
+      "difficulty": "NORMAL",
+      "apCost": 18,
+      "recommendedLevel": 45,
+      "maxLifePoints": 3,
+      "levelId": "gamedata/levels/main/level_gs_multi.json"
+    }
+  }
+}

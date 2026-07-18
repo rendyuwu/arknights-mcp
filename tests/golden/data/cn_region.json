@@ -1,0 +1,58 @@
+{
+  "analyzer_version": "1",
+  "observations": [
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "field": "motion_type",
+          "note": "total_count=2",
+          "ref": "enemy_cn_drone",
+          "value": "FLY"
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.aerial",
+      "summary": "Stage fields 1 aerial enemy type (2 total spawns); ground-only defenses cannot engage them.",
+      "tag": "aerial",
+      "title": "Aerial enemies present"
+    }
+  ],
+  "occurrences": [
+    {
+      "attack_type": "physical",
+      "display_name": "侦察机",
+      "enemy_class": "ELITE",
+      "first_spawn_time": 4.0,
+      "game_id": "enemy_cn_drone",
+      "is_boss": false,
+      "is_elite": true,
+      "last_spawn_time": 4.0,
+      "level_variant": 0,
+      "motion_type": "FLY",
+      "route_count": 1,
+      "total_count": 2
+    }
+  ],
+  "server": "cn",
+  "stage": {
+    "difficulty": "NORMAL",
+    "display_name": "夜巡",
+    "game_id": "cs_1",
+    "max_life_points": 3,
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "cn:95aa24a5572b"
+    },
+    "recommended_level": 35,
+    "sanity_cost": 12,
+    "server": "cn",
+    "stage_code": "CN-1",
+    "stage_type": "MAIN",
+    "zone_game_id": "cz_1"
+  },
+  "status": "ok",
+  "warnings": []
+}

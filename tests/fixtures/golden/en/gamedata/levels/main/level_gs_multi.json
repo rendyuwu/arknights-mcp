@@ -1,0 +1,39 @@
+{
+  "mapData": {
+    "width": 8,
+    "height": 5,
+    "mapVersion": "1",
+    "environment": {},
+    "tiles": [
+      { "x": 0, "y": 0, "tileKey": "tile_start", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 7, "y": 4, "tileKey": "tile_end", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 2, "y": 1, "tileKey": "tile_wall", "heightType": "HIGHLAND", "buildableType": "RANGED", "passable": false },
+      { "x": 3, "y": 2, "tileKey": "tile_floor", "heightType": "LOWLAND", "buildableType": "MELEE", "passable": true },
+      { "x": 4, "y": 2, "tileKey": "tile_floor", "heightType": "LOWLAND", "buildableType": "MELEE", "passable": true },
+      { "x": 1, "y": 1, "tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 5, "y": 3, "tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 6, "y": 3, "tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 2, "y": 3, "tileKey": "tile_road", "heightType": "LOWLAND", "buildableType": "NONE", "passable": true },
+      { "x": 5, "y": 1, "tileKey": "tile_forbidden", "heightType": "HIGHLAND", "buildableType": "NONE", "passable": false }
+    ]
+  },
+  "routes": [
+    { "routeIndex": 0, "startPosition": { "row": 0, "col": 0 }, "endPosition": { "row": 4, "col": 7 }, "checkpoints": [] },
+    { "routeIndex": 1, "startPosition": { "row": 4, "col": 0 }, "endPosition": { "row": 0, "col": 7 }, "checkpoints": [] }
+  ],
+  "waves": [
+    {
+      "waveIndex": 0,
+      "preDelay": 1.0,
+      "maxTimeWaiting": 10.0,
+      "fragments": [
+        {
+          "actions": [
+            { "enemyId": "enemy_soldier_a", "levelVariant": 0, "routeIndex": 0, "spawnTime": 2.0, "count": 3, "interval": 1.5, "spawnGroup": "g0", "hidden": false },
+            { "enemyId": "enemy_soldier_b", "levelVariant": 0, "routeIndex": 1, "spawnTime": 4.0, "count": 3, "interval": 1.5, "spawnGroup": "g1", "hidden": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

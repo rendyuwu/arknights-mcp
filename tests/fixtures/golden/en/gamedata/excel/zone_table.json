@@ -1,0 +1,9 @@
+{
+  "zones": {
+    "gz_1": {
+      "zoneId": "gz_1",
+      "zoneName": "Golden Suite Zone",
+      "type": "MAINLINE"
+    }
+  }
+}

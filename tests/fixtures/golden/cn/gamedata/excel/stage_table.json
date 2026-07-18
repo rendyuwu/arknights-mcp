@@ -1,0 +1,16 @@
+{
+  "stages": {
+    "cs_1": {
+      "stageId": "cs_1",
+      "code": "CN-1",
+      "name": "夜巡",
+      "zoneId": "cz_1",
+      "stageType": "MAIN",
+      "difficulty": "NORMAL",
+      "apCost": 12,
+      "recommendedLevel": 35,
+      "maxLifePoints": 3,
+      "levelId": "gamedata/levels/main/level_cs_1.json"
+    }
+  }
+}

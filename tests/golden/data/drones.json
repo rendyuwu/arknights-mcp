@@ -1,0 +1,78 @@
+{
+  "analyzer_version": "1",
+  "observations": [
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "field": "motion_type",
+          "note": "total_count=2",
+          "ref": "enemy_drone_a",
+          "value": "FLY"
+        },
+        {
+          "field": "motion_type",
+          "note": "total_count=2",
+          "ref": "enemy_drone_b",
+          "value": "FLY"
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.aerial",
+      "summary": "Stage fields 2 aerial enemy types (4 total spawns); ground-only defenses cannot engage them.",
+      "tag": "aerial",
+      "title": "Aerial enemies present"
+    }
+  ],
+  "occurrences": [
+    {
+      "attack_type": "physical",
+      "display_name": "Scout Drone A",
+      "enemy_class": "ELITE",
+      "first_spawn_time": 3.0,
+      "game_id": "enemy_drone_a",
+      "is_boss": false,
+      "is_elite": true,
+      "last_spawn_time": 3.0,
+      "level_variant": 0,
+      "motion_type": "FLY",
+      "route_count": 1,
+      "total_count": 2
+    },
+    {
+      "attack_type": "physical",
+      "display_name": "Scout Drone B",
+      "enemy_class": "ELITE",
+      "first_spawn_time": 8.0,
+      "game_id": "enemy_drone_b",
+      "is_boss": false,
+      "is_elite": true,
+      "last_spawn_time": 8.0,
+      "level_variant": 0,
+      "motion_type": "FLY",
+      "route_count": 1,
+      "total_count": 2
+    }
+  ],
+  "server": "en",
+  "stage": {
+    "difficulty": "NORMAL",
+    "display_name": "Drone Swarm",
+    "game_id": "gs_drones",
+    "max_life_points": 3,
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "en:465bb705512f"
+    },
+    "recommended_level": 40,
+    "sanity_cost": 15,
+    "server": "en",
+    "stage_code": "GS-1",
+    "stage_type": "MAIN",
+    "zone_game_id": "gz_1"
+  },
+  "status": "ok",
+  "warnings": []
+}

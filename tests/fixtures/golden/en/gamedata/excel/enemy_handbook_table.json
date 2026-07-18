@@ -1,0 +1,39 @@
+{
+  "enemyData": {
+    "enemy_drone_a": {
+      "enemyId": "enemy_drone_a",
+      "name": "Scout Drone A",
+      "enemyLevel": "ELITE",
+      "attackType": "physical",
+      "motionType": "FLY"
+    },
+    "enemy_drone_b": {
+      "enemyId": "enemy_drone_b",
+      "name": "Scout Drone B",
+      "enemyLevel": "ELITE",
+      "attackType": "physical",
+      "motionType": "FLY"
+    },
+    "enemy_caster": {
+      "enemyId": "enemy_caster",
+      "name": "Arts Caster",
+      "enemyLevel": "ELITE",
+      "attackType": "magical",
+      "motionType": "WALK"
+    },
+    "enemy_soldier_a": {
+      "enemyId": "enemy_soldier_a",
+      "name": "Foot Soldier A",
+      "enemyLevel": "NORMAL",
+      "attackType": "physical",
+      "motionType": "WALK"
+    },
+    "enemy_soldier_b": {
+      "enemyId": "enemy_soldier_b",
+      "name": "Foot Soldier B",
+      "enemyLevel": "NORMAL",
+      "attackType": "physical",
+      "motionType": "WALK"
+    }
+  }
+}

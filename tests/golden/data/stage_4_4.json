@@ -1,0 +1,72 @@
+{
+  "analyzer_version": "1",
+  "observations": [
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "field": "motion_type",
+          "note": "total_count=2",
+          "ref": "enemy_1105_drone",
+          "value": "FLY"
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.aerial",
+      "summary": "Stage fields 1 aerial enemy type (2 total spawns); ground-only defenses cannot engage them.",
+      "tag": "aerial",
+      "title": "Aerial enemies present"
+    }
+  ],
+  "occurrences": [
+    {
+      "attack_type": "physical",
+      "display_name": "Originium Slug",
+      "enemy_class": "NORMAL",
+      "first_spawn_time": 2.0,
+      "game_id": "enemy_1007_slime",
+      "is_boss": false,
+      "is_elite": false,
+      "last_spawn_time": 2.0,
+      "level_variant": 0,
+      "motion_type": "WALK",
+      "route_count": 1,
+      "total_count": 3
+    },
+    {
+      "attack_type": "physical",
+      "display_name": "Recon Drone",
+      "enemy_class": "ELITE",
+      "first_spawn_time": 8.0,
+      "game_id": "enemy_1105_drone",
+      "is_boss": false,
+      "is_elite": true,
+      "last_spawn_time": 8.0,
+      "level_variant": 0,
+      "motion_type": "FLY",
+      "route_count": 1,
+      "total_count": 2
+    }
+  ],
+  "server": "en",
+  "stage": {
+    "difficulty": "NORMAL",
+    "display_name": "Combustion",
+    "game_id": "main_04-04",
+    "max_life_points": 3,
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "en:75d6e11fab51"
+    },
+    "recommended_level": 45,
+    "sanity_cost": 18,
+    "server": "en",
+    "stage_code": "4-4",
+    "stage_type": "MAIN",
+    "zone_game_id": "main_4"
+  },
+  "status": "ok",
+  "warnings": []
+}

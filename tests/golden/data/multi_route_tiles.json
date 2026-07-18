@@ -1,0 +1,96 @@
+{
+  "analyzer_version": "1",
+  "observations": [
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.85,
+      "evidence": [
+        {
+          "field": "route_count",
+          "note": "2 distinct routes",
+          "ref": "GS-3",
+          "value": 2
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.lane_route",
+      "summary": "Stage fields 2 distinct enemy routes; threats approach from several lanes at once, so a single defensive line cannot cover every path.",
+      "tag": "lane_route",
+      "title": "Multiple approach lanes"
+    },
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.8,
+      "evidence": [
+        {
+          "field": "buildable_ranged",
+          "note": "of 10 tiles",
+          "ref": "GS-3",
+          "value": 1
+        },
+        {
+          "field": "buildable_melee",
+          "note": "of 10 tiles",
+          "ref": "GS-3",
+          "value": 2
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.tiles_deploy",
+      "summary": "Stage offers few deployable tiles (high-ground (ranged) tiles: 1; ground (melee) tiles: 2), limiting where units can be placed.",
+      "tag": "tiles_deploy",
+      "title": "Constrained deployment surface"
+    }
+  ],
+  "occurrences": [
+    {
+      "attack_type": "physical",
+      "display_name": "Foot Soldier A",
+      "enemy_class": "NORMAL",
+      "first_spawn_time": 2.0,
+      "game_id": "enemy_soldier_a",
+      "is_boss": false,
+      "is_elite": false,
+      "last_spawn_time": 2.0,
+      "level_variant": 0,
+      "motion_type": "WALK",
+      "route_count": 1,
+      "total_count": 3
+    },
+    {
+      "attack_type": "physical",
+      "display_name": "Foot Soldier B",
+      "enemy_class": "NORMAL",
+      "first_spawn_time": 4.0,
+      "game_id": "enemy_soldier_b",
+      "is_boss": false,
+      "is_elite": false,
+      "last_spawn_time": 4.0,
+      "level_variant": 0,
+      "motion_type": "WALK",
+      "route_count": 1,
+      "total_count": 3
+    }
+  ],
+  "server": "en",
+  "stage": {
+    "difficulty": "NORMAL",
+    "display_name": "Split Lanes",
+    "game_id": "gs_multi",
+    "max_life_points": 3,
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "en:465bb705512f"
+    },
+    "recommended_level": 45,
+    "sanity_cost": 18,
+    "server": "en",
+    "stage_code": "GS-3",
+    "stage_type": "MAIN",
+    "zone_game_id": "gz_1"
+  },
+  "status": "ok",
+  "warnings": []
+}
