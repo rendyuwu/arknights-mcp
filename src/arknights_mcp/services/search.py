@@ -18,7 +18,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Literal
 
-from arknights_mcp.db.repositories.search import SearchRepository
+from arknights_mcp.db.repositories.search import SearchHitRow, SearchRepository
 from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT
 
 #: §V19 search-result bounds. Single home is ``models.common`` (§V37); re-exported
@@ -89,6 +89,26 @@ def _validate_limit(limit: int) -> int:
     return value
 
 
+def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
+    """Map repository rows to region-tagged hits + a typed status (§V5/§V23).
+
+    Single home (§V37) for the row -> :class:`SearchHit` shaping shared by
+    :func:`search_entities` and :func:`search_stages`; ``not_found`` == the query
+    was well-formed but the FTS match returned nothing.
+    """
+    hits = tuple(
+        SearchHit(
+            entity_type=row.entity_type,
+            server=row.server,
+            game_id=row.game_id,
+            display_name=row.name,
+            stage_code=row.stage_code,
+        )
+        for row in rows
+    )
+    return SearchResult(status="ok" if hits else "not_found", query=query, hits=hits)
+
+
 def search_entities(
     conn: sqlite3.Connection,
     *,
@@ -111,14 +131,30 @@ def search_entities(
 
     repo = SearchRepository(conn)
     rows = repo.search(match, server=server, entity_type=entity_type, limit=bounded)
-    hits = tuple(
-        SearchHit(
-            entity_type=row.entity_type,
-            server=row.server,
-            game_id=row.game_id,
-            display_name=row.name,
-            stage_code=row.stage_code,
-        )
-        for row in rows
-    )
-    return SearchResult(status="ok" if hits else "not_found", query=query, hits=hits)
+    return _result_from_rows(query, rows)
+
+
+def search_stages(
+    conn: sqlite3.Connection,
+    *,
+    query: str,
+    server: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> SearchResult:
+    """Search indexed stages for ``query`` -- exact ``stage_code`` first (§T33).
+
+    Same safe, tokenized FTS path as :func:`search_entities` (§V2/§V18), scoped to
+    the ``stage`` domain, but a stage whose ``stage_code`` equals the query (e.g.
+    ``4-4``, case-insensitive) is ranked ahead of a fuzzier name/game-id hit.
+    ``server`` scopes to one region (§V5, never silently mixed); ``limit`` is
+    validated against the §V19 window -- an out-of-range value is *rejected*
+    (``ValueError``), never silently widened. Both transports call this (§V14).
+    """
+    bounded = _validate_limit(limit)
+    match = _match_expression(query)
+    if match is None:
+        return SearchResult(status="not_found", query=query, hits=())
+
+    repo = SearchRepository(conn)
+    rows = repo.search_stages(match, exact_code=query, server=server, limit=bounded)
+    return _result_from_rows(query, rows)

@@ -1,12 +1,14 @@
-"""``search_entities`` MCP tool (§T32; §V19/§V23; §I.tool).
+"""FTS-backed search MCP tools: ``search_entities`` (§T32) + ``search_stages``
+(§T33) (§V19/§V23; §I.tool).
 
-Bridges the bounded :class:`~arknights_mcp.models.search.SearchEntitiesInput`
-(§T30 -- the §V19 ``limit`` gate) to the shared
-:func:`~arknights_mcp.services.search.search_entities` domain service (§T31) and
-wraps the outcome in the typed :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`
-(§T29 -- one §V23 status per result). Both transports dispatch this exact spec via
-the single registry (§V14): the tool owns no query logic of its own, only the
-model -> service -> envelope mapping.
+Each bridges a bounded input model (§T30 -- the §V19 ``limit`` gate) to a shared
+domain service (§T31) and wraps the outcome in the typed
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29 -- one §V23 status per
+result). Both transports dispatch these exact specs via the single registry
+(§V14): a tool owns no query logic of its own, only the model -> service ->
+envelope mapping, and the two share one guarded-run + locator-shaping path
+(:func:`_guarded_search`, §V37). ``search_stages`` differs only in that an exact
+``stage_code`` match is ranked first (§T33), enforced in the service.
 
 Two invariants are load-bearing here:
 
@@ -35,26 +37,45 @@ from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error,
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.search import SearchEntitiesInput
-from arknights_mcp.services.search import SearchHit, SearchResult, search_entities
+from arknights_mcp.models.stages import SearchStagesInput
+from arknights_mcp.services.search import SearchHit, SearchResult, search_entities, search_stages
 
 #: Supplies the process-wide read-only connection to the promoted build. The
 #: app/transport layer owns the connection's lifecycle (opened once, reused); the
 #: handler only reads through it and never opens or closes it.
 ConnectionProvider = Callable[[], sqlite3.Connection]
 
-_TOOL_NAME = "search_entities"
-_TOOL_TITLE = "Search entities"
-_TOOL_DESCRIPTION = (
+#: The service call a search tool runs once it has a connection: it takes the
+#: read-only connection and returns the domain :class:`SearchResult`. The
+#: bound-model parsing happens in the tool handler *before* this runs (§V18/§V19).
+SearchRunner = Callable[[sqlite3.Connection], SearchResult]
+
+_ENTITIES_TOOL_NAME = "search_entities"
+_ENTITIES_TOOL_TITLE = "Search entities"
+_ENTITIES_TOOL_DESCRIPTION = (
     "Search indexed Arknights operators, enemies, and stages by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
     "get_operator / get_enemy / get_stage for full facts. Results are bounded "
     "(default 10, max 50) and en/cn are never mixed."
 )
+_STAGES_TOOL_NAME = "search_stages"
+_STAGES_TOOL_TITLE = "Search stages"
+_STAGES_TOOL_DESCRIPTION = (
+    "Search indexed Arknights stages by stage code (e.g. 4-4), name, or game id. "
+    "An exact stage-code match is ranked first. Returns ranked, region-tagged "
+    "locators; use get_stage for full facts + map/spawns. Results are bounded "
+    "(default 10, max 50) and en/cn are never mixed."
+)
 
 #: Fixed, safe copy for the typed error envelopes (§V23 -- no query echo, no
-#: stack trace, no local path).
-_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
-_NOT_FOUND_ACTION = "broaden the query, drop the server/entity_type filter, or check the spelling"
+#: stack trace, no local path). Per-tool ``not_found`` copy; the DB-unavailable
+#: copy is shared (one failure mode, one home -- §V37).
+_ENTITIES_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
+_ENTITIES_NOT_FOUND_ACTION = (
+    "broaden the query, drop the server/entity_type filter, or check the spelling"
+)
+_STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
+_STAGES_NOT_FOUND_ACTION = "broaden the query, drop the server filter, or check the stage code"
 _DB_UNAVAILABLE_MESSAGE = "the active database is unavailable"
 _DB_UNAVAILABLE_ACTION = "run `arknights-mcp status` to check the active build"
 
@@ -70,10 +91,36 @@ def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     }
 
 
-def _to_envelope(result: SearchResult) -> ResponseEnvelope:
-    """Map the domain :class:`SearchResult` to a typed §V23 envelope."""
+def _guarded_search(
+    get_conn: ConnectionProvider,
+    run: SearchRunner,
+    *,
+    not_found_message: str,
+    not_found_action: str,
+) -> ResponseEnvelope:
+    """Run a search service call and map it to a typed §V23 envelope (§V37 home).
+
+    Shared by ``search_entities`` and ``search_stages``: the only per-tool
+    variation is the runner (which service + params) and the ``not_found`` copy;
+    the connection acquisition, fail-closed error handling, and ``ok`` locator
+    shaping are identical. A :class:`DatabaseUnavailable` fails closed to a fixed
+    ``database_unavailable`` envelope; any other exception to ``internal_error`` --
+    never a leaked exception text, stack trace, or local path (§V23).
+    """
+    try:
+        conn = get_conn()
+        result = run(conn)
+    except DatabaseUnavailable:
+        return error(
+            "database_unavailable",
+            _DB_UNAVAILABLE_MESSAGE,
+            suggested_action=_DB_UNAVAILABLE_ACTION,
+        )
+    except Exception:
+        # §V23 fail-closed: the detail belongs in the redacted log, not the client.
+        return internal_error()
     if result.status == "not_found":
-        return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
+        return error("not_found", not_found_message, suggested_action=not_found_action)
     return ok(
         {
             "query": result.query,
@@ -99,31 +146,56 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
         # query runs. A ValidationError here propagates as a protocol-level
         # rejection -- never a silently widened search (§V19).
         parsed = SearchEntitiesInput.model_validate(params)
-        try:
-            conn = get_conn()
-            result = search_entities(
+        return _guarded_search(
+            get_conn,
+            lambda conn: search_entities(
                 conn,
                 query=parsed.query,
                 server=parsed.server,
                 entity_type=parsed.entity_type,
                 limit=parsed.limit,
-            )
-        except DatabaseUnavailable:
-            return error(
-                "database_unavailable",
-                _DB_UNAVAILABLE_MESSAGE,
-                suggested_action=_DB_UNAVAILABLE_ACTION,
-            )
-        except Exception:
-            # §V23 fail-closed: no exception text, stack trace, or local path
-            # reaches the client -- that detail belongs in the redacted log.
-            return internal_error()
-        return _to_envelope(result)
+            ),
+            not_found_message=_ENTITIES_NOT_FOUND_MESSAGE,
+            not_found_action=_ENTITIES_NOT_FOUND_ACTION,
+        )
 
     return ToolSpec(
-        name=_TOOL_NAME,
-        title=_TOOL_TITLE,
-        description=_TOOL_DESCRIPTION,
+        name=_ENTITIES_TOOL_NAME,
+        title=_ENTITIES_TOOL_TITLE,
+        description=_ENTITIES_TOOL_DESCRIPTION,
         handler=handler,
         input_schema=tool_input_schema(SearchEntitiesInput),
+    )
+
+
+def build_search_stages_spec(get_conn: ConnectionProvider) -> ToolSpec:
+    """Build the ``search_stages`` :class:`ToolSpec` (§T33; §V19/§I.tool).
+
+    Stage-scoped sibling of ``search_entities``: an exact ``stage_code`` match is
+    ranked first (the service enforces the ordering). Same §V18/§V19 model gate
+    (out-of-range ``limit`` / over-length query / unknown parameter *rejected*
+    before any query runs) and same fail-closed §V23 envelope path (§V14). The
+    spec is read-only (§V2) for the single shared registry both transports use.
+    """
+
+    def handler(**params: object) -> ResponseEnvelope:
+        parsed = SearchStagesInput.model_validate(params)
+        return _guarded_search(
+            get_conn,
+            lambda conn: search_stages(
+                conn,
+                query=parsed.query,
+                server=parsed.server,
+                limit=parsed.limit,
+            ),
+            not_found_message=_STAGES_NOT_FOUND_MESSAGE,
+            not_found_action=_STAGES_NOT_FOUND_ACTION,
+        )
+
+    return ToolSpec(
+        name=_STAGES_TOOL_NAME,
+        title=_STAGES_TOOL_TITLE,
+        description=_STAGES_TOOL_DESCRIPTION,
+        handler=handler,
+        input_schema=tool_input_schema(SearchStagesInput),
     )

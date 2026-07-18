@@ -43,6 +43,21 @@ _SEARCH_SQL = (
     "LIMIT ?"
 )
 
+# ``search_stages`` (§T33): stage-scoped FTS, but a stage whose ``stage_code``
+# equals the raw query (case-insensitive) is pulled to the top ahead of bm25
+# ``rank`` -- an exact code match ("4-4") beats a fuzzier name/game-id hit. The
+# exact-code candidate is bound (§V2), never interpolated, and ``rank`` breaks
+# ties within each group.
+_STAGE_SEARCH_SQL = (
+    "SELECT entity_type, server, entity_pk, game_id, name, stage_code "
+    "FROM entity_fts "
+    "WHERE entity_fts MATCH ? "
+    "AND entity_type = 'stage' "
+    "AND (? IS NULL OR server = ?) "
+    "ORDER BY (CASE WHEN stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), rank "
+    "LIMIT ?"
+)
+
 
 def _to_hit(row: Any) -> SearchHitRow:
     entity_type, server, entity_pk, game_id, name, stage_code = row
@@ -75,3 +90,22 @@ class SearchRepository(Repository):
         """
         params = (match, server, server, entity_type, entity_type, limit)
         return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
+
+    def search_stages(
+        self,
+        match: str,
+        *,
+        exact_code: str,
+        server: str | None,
+        limit: int,
+    ) -> list[SearchHitRow]:
+        """Return up to ``limit`` stage hits, exact ``stage_code`` first (§T33).
+
+        ``match`` is the pre-built, tokenized FTS expression (same safe surface as
+        :meth:`search`); ``exact_code`` is the raw query, compared case-insensitively
+        against ``stage_code`` so an exact code match ranks ahead of bm25 ``rank``.
+        ``server`` is an optional region filter (§V5); ``limit`` is pre-clamped to
+        the §V19 bound. Every value is bound (§V2).
+        """
+        params = (match, server, server, exact_code, limit)
+        return [_to_hit(r) for r in self._all(_STAGE_SEARCH_SQL, params)]
