@@ -140,7 +140,7 @@ T40|x|M3 analyze_stage tool (depth summary/standard/detailed)|V6,V7,I.tool
 T41|x|M3 golden suite: 4-4 + drones + ranged-arts + multi-route/tiles + operator + CN-only region sep|V5,V6
 T42|.|M4 operator+skill+talent importer (character_table, skill_table, aliases)|V18
 T43|.|M4 module importer (uniequip_table, uniequip_data, battle_equip_table)|V18
-T44|.|M4 get_operator tool (include summary/phases/skills/talents/modules/provenance)|V5,I.tool
+T44|.|M4 get_operator tool (include summary/phases/skills/talents/modules/provenance) + operator golden extends T41 suite (deferred from T41: M3 had no operator read path — `services/operators.py` stub, importer T42 + this tool unbuilt ∴ operator facts+region+provenance scenario → `tests/golden` lands here w/ get_operator)|V5,I.tool
 T45|.|M4 compare_operator_modules tool (levels 1/2/3, modes facts_only + with_observations)|V7,I.tool
 T46|.|M4 module analyzer deterministic observations analyzers/module.py|V6,V7,V26
 T47|.|M5 packaging + fresh-clone install smoke (locked deps, uv run serve --transport stdio)|-
