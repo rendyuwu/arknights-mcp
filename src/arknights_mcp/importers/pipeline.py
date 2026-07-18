@@ -33,6 +33,7 @@ from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.importers.enemies import ImporterError, import_enemies
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
+from arknights_mcp.importers.operators import import_operators
 from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
@@ -70,6 +71,8 @@ class SnapshotSummary:
     tiles: int = 0
     spawns: int = 0
     stage_enemies: int = 0
+    operators: int = 0
+    skills: int = 0
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,10 @@ def _import_one(
     enemies = import_enemies(conn, job.adapter, record.snapshot_id)
     stages = import_stages(conn, job.adapter, record.snapshot_id)
     _guard_not_silently_empty(job.server, stages)
+    # Operators are optional per snapshot: a combat-only snapshot without
+    # character_table imports zero and is not a silent-empty failure (§V30 is
+    # combat-scoped).
+    operators = import_operators(conn, job.adapter, record.snapshot_id)
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
@@ -172,6 +179,8 @@ def _import_one(
         tiles=lv.tiles,
         spawns=lv.spawns,
         stage_enemies=lv.stage_enemies,
+        operators=operators.operators_inserted,
+        skills=operators.skills_inserted,
     )
 
 

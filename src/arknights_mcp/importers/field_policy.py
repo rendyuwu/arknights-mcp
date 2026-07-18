@@ -77,6 +77,60 @@ SPAWN_ACTION_ALLOWLIST: frozenset[str] = frozenset(
 )
 
 
+#: Operator scalar fields from ``character_table`` (§V18). Prose (``description``,
+#: ``itemUsage``, ``itemDesc``) is intentionally absent and thus excluded. The
+#: nested ``phases``/``skills``/``talents`` lists are *not* kept here -- each is
+#: parsed field-by-field with its own allowlist below, so no prose rides in via a
+#: raw nested structure (§V31).
+CHARACTER_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "name",
+        "appellation",
+        "rarity",
+        "profession",
+        "subProfessionId",
+        "position",
+        "tagList",
+        "isNotObtainable",
+    }
+)
+
+#: One elite ``phases[]`` entry (structural stats only; no prose).
+PHASE_ALLOWLIST: frozenset[str] = frozenset({"rangeId", "maxLevel"})
+
+#: A phase attribute keyframe ``data`` block (all numeric).
+PHASE_ATTR_ALLOWLIST: frozenset[str] = frozenset(
+    {"maxHp", "atk", "def", "magicResistance", "cost", "blockCnt", "baseAttackTime", "respawnTime"}
+)
+
+#: An operator's per-skill link (``character_table.skills[]``); the skill's own
+#: record lives in ``skill_table`` (SKILL_LEVEL_ALLOWLIST). ``unlockCond`` is a
+#: nested ``{phase, level}`` dict kept structurally (both numeric/enum).
+SKILL_LINK_ALLOWLIST: frozenset[str] = frozenset({"skillId", "unlockCond"})
+
+#: One ``skill_table`` level entry. ``description`` (prose) is excluded (§V16);
+#: ``spData`` is a nested numeric block (SP_DATA_ALLOWLIST).
+SKILL_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
+    {"name", "rangeId", "skillType", "durationType", "duration", "spData", "blackboard"}
+)
+
+#: The ``spData`` sub-block of a skill level (all numeric/enum).
+SP_DATA_ALLOWLIST: frozenset[str] = frozenset(
+    {"spType", "spCost", "initSp", "maxChargeTime", "increment"}
+)
+
+#: One talent ``candidates[]`` variant. ``description``/``upgradeDescription`` are
+#: prose and excluded (§V16); the ``name`` is a short gameplay label (kept, like a
+#: skill/operator display name). ``blackboard`` holds numeric params.
+TALENT_CANDIDATE_ALLOWLIST: frozenset[str] = frozenset(
+    {"name", "unlockCondition", "requiredPotentialRank", "prefabKey", "blackboard"}
+)
+
+#: One ``blackboard`` parameter entry shared by skills + talents (§V31: keep the
+#: structural key/value, drop anything else).
+BLACKBOARD_ALLOWLIST: frozenset[str] = frozenset({"key", "value", "valueStr"})
+
+
 @dataclass(frozen=True)
 class AllowlistResult:
     """Outcome of applying an allowlist: kept (sanitized) fields + dropped keys."""
