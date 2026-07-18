@@ -233,7 +233,23 @@ def test_pressure_spike_fires_on_tight_burst() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(swarm)))["pressure_spike"]
     assert obs.rule_id == PRESSURE_SPIKE_ID
     _assert_v6_fields(obs)
-    assert obs.confidence >= 0.8
+    # B30/§V39: first/last_spawn_time is fragment-relative preDelay aggregated across
+    # waves, not elapsed time -> the rule no longer asserts a high-confidence burst; it
+    # fires at reduced confidence and stamps the fragment-relative limitation.
+    assert obs.confidence < 0.8
+    assert any("fragment-relative" in lim for lim in obs.limitations)
+
+
+def test_pressure_spike_fragment_relative_window_reports_with_limitation() -> None:
+    # B30/§V39: an enemy trickled across >=6 fragments each at a low per-fragment preDelay
+    # collapses to a ~0 computed window (first == last). The rule must NOT conclude a
+    # confident burst from that cross-wave min/max; it reports at reduced confidence with
+    # a limitation that the window is fragment-relative and may overstate the burst.
+    trickle = occ("enemy_frag", total_count=6, first_spawn_time=3.0, last_spawn_time=3.0)
+    obs = _obs_by_tag(analyze_stage(ctx(trickle)))["pressure_spike"]
+    _assert_v6_fields(obs)
+    assert obs.confidence < 0.8  # no confident burst from a fragment-relative window
+    assert any("fragment-relative" in lim and "overstate burst" in lim for lim in obs.limitations)
 
 
 def test_pressure_spike_spread_out_does_not_fire() -> None:
