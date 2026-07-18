@@ -133,7 +133,7 @@ T33|x|M2 search_stages tool (exact stage_code rank first)|V19,I.tool
 T34|x|M2 get_stage tool (include_map/routes/spawns flags + pagination)|V19,V22,I.tool
 T35|x|M2 get_enemy tool|V5,V23,I.tool
 T36|x|M2 instructions.py (facts/observations/recommendations distinction in first 512 chars)|V6,V7
-T37|.|M2 optional MCP resources arknights:// + mcp/resources.py|V27,I.resource
+T37|x|M2 optional MCP resources arknights:// + mcp/resources.py|V27,I.resource
 T38|.|M2 local MCP Inspector contract tests (valid/ambiguous/not_found/invalid)|V14,V23
 T39|.|M3 rule engine: aerial, block-bypass, def/res skew, ranged-arts, support-aura, pressure-spike, lane/route, tiles/deploy, crowd-control|V6,V7,V26
 T40|.|M3 analyze_stage tool (depth summary/standard/detailed)|V6,V7,I.tool
