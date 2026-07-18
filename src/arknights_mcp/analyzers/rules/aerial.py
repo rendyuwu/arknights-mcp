@@ -17,19 +17,20 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
+from arknights_mcp.analyzers.rules._common import (
+    AERIAL_ABILITY,
+    FLY_MOTIONS,
+    GROUND_MOTIONS,
+    ability_tokens,
+    by_game_id,
+    count_note,
+    distinct_refs,
+)
 
 RULE_ID = "threat.aerial"
 
-_AERIAL_ABILITY = "aerial"
-_FLY_MOTIONS = frozenset({"FLY", "FLYING", "AIR"})
-_GROUND_MOTIONS = frozenset({"WALK", "GROUND", "CRAWL", "CLIMB", "DRIFT", "SWIM", "WALL"})
-
 _CONF_MOTION_FLY = 0.9  # authoritative typed motion field
 _CONF_ABILITY_ONLY = 0.6  # inferred from ability when motion_type is missing/unknown
-
-
-def _count_note(count: int | None) -> str | None:
-    return f"total_count={count}" if count is not None else None
 
 
 def _summary(flyer_types: int, total_spawns: int) -> str:
@@ -53,20 +54,20 @@ class AerialThreatRule:
         total_spawns = 0
 
         # Sort by game_id so evidence/warning order is deterministic (§V26).
-        for occ in sorted(ctx.occurrences, key=lambda o: o.game_id):
+        for occ in by_game_id(ctx.occurrences):
             motion = occ.motion_type.upper() if occ.motion_type else None
-            abilities = None if occ.abilities is None else {a.lower() for a in occ.abilities}
-            has_aerial = abilities is not None and _AERIAL_ABILITY in abilities
+            abilities = ability_tokens(occ.abilities)
+            has_aerial = abilities is not None and AERIAL_ABILITY in abilities
 
             deciding_field: str | None = None
             deciding_value: Any = None
             conf = 0.0
 
-            if motion in _FLY_MOTIONS:
+            if motion in FLY_MOTIONS:
                 deciding_field = "motion_type"
                 deciding_value = occ.motion_type
                 conf = _CONF_MOTION_FLY
-            elif motion in _GROUND_MOTIONS:
+            elif motion in GROUND_MOTIONS:
                 if has_aerial:
                     warnings.append(
                         f"{occ.game_id}: motion_type={occ.motion_type!r} conflicts with "
@@ -77,7 +78,7 @@ class AerialThreatRule:
                 # motion_type is missing or an unrecognized value, but a typed
                 # 'aerial' ability is present -> infer flying at lower confidence.
                 deciding_field = "abilities"
-                deciding_value = _AERIAL_ABILITY
+                deciding_value = AERIAL_ABILITY
                 conf = _CONF_ABILITY_ONLY
                 if motion is None:
                     limitations.append(
@@ -97,7 +98,7 @@ class AerialThreatRule:
                     ref=occ.game_id,
                     field=deciding_field,
                     value=deciding_value,
-                    note=_count_note(occ.total_count),
+                    note=count_note(occ.total_count),
                 )
             )
             confidence = max(confidence, conf)
@@ -108,8 +109,8 @@ class AerialThreatRule:
 
         # One enemy that appears at several level variants yields several evidence
         # items with the same ``ref``; the headline counts *distinct* enemies, not
-        # evidence rows, so a single flyer is not reported as multiple types (§V6).
-        distinct_flyers = len({e.ref for e in evidence})
+        # evidence rows, so a single flyer is not reported as multiple types (§V35).
+        distinct_flyers = distinct_refs(evidence)
         observation = Observation(
             rule_id=RULE_ID,
             category="threat",

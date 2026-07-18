@@ -14,6 +14,7 @@ from arknights_mcp.analyzers.base import (
     Observation,
     RuleResult,
     StageThreatContext,
+    StageTiles,
     ThreatRule,
 )
 from arknights_mcp.analyzers.rules import THREAT_RULES
@@ -28,6 +29,7 @@ __all__ = [
     "RuleResult",
     "StageAnalysis",
     "StageThreatContext",
+    "StageTiles",
     "ThreatRule",
     "analyze_stage",
 ]

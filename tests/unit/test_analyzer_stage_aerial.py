@@ -40,11 +40,15 @@ SLUG = EnemyOccurrence(
 )
 
 
-def test_registry_has_single_rule_matching_protocol() -> None:
-    assert len(THREAT_RULES) == 1
-    rule = THREAT_RULES[0]
-    assert isinstance(rule, ThreatRule)  # structural: rule_id + evaluate()
-    assert isinstance(rule, AerialThreatRule)
+def test_registry_rules_match_protocol_with_unique_ids() -> None:
+    # M3 (§T39): the engine grew from one rule to nine; each still satisfies the
+    # ThreatRule protocol (rule_id + evaluate) and every rule_id is unique.
+    assert len(THREAT_RULES) == 9
+    for rule in THREAT_RULES:
+        assert isinstance(rule, ThreatRule)  # structural: rule_id + evaluate()
+    assert any(isinstance(rule, AerialThreatRule) for rule in THREAT_RULES)
+    ids = [rule.rule_id for rule in THREAT_RULES]
+    assert len(set(ids)) == len(ids)
 
 
 def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:

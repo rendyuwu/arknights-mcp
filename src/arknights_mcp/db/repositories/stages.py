@@ -41,7 +41,12 @@ class StageRow:
 
 @dataclass(frozen=True)
 class StageEnemyRow:
-    """One enemy's typed occurrence in a stage (from ``stage_enemies``)."""
+    """One enemy's typed occurrence in a stage (from ``stage_enemies``).
+
+    Carries the M3 analyzer stat inputs (``def_`` / ``res`` / ``attack_range`` /
+    ``block_behavior``) joined from the matching ``enemy_levels`` variant (§T39);
+    they are ``None`` when the level row or the source field is absent (§V26).
+    """
 
     game_id: str
     display_name: str | None
@@ -56,6 +61,10 @@ class StageEnemyRow:
     last_spawn_time: float | None
     route_count: int | None
     abilities_json: str | None
+    def_: int | None
+    res: int | None
+    attack_range: float | None
+    block_behavior: str | None
 
 
 @dataclass(frozen=True)
@@ -121,13 +130,26 @@ _STAGE_BY_GAME_ID_SQL = _STAGE_SELECT + "s.game_id = ? ORDER BY s.stage_pk LIMIT
 _OCCURRENCES_SQL = (
     "SELECT e.game_id, e.display_name, e.enemy_class, e.is_boss, e.is_elite, "
     "e.motion_type, e.attack_type, se.enemy_level_variant, se.total_count, "
-    "se.first_spawn_time, se.last_spawn_time, se.route_count, el.abilities_json "
+    "se.first_spawn_time, se.last_spawn_time, se.route_count, el.abilities_json, "
+    'el."def", el.res, el.attack_range, el.block_behavior '
     "FROM stage_enemies se "
     "JOIN enemies e ON e.enemy_pk = se.enemy_pk "
     "LEFT JOIN enemy_levels el "
     "ON el.enemy_pk = se.enemy_pk AND el.level_variant = se.enemy_level_variant "
     "WHERE se.stage_pk = ? "
     "ORDER BY e.game_id, se.enemy_level_variant"
+)
+
+# Deploy-surface tile counts for the tiles/deploy rule (§T39): a buildable LOWLAND
+# tile holds a melee unit, a buildable HIGHLAND tile a ranged unit; a NONE/absent
+# ``buildable_type`` is not deployable. SUM over zero rows is NULL (coalesced to 0).
+_TILE_SUMMARY_SQL = (
+    "SELECT COUNT(*), "
+    "SUM(CASE WHEN UPPER(COALESCE(buildable_type, 'NONE')) NOT IN ('NONE', '') "
+    "AND UPPER(COALESCE(height_type, '')) = 'LOWLAND' THEN 1 ELSE 0 END), "
+    "SUM(CASE WHEN UPPER(COALESCE(buildable_type, 'NONE')) NOT IN ('NONE', '') "
+    "AND UPPER(COALESCE(height_type, '')) = 'HIGHLAND' THEN 1 ELSE 0 END) "
+    "FROM stage_tiles WHERE stage_pk = ?"
 )
 
 # --- get_stage opt-in sections (§T34): each paged through a bounded LIMIT/OFFSET
@@ -219,6 +241,10 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         last_spawn_time,
         route_count,
         abilities_json,
+        def_,
+        res,
+        attack_range,
+        block_behavior,
     ) = row
     return StageEnemyRow(
         game_id=game_id,
@@ -234,6 +260,10 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         last_spawn_time=last_spawn_time,
         route_count=route_count,
         abilities_json=abilities_json,
+        def_=def_,
+        res=res,
+        attack_range=attack_range,
+        block_behavior=block_behavior,
     )
 
 
@@ -310,6 +340,13 @@ class StageRepository(Repository):
     def stage_enemies(self, stage_pk: int) -> list[StageEnemyRow]:
         """Every enemy occurrence in the stage, ordered by ``game_id`` then variant."""
         return [_to_stage_enemy_row(r) for r in self._all(_OCCURRENCES_SQL, (stage_pk,))]
+
+    def tile_summary(self, stage_pk: int) -> tuple[int, int, int]:
+        """Deploy-surface tile counts ``(total, buildable_melee, buildable_ranged)``
+        for the tiles/deploy rule (§T39). Melee = buildable LOWLAND, ranged =
+        buildable HIGHLAND; a ``total`` of 0 means the stage has no tile rows."""
+        total, melee, ranged = self._one(_TILE_SUMMARY_SQL, (stage_pk,))
+        return int(total), int(melee or 0), int(ranged or 0)
 
     # --- get_stage opt-in sections (§T34): map header + paged tiles/routes/spawns.
 

@@ -28,6 +28,7 @@ from arknights_mcp.analyzers import (
     EnemyOccurrence,
     Observation,
     StageThreatContext,
+    StageTiles,
 )
 from arknights_mcp.analyzers import (
     analyze_stage as run_threat_analysis,
@@ -217,14 +218,36 @@ def analyze_stage(
                 attack_type=enemy.attack_type,
                 abilities=_parse_abilities(enemy.abilities_json),
                 total_count=enemy.total_count,
+                defense=enemy.def_,
+                res=enemy.res,
+                attack_range=enemy.attack_range,
+                block_behavior=enemy.block_behavior,
+                first_spawn_time=enemy.first_spawn_time,
+                last_spawn_time=enemy.last_spawn_time,
+                route_count=enemy.route_count,
             )
         )
+
+    # Stage-level rule inputs (§T39): distinct routes + the deploy-tile summary. A
+    # tile-less stage passes ``tiles=None`` so the tiles/deploy rule skips it (§V26).
+    total_tiles, buildable_melee, buildable_ranged = repo.tile_summary(stage.stage_pk)
+    tiles = (
+        StageTiles(
+            total=total_tiles,
+            buildable_melee=buildable_melee,
+            buildable_ranged=buildable_ranged,
+        )
+        if total_tiles > 0
+        else None
+    )
 
     analysis = run_threat_analysis(
         StageThreatContext(
             server=stage.server,
             stage_code=stage.stage_code,
             occurrences=tuple(threat_inputs),
+            route_count=repo.route_count(stage.stage_pk),
+            tiles=tiles,
         )
     )
 

@@ -135,7 +135,7 @@ T35|x|M2 get_enemy tool|V5,V23,I.tool
 T36|x|M2 instructions.py (facts/observations/recommendations distinction in first 512 chars)|V6,V7
 T37|x|M2 optional MCP resources arknights:// + mcp/resources.py|V27,I.resource
 T38|x|M2 local MCP Inspector contract tests (valid/ambiguous/not_found/invalid)|V14,V23
-T39|.|M3 rule engine: aerial, block-bypass, def/res skew, ranged-arts, support-aura, pressure-spike, lane/route, tiles/deploy, crowd-control|V6,V7,V26
+T39|x|M3 rule engine: aerial, block-bypass, def/res skew, ranged-arts, support-aura, pressure-spike, lane/route, tiles/deploy, crowd-control|V6,V7,V26
 T40|.|M3 analyze_stage tool (depth summary/standard/detailed)|V6,V7,I.tool
 T41|.|M3 golden suite: 4-4 + drones + ranged-arts + multi-route/tiles + operator + CN-only region sep|V5,V6
 T42|.|M4 operator+skill+talent importer (character_table, skill_table, aliases)|V18
