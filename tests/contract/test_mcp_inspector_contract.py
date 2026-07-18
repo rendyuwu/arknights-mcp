@@ -66,6 +66,7 @@ _EXPECTED_TOOLS = (
     "get_stage",
     "get_enemy",
     "get_operator",
+    "compare_operator_modules",
     "analyze_stage",
 )
 
@@ -76,6 +77,7 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "get_stage": {"server": "en", "stage_code": "4-4"},
     "get_enemy": {"server": "en", "game_id": "enemy_1007_slime"},
     "get_operator": {"server": "en", "game_id": "char_002_amiya"},
+    "compare_operator_modules": {"server": "en", "game_id": "char_002_amiya"},
     "analyze_stage": {"server": "en", "stage_code": "4-4"},
 }
 
@@ -86,6 +88,7 @@ _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "get_stage": {"server": "en", "stage_code": "99-99"},
     "get_enemy": {"server": "en", "game_id": "enemy_9999_ghost"},
     "get_operator": {"server": "en", "game_id": "char_999_ghost"},
+    "compare_operator_modules": {"server": "en", "game_id": "char_999_ghost"},
     "analyze_stage": {"server": "en", "stage_code": "99-99"},
 }
 
@@ -158,7 +161,13 @@ def test_valid_call_returns_ok_envelope(registry: ToolRegistry, name: str) -> No
 def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> None:
     # §V5: a factual tool result is region-attributed via provenance; en/cn are
     # never silently mixed. (Search returns region-tagged locators, not facts.)
-    for name in ("get_stage", "get_enemy", "get_operator", "analyze_stage"):
+    for name in (
+        "get_stage",
+        "get_enemy",
+        "get_operator",
+        "compare_operator_modules",
+        "analyze_stage",
+    ):
         env = _call(registry, name, **_VALID_CALLS[name])
         assert env.provenance and all(p.server == "en" for p in env.provenance)
 

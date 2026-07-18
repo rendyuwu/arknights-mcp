@@ -99,11 +99,15 @@ def _label(module: ModuleInput) -> str:
 
 
 def _stat_summary(by_key: dict[str, list[tuple[int, float]]]) -> str:
-    """Render the per-stat progression factually: ``atk: +34 (Lv1), +48 (Lv2)``."""
+    """Render the per-stat progression factually: ``atk: 34 (Lv1), 48 (Lv2)``.
+
+    No sign is forced onto a value -- ``{:g}`` shows a negative naturally, so a
+    module that trades a stat down is stated correctly rather than as ``+-5``.
+    """
     parts: list[str] = []
     for key in sorted(by_key):
         points = ", ".join(f"{value:g} (Lv{level})" for level, value in by_key[key])
-        parts.append(f"{key} +{points}")
+        parts.append(f"{key}: {points}")
     return "; ".join(parts)
 
 

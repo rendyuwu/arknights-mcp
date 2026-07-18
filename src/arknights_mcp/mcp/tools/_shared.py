@@ -20,6 +20,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 
+from arknights_mcp.analyzers import EvidenceItem, Observation
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
 
@@ -59,3 +60,32 @@ def run_guarded[Result](
     except Exception:
         return internal_error()
     return shape(result)
+
+
+def evidence_to_dict(item: EvidenceItem) -> dict[str, object]:
+    """One typed datum that drove an observation (§V6 evidence).
+
+    Shared §V37 home: both ``analyze_stage`` and ``compare_operator_modules``
+    surface analyzer observations, so the evidence/observation wire mapping lives
+    here once rather than in each tool module.
+    """
+    return {"ref": item.ref, "field": item.field, "value": item.value, "note": item.note}
+
+
+def observation_to_dict(obs: Observation) -> dict[str, object]:
+    """One evidence-backed observation with every §V6 field intact (§V37 single home).
+
+    A surfaced inference always carries its ``rule_id`` + evidence + confidence +
+    limitations + ``analyzer_version`` -- never a bare verdict (§V6).
+    """
+    return {
+        "rule_id": obs.rule_id,
+        "category": obs.category,
+        "tag": obs.tag,
+        "title": obs.title,
+        "summary": obs.summary,
+        "confidence": obs.confidence,
+        "evidence": [evidence_to_dict(e) for e in obs.evidence],
+        "limitations": list(obs.limitations),
+        "analyzer_version": obs.analyzer_version,
+    }

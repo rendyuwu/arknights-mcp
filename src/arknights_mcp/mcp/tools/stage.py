@@ -32,10 +32,13 @@ shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
 
 from __future__ import annotations
 
-from arknights_mcp.analyzers import EvidenceItem, Observation
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    ConnectionProvider,
+    observation_to_dict,
+    run_guarded,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stages import (
@@ -229,31 +232,6 @@ _ANALYZE_TOOL_DESCRIPTION = (
 )
 
 
-def _evidence_to_dict(item: EvidenceItem) -> dict[str, object]:
-    """One typed datum that drove an observation (§V6 evidence)."""
-    return {"ref": item.ref, "field": item.field, "value": item.value, "note": item.note}
-
-
-def _observation_to_dict(obs: Observation) -> dict[str, object]:
-    """One evidence-backed observation with every §V6 field intact.
-
-    Emitted in full at *every* depth: a surfaced inference always carries its
-    ``rule_id`` + evidence + confidence + limitations + ``analyzer_version``, never
-    a bare verdict (§V6). ``depth`` scales the surrounding facts, not the evidence.
-    """
-    return {
-        "rule_id": obs.rule_id,
-        "category": obs.category,
-        "tag": obs.tag,
-        "title": obs.title,
-        "summary": obs.summary,
-        "confidence": obs.confidence,
-        "evidence": [_evidence_to_dict(e) for e in obs.evidence],
-        "limitations": list(obs.limitations),
-        "analyzer_version": obs.analyzer_version,
-    }
-
-
 def _occurrence_compact(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     """The enemy-roster row for ``depth=standard``: identity + how many, no stats."""
     return {
@@ -299,7 +277,7 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     data: dict[str, object] = {
         "depth": depth,
         "stage": _stage_to_dict(result.stage),
-        "observations": [_observation_to_dict(o) for o in result.observations],
+        "observations": [observation_to_dict(o) for o in result.observations],
     }
     if depth != "summary":
         shaper = _occurrence_full if depth == "detailed" else _occurrence_compact

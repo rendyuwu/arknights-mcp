@@ -46,6 +46,7 @@ import pytest
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
+from arknights_mcp.services.module_compare import compare_operator_modules
 from arknights_mcp.services.operators import get_operator
 from arknights_mcp.services.stages import analyze_stage
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -283,6 +284,38 @@ def test_golden_operator_cn(operator_multi: sqlite3.Connection) -> None:
     assert payload["operator"]["display_name"] == "陈"
     assert "近战位" in payload["operator"]["summary"]["tags"]
     assert payload["operator"]["modules"] == []  # cn fixture ships no module
+
+
+def test_golden_compare_modules_en(operator_multi: sqlite3.Connection) -> None:
+    # §T45: the shared-core compare_operator_modules read path over the multi-region
+    # operator build. with_observations locks the deterministic module observations
+    # (§V6) + region/provenance (§V5) end to end -- an unintended analyzer change
+    # surfaces as a golden diff.
+    payload = _check_golden(
+        "compare_modules_en",
+        compare_operator_modules(
+            operator_multi,
+            server="en",
+            game_id="char_002_amiya",
+            levels=(1, 2, 3),
+            mode="with_observations",
+        ),
+    )
+    assert payload["status"] == "ok"
+    assert payload["server"] == "en" and payload["game_id"] == "char_002_amiya"
+    prov = payload["provenance"]
+    assert prov["snapshot_id"].startswith("en:")  # §V5 region on provenance
+    assert prov["imported_at"] == PINNED_IMPORTED_AT
+    module = payload["modules"][0]
+    assert module["module_type"] == "CX-1"
+    assert [lv["level"] for lv in module["levels"]] == [1, 2, 3]
+    # §V6: every observation is fully attributed to the pinned analyzer version.
+    tags = {o["tag"] for o in payload["observations"]}
+    assert {"stat_bonus", "trait_change", "talent_change"} <= tags
+    for obs in payload["observations"]:
+        assert obs["rule_id"] and obs["evidence"]
+        assert 0.0 <= obs["confidence"] <= 1.0
+        assert obs["analyzer_version"] == payload["analyzer_version"]
 
 
 def test_operator_regions_never_silently_mixed(operator_multi: sqlite3.Connection) -> None:
