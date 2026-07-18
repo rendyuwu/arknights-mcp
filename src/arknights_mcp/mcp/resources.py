@@ -85,6 +85,11 @@ _NOT_FOUND_ACTION = (
     "verify the region + id, or run `arknights-mcp status` to check the active build"
 )
 
+#: Region-scoped staleness copy (§V5): a region with no active snapshot is stale
+#: for that region even when another region keeps the build globally non-empty.
+_NO_REGION_DATA_MESSAGE = "no active snapshot for the requested region in the active build"
+_NO_REGION_DATA_ACTION = "run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+
 #: A resource handler: URI-captured params -> a typed envelope (the resource body).
 ResourceHandler = Callable[[Mapping[str, str]], ResponseEnvelope]
 
@@ -285,12 +290,28 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
                 Provenance(server=s.server, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
                 for s in snapshots
             )
-            # Reuse the service's serialization (§V37) and override only the two
-            # region-scoped keys, rather than re-enumerating the status fields.
+            # Region-scope the whole verdict, not just the snapshot list: a region
+            # with no active snapshot is ``data_stale`` for that region even when
+            # another region keeps the build globally non-empty (§V5). Recompute
+            # status/warnings/action for the region rather than leaking the global
+            # verdict; keep the global build-wide warnings only when the region
+            # itself has data.
+            if not snapshots:
+                env_status: ToolStatus = "data_stale"
+                warnings: tuple[str, ...] = (_NO_REGION_DATA_MESSAGE,)
+                suggested_action: str | None = _NO_REGION_DATA_ACTION
+            else:
+                env_status = "data_stale" if status.status == "data_stale" else "ok"
+                warnings = status.warnings
+                suggested_action = status.suggested_action
+            # Reuse the service's serialization (§V37) and override the region-scoped
+            # keys, rather than re-enumerating the status fields.
             data = dict(status.to_dict())
             data["server"] = server
+            data["status"] = env_status
             data["snapshots"] = [s.to_dict() for s in snapshots]
-            env_status: ToolStatus = "data_stale" if status.status == "data_stale" else "ok"
+            data["warnings"] = list(warnings)
+            data["suggested_action"] = suggested_action
             return build_envelope(
                 env_status,
                 data=data,

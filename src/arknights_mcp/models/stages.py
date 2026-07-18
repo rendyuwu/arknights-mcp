@@ -64,14 +64,19 @@ class GetStageInput(_StageSelector):
 
     The heavy sections are opt-in: ``include_map`` (tile grid), ``include_routes``
     and ``include_spawns`` each default ``False`` so the default response stays
-    small (§V22). When requested, a section is paged through :attr:`page` bounds
-    (§V19), so even an opted-in payload never returns an unbounded slice.
+    small (§V22). Each requested section is paged through its **own** bounds --
+    ``map_page`` / ``routes_page`` / ``spawns_page`` -- so a client can hold the
+    whole stage in one call yet page a large section (e.g. the spawn timeline)
+    without shifting the others off (§V19). Every page is bounded, so no opted-in
+    payload ever returns an unbounded slice.
     """
 
     include_map: bool = False
     include_routes: bool = False
     include_spawns: bool = False
-    page: PageParams = Field(default_factory=PageParams)
+    map_page: PageParams = Field(default_factory=PageParams)
+    routes_page: PageParams = Field(default_factory=PageParams)
+    spawns_page: PageParams = Field(default_factory=PageParams)
 
 
 class AnalyzeStageInput(_StageSelector):

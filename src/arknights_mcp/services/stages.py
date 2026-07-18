@@ -20,7 +20,6 @@ lives here.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Literal
@@ -105,14 +104,11 @@ class StageAnalysisResult:
 
 def _parse_abilities(raw: str | None) -> tuple[str, ...] | None:
     """Decode ``enemy_levels.abilities_json`` preserving the §V26 missing/empty
-    distinction the analyzer relies on: SQL ``NULL`` -> ``None`` (field absent),
-    ``"[]"`` -> ``()`` (present but empty)."""
-    if raw is None:
-        return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
+    distinction the analyzer relies on: SQL ``NULL`` (or an undecodable fragment)
+    -> ``None`` (field absent), ``"[]"`` -> ``()`` (present but empty). Decodes
+    through the shared §V37 :func:`~arknights_mcp.util.coerce.json_load` home; only
+    the list/str shaping the analyzer needs is applied on top."""
+    data = json_load(raw)
     if not isinstance(data, list):
         return None
     return tuple(str(a) for a in data)
@@ -380,53 +376,67 @@ def get_stage(
     include_map: bool = False,
     include_routes: bool = False,
     include_spawns: bool = False,
-    page: int = 1,
-    page_size: int = PAGE_SIZE_DEFAULT,
+    map_page: int = 1,
+    map_page_size: int = PAGE_SIZE_DEFAULT,
+    routes_page: int = 1,
+    routes_page_size: int = PAGE_SIZE_DEFAULT,
+    spawns_page: int = 1,
+    spawns_page_size: int = PAGE_SIZE_DEFAULT,
 ) -> StageDetailResult:
     """Fetch one stage's facts + optional map/routes/spawns (§T34; §V5/§V19/§V22).
 
     Read-only; parameterized SQL only (§V2). The default response is facts +
-    provenance only (§V22 -- the heavy sections stay off); each opted-in section is
-    returned as a bounded page (§V19), so even an included payload never yields an
-    unbounded slice. ``page``/``page_size`` are validated against the §V19 window
-    here too, mirroring the model gate. Both transports call this function (§V14).
+    provenance only (§V22 -- the heavy sections stay off). Each opted-in section
+    pages through its **own** cursor (``map_page``/``routes_page``/``spawns_page``),
+    so a client can request several sections at once and still page a large one
+    without shifting the others off, and no included payload ever yields an
+    unbounded slice (§V19). Every cursor is validated against the §V19 window here
+    too, mirroring the model gate. Both transports call this function (§V14).
     """
-    p, size = _validate_page(page, page_size)
+    mp, msize = _validate_page(map_page, map_page_size)
+    rp, rsize = _validate_page(routes_page, routes_page_size)
+    sp, ssize = _validate_page(spawns_page, spawns_page_size)
     repo = StageRepository(conn)
     stage = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
     if stage is None:
         return _not_found_detail(server)
 
-    offset = (p - 1) * size
     stage_pk = stage.stage_pk
 
     stage_map: StageMapFacts | None = None
     tiles: tuple[TileFacts, ...] = ()
-    tiles_page: SectionPage | None = None
+    tiles_page_info: SectionPage | None = None
     if include_map:
         raw_map = repo.stage_map(stage_pk)
-        stage_map = StageMapFacts(
-            width=raw_map.width if raw_map else None,
-            height=raw_map.height if raw_map else None,
-            map_version=raw_map.map_version if raw_map else None,
-            environment=json_load(raw_map.environment_json) if raw_map else None,
-        )
-        tiles = tuple(
-            TileFacts(
-                x=t.x,
-                y=t.y,
-                tile_key=t.tile_key,
-                height_type=t.height_type,
-                buildable_type=t.buildable_type,
-                passable=t.passable,
+        total_tiles = repo.tile_count(stage_pk)
+        # Only surface a map section when there is one; an all-null header with no
+        # tiles is indistinguishable from "map absent", so omit it instead (the
+        # tool then emits no ``map`` key at all).
+        if raw_map is not None or total_tiles > 0:
+            offset = (mp - 1) * msize
+            stage_map = StageMapFacts(
+                width=raw_map.width if raw_map else None,
+                height=raw_map.height if raw_map else None,
+                map_version=raw_map.map_version if raw_map else None,
+                environment=json_load(raw_map.environment_json) if raw_map else None,
             )
-            for t in repo.tiles(stage_pk, size, offset)
-        )
-        tiles_page = _section_page(p, size, repo.tile_count(stage_pk))
+            tiles = tuple(
+                TileFacts(
+                    x=t.x,
+                    y=t.y,
+                    tile_key=t.tile_key,
+                    height_type=t.height_type,
+                    buildable_type=t.buildable_type,
+                    passable=t.passable,
+                )
+                for t in repo.tiles(stage_pk, msize, offset)
+            )
+            tiles_page_info = _section_page(mp, msize, total_tiles)
 
     routes: tuple[RouteFacts, ...] = ()
-    routes_page: SectionPage | None = None
+    routes_page_info: SectionPage | None = None
     if include_routes:
+        offset = (rp - 1) * rsize
         routes = tuple(
             RouteFacts(
                 route_index=r.route_index,
@@ -434,13 +444,14 @@ def get_stage(
                 end_position=json_load(r.end_position_json),
                 checkpoints=json_load(r.checkpoints_json),
             )
-            for r in repo.routes(stage_pk, size, offset)
+            for r in repo.routes(stage_pk, rsize, offset)
         )
-        routes_page = _section_page(p, size, repo.route_count(stage_pk))
+        routes_page_info = _section_page(rp, rsize, repo.route_count(stage_pk))
 
     spawns: tuple[SpawnFacts, ...] = ()
-    spawns_page: SectionPage | None = None
+    spawns_page_info: SectionPage | None = None
     if include_spawns:
+        offset = (sp - 1) * ssize
         spawns = tuple(
             SpawnFacts(
                 wave_index=s.wave_index,
@@ -453,9 +464,9 @@ def get_stage(
                 spawn_group=s.spawn_group,
                 hidden=s.hidden,
             )
-            for s in repo.spawns(stage_pk, size, offset)
+            for s in repo.spawns(stage_pk, ssize, offset)
         )
-        spawns_page = _section_page(p, size, repo.spawn_count(stage_pk))
+        spawns_page_info = _section_page(sp, ssize, repo.spawn_count(stage_pk))
 
     return StageDetailResult(
         status="ok",
@@ -463,9 +474,9 @@ def get_stage(
         stage=_stage_facts(stage),
         stage_map=stage_map,
         tiles=tiles,
-        tiles_page=tiles_page,
+        tiles_page=tiles_page_info,
         routes=routes,
-        routes_page=routes_page,
+        routes_page=routes_page_info,
         spawns=spawns,
-        spawns_page=spawns_page,
+        spawns_page=spawns_page_info,
     )

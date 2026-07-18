@@ -192,6 +192,11 @@ def test_status_other_region_has_no_snapshots(resources: ResourceRegistry) -> No
     body = _body(resources.read("arknights://status/cn"))
     assert body["data"]["snapshots"] == []  # type: ignore[index]
     assert body["provenance"] == []
+    # §V5: a region with no active snapshot is data_stale for that region -- the
+    # global "ok" verdict (en is present) must not leak into the cn view.
+    assert body["status"] == "data_stale"
+    assert body["data"]["status"] == "data_stale"  # type: ignore[index]
+    assert body["data"]["warnings"]  # type: ignore[index]
 
 
 # --- §V23 fail-closed paths ---------------------------------------------------

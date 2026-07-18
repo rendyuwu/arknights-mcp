@@ -207,7 +207,7 @@ def test_v23_vocabulary_carries_ambiguous_status() -> None:
         # missing required field.
         ("get_enemy", {"game_id": "enemy_1007_slime"}),
         # out-of-range nested page bound (§V19).
-        ("get_stage", {"server": "en", "stage_code": "4-4", "page": {"page_size": 101}}),
+        ("get_stage", {"server": "en", "stage_code": "4-4", "map_page": {"page_size": 101}}),
         # unknown parameter on a factual tool.
         ("get_stage", {"server": "en", "stage_code": "4-4", "bogus": 1}),
     ],

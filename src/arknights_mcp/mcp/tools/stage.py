@@ -93,16 +93,14 @@ def _tile_to_dict(tile: TileFacts) -> dict[str, object]:
     }
 
 
-def _map_to_dict(
-    stage_map: StageMapFacts, tiles: tuple[TileFacts, ...], page: SectionPage
-) -> dict[str, object]:
+def _map_header_to_dict(stage_map: StageMapFacts) -> dict[str, object]:
+    """The map header only. Tiles ride as their own top-level paged section, so
+    all three heavy sections share one shape (list + ``*_page``)."""
     return {
         "width": stage_map.width,
         "height": stage_map.height,
         "map_version": stage_map.map_version,
         "environment": stage_map.environment,
-        "tiles": [_tile_to_dict(t) for t in tiles],
-        "tiles_page": _page_to_dict(page),
     }
 
 
@@ -136,7 +134,9 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
 
     data: dict[str, object] = {"stage": _stage_to_dict(result.stage)}
     if result.stage_map is not None and result.tiles_page is not None:
-        data["map"] = _map_to_dict(result.stage_map, result.tiles, result.tiles_page)
+        data["map"] = _map_header_to_dict(result.stage_map)
+        data["tiles"] = [_tile_to_dict(t) for t in result.tiles]
+        data["tiles_page"] = _page_to_dict(result.tiles_page)
     if result.routes_page is not None:
         data["routes"] = [_route_to_dict(r) for r in result.routes]
         data["routes_page"] = _page_to_dict(result.routes_page)
@@ -183,8 +183,12 @@ def build_get_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 include_map=parsed.include_map,
                 include_routes=parsed.include_routes,
                 include_spawns=parsed.include_spawns,
-                page=parsed.page.page,
-                page_size=parsed.page.page_size,
+                map_page=parsed.map_page.page,
+                map_page_size=parsed.map_page.page_size,
+                routes_page=parsed.routes_page.page,
+                routes_page_size=parsed.routes_page.page_size,
+                spawns_page=parsed.spawns_page.page,
+                spawns_page_size=parsed.spawns_page.page_size,
             ),
             _shape,
         )

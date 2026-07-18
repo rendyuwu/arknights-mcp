@@ -149,9 +149,13 @@ _ROUTES_SQL = (
     "ORDER BY route_index LIMIT ? OFFSET ?"
 )
 
+# Mirror the JOINs of ``_SPAWNS_SQL`` exactly (incl. the enemies inner join) so
+# the count matches the number of rows the page query can return: a spawn whose
+# enemy row is absent is dropped by both, keeping ``total``/``has_more`` honest.
 _SPAWN_COUNT_SQL = (
     "SELECT COUNT(*) FROM stage_spawns sp "
     "JOIN stage_waves w ON w.wave_pk = sp.wave_pk "
+    "JOIN enemies e ON e.enemy_pk = sp.enemy_pk "
     "WHERE w.stage_pk = ?"
 )
 _SPAWNS_SQL = (
