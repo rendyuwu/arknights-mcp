@@ -9,9 +9,10 @@ active database is never mutated in place (§V3, §V4).
 This package splits the former ``cli.py`` (§V38): one module per command group
 (:mod:`~arknights_mcp.cli.sync` §T21, :mod:`~arknights_mcp.cli.import_` §T22,
 :mod:`~arknights_mcp.cli.validate` §T23, :mod:`~arknights_mcp.cli.status`
-status+doctor §T25, :mod:`~arknights_mcp.cli.source` §T26) over shared helpers in
-:mod:`~arknights_mcp.cli._shared`. This module wires the argument parser and
-dispatches. ``serve`` is wired later (§T29/§T51).
+status+doctor §T25, :mod:`~arknights_mcp.cli.source` §T26, :mod:`~arknights_mcp.cli.serve` stdio
+§T47) over shared helpers in :mod:`~arknights_mcp.cli._shared`. This module wires
+the argument parser and dispatches. ``serve --transport streamable-http`` (M6)
+lands with §T51.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from arknights_mcp.cli._shared import (
     _err,
 )
 from arknights_mcp.cli.import_ import _cmd_import
+from arknights_mcp.cli.serve import _cmd_serve
 from arknights_mcp.cli.source import (
     _cmd_source_disable,
     _cmd_source_enable,
@@ -78,6 +80,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser("doctor", help="report environment/config/database health")
     p_doctor.set_defaults(func=_cmd_doctor)
+
+    p_serve = sub.add_parser("serve", help="run the read-only MCP server (stdio)")
+    p_serve.add_argument(
+        "--transport",
+        choices=["stdio", "streamable-http"],
+        default="stdio",
+        help="transport to serve (v0.1: stdio; streamable-http lands in M6/§T51)",
+    )
+    p_serve.set_defaults(func=_cmd_serve)
 
     p_source = sub.add_parser("source", help="manage data sources (list/enable/disable/purge)")
     source_sub = p_source.add_subparsers(dest="source_command", metavar="<action>")
