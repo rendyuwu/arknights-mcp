@@ -33,6 +33,7 @@ from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.importers.enemies import ImporterError, import_enemies
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
+from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.sources.registry import SourceRegistry, SourceRegistryEntry
@@ -222,6 +223,9 @@ def build_candidate(
         seed_data_sources(conn, registry)
         materialize_policy_events(conn, policy_events)
         summaries = [_import_one(conn, job, imported_at=imported_at) for job in imports]
+        # Populate the unified FTS search index once every server is imported, so
+        # it covers all regions in one pass (§T31); read-only from here on (§V2).
+        build_search_index(conn)
         conn.commit()
     finally:
         conn.close()

@@ -54,8 +54,9 @@ def test_valid_candidate_passes_all_checks(tmp_path: Path) -> None:
     )
     assert report.passed
     assert all(c.passed for c in report.checks)
-    # FTS index does not exist yet (§T31): its smoke check is a no-op pass.
-    assert "no FTS index" in _check(report, "fts_smoke").detail
+    # §T31: the FTS index now exists and its smoke check queries it (no longer a
+    # no-op pass).
+    assert "FTS table(s) queryable" in _check(report, "fts_smoke").detail
 
 
 # --- unreadable / corrupt files -----------------------------------------------

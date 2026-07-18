@@ -44,6 +44,7 @@ CRITICAL_TABLES: tuple[str, ...] = (
     "modules",
     "analysis_rules",
     "analysis_findings",
+    "entity_fts",
 )
 
 #: Regions confined to the v0.1 set (§C, §V5).
