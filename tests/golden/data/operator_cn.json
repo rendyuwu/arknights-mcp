@@ -1,0 +1,93 @@
+{
+  "operator": {
+    "display_name": "陈",
+    "game_id": "char_1013_chen",
+    "modules": [],
+    "phases": [
+      {
+        "atk": 780,
+        "attack_interval": 1.3,
+        "block_count": 1,
+        "cost": 18,
+        "def_": 350,
+        "max_hp": 1900,
+        "max_level": 90,
+        "phase": 0,
+        "range_id": "0-1",
+        "redeploy_time": 70,
+        "res": 0
+      }
+    ],
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "cn:1f896d54ca0d"
+    },
+    "server": "cn",
+    "skills": [
+      {
+        "display_name": "瞬影",
+        "duration_type": "NONE",
+        "game_id": "skchr_chen_1",
+        "levels": [
+          {
+            "blackboard": [
+              {
+                "key": "atk",
+                "value": 1.8,
+                "valueStr": null
+              }
+            ],
+            "duration": 15.0,
+            "initial_sp": 10,
+            "level": 1,
+            "range_id": null,
+            "sp_cost": 25
+          }
+        ],
+        "skill_type": "MANUAL",
+        "slot_index": 1,
+        "sp_type": "INCREASE_WITH_TIME",
+        "unlock_level": 1,
+        "unlock_phase": 0
+      }
+    ],
+    "summary": {
+      "module_count": 0,
+      "obtainable": true,
+      "phase_count": 1,
+      "position": "MELEE",
+      "profession": "GUARD",
+      "rarity": 6,
+      "skill_count": 1,
+      "subclass_id": "sword",
+      "tags": [
+        "近战位",
+        "输出"
+      ],
+      "talent_count": 1
+    },
+    "talents": [
+      {
+        "display_name": "剑术",
+        "talent_index": 0,
+        "variants": [
+          {
+            "blackboard": [
+              {
+                "key": "atk",
+                "value": 0.1,
+                "valueStr": null
+              }
+            ],
+            "potential_rank": 0,
+            "unlock_level": 1,
+            "unlock_phase": 0,
+            "variant_index": 0
+          }
+        ]
+      }
+    ]
+  },
+  "server": "cn",
+  "status": "ok"
+}

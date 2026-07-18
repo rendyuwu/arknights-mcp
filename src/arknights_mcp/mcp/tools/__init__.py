@@ -21,18 +21,20 @@ from __future__ import annotations
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
+from arknights_mcp.mcp.tools.operator import build_get_operator_spec
 from arknights_mcp.mcp.tools.search import build_search_entities_spec, build_search_stages_spec
 from arknights_mcp.mcp.tools.stage import build_analyze_stage_spec, build_get_stage_spec
 
 #: The read-only tool set, in a deterministic registration order. Single §V37
 #: home for the tool list: adding a tool means adding its builder here once, and
-#: both transports pick it up (§V14). The still-stubbed tools (operator/module,
-#: data status/sources) join as their §T tasks land.
+#: both transports pick it up (§V14). The still-stubbed tools
+#: (compare_operator_modules, data status/sources) join as their §T tasks land.
 _TOOL_BUILDERS = (
     build_search_entities_spec,
     build_search_stages_spec,
     build_get_stage_spec,
     build_get_enemy_spec,
+    build_get_operator_spec,
     build_analyze_stage_spec,
 )
 

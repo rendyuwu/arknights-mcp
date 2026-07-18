@@ -1,0 +1,42 @@
+{
+  "skchr_amiya_1": {
+    "skillId": "skchr_amiya_1",
+    "levels": [
+      {
+        "name": "Arts Charge",
+        "skillType": "PASSIVE",
+        "durationType": "NONE",
+        "description": "prose that must never be imported",
+        "duration": 0.0,
+        "rangeId": null,
+        "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 0, "initSp": 0},
+        "blackboard": [{"key": "charge", "value": 1.0, "valueStr": null}]
+      },
+      {
+        "name": "Arts Charge",
+        "skillType": "PASSIVE",
+        "durationType": "NONE",
+        "description": "prose that must never be imported",
+        "duration": 0.0,
+        "rangeId": null,
+        "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 0, "initSp": 0},
+        "blackboard": []
+      }
+    ]
+  },
+  "skchr_amiya_2": {
+    "skillId": "skchr_amiya_2",
+    "levels": [
+      {
+        "name": "Chain Cast",
+        "skillType": "MANUAL",
+        "durationType": "NONE",
+        "description": "prose that must never be imported",
+        "duration": 20.0,
+        "rangeId": "x-1",
+        "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 30, "initSp": 0},
+        "blackboard": [{"key": "atk", "value": 1.5, "valueStr": null}]
+      }
+    ]
+  }
+}

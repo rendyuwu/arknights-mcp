@@ -1,0 +1,17 @@
+{
+  "skchr_chen_1": {
+    "skillId": "skchr_chen_1",
+    "levels": [
+      {
+        "name": "瞬影",
+        "skillType": "MANUAL",
+        "durationType": "NONE",
+        "description": "prose that must never be imported",
+        "duration": 15.0,
+        "rangeId": null,
+        "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 25, "initSp": 10},
+        "blackboard": [{"key": "atk", "value": 1.8, "valueStr": null}]
+      }
+    ]
+  }
+}

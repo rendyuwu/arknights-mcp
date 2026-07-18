@@ -1,0 +1,50 @@
+{
+  "char_1013_chen": {
+    "name": "陈",
+    "appellation": "Ch'en",
+    "description": "prose that must never be imported",
+    "rarity": "TIER_6",
+    "profession": "GUARD",
+    "subProfessionId": "sword",
+    "position": "MELEE",
+    "tagList": ["近战位", "输出"],
+    "isNotObtainable": false,
+    "phases": [
+      {
+        "rangeId": "0-1",
+        "maxLevel": 90,
+        "attributesKeyFrames": [
+          {
+            "level": 90,
+            "data": {
+              "maxHp": 1900,
+              "atk": 780,
+              "def": 350,
+              "magicResistance": 0,
+              "cost": 18,
+              "blockCnt": 1,
+              "baseAttackTime": 1.3,
+              "respawnTime": 70
+            }
+          }
+        ]
+      }
+    ],
+    "skills": [
+      {"skillId": "skchr_chen_1", "unlockCond": {"phase": "PHASE_0", "level": 1}}
+    ],
+    "talents": [
+      {
+        "candidates": [
+          {
+            "unlockCondition": {"phase": "PHASE_0", "level": 1},
+            "requiredPotentialRank": 0,
+            "name": "剑术",
+            "description": "prose that must never be imported",
+            "blackboard": [{"key": "atk", "value": 0.1, "valueStr": null}]
+          }
+        ]
+      }
+    ]
+  }
+}

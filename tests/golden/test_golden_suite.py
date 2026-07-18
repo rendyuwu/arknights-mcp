@@ -23,6 +23,10 @@ Scenarios (all §V5/§V6):
 * **CN-only region separation** -- a single multi-region build where the cn stage
   is never surfaced under an ``en`` query and vice versa, and each region's
   provenance stays its own (en & cn never silently mixed, §V5).
+* **operator (§T44)** -- the shared-core :func:`~arknights_mcp.services.operators.get_operator`
+  read path over a multi-region operator build: an en operator's full facts +
+  region + provenance are locked, a cn operator's non-ASCII name survives the
+  pipeline, and neither region's operator is surfaced under the other's query (§V5).
 
 Regenerate the golden files after an *intended* analysis change with
 ``UPDATE_GOLDEN=1 uv run pytest tests/golden`` and review the diff.
@@ -42,7 +46,8 @@ import pytest
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.services.stages import StageAnalysisResult, analyze_stage
+from arknights_mcp.services.operators import get_operator
+from arknights_mcp.services.stages import analyze_stage
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -99,15 +104,29 @@ def multi_region(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.C
     conn.close()
 
 
+@pytest.fixture(scope="session")
+def operator_multi(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Connection]:
+    """One candidate with an en operator + a distinct cn-only operator (§T44; §V5)."""
+    conn = _build(
+        tmp_path_factory.mktemp("golden_operator"),
+        [
+            ServerImport("en", _adapter(FIXTURES / "operator" / "en", "en"), "local_snapshot"),
+            ServerImport("cn", _adapter(FIXTURES / "operator" / "cn", "cn"), "local_snapshot"),
+        ],
+    )
+    yield conn
+    conn.close()
+
+
 # --- golden compare -----------------------------------------------------------
 
 
-def _canonical(result: StageAnalysisResult) -> str:
-    """Serialize a result to a stable JSON artifact (sorted keys, trailing NL)."""
+def _canonical(result: Any) -> str:
+    """Serialize a dataclass result to a stable JSON artifact (sorted keys, trailing NL)."""
     return json.dumps(asdict(result), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def _check_golden(name: str, result: StageAnalysisResult) -> dict[str, Any]:
+def _check_golden(name: str, result: Any) -> dict[str, Any]:
     """Assert ``result`` matches ``tests/golden/data/<name>.json`` (or rewrite it)."""
     text = _canonical(result)
     path = GOLDEN_DIR / f"{name}.json"
@@ -211,3 +230,71 @@ def test_regions_never_silently_mixed(multi_region: sqlite3.Connection) -> None:
     assert cn.stage.provenance.snapshot_id.startswith("cn:")
     assert en.stage.provenance.snapshot_id.startswith("en:")
     assert cn.stage.provenance.snapshot_id != en.stage.provenance.snapshot_id
+
+
+# --- operator scenarios (§T44) ------------------------------------------------
+
+
+def _assert_operator_v5(payload: dict[str, Any], *, server: str, game_id: str) -> None:
+    """The operator golden carries region + provenance (§V5)."""
+    assert payload["status"] == "ok"
+    assert payload["server"] == server
+    op = payload["operator"]
+    assert op is not None and op["server"] == server and op["game_id"] == game_id
+    prov = op["provenance"]
+    assert prov["snapshot_id"].startswith(f"{server}:")  # §V5 region on provenance
+    assert prov["imported_at"] == PINNED_IMPORTED_AT
+
+
+def _all_sections(conn: sqlite3.Connection, *, server: str, game_id: str):  # type: ignore[no-untyped-def]
+    """Drive get_operator with every heavy section opted in (locks the full shape)."""
+    return get_operator(
+        conn,
+        server=server,
+        game_id=game_id,
+        include_summary=True,
+        include_phases=True,
+        include_skills=True,
+        include_talents=True,
+        include_modules=True,
+    )
+
+
+def test_golden_operator_en(operator_multi: sqlite3.Connection) -> None:
+    payload = _check_golden(
+        "operator_en", _all_sections(operator_multi, server="en", game_id="char_002_amiya")
+    )
+    _assert_operator_v5(payload, server="en", game_id="char_002_amiya")
+    op = payload["operator"]
+    assert op["display_name"] == "Amiya"
+    assert op["summary"]["rarity"] == 5
+    assert op["summary"]["module_count"] == 1
+    assert [p["phase"] for p in op["phases"]] == [0, 1]
+    assert {s["game_id"] for s in op["skills"]} == {"skchr_amiya_1", "skchr_amiya_2"}
+    assert op["modules"][0]["module_type"] == "CX-1"
+
+
+def test_golden_operator_cn(operator_multi: sqlite3.Connection) -> None:
+    payload = _check_golden(
+        "operator_cn", _all_sections(operator_multi, server="cn", game_id="char_1013_chen")
+    )
+    _assert_operator_v5(payload, server="cn", game_id="char_1013_chen")
+    # Non-ASCII name + tags survive the pipeline into the result without mojibake.
+    assert payload["operator"]["display_name"] == "陈"
+    assert "近战位" in payload["operator"]["summary"]["tags"]
+    assert payload["operator"]["modules"] == []  # cn fixture ships no module
+
+
+def test_operator_regions_never_silently_mixed(operator_multi: sqlite3.Connection) -> None:
+    # §V5: an en operator is not surfaced under a cn query and vice versa, in one DB.
+    assert get_operator(operator_multi, server="cn", game_id="char_002_amiya").status == "not_found"
+    assert get_operator(operator_multi, server="en", game_id="char_1013_chen").status == "not_found"
+
+    en = get_operator(operator_multi, server="en", game_id="char_002_amiya")
+    cn = get_operator(operator_multi, server="cn", game_id="char_1013_chen")
+    assert en.status == "ok" and cn.status == "ok"
+    assert en.operator is not None and cn.operator is not None
+    # Each region's provenance stays its own -- distinct snapshots, region-tagged.
+    assert en.operator.provenance.snapshot_id.startswith("en:")
+    assert cn.operator.provenance.snapshot_id.startswith("cn:")
+    assert en.operator.provenance.snapshot_id != cn.operator.provenance.snapshot_id

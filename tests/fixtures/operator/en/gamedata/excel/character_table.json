@@ -1,0 +1,85 @@
+{
+  "char_002_amiya": {
+    "name": "Amiya",
+    "appellation": "Amiya",
+    "description": "A long lore blurb that must never be imported into the database.",
+    "rarity": "TIER_5",
+    "profession": "CASTER",
+    "subProfessionId": "corecaster",
+    "position": "RANGED",
+    "tagList": ["Arts", "DPS"],
+    "isNotObtainable": false,
+    "phases": [
+      {
+        "rangeId": "1-1",
+        "maxLevel": 50,
+        "attributesKeyFrames": [
+          {"level": 1, "data": {"maxHp": 649, "atk": 259}},
+          {
+            "level": 50,
+            "data": {
+              "maxHp": 1043,
+              "atk": 481,
+              "def": 88,
+              "magicResistance": 10,
+              "cost": 15,
+              "blockCnt": 1,
+              "baseAttackTime": 1.6,
+              "respawnTime": 70
+            }
+          }
+        ]
+      },
+      {
+        "rangeId": "1-2",
+        "maxLevel": 80,
+        "attributesKeyFrames": [
+          {
+            "level": 80,
+            "data": {
+              "maxHp": 1400,
+              "atk": 700,
+              "def": 120,
+              "magicResistance": 10,
+              "cost": 17,
+              "blockCnt": 1,
+              "baseAttackTime": 1.6,
+              "respawnTime": 70
+            }
+          }
+        ]
+      }
+    ],
+    "skills": [
+      {"skillId": "skchr_amiya_1", "unlockCond": {"phase": "PHASE_0", "level": 1}},
+      {"skillId": "skchr_amiya_2", "unlockCond": {"phase": "PHASE_1", "level": 1}}
+    ],
+    "talents": [
+      {
+        "candidates": [
+          {
+            "unlockCondition": {"phase": "PHASE_0", "level": 1},
+            "requiredPotentialRank": 0,
+            "name": "Nervous Impulse",
+            "description": "A long lore blurb that must never be imported.",
+            "blackboard": [{"key": "atk_scale", "value": 1.1, "valueStr": null}]
+          },
+          {
+            "unlockCondition": {"phase": "PHASE_2", "level": 1},
+            "requiredPotentialRank": 3,
+            "name": "Nervous Impulse",
+            "description": "A long lore blurb that must never be imported.",
+            "blackboard": [{"key": "atk_scale", "value": 1.2, "valueStr": null}]
+          }
+        ]
+      }
+    ]
+  },
+  "token_10012_shield": {
+    "name": "Guardian",
+    "rarity": "TIER_1",
+    "profession": "TOKEN",
+    "position": "MELEE",
+    "phases": []
+  }
+}

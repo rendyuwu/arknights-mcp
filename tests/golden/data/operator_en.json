@@ -1,0 +1,251 @@
+{
+  "operator": {
+    "display_name": "Amiya",
+    "game_id": "char_002_amiya",
+    "modules": [
+      {
+        "display_name": "Magician's Trick",
+        "game_id": "uniequip_002_amiya",
+        "levels": [
+          {
+            "cost": [
+              {
+                "count": 8,
+                "id": "mat_1",
+                "type": "MATERIAL"
+              }
+            ],
+            "level": 1,
+            "stat_bonus": [
+              {
+                "key": "atk",
+                "value": 34,
+                "valueStr": null
+              }
+            ],
+            "talent_changes": null,
+            "trait_changes": [
+              {
+                "blackboard": [
+                  {
+                    "key": "atk_scale",
+                    "value": 1.1
+                  }
+                ],
+                "requiredPotentialRank": 0,
+                "unlockCondition": {
+                  "level": 1,
+                  "phase": "PHASE_2"
+                }
+              }
+            ]
+          },
+          {
+            "cost": [
+              {
+                "count": 4,
+                "id": "mat_2",
+                "type": "MATERIAL"
+              }
+            ],
+            "level": 2,
+            "stat_bonus": [
+              {
+                "key": "atk",
+                "value": 48
+              }
+            ],
+            "talent_changes": [
+              {
+                "blackboard": [
+                  {
+                    "key": "prob",
+                    "value": 0.3
+                  }
+                ],
+                "requiredPotentialRank": 0,
+                "talentIndex": 0,
+                "unlockCondition": {
+                  "level": 1,
+                  "phase": "PHASE_2"
+                }
+              }
+            ],
+            "trait_changes": null
+          },
+          {
+            "cost": [
+              {
+                "count": 2,
+                "id": "mat_3",
+                "type": "MATERIAL"
+              }
+            ],
+            "level": 3,
+            "stat_bonus": [
+              {
+                "key": "atk",
+                "value": 66
+              },
+              {
+                "key": "max_hp",
+                "value": 150
+              }
+            ],
+            "talent_changes": null,
+            "trait_changes": null
+          }
+        ],
+        "module_type": "CX-1",
+        "unlock_level": 40,
+        "unlock_phase": 2
+      }
+    ],
+    "phases": [
+      {
+        "atk": 481,
+        "attack_interval": 1.6,
+        "block_count": 1,
+        "cost": 15,
+        "def_": 88,
+        "max_hp": 1043,
+        "max_level": 50,
+        "phase": 0,
+        "range_id": "1-1",
+        "redeploy_time": 70,
+        "res": 10
+      },
+      {
+        "atk": 700,
+        "attack_interval": 1.6,
+        "block_count": 1,
+        "cost": 17,
+        "def_": 120,
+        "max_hp": 1400,
+        "max_level": 80,
+        "phase": 1,
+        "range_id": "1-2",
+        "redeploy_time": 70,
+        "res": 10
+      }
+    ],
+    "provenance": {
+      "imported_at": "2026-07-18T00:00:00+00:00",
+      "snapshot_id": "en:b32220e9785e"
+    },
+    "server": "en",
+    "skills": [
+      {
+        "display_name": "Arts Charge",
+        "duration_type": "NONE",
+        "game_id": "skchr_amiya_1",
+        "levels": [
+          {
+            "blackboard": [
+              {
+                "key": "charge",
+                "value": 1.0,
+                "valueStr": null
+              }
+            ],
+            "duration": 0.0,
+            "initial_sp": 0,
+            "level": 1,
+            "range_id": null,
+            "sp_cost": 0
+          },
+          {
+            "blackboard": null,
+            "duration": 0.0,
+            "initial_sp": 0,
+            "level": 2,
+            "range_id": null,
+            "sp_cost": 0
+          }
+        ],
+        "skill_type": "PASSIVE",
+        "slot_index": 1,
+        "sp_type": "INCREASE_WITH_TIME",
+        "unlock_level": 1,
+        "unlock_phase": 0
+      },
+      {
+        "display_name": "Chain Cast",
+        "duration_type": "NONE",
+        "game_id": "skchr_amiya_2",
+        "levels": [
+          {
+            "blackboard": [
+              {
+                "key": "atk",
+                "value": 1.5,
+                "valueStr": null
+              }
+            ],
+            "duration": 20.0,
+            "initial_sp": 0,
+            "level": 1,
+            "range_id": "x-1",
+            "sp_cost": 30
+          }
+        ],
+        "skill_type": "MANUAL",
+        "slot_index": 2,
+        "sp_type": "INCREASE_WITH_TIME",
+        "unlock_level": 1,
+        "unlock_phase": 1
+      }
+    ],
+    "summary": {
+      "module_count": 1,
+      "obtainable": true,
+      "phase_count": 2,
+      "position": "RANGED",
+      "profession": "CASTER",
+      "rarity": 5,
+      "skill_count": 2,
+      "subclass_id": "corecaster",
+      "tags": [
+        "Arts",
+        "DPS"
+      ],
+      "talent_count": 1
+    },
+    "talents": [
+      {
+        "display_name": "Nervous Impulse",
+        "talent_index": 0,
+        "variants": [
+          {
+            "blackboard": [
+              {
+                "key": "atk_scale",
+                "value": 1.1,
+                "valueStr": null
+              }
+            ],
+            "potential_rank": 0,
+            "unlock_level": 1,
+            "unlock_phase": 0,
+            "variant_index": 0
+          },
+          {
+            "blackboard": [
+              {
+                "key": "atk_scale",
+                "value": 1.2,
+                "valueStr": null
+              }
+            ],
+            "potential_rank": 3,
+            "unlock_level": 1,
+            "unlock_phase": 2,
+            "variant_index": 1
+          }
+        ]
+      }
+    ]
+  },
+  "server": "en",
+  "status": "ok"
+}

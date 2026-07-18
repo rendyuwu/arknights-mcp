@@ -1,0 +1,33 @@
+{
+  "equipDict": {
+    "uniequip_001_amiya": {
+      "uniEquipId": "uniequip_001_amiya",
+      "uniEquipName": "Original",
+      "uniEquipDesc": "prose that must never be imported",
+      "charId": "char_002_amiya",
+      "type": "INITIAL",
+      "typeName1": "ORIGINAL",
+      "typeName2": null,
+      "unlockEvolvePhase": "PHASE_0",
+      "unlockLevel": 0,
+      "itemCost": null
+    },
+    "uniequip_002_amiya": {
+      "uniEquipId": "uniequip_002_amiya",
+      "uniEquipName": "Magician's Trick",
+      "uniEquipDesc": "prose that must never be imported",
+      "charId": "char_002_amiya",
+      "type": "ADVANCED",
+      "typeName1": "CX",
+      "typeName2": "1",
+      "unlockEvolvePhase": "PHASE_2",
+      "unlockLevel": 40,
+      "itemCost": {
+        "1": [{"id": "mat_1", "count": 8, "type": "MATERIAL", "sortId": 99}],
+        "2": [{"id": "mat_2", "count": 4, "type": "MATERIAL"}],
+        "3": [{"id": "mat_3", "count": 2, "type": "MATERIAL"}]
+      }
+    }
+  },
+  "charEquip": {"char_002_amiya": ["uniequip_001_amiya", "uniequip_002_amiya"]}
+}

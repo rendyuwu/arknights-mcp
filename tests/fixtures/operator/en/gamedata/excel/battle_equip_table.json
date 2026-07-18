@@ -1,0 +1,58 @@
+{
+  "uniequip_002_amiya": {
+    "phases": [
+      {
+        "equipLevel": 1,
+        "attributeBlackboard": [{"key": "atk", "value": 34, "valueStr": null}],
+        "parts": [
+          {
+            "target": "TRAIT",
+            "overrideTraitDataBundle": {
+              "candidates": [
+                {
+                  "additionalDescription": "prose that must never be imported",
+                  "overrideDescripton": "prose that must never be imported",
+                  "unlockCondition": {"phase": "PHASE_2", "level": 1},
+                  "requiredPotentialRank": 0,
+                  "blackboard": [{"key": "atk_scale", "value": 1.1}]
+                }
+              ]
+            },
+            "addOrOverrideTalentDataBundle": {"candidates": null}
+          }
+        ]
+      },
+      {
+        "equipLevel": 2,
+        "attributeBlackboard": [{"key": "atk", "value": 48}],
+        "parts": [
+          {
+            "target": "TALENT",
+            "overrideTraitDataBundle": {"candidates": null},
+            "addOrOverrideTalentDataBundle": {
+              "candidates": [
+                {
+                  "upgradeDescription": "prose that must never be imported",
+                  "description": "prose that must never be imported",
+                  "name": "Nervous Impulse",
+                  "talentIndex": 0,
+                  "unlockCondition": {"phase": "PHASE_2", "level": 1},
+                  "requiredPotentialRank": 0,
+                  "blackboard": [{"key": "prob", "value": 0.3}]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "equipLevel": 3,
+        "attributeBlackboard": [
+          {"key": "atk", "value": 66},
+          {"key": "max_hp", "value": 150}
+        ],
+        "parts": []
+      }
+    ]
+  }
+}
