@@ -35,6 +35,7 @@ from arknights_mcp.analyzers import (
 )
 from arknights_mcp.db.repositories.stages import StageRepository, StageRow
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX
+from arknights_mcp.util.coerce import json_load
 
 #: Typed outcome of a stage lookup. The full §V23 status vocabulary is wired
 #: into the tool envelope in §T29; the M0 service reports only these two.
@@ -329,22 +330,6 @@ class StageDetailResult:
     spawns_page: SectionPage | None
 
 
-def _json_load(raw: str | None) -> object | None:
-    """Decode a stored (sanitized) JSON fragment back to a Python object.
-
-    The value was allowlisted + sanitized at import (§V18/§V31), so decoding it
-    here re-exposes only vetted structural data. A ``NULL`` column or an
-    undecodable string maps to ``None`` (absent), never a raw string leak.
-    """
-    if raw is None:
-        return None
-    try:
-        decoded: object = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    return decoded
-
-
 def _validate_page(page: int, page_size: int) -> tuple[int, int]:
     """Reject out-of-range pagination -- never silently widen it (§V19).
 
@@ -424,7 +409,7 @@ def get_stage(
             width=raw_map.width if raw_map else None,
             height=raw_map.height if raw_map else None,
             map_version=raw_map.map_version if raw_map else None,
-            environment=_json_load(raw_map.environment_json) if raw_map else None,
+            environment=json_load(raw_map.environment_json) if raw_map else None,
         )
         tiles = tuple(
             TileFacts(
@@ -445,9 +430,9 @@ def get_stage(
         routes = tuple(
             RouteFacts(
                 route_index=r.route_index,
-                start_position=_json_load(r.start_position_json),
-                end_position=_json_load(r.end_position_json),
-                checkpoints=_json_load(r.checkpoints_json),
+                start_position=json_load(r.start_position_json),
+                end_position=json_load(r.end_position_json),
+                checkpoints=json_load(r.checkpoints_json),
             )
             for r in repo.routes(stage_pk, size, offset)
         )

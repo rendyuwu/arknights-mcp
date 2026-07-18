@@ -46,3 +46,18 @@ def as_str(value: Any, *, sanitize: bool = False) -> str | None:
 def json_or_none(value: Any) -> str | None:
     """JSON-encode ``value`` (stable key order) or return ``None`` for ``None``."""
     return None if value is None else json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def json_load(raw: str | None) -> Any:
+    """Decode a stored (already allowlisted + sanitized) JSON fragment (§V18/§V31).
+
+    The inverse of :func:`json_or_none`, and the single home (§V37) for the
+    read-side decode shared by the stage/enemy services: a ``NULL`` column or an
+    undecodable string maps to ``None`` (absent), never a raw string leak.
+    """
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None

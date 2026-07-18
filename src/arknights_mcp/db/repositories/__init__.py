@@ -5,6 +5,11 @@ only, values bound via ``?`` placeholders, never string interpolation.
 """
 
 from arknights_mcp.db.repositories.base import Repository
+from arknights_mcp.db.repositories.enemies import (
+    EnemyLevelRow,
+    EnemyRepository,
+    EnemyRow,
+)
 from arknights_mcp.db.repositories.search import SearchHitRow, SearchRepository
 from arknights_mcp.db.repositories.stages import (
     StageEnemyRow,
@@ -13,6 +18,9 @@ from arknights_mcp.db.repositories.stages import (
 )
 
 __all__ = [
+    "EnemyLevelRow",
+    "EnemyRepository",
+    "EnemyRow",
     "Repository",
     "SearchHitRow",
     "SearchRepository",
