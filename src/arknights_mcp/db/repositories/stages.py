@@ -58,6 +58,53 @@ class StageEnemyRow:
     abilities_json: str | None
 
 
+@dataclass(frozen=True)
+class StageMapRow:
+    """The stage's map header (``stage_maps``); tiles are paged separately."""
+
+    width: int | None
+    height: int | None
+    map_version: str | None
+    environment_json: str | None
+
+
+@dataclass(frozen=True)
+class StageTileRow:
+    """One tile of the stage grid (``stage_tiles``)."""
+
+    x: int
+    y: int
+    tile_key: str | None
+    height_type: str | None
+    buildable_type: str | None
+    passable: bool | None
+
+
+@dataclass(frozen=True)
+class StageRouteRow:
+    """One enemy route (``stage_routes``); position payloads stay JSON strings."""
+
+    route_index: int
+    start_position_json: str | None
+    end_position_json: str | None
+    checkpoints_json: str | None
+
+
+@dataclass(frozen=True)
+class StageSpawnRow:
+    """One scheduled spawn (``stage_spawns``) joined to its wave + enemy + route."""
+
+    wave_index: int
+    enemy_game_id: str
+    enemy_level_variant: int | None
+    route_index: int | None
+    spawn_time: float | None
+    count: int | None
+    interval: float | None
+    spawn_group: str | None
+    hidden: bool
+
+
 _STAGE_SELECT = (
     "SELECT s.stage_pk, s.server, s.game_id, s.stage_code, s.display_name, "
     "z.game_id, s.stage_type, s.difficulty, s.sanity_cost, "
@@ -81,6 +128,42 @@ _OCCURRENCES_SQL = (
     "ON el.enemy_pk = se.enemy_pk AND el.level_variant = se.enemy_level_variant "
     "WHERE se.stage_pk = ? "
     "ORDER BY e.game_id, se.enemy_level_variant"
+)
+
+# --- get_stage opt-in sections (§T34): each paged through a bounded LIMIT/OFFSET
+# with a deterministic ORDER BY so a client can page without ever pulling an
+# unbounded slice (§V19), and repeat a page reproducibly.
+_MAP_SQL = "SELECT width, height, map_version, environment_json FROM stage_maps WHERE stage_pk = ?"
+
+_TILE_COUNT_SQL = "SELECT COUNT(*) FROM stage_tiles WHERE stage_pk = ?"
+_TILES_SQL = (
+    "SELECT x, y, tile_key, height_type, buildable_type, passable "
+    "FROM stage_tiles WHERE stage_pk = ? "
+    "ORDER BY y, x LIMIT ? OFFSET ?"
+)
+
+_ROUTE_COUNT_SQL = "SELECT COUNT(*) FROM stage_routes WHERE stage_pk = ?"
+_ROUTES_SQL = (
+    "SELECT route_index, start_position_json, end_position_json, checkpoints_json "
+    "FROM stage_routes WHERE stage_pk = ? "
+    "ORDER BY route_index LIMIT ? OFFSET ?"
+)
+
+_SPAWN_COUNT_SQL = (
+    "SELECT COUNT(*) FROM stage_spawns sp "
+    "JOIN stage_waves w ON w.wave_pk = sp.wave_pk "
+    "WHERE w.stage_pk = ?"
+)
+_SPAWNS_SQL = (
+    "SELECT w.wave_index, e.game_id, sp.enemy_level_variant, r.route_index, "
+    "sp.spawn_time, sp.count, sp.interval, sp.spawn_group, sp.hidden_or_scripted "
+    "FROM stage_spawns sp "
+    "JOIN stage_waves w ON w.wave_pk = sp.wave_pk "
+    "JOIN enemies e ON e.enemy_pk = sp.enemy_pk "
+    "LEFT JOIN stage_routes r ON r.route_pk = sp.route_pk "
+    "WHERE w.stage_pk = ? "
+    "ORDER BY w.wave_index, sp.spawn_time, e.game_id, sp.spawn_pk "
+    "LIMIT ? OFFSET ?"
 )
 
 
@@ -150,6 +233,63 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
     )
 
 
+def _to_stage_map_row(row: Any) -> StageMapRow:
+    width, height, map_version, environment_json = row
+    return StageMapRow(
+        width=width,
+        height=height,
+        map_version=map_version,
+        environment_json=environment_json,
+    )
+
+
+def _to_stage_tile_row(row: Any) -> StageTileRow:
+    x, y, tile_key, height_type, buildable_type, passable = row
+    return StageTileRow(
+        x=x,
+        y=y,
+        tile_key=tile_key,
+        height_type=height_type,
+        buildable_type=buildable_type,
+        passable=None if passable is None else bool(passable),
+    )
+
+
+def _to_stage_route_row(row: Any) -> StageRouteRow:
+    route_index, start_position_json, end_position_json, checkpoints_json = row
+    return StageRouteRow(
+        route_index=route_index,
+        start_position_json=start_position_json,
+        end_position_json=end_position_json,
+        checkpoints_json=checkpoints_json,
+    )
+
+
+def _to_stage_spawn_row(row: Any) -> StageSpawnRow:
+    (
+        wave_index,
+        enemy_game_id,
+        enemy_level_variant,
+        route_index,
+        spawn_time,
+        count,
+        interval,
+        spawn_group,
+        hidden,
+    ) = row
+    return StageSpawnRow(
+        wave_index=wave_index,
+        enemy_game_id=enemy_game_id,
+        enemy_level_variant=enemy_level_variant,
+        route_index=route_index,
+        spawn_time=spawn_time,
+        count=count,
+        interval=interval,
+        spawn_group=spawn_group,
+        hidden=bool(hidden),
+    )
+
+
 class StageRepository(Repository):
     """Read-only access to stages and their enemy occurrences (§V2)."""
 
@@ -166,3 +306,34 @@ class StageRepository(Repository):
     def stage_enemies(self, stage_pk: int) -> list[StageEnemyRow]:
         """Every enemy occurrence in the stage, ordered by ``game_id`` then variant."""
         return [_to_stage_enemy_row(r) for r in self._all(_OCCURRENCES_SQL, (stage_pk,))]
+
+    # --- get_stage opt-in sections (§T34): map header + paged tiles/routes/spawns.
+
+    def stage_map(self, stage_pk: int) -> StageMapRow | None:
+        """The stage's map header (``stage_maps``) or ``None`` if absent."""
+        row = self._one(_MAP_SQL, (stage_pk,))
+        return _to_stage_map_row(row) if row is not None else None
+
+    def tile_count(self, stage_pk: int) -> int:
+        """Total tiles in the stage grid (for the §V19 page descriptor)."""
+        return int(self._one(_TILE_COUNT_SQL, (stage_pk,))[0])
+
+    def tiles(self, stage_pk: int, limit: int, offset: int) -> list[StageTileRow]:
+        """One bounded page of tiles, ordered ``(y, x)`` for deterministic paging."""
+        return [_to_stage_tile_row(r) for r in self._all(_TILES_SQL, (stage_pk, limit, offset))]
+
+    def route_count(self, stage_pk: int) -> int:
+        """Total routes in the stage (for the §V19 page descriptor)."""
+        return int(self._one(_ROUTE_COUNT_SQL, (stage_pk,))[0])
+
+    def routes(self, stage_pk: int, limit: int, offset: int) -> list[StageRouteRow]:
+        """One bounded page of routes, ordered by ``route_index``."""
+        return [_to_stage_route_row(r) for r in self._all(_ROUTES_SQL, (stage_pk, limit, offset))]
+
+    def spawn_count(self, stage_pk: int) -> int:
+        """Total scheduled spawns in the stage (for the §V19 page descriptor)."""
+        return int(self._one(_SPAWN_COUNT_SQL, (stage_pk,))[0])
+
+    def spawns(self, stage_pk: int, limit: int, offset: int) -> list[StageSpawnRow]:
+        """One bounded page of spawns, ordered ``(wave, spawn_time, enemy, spawn_pk)``."""
+        return [_to_stage_spawn_row(r) for r in self._all(_SPAWNS_SQL, (stage_pk, limit, offset))]

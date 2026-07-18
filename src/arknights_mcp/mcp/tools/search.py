@@ -32,18 +32,13 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 
-from arknights_mcp.db.connection import DatabaseUnavailable
-from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error, ok
+from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.search import SearchEntitiesInput
 from arknights_mcp.models.stages import SearchStagesInput
 from arknights_mcp.services.search import SearchHit, SearchResult, search_entities, search_stages
-
-#: Supplies the process-wide read-only connection to the promoted build. The
-#: app/transport layer owns the connection's lifecycle (opened once, reused); the
-#: handler only reads through it and never opens or closes it.
-ConnectionProvider = Callable[[], sqlite3.Connection]
 
 #: The service call a search tool runs once it has a connection: it takes the
 #: read-only connection and returns the domain :class:`SearchResult`. The
@@ -67,17 +62,15 @@ _STAGES_TOOL_DESCRIPTION = (
     "(default 10, max 50) and en/cn are never mixed."
 )
 
-#: Fixed, safe copy for the typed error envelopes (§V23 -- no query echo, no
-#: stack trace, no local path). Per-tool ``not_found`` copy; the DB-unavailable
-#: copy is shared (one failure mode, one home -- §V37).
+#: Fixed, safe copy for the typed ``not_found`` envelopes (§V23 -- no query echo,
+#: no stack trace, no local path). The shared DB-unavailable/internal fail-closed
+#: copy + guard live in ``_shared.run_guarded`` (one failure mode, one home §V37).
 _ENTITIES_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
 _ENTITIES_NOT_FOUND_ACTION = (
     "broaden the query, drop the server/entity_type filter, or check the spelling"
 )
 _STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
 _STAGES_NOT_FOUND_ACTION = "broaden the query, drop the server filter, or check the stage code"
-_DB_UNAVAILABLE_MESSAGE = "the active database is unavailable"
-_DB_UNAVAILABLE_ACTION = "run `arknights-mcp status` to check the active build"
 
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
@@ -98,36 +91,27 @@ def _guarded_search(
     not_found_message: str,
     not_found_action: str,
 ) -> ResponseEnvelope:
-    """Run a search service call and map it to a typed §V23 envelope (§V37 home).
+    """Run a search service call and map it to a typed §V23 envelope.
 
     Shared by ``search_entities`` and ``search_stages``: the only per-tool
-    variation is the runner (which service + params) and the ``not_found`` copy;
-    the connection acquisition, fail-closed error handling, and ``ok`` locator
-    shaping are identical. A :class:`DatabaseUnavailable` fails closed to a fixed
-    ``database_unavailable`` envelope; any other exception to ``internal_error`` --
-    never a leaked exception text, stack trace, or local path (§V23).
+    variation is the runner (which service + params) and the ``not_found`` copy.
+    The connection acquisition + fail-closed error handling is delegated to the
+    shared :func:`run_guarded` (§V37); here we own only the search-specific
+    ``ok`` locator shaping and the ``not_found`` mapping.
     """
-    try:
-        conn = get_conn()
-        result = run(conn)
-    except DatabaseUnavailable:
-        return error(
-            "database_unavailable",
-            _DB_UNAVAILABLE_MESSAGE,
-            suggested_action=_DB_UNAVAILABLE_ACTION,
+
+    def shape(result: SearchResult) -> ResponseEnvelope:
+        if result.status == "not_found":
+            return error("not_found", not_found_message, suggested_action=not_found_action)
+        return ok(
+            {
+                "query": result.query,
+                "count": len(result.hits),
+                "results": [_hit_to_dict(hit) for hit in result.hits],
+            }
         )
-    except Exception:
-        # §V23 fail-closed: the detail belongs in the redacted log, not the client.
-        return internal_error()
-    if result.status == "not_found":
-        return error("not_found", not_found_message, suggested_action=not_found_action)
-    return ok(
-        {
-            "query": result.query,
-            "count": len(result.hits),
-            "results": [_hit_to_dict(hit) for hit in result.hits],
-        }
-    )
+
+    return run_guarded(get_conn, run, shape)
 
 
 def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:

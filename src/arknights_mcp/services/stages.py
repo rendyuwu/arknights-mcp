@@ -33,7 +33,8 @@ from arknights_mcp.analyzers import (
 from arknights_mcp.analyzers import (
     analyze_stage as run_threat_analysis,
 )
-from arknights_mcp.db.repositories.stages import StageRepository
+from arknights_mcp.db.repositories.stages import StageRepository, StageRow
+from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX
 
 #: Typed outcome of a stage lookup. The full §V23 status vocabulary is wired
 #: into the tool envelope in §T29; the M0 service reports only these two.
@@ -116,6 +117,48 @@ def _parse_abilities(raw: str | None) -> tuple[str, ...] | None:
     return tuple(str(a) for a in data)
 
 
+def _stage_facts(stage: StageRow) -> StageFacts:
+    """Shape a repository row into the typed, region-attributed facts (§V5/§V37).
+
+    Single home for the ``StageRow -> StageFacts`` mapping shared by
+    :func:`analyze_stage` and :func:`get_stage`; the two joins backing ``stage``
+    are NOT NULL, so ``provenance`` (snapshot_id + imported_at) is always present.
+    """
+    return StageFacts(
+        server=stage.server,
+        game_id=stage.game_id,
+        stage_code=stage.stage_code,
+        display_name=stage.display_name,
+        zone_game_id=stage.zone_game_id,
+        stage_type=stage.stage_type,
+        difficulty=stage.difficulty,
+        sanity_cost=stage.sanity_cost,
+        recommended_level=stage.recommended_level,
+        max_life_points=stage.max_life_points,
+        provenance=StageProvenance(snapshot_id=stage.snapshot_id, imported_at=stage.imported_at),
+    )
+
+
+def _resolve_stage(
+    repo: StageRepository,
+    server: str,
+    *,
+    stage_code: str | None,
+    game_id: str | None,
+) -> StageRow | None:
+    """Resolve a stage by ``game_id`` (preferred, unique) or ``stage_code`` (§V37).
+
+    Single home for the selector shared by :func:`analyze_stage` and
+    :func:`get_stage`. Raises :class:`ValueError` when neither is given (the tool
+    models require exactly one, but a direct caller must fail loudly, not silently).
+    """
+    if game_id is not None:
+        return repo.stage_by_game_id(server, game_id)
+    if stage_code is not None:
+        return repo.stage_by_code(server, stage_code)
+    raise ValueError("stage lookup requires stage_code or game_id")
+
+
 def _not_found(server: str) -> StageAnalysisResult:
     return StageAnalysisResult(
         status="not_found",
@@ -143,29 +186,12 @@ def analyze_stage(
     call this same function (§V14).
     """
     repo = StageRepository(conn)
-    if game_id is not None:
-        stage = repo.stage_by_game_id(server, game_id)
-    elif stage_code is not None:
-        stage = repo.stage_by_code(server, stage_code)
-    else:
-        raise ValueError("analyze_stage requires stage_code or game_id")
+    stage = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
 
     if stage is None:
         return _not_found(server)
 
-    facts = StageFacts(
-        server=stage.server,
-        game_id=stage.game_id,
-        stage_code=stage.stage_code,
-        display_name=stage.display_name,
-        zone_game_id=stage.zone_game_id,
-        stage_type=stage.stage_type,
-        difficulty=stage.difficulty,
-        sanity_cost=stage.sanity_cost,
-        recommended_level=stage.recommended_level,
-        max_life_points=stage.max_life_points,
-        provenance=StageProvenance(snapshot_id=stage.snapshot_id, imported_at=stage.imported_at),
-    )
+    facts = _stage_facts(stage)
 
     occurrences: list[EnemyOccurrenceFacts] = []
     threat_inputs: list[EnemyOccurrence] = []
@@ -213,4 +239,248 @@ def analyze_stage(
         observations=analysis.observations,
         warnings=analysis.warnings,
         analyzer_version=analysis.analyzer_version,
+    )
+
+
+# --- get_stage (§T34): facts by default; heavy map/routes/spawns opt-in + paged.
+
+
+@dataclass(frozen=True)
+class SectionPage:
+    """Bounded page descriptor for one opt-in section (§V19/§V22).
+
+    ``total`` is the full row count; ``has_more`` signals another bounded page
+    (never an invitation to dump). Mirrors
+    :class:`~arknights_mcp.models.common.PageInfo` on the wire.
+    """
+
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class StageMapFacts:
+    """The stage's map header; tiles are delivered as a separate paged section."""
+
+    width: int | None
+    height: int | None
+    map_version: str | None
+    environment: object | None
+
+
+@dataclass(frozen=True)
+class TileFacts:
+    """One tile of the stage grid (already allowlisted + sanitized; §V18)."""
+
+    x: int
+    y: int
+    tile_key: str | None
+    height_type: str | None
+    buildable_type: str | None
+    passable: bool | None
+
+
+@dataclass(frozen=True)
+class RouteFacts:
+    """One enemy route; positions decoded from the stored (sanitized) JSON."""
+
+    route_index: int
+    start_position: object | None
+    end_position: object | None
+    checkpoints: object | None
+
+
+@dataclass(frozen=True)
+class SpawnFacts:
+    """One scheduled spawn on the stage timeline (typed structural fields only)."""
+
+    wave_index: int
+    enemy_game_id: str
+    enemy_level_variant: int | None
+    route_index: int | None
+    spawn_time: float | None
+    count: int | None
+    interval: float | None
+    spawn_group: str | None
+    hidden: bool
+
+
+@dataclass(frozen=True)
+class StageDetailResult:
+    """Domain result of :func:`get_stage`.
+
+    Carries region + provenance on ``stage`` (§V5). The heavy sections are
+    populated only when their include flag is set; each populated section pairs
+    its rows with a bounded :class:`SectionPage` (§V19/§V22). ``status ==
+    "not_found"`` implies every section is empty/``None``.
+    """
+
+    status: StageAnalysisStatus
+    server: str
+    stage: StageFacts | None
+    stage_map: StageMapFacts | None
+    tiles: tuple[TileFacts, ...]
+    tiles_page: SectionPage | None
+    routes: tuple[RouteFacts, ...]
+    routes_page: SectionPage | None
+    spawns: tuple[SpawnFacts, ...]
+    spawns_page: SectionPage | None
+
+
+def _json_load(raw: str | None) -> object | None:
+    """Decode a stored (sanitized) JSON fragment back to a Python object.
+
+    The value was allowlisted + sanitized at import (§V18/§V31), so decoding it
+    here re-exposes only vetted structural data. A ``NULL`` column or an
+    undecodable string maps to ``None`` (absent), never a raw string leak.
+    """
+    if raw is None:
+        return None
+    try:
+        decoded: object = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return decoded
+
+
+def _validate_page(page: int, page_size: int) -> tuple[int, int]:
+    """Reject out-of-range pagination -- never silently widen it (§V19).
+
+    Mirrors :class:`~arknights_mcp.models.common.PageParams` (``page >= 1``,
+    ``1 <= page_size <= PAGE_SIZE_MAX``): the model is the MCP gate, but a caller
+    reaching this service directly (or a transport skipping model validation) must
+    get the *same* rejection, not a silent clamp -- one §V19 contract, both places.
+    """
+    p, size = int(page), int(page_size)
+    if p < 1:
+        raise ValueError(f"page {p} must be >= 1 (§V19)")
+    if size < 1 or size > PAGE_SIZE_MAX:
+        raise ValueError(f"page_size {size} outside the §V19 window [1, {PAGE_SIZE_MAX}]")
+    return p, size
+
+
+def _section_page(page: int, page_size: int, total: int) -> SectionPage:
+    """Build the §V19 page descriptor. ``has_more`` is purely count-derived."""
+    return SectionPage(
+        page=page,
+        page_size=page_size,
+        total=total,
+        has_more=page * page_size < total,
+    )
+
+
+def _not_found_detail(server: str) -> StageDetailResult:
+    return StageDetailResult(
+        status="not_found",
+        server=server,
+        stage=None,
+        stage_map=None,
+        tiles=(),
+        tiles_page=None,
+        routes=(),
+        routes_page=None,
+        spawns=(),
+        spawns_page=None,
+    )
+
+
+def get_stage(
+    conn: sqlite3.Connection,
+    *,
+    server: str,
+    stage_code: str | None = None,
+    game_id: str | None = None,
+    include_map: bool = False,
+    include_routes: bool = False,
+    include_spawns: bool = False,
+    page: int = 1,
+    page_size: int = PAGE_SIZE_DEFAULT,
+) -> StageDetailResult:
+    """Fetch one stage's facts + optional map/routes/spawns (§T34; §V5/§V19/§V22).
+
+    Read-only; parameterized SQL only (§V2). The default response is facts +
+    provenance only (§V22 -- the heavy sections stay off); each opted-in section is
+    returned as a bounded page (§V19), so even an included payload never yields an
+    unbounded slice. ``page``/``page_size`` are validated against the §V19 window
+    here too, mirroring the model gate. Both transports call this function (§V14).
+    """
+    p, size = _validate_page(page, page_size)
+    repo = StageRepository(conn)
+    stage = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
+    if stage is None:
+        return _not_found_detail(server)
+
+    offset = (p - 1) * size
+    stage_pk = stage.stage_pk
+
+    stage_map: StageMapFacts | None = None
+    tiles: tuple[TileFacts, ...] = ()
+    tiles_page: SectionPage | None = None
+    if include_map:
+        raw_map = repo.stage_map(stage_pk)
+        stage_map = StageMapFacts(
+            width=raw_map.width if raw_map else None,
+            height=raw_map.height if raw_map else None,
+            map_version=raw_map.map_version if raw_map else None,
+            environment=_json_load(raw_map.environment_json) if raw_map else None,
+        )
+        tiles = tuple(
+            TileFacts(
+                x=t.x,
+                y=t.y,
+                tile_key=t.tile_key,
+                height_type=t.height_type,
+                buildable_type=t.buildable_type,
+                passable=t.passable,
+            )
+            for t in repo.tiles(stage_pk, size, offset)
+        )
+        tiles_page = _section_page(p, size, repo.tile_count(stage_pk))
+
+    routes: tuple[RouteFacts, ...] = ()
+    routes_page: SectionPage | None = None
+    if include_routes:
+        routes = tuple(
+            RouteFacts(
+                route_index=r.route_index,
+                start_position=_json_load(r.start_position_json),
+                end_position=_json_load(r.end_position_json),
+                checkpoints=_json_load(r.checkpoints_json),
+            )
+            for r in repo.routes(stage_pk, size, offset)
+        )
+        routes_page = _section_page(p, size, repo.route_count(stage_pk))
+
+    spawns: tuple[SpawnFacts, ...] = ()
+    spawns_page: SectionPage | None = None
+    if include_spawns:
+        spawns = tuple(
+            SpawnFacts(
+                wave_index=s.wave_index,
+                enemy_game_id=s.enemy_game_id,
+                enemy_level_variant=s.enemy_level_variant,
+                route_index=s.route_index,
+                spawn_time=s.spawn_time,
+                count=s.count,
+                interval=s.interval,
+                spawn_group=s.spawn_group,
+                hidden=s.hidden,
+            )
+            for s in repo.spawns(stage_pk, size, offset)
+        )
+        spawns_page = _section_page(p, size, repo.spawn_count(stage_pk))
+
+    return StageDetailResult(
+        status="ok",
+        server=stage.server,
+        stage=_stage_facts(stage),
+        stage_map=stage_map,
+        tiles=tiles,
+        tiles_page=tiles_page,
+        routes=routes,
+        routes_page=routes_page,
+        spawns=spawns,
+        spawns_page=spawns_page,
     )

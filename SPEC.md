@@ -130,7 +130,7 @@ T30|x|M2 bounded Pydantic input/output models models/|V22
 T31|x|M2 FTS5 index (names, aliases, stage_code, game_id, tags) + search service|-
 T32|x|M2 search_entities tool|V19,V23,I.tool
 T33|x|M2 search_stages tool (exact stage_code rank first)|V19,I.tool
-T34|.|M2 get_stage tool (include_map/routes/spawns flags + pagination)|V19,V22,I.tool
+T34|x|M2 get_stage tool (include_map/routes/spawns flags + pagination)|V19,V22,I.tool
 T35|.|M2 get_enemy tool|V5,V23,I.tool
 T36|.|M2 instructions.py (facts/observations/recommendations distinction in first 512 chars)|V6,V7
 T37|.|M2 optional MCP resources arknights:// + mcp/resources.py|V27,I.resource
