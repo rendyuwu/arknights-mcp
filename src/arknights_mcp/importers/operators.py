@@ -27,7 +27,6 @@ from typing import Any
 
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.field_policy import (
-    BLACKBOARD_ALLOWLIST,
     CHARACTER_ALLOWLIST,
     PHASE_ALLOWLIST,
     PHASE_ATTR_ALLOWLIST,
@@ -35,11 +34,12 @@ from arknights_mcp.importers.field_policy import (
     SKILL_LINK_ALLOWLIST,
     SP_DATA_ALLOWLIST,
     TALENT_CANDIDATE_ALLOWLIST,
+    allowlist_blackboard,
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.sources.base import SourceAdapter
-from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
+from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
 
 _LOG = logging.getLogger(__name__)
@@ -149,27 +149,6 @@ class OperatorImportResult:
 # --- coercion helpers --------------------------------------------------------
 
 
-def _suffix_int(value: Any, prefix: str) -> int | None:
-    """``"TIER_6"`` / ``"PHASE_0"`` → ``6`` / ``0``; a plain int passes through.
-
-    Real ``rarity`` (``TIER_<n>``, 1-indexed: ``TIER_6`` = 6★) and unlock
-    ``phase`` (``PHASE_<n>``) are enum strings; older dumps use a bare int, kept
-    as-is (a documented limitation for the 0-indexed legacy form). ``bool`` — an
-    ``int`` subclass — is rejected so a stray ``True`` never counts as ``1``.
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        upper = value.strip().upper()
-        head = prefix.upper()
-        tail = upper[len(head) :]
-        if upper.startswith(head) and tail.isdigit():
-            return int(tail)
-    return None
-
-
 def _enum_text(value: Any) -> str | None:
     """Enum-ish field (``skillType``/``spType``/``durationType``) → text or ``None``.
 
@@ -185,20 +164,6 @@ def _enum_text(value: Any) -> str | None:
     if isinstance(value, int):
         return str(value)
     return None
-
-
-def _allowlist_blackboard(raw: Any) -> list[dict[str, Any]] | None:
-    """Strictly allowlist a ``blackboard`` list to ``{key, value, valueStr}`` items.
-
-    Read from the raw source (not a broadly-kept parent), so no unallowlisted
-    parameter key or prose leaf is stored (§V31). ``None`` for an absent/empty list.
-    """
-    if not isinstance(raw, list):
-        return None
-    out = [
-        apply_allowlist(item, BLACKBOARD_ALLOWLIST).kept for item in raw if isinstance(item, dict)
-    ]
-    return out or None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -227,7 +192,7 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                 continue
             kept = apply_allowlist(raw_level, SKILL_LEVEL_ALLOWLIST).kept
             sp = apply_allowlist(_as_dict(raw_level.get("spData")), SP_DATA_ALLOWLIST).kept
-            blackboard = _allowlist_blackboard(raw_level.get("blackboard"))
+            blackboard = allowlist_blackboard(raw_level.get("blackboard"))
             kept_levels.append({**kept, "spData": sp, "blackboard": blackboard})
             levels.append(
                 ParsedSkillLevel(
@@ -363,7 +328,7 @@ def _parse_skill_links(raw_skills: Any) -> tuple[list[ParsedSkillLink], list[dic
             ParsedSkillLink(
                 skill_game_id=skill_id,
                 slot_index=i + 1,  # 1-based skill slot
-                unlock_phase=_suffix_int(unlock.get("phase"), "PHASE_"),
+                unlock_phase=suffix_int(unlock.get("phase"), "PHASE_"),
                 unlock_level=as_int(unlock.get("level")),
             )
         )
@@ -384,7 +349,7 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
             if not isinstance(cand, dict):
                 continue
             kept = apply_allowlist(cand, TALENT_CANDIDATE_ALLOWLIST).kept
-            blackboard = _allowlist_blackboard(cand.get("blackboard"))
+            blackboard = allowlist_blackboard(cand.get("blackboard"))
             kept_cands.append({**kept, "blackboard": blackboard})
             if display_name is None:
                 display_name = as_str(kept.get("name"))
@@ -392,7 +357,7 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
             variants.append(
                 ParsedTalentVariant(
                     variant_index=vi,
-                    unlock_phase=_suffix_int(cond.get("phase"), "PHASE_"),
+                    unlock_phase=suffix_int(cond.get("phase"), "PHASE_"),
                     unlock_level=as_int(cond.get("level")),
                     potential_rank=as_int(kept.get("requiredPotentialRank")),
                     blackboard=blackboard,
@@ -438,7 +403,7 @@ def parse_operators(character_raw: Any) -> list[ParsedOperator]:
             ParsedOperator(
                 game_id=game_id,
                 display_name=name,
-                rarity=_suffix_int(kept.get("rarity"), "TIER_"),
+                rarity=suffix_int(kept.get("rarity"), "TIER_"),
                 profession=profession,
                 subclass_id=as_str(kept.get("subProfessionId")),
                 position=as_str(kept.get("position")),

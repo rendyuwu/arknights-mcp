@@ -48,6 +48,29 @@ def json_or_none(value: Any) -> str | None:
     return None if value is None else json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def suffix_int(value: Any, prefix: str) -> int | None:
+    """``"TIER_6"`` / ``"PHASE_0"`` → ``6`` / ``0``; a plain int passes through.
+
+    Real Arknights enum strings (``rarity`` = ``TIER_<n>`` 1-indexed, unlock
+    ``phase`` = ``PHASE_<n>``, module ``unlockEvolvePhase`` = ``PHASE_<n>``) carry
+    their int payload as a ``<prefix>_<n>`` suffix; older dumps use a bare int, kept
+    as-is (a documented limitation for the 0-indexed legacy form). ``bool`` -- an
+    ``int`` subclass -- is rejected so a stray ``True`` never counts as ``1``. The
+    single home (§V37) for the two former private copies in the operator importer.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        upper = value.strip().upper()
+        head = prefix.upper()
+        tail = upper[len(head) :]
+        if upper.startswith(head) and tail.isdigit():
+            return int(tail)
+    return None
+
+
 def json_load(raw: str | None) -> Any:
     """Decode a stored (already allowlisted + sanitized) JSON fragment (§V18/§V31).
 

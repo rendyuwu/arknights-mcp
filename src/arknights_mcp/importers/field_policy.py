@@ -126,9 +126,32 @@ TALENT_CANDIDATE_ALLOWLIST: frozenset[str] = frozenset(
     {"name", "unlockCondition", "requiredPotentialRank", "prefabKey", "blackboard"}
 )
 
-#: One ``blackboard`` parameter entry shared by skills + talents (§V31: keep the
-#: structural key/value, drop anything else).
+#: One ``blackboard`` parameter entry shared by skills + talents + modules (§V31:
+#: keep the structural key/value, drop anything else).
 BLACKBOARD_ALLOWLIST: frozenset[str] = frozenset({"key", "value", "valueStr"})
+
+#: Scalar module fields from ``uniequip_table.equipDict[]`` (§V18). Prose
+#: (``uniEquipDesc``) and icon/color/mission fields are intentionally absent and
+#: thus excluded; ``uniEquipName`` is a short display label (kept, like an operator
+#: name). ``itemCost`` is *not* kept whole here -- it is a nested per-level dict of
+#: item lists, extracted level-by-level with ITEM_COST_ALLOWLIST (§V31).
+UNIEQUIP_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "uniEquipId",
+        "uniEquipName",
+        "charId",
+        "type",
+        "typeName1",
+        "typeName2",
+        "showEvolvePhase",
+        "unlockEvolvePhase",
+        "showLevel",
+        "unlockLevel",
+    }
+)
+
+#: One ``itemCost`` entry for a module upgrade level (all id/count/enum; no prose).
+ITEM_COST_ALLOWLIST: frozenset[str] = frozenset({"id", "count", "type"})
 
 
 @dataclass(frozen=True)
@@ -181,3 +204,19 @@ def apply_allowlist(
         else:
             kept[key] = sanitize_value(value, max_length=max_length)
     return AllowlistResult(kept=kept, dropped=sorted(dropped))
+
+
+def allowlist_blackboard(raw: Any) -> list[dict[str, Any]] | None:
+    """Strictly allowlist a ``blackboard`` list to ``{key, value, valueStr}`` items.
+
+    Read from the raw source (not a broadly-kept parent), so no unallowlisted
+    parameter key or prose leaf is stored (§V31). ``None`` for an absent/empty list.
+    The single home (§V37) for the blackboard projection shared by the skill/talent
+    (operator) and module importers.
+    """
+    if not isinstance(raw, list):
+        return None
+    out = [
+        apply_allowlist(item, BLACKBOARD_ALLOWLIST).kept for item in raw if isinstance(item, dict)
+    ]
+    return out or None
