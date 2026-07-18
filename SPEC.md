@@ -142,7 +142,7 @@ T42|x|M4 operator+skill+talent importer (character_table, skill_table, aliases)|
 T43|x|M4 module importer (uniequip_table, uniequip_data, battle_equip_table)|V18
 T44|x|M4 get_operator tool (include summary/phases/skills/talents/modules/provenance) + operator golden extends T41 suite (deferred from T41: M3 had no operator read path — `services/operators.py` stub, importer T42 + this tool unbuilt ∴ operator facts+region+provenance scenario → `tests/golden` lands here w/ get_operator)|V5,I.tool
 T45|.|M4 compare_operator_modules tool (levels 1/2/3, modes facts_only + with_observations)|V7,I.tool
-T46|.|M4 module analyzer deterministic observations analyzers/module.py|V6,V7,V26
+T46|x|M4 module analyzer deterministic observations analyzers/module.py|V6,V7,V26
 T47|.|M5 packaging + fresh-clone install smoke (locked deps, uv run serve --transport stdio)|-
 T48|.|M5 Claude Code + Codex setup docs (current official formats)|-
 T49|.|M5 release audit: no bundled data + policy files complete|V16
