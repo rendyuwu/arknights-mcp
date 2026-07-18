@@ -126,7 +126,7 @@ T26|x|M1 source list/enable/disable/purge --rebuild + source_policy_events|V20,V
 T27|x|M1 get_data_status + get_data_sources services|V27
 T28|x|M1 takedown drill test: disable+purge+rebuild, current DB stays until validate|V20
 T29|x|M2 mcp/tool_registry.py + envelopes.py (schema_version, status, provenance, read-only hints)|V21,V22,V23
-T30|.|M2 bounded Pydantic input/output models models/|V22
+T30|x|M2 bounded Pydantic input/output models models/|V22
 T31|x|M2 FTS5 index (names, aliases, stage_code, game_id, tags) + search service|-
 T32|.|M2 search_entities tool|V19,V23,I.tool
 T33|.|M2 search_stages tool (exact stage_code rank first)|V19,I.tool

@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 from arknights_mcp.db.repositories.search import SearchRepository
+from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT
 
-#: §V19 search-result bounds.
-DEFAULT_LIMIT = 10
-MAX_LIMIT = 50
+#: §V19 search-result bounds. Single home is ``models.common`` (§V37); re-exported
+#: under the service-local names the rest of this module already uses.
+DEFAULT_LIMIT = SEARCH_DEFAULT_LIMIT
+MAX_LIMIT = SEARCH_MAX_LIMIT
 #: Cap tokens so a pathological query cannot build an unbounded MATCH expression.
 _MAX_TOKENS = 16
 #: Word runs only: stripping every FTS/SQL metacharacter at the tokenizer means the
