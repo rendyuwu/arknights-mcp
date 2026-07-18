@@ -31,16 +31,21 @@ _INSERT_SQL = (
 )
 
 # Enemies + operators aggregate their aliases via a correlated GROUP_CONCAT so one
-# document holds every alias for the entity; stages have no alias table.
+# document holds every alias for the entity; stages have no alias table. The
+# ``ORDER BY a.alias`` pins the concat order -- SQLite's default GROUP_CONCAT order
+# is arbitrary, so two builds of byte-identical source could otherwise emit the
+# aliases in different orders, diverging the FTS document bytes -> the file-level
+# database_hash -> T24's "unchanged -> no-op" promotion (and reproducibility).
 _ENEMY_SQL = (
     "SELECT e.enemy_pk, e.server, e.game_id, e.display_name, "
-    "(SELECT GROUP_CONCAT(a.alias, ' ') FROM enemy_aliases a WHERE a.enemy_pk = e.enemy_pk) "
+    "(SELECT GROUP_CONCAT(a.alias, ' ' ORDER BY a.alias) FROM enemy_aliases a "
+    "WHERE a.enemy_pk = e.enemy_pk) "
     "FROM enemies e"
 )
 _STAGE_SQL = "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code FROM stages s"
 _OPERATOR_SQL = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.tag_json, "
-    "(SELECT GROUP_CONCAT(a.alias, ' ') FROM operator_aliases a "
+    "(SELECT GROUP_CONCAT(a.alias, ' ' ORDER BY a.alias) FROM operator_aliases a "
     "WHERE a.operator_pk = o.operator_pk) "
     "FROM operators o"
 )
@@ -80,3 +85,18 @@ def build_search_index(conn: sqlite3.Connection) -> int:
 
     conn.executemany(_INSERT_SQL, rows)
     return len(rows)
+
+
+def rebuild_search_index(conn: sqlite3.Connection) -> int:
+    """Clear and repopulate ``entity_fts`` so it matches the current base tables.
+
+    ``entity_fts`` is a *standalone* FTS5 index with no triggers (migration 0007):
+    a build is immutable once promoted, so nothing tracks base-table edits. A
+    filtered purge (:mod:`arknights_mcp.db.purge`) *does* delete base rows in place
+    on the candidate, which would leave the purged source's documents behind and
+    let a taken-down entity keep surfacing in search (§V16/§V20). Dropping and
+    rebuilding the whole index keeps it consistent with the surviving rows -- and
+    FTS population stays a single home (§V37) rather than a per-domain delete fork.
+    """
+    conn.execute("DELETE FROM entity_fts")
+    return build_search_index(conn)

@@ -27,6 +27,7 @@ from arknights_mcp.db.migrations import open_writable
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.db.promotion import PromotionResult, promote_candidate
 from arknights_mcp.db.validate import ValidationReport, validate_database
+from arknights_mcp.importers.search_index import rebuild_search_index
 from arknights_mcp.util.sqlite import integrity_guard
 
 
@@ -186,6 +187,11 @@ def purge_and_rebuild(
                 on_error=conn.rollback,
             ):
                 affected = _purge_source_rows(conn, source_id)
+                # entity_fts is a standalone FTS5 index with no triggers (0007), so
+                # deleting base rows above leaves the purged source's search
+                # documents behind. Rebuild the index from the surviving rows so a
+                # taken-down entity no longer surfaces in search (§V16/§V20/§V32).
+                rebuild_search_index(conn)
                 materialize_policy_events(conn, policy_events)
                 conn.commit()
         finally:

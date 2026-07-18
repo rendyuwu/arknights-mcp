@@ -74,9 +74,19 @@ def _match_expression(query: str) -> str | None:
     return " ".join(f'"{tok}"*' for tok in tokens[:_MAX_TOKENS])
 
 
-def _clamp_limit(limit: int) -> int:
-    """Clamp to the §V19 window: at least 1, at most :data:`MAX_LIMIT`."""
-    return max(1, min(int(limit), MAX_LIMIT))
+def _validate_limit(limit: int) -> int:
+    """Reject a ``limit`` outside the §V19 window -- never silently widen it.
+
+    Mirrors :class:`~arknights_mcp.models.search.SearchEntitiesInput`
+    (``ge=1, le=SEARCH_MAX_LIMIT``): the model is the MCP gate, but a caller
+    reaching this service directly (or a future transport that skips model
+    validation) must get the *same* rejection, not a silent clamp -- one §V19
+    contract, enforced identically in both places.
+    """
+    value = int(limit)
+    if value < 1 or value > MAX_LIMIT:
+        raise ValueError(f"limit {value} outside the §V19 window [1, {MAX_LIMIT}]")
+    return value
 
 
 def search_entities(
@@ -91,9 +101,10 @@ def search_entities(
 
     ``server`` scopes the result to one region (§V5, never silently mixed);
     ``entity_type`` narrows to ``operator`` | ``enemy`` | ``stage``. ``limit`` is
-    clamped to the §V19 window. Both transports call this same function (§V14).
+    validated against the §V19 window -- an out-of-range value is *rejected*
+    (``ValueError``), never silently widened. Both transports call this (§V14).
     """
-    bounded = _clamp_limit(limit)
+    bounded = _validate_limit(limit)
     match = _match_expression(query)
     if match is None:
         return SearchResult(status="not_found", query=query, hits=())

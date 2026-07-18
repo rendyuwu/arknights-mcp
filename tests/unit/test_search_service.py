@@ -155,9 +155,19 @@ def test_result_bounded_to_v19_max(tmp_path: Path) -> None:
     writer.commit()
     writer.close()
     with open_read_only(path) as conn:
-        assert len(search_entities(conn, query="sarkaz", limit=100).hits) == MAX_LIMIT
+        # Ask for the max window and get exactly it, even though more rows match.
+        assert len(search_entities(conn, query="sarkaz", limit=MAX_LIMIT).hits) == MAX_LIMIT
         # Default caps at 10 without an explicit limit.
         assert len(search_entities(conn, query="sarkaz").hits) == 10
+
+
+def test_out_of_range_limit_rejected(conn: sqlite3.Connection) -> None:
+    # §V19: the service *rejects* an out-of-range limit rather than silently
+    # clamping -- the same contract SearchEntitiesInput enforces at the MCP gate,
+    # so a caller reaching the service directly gets no silent widening/narrowing.
+    for bad in (0, -1, MAX_LIMIT + 1, 100):
+        with pytest.raises(ValueError):
+            search_entities(conn, query="drone", limit=bad)
 
 
 def test_operator_tags_and_aliases_indexed(tmp_path: Path) -> None:

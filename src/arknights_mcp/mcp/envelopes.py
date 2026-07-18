@@ -37,7 +37,9 @@ from typing import Literal, get_args
 SCHEMA_VERSION = "0.1"
 
 #: §V22 default response cap. The serialized envelope (as emitted by
-#: :meth:`ResponseEnvelope.to_dict` -> JSON) must stay under this size; large
+#: :meth:`ResponseEnvelope.to_dict` -> JSON) must stay under this size, measured
+#: at its worst-case ASCII-escaped byte length (see :func:`serialized_size`) so
+#: the cap holds on the wire regardless of the transport's encoding; large
 #: map/spawn payloads are opt-in via tool include flags + pagination (§T34).
 MAX_RESPONSE_BYTES = 200_000
 
@@ -135,8 +137,17 @@ class ResponseEnvelope:
 
 
 def serialized_size(envelope: ResponseEnvelope) -> int:
-    """Byte size of ``envelope`` as it goes on the wire (compact UTF-8 JSON)."""
-    return len(json.dumps(envelope.to_dict(), ensure_ascii=False).encode("utf-8"))
+    """Worst-case wire byte size of ``envelope`` for the §V22 cap.
+
+    Measured with ``ensure_ascii=True`` (JSON's default): a CJK/astral character
+    serializes to its ``\\uXXXX`` escape, whose byte length is >= its raw UTF-8
+    encoding (a 3-byte CJK char -> 6 ASCII bytes). So this is an upper bound on the
+    bytes any JSON serializer can emit for the envelope -- the §V22 cap then holds
+    on the wire whether the transport (T51) emits compact UTF-8 or ASCII-escaped
+    JSON. Fail-closed: a CN-heavy payload is measured at its largest, never passing
+    a cap it would exceed once escaped.
+    """
+    return len(json.dumps(envelope.to_dict()).encode("utf-8"))
 
 
 def _validate_status(status: str) -> None:

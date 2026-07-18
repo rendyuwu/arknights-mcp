@@ -2,7 +2,7 @@
 
 Covers each gate check -- ``integrity_check``, ``foreign_key_check``,
 critical-table presence, row-count sanity, cross-region orphan detection, the
-FTS smoke test (skipped until §T31), and golden domain invariants -- plus the
+FTS smoke + integrity check (§T31), and golden domain invariants -- plus the
 CLI's exit code. A candidate is promotable only if every check passes (§V4).
 """
 
@@ -54,9 +54,25 @@ def test_valid_candidate_passes_all_checks(tmp_path: Path) -> None:
     )
     assert report.passed
     assert all(c.passed for c in report.checks)
-    # §T31: the FTS index now exists and its smoke check queries it (no longer a
-    # no-op pass).
-    assert "FTS table(s) queryable" in _check(report, "fts_smoke").detail
+    # §T31: the FTS index now exists; the check queries it and runs FTS5's own
+    # integrity-check (no longer a no-op pass).
+    assert "consistent" in _check(report, "fts_smoke").detail
+
+
+def test_corrupt_fts_index_detected(tmp_path: Path) -> None:
+    # §V4: PRAGMA integrity_check does not verify FTS5 shadow tables, so the gate
+    # runs FTS5's own integrity-check. Corrupt the index's shadow data and the
+    # fts_smoke check must fail the candidate (a stale/corrupt index never promotes).
+    path = _valid_candidate(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA writable_schema = ON")
+    # Drop the highest-id shadow row -> the inverted index disagrees with content.
+    conn.execute("DELETE FROM entity_fts_data WHERE id = (SELECT MAX(id) FROM entity_fts_data)")
+    conn.commit()
+    conn.close()
+    report = validate_database(path)
+    assert not report.passed
+    assert not _check(report, "fts_smoke").passed
 
 
 # --- unreadable / corrupt files -----------------------------------------------

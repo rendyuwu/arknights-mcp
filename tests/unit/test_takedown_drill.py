@@ -26,6 +26,7 @@ from arknights_mcp.db.policy_events import read_events
 from arknights_mcp.db.promotion import promote_candidate, resolve_active_database
 from arknights_mcp.db.purge import purge_and_rebuild
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
+from arknights_mcp.services.search import search_entities
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -154,6 +155,16 @@ def test_takedown_drill_purges_only_target_keeps_others_live(tmp_path: Path) -> 
     with read_only_connection(rebuilt) as conn:
         remaining = {row[0] for row in conn.execute("SELECT source_id FROM source_snapshots")}
     assert remaining == {_PRIMARY}
+
+    # The FTS index was rebuilt with the purge (§V16/§V20/§V32): entity_fts is a
+    # standalone FTS5 index with no triggers, so the purge must clear + rebuild it
+    # or the taken-down source's documents linger and keep surfacing in search.
+    assert _count(rebuilt, "SELECT COUNT(*) FROM entity_fts WHERE server = 'en'") == 0
+    assert _count(rebuilt, "SELECT COUNT(*) FROM entity_fts WHERE server = 'cn'") > 0
+    with read_only_connection(rebuilt) as conn:
+        # The purged en entity no longer surfaces; the live cn source still does.
+        assert search_entities(conn, query="drone", server="en").hits == ()
+        assert search_entities(conn, query="drone", server="cn").hits
 
     # The pre-purge build stayed valid until the rebuild validated: it was copied,
     # never mutated in place, so it survives byte-identical (§V4 backstop of §V20).

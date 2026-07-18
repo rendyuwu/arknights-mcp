@@ -3,14 +3,18 @@
 A candidate is promotable only after it passes this gate (§V4): SQLite
 ``PRAGMA integrity_check`` + ``PRAGMA foreign_key_check``, a critical-table
 presence check, row-count sanity, an orphan/cross-region consistency check, an
-FTS smoke test (skipped until the FTS index exists, §T31), and golden domain
-invariants (regions confined to ``{en, cn}``; the schema version matches the
-applied migrations). The report is data only -- the caller decides whether to
-promote -- so ``sync``/``import``/``purge`` all gate promotion on the same result
-and the ``validate`` CLI command can print it without side effects.
+FTS smoke + integrity check (skipped until the FTS index exists, §T31), and
+golden domain invariants (regions confined to ``{en, cn}``; the schema version
+matches the applied migrations). The report is data only -- the caller decides
+whether to promote -- so ``sync``/``import``/``purge`` all gate promotion on the
+same result and the ``validate`` CLI command can print it without side effects.
 
 Read-only: the candidate is opened through the read-only connection factory
-(§V2); validation never mutates it.
+(§V2); validation never mutates it. The one exception is FTS5's own
+``integrity-check`` command -- ``PRAGMA integrity_check`` does not verify FTS5
+shadow tables, and SQLite prepares ``integrity-check`` as a write statement, so
+it runs on a short-lived writable handle. It performs no writes and leaves the
+candidate byte-identical, so byte-reproducibility (T24) is preserved.
 """
 
 from __future__ import annotations
@@ -145,8 +149,18 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
     return CheckResult("orphans", True, "no cross-region references")
 
 
-def _fts_smoke(conn: sqlite3.Connection) -> CheckResult:
-    """Smoke-test any FTS index; a no-op pass until the FTS index lands (§T31)."""
+def _fts_smoke(conn: sqlite3.Connection, db_path: Path) -> CheckResult:
+    """Smoke-test + integrity-check any FTS index (§V4; no-op until §T31 lands).
+
+    Two layers guard the promotion gate. First a no-match ``MATCH`` proves the
+    index is queryable on the read-only connection. Then FTS5's own
+    ``integrity-check`` verifies the inverted index against its stored content --
+    which ``PRAGMA integrity_check`` does *not* cover, so a corrupt/inconsistent
+    FTS index would otherwise pass validation and get promoted. ``integrity-check``
+    is prepared as a write statement (rejected on the ``mode=ro`` handle), so it
+    runs on a short-lived writable connection; it performs no writes, leaving the
+    candidate byte-identical (T24).
+    """
     fts_tables = [
         row[0]
         for row in conn.execute(
@@ -160,7 +174,20 @@ def _fts_smoke(conn: sqlite3.Connection) -> CheckResult:
             conn.execute(f"SELECT COUNT(*) FROM {name} WHERE {name} MATCH ?", ("zzzznomatch",))
     except sqlite3.Error as exc:
         return CheckResult("fts_smoke", False, f"FTS query failed: {exc}")
-    return CheckResult("fts_smoke", True, f"{len(fts_tables)} FTS table(s) queryable")
+    try:
+        writable = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=rw", uri=True)
+    except sqlite3.Error as exc:
+        return CheckResult("fts_smoke", False, f"cannot open for FTS integrity check: {exc}")
+    try:
+        for name in fts_tables:
+            # FTS5's own consistency check; raises SQLITE_CORRUPT_VTAB if the index
+            # disagrees with its content. `name` is a trusted sqlite_master ident.
+            writable.execute(f"INSERT INTO {name}({name}) VALUES('integrity-check')")  # noqa: S608
+    except sqlite3.Error as exc:
+        return CheckResult("fts_smoke", False, f"FTS integrity check failed: {exc}")
+    finally:
+        writable.close()
+    return CheckResult("fts_smoke", True, f"{len(fts_tables)} FTS index(es) consistent")
 
 
 def _golden(conn: sqlite3.Connection, *, expected_schema_version: str | None) -> CheckResult:
@@ -231,7 +258,7 @@ def validate_database(
             _safe("critical_tables", lambda: _critical_tables(conn)),
             _safe("row_counts", lambda: _row_counts(conn, min_snapshots=min_snapshots)),
             _safe("orphans", lambda: _orphans(conn)),
-            _safe("fts_smoke", lambda: _fts_smoke(conn)),
+            _safe("fts_smoke", lambda: _fts_smoke(conn, path)),
             _safe("golden", lambda: _golden(conn, expected_schema_version=expected_schema_version)),
         ]
         schema_version = _schema_version(conn)
