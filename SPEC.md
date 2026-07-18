@@ -128,7 +128,7 @@ T28|x|M1 takedown drill test: disable+purge+rebuild, current DB stays until vali
 T29|x|M2 mcp/tool_registry.py + envelopes.py (schema_version, status, provenance, read-only hints)|V21,V22,V23
 T30|x|M2 bounded Pydantic input/output models models/|V22
 T31|x|M2 FTS5 index (names, aliases, stage_code, game_id, tags) + search service|-
-T32|.|M2 search_entities tool|V19,V23,I.tool
+T32|x|M2 search_entities tool|V19,V23,I.tool
 T33|.|M2 search_stages tool (exact stage_code rank first)|V19,I.tool
 T34|.|M2 get_stage tool (include_map/routes/spawns flags + pagination)|V19,V22,I.tool
 T35|.|M2 get_enemy tool|V5,V23,I.tool
