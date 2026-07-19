@@ -163,7 +163,7 @@ T61|x|M7 local↔remote result parity tests|V14
 T62|x|M7 privacy log scan (no token/prompt/args/body)|V12
 T63|x|M7 no-bulk-reconstruction test|V19
 T64|x|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
-T65|.|M7 tag private-alpha v0.1.0 release|-
+T65|x|M7 tag private-alpha v0.1.0 release|-
 T66|x|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18,V36
 T67|x|M1 real-shape contract test: fixture built from real enemy_database/stage_table/level shapes (⊥ synthetic-only); assert `sync`/`import` 4-4 → non-empty enemies+tiles+spawns+`stage_enemies`|V29,V30
 T68|x|M1 CI-only real-shape validation vs LIVE upstream (T67 is fixture-only ∴ proves internal consistency, ⊥ real-upstream fidelity of inferred mappings): fetch pinned `arknights_assets_gamedata` (+ `kengxxiao_gamedata` CN validator) commit, run `sync`/`import`, assert real 4-4 → non-null `hp`/`res`/`attackInterval`/`weight`/`lifePointReduction`/`motion` + non-empty tiles/spawns/`stage_enemies`; ⊥ commit fetched raw data (V16 code-only, fetch→discard). on pass → promote inferred mappings (`massLevel`→weight, `lifePointReduce`→lifePointReduction, `preDelay`→spawnTime, `maxTimeWaitingForNextWave`→maxTimeWaiting, positional route/wave index) into §V29 + drop `normalization.py` "inferred" caveat|V16,V29,V30,C
