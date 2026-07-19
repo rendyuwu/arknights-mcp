@@ -22,7 +22,7 @@ read-only Python 3.12 Arknights Intelligence MCP. 1 shared core → 2 transports
 - ⊥ game login | roster storage (v0.1) | squad optimizer | combat sim | banner/gacha planning.
 - regions v0.1: `en`, `cn`.
 - primary source `arknights_assets_gamedata`; CN validator `kengxxiao_gamedata` (CI only); `penguin_statistics` + official news disabled v0.1.
-- CI: lint + type + test on Windows + macOS + Linux.
+- CI: lint + type + test on Linux/`ubuntu-latest` only. ⊥ Windows|macOS (Docker-based ∴ OS-portable; no macOS device ∴ ⊥ real test).
 
 ## §I INTERFACES
 
@@ -176,6 +176,7 @@ T74|x|fix B18: `get_data_sources`/service `SourceInfo` route through single `reg
 T75|x|V38: split `cli.py` (604 ln, ≥3 cmd groups) → `cli/` package: 1 module/command-group (`sync`\|`import`\|`validate`\|`status`+`doctor`\|`source`) + shared `cli/_shared.py` helpers; pure structural move, ⊥ behavior change|V38
 T76|x|fix B30: `analyzers/rules/pressure_spike.py` ⊥ conclude burst from cross-wave `first/last_spawn_time` min/max (fragment-relative preDelay, ≠ elapsed) → per V39 pick (c) downgrade conf + record limitation, \| (a)/(b) expose wave+fragment offset to `StageThreatContext` for real window; add `test_analyzer_rules.py` case: 1 enemy across ≥6 fragments @low `preDelay` ⊥ report spike (\| reports w/ limitation + reduced conf)|V39,V26
 T77|x|M2 (deferred): build `get_data_status` + `get_data_sources` MCP tools over the T27 domain services (`services/status.py` + `services/source_status.py`); register both in `mcp/tools/__init__._TOOL_BUILDERS` (§V14/§V37 single home) → both transports dispatch all 9 §I.tool tools (currently 7). typed envelope §V21/§V22/§V23; `get_data_sources` public-safe via `registry.public_view` (§V27/§V34, ⊥ secrets\|paths\|OAuth config\|takedown notes); `get_data_status` region + provenance, en/cn ⊥ mixed (§V5). add MCP Inspector contract tests (PRD §24.7 acceptance: ∀ 9 tools pass). NB: `arknights://status`+`arknights://sources` resources (T37) already surface this data, but PRD §13.9/§13.10 label both `Tool` ∴ tool surface required unless ADR drops them from §I|V5,V21,V22,V23,V27,V34,V14,I.tool
+T78|x|amend `.github/workflows/ci.yml` `lint-type-test` matrix → drop `macos-latest`+`windows-latest`, keep `ubuntu-latest` only (Docker ∴ OS-portable; no macOS device ∴ ⊥ real test). update stale `# SPEC §C` comment L19. `live-upstream`+`cn-cross-validate` jobs already `ubuntu-latest` (no change). also bump `actions/checkout@v4`→`@v5` + `astral-sh/setup-uv@v5`→`@v7` (both → node24) ∀ 3 jobs ∴ clear Node20-deprecation warning|C
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
