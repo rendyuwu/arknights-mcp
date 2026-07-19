@@ -35,6 +35,7 @@ from time import monotonic
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from arknights_mcp.middleware._shared import principal_id_of
+from arknights_mcp.util.text import strip_control_chars
 
 _LOG = logging.getLogger("arknights_mcp.access")
 
@@ -60,8 +61,12 @@ class RedactedLoggingMiddleware:
             await self._app(scope, receive, send)
             return
 
-        method = scope.get("method", "-")
-        path = scope.get("path", "-")
+        # Strip control/format chars before logging: uvicorn percent-decodes the
+        # URL into ``scope["path"]``, so a ``%0a``-laced path would otherwise inject a
+        # forged line into the access log (log forging). ``method`` is sanitized for
+        # the same reason -- both are attacker-controlled request line fields (§V12).
+        method = strip_control_chars(scope.get("method", "-"))
+        path = strip_control_chars(scope.get("path", "-"))
         started = self._clock()
         status = 0
 

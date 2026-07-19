@@ -3,12 +3,17 @@
 Two more of the five §V11 remote controls (rate + concurrency live in
 :mod:`.rate_limit`; the response cap is the §V22 envelope builder's job -- see below):
 
-* **Request cap** -- an ``http`` request body larger than ``max_request_bytes`` is
-  rejected with ``413`` before the inner app runs. A declared ``Content-Length``
-  over the cap is refused up front; a request without one (or a lying one) is bounded
-  as its body streams by a wrapped ``receive`` that fails closed the moment the
-  cumulative bytes cross the cap. So the cap holds whether or not the client is
-  honest about the length.
+* **Request cap** -- a declared ``Content-Length`` over ``max_request_bytes`` is
+  refused ``413`` up front, before the inner app runs. A request that omits (or lies
+  about) its length is still bounded as its body streams: a wrapped ``receive`` stops
+  reading and fails closed the moment the cumulative bytes cross the cap, so an
+  oversized chunked body can never be buffered whole -- the *memory* bound holds
+  whether or not the client is honest. NB on the *status*: the SDK reads the POST body
+  (``await request.body()``) inside its own ``try/except`` and converts a mid-read
+  overflow to its generic ``500`` before it can propagate to this middleware, so on the
+  current SDK only the declared-length path yields a typed ``413``. The
+  ``except _RequestTooLarge`` below is kept as a defensive fallback for a composition
+  where the overflow does reach us (and it is what the unit test exercises).
 * **Request timeout** -- a non-GET ``http`` request that has not begun its response
   within ``timeout_seconds`` is abandoned and answered ``504``. ``GET`` is exempt:
   the Streamable HTTP protocol serves the long-lived server->client SSE stream over

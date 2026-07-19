@@ -25,7 +25,6 @@ adapter :meth:`OidcTokenVerifier.verify_token` collapses any failure to ``None``
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -212,8 +211,3 @@ class OidcTokenVerifier:
             # Bad signature, wrong alg (none/HS*), malformed token, etc.
             raise AuthError("invalid_token", 401, "token invalid") from exc
         return claims
-
-
-def required_scopes_from(settings: OidcSettings) -> Sequence[str]:
-    """Expose the configured required scopes for a ``WWW-Authenticate`` ``scope=``."""
-    return settings.required_scopes
