@@ -178,7 +178,16 @@ REAL_LEVEL = {
                             "preDelay": 8.0,
                             "routeIndex": 0,
                         },
-                        {"actionType": "STORY", "key": ""},
+                        # B35: real waves interleave non-spawn actions that also
+                        # carry a ``key``. A STORY key is a story-asset path (not an
+                        # enemy id — the old code leaked it as a spawn and crashed
+                        # the cross-ref check); DISPLAY_ENEMY_INFO/PREVIEW_CURSOR
+                        # name a real enemy as a codex/preview cue (the old code
+                        # fabricated a phantom count=1 spawn from each). All must
+                        # be dropped — only actionType == "SPAWN" is a spawn.
+                        {"actionType": "STORY", "key": "activities/a001/tutorial_a001_01_a"},
+                        {"actionType": "DISPLAY_ENEMY_INFO", "key": "enemy_1007_slime", "count": 1},
+                        {"actionType": "PREVIEW_CURSOR", "key": "enemy_1105_drone", "count": 1},
                     ]
                 }
             ],

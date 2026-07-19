@@ -380,10 +380,22 @@ def _normalize_action(
 ) -> dict[str, Any] | None:
     """One real wave action → normalized spawn dict, or ``None`` for a non-spawn action.
 
-    The enemy id comes from ``key`` (resolved via ``enemyDbRefs``); a spawn's level
-    variant defaults to the ref's declared level. Actions without a resolvable
-    enemy ``key`` (dialogue, camera, bgm, …) are dropped.
+    Only ``actionType == "SPAWN"`` actions describe an enemy entering the map. A
+    level's waves interleave spawns with UI/scripting actions that *also* carry a
+    ``key`` (B35): ``DISPLAY_ENEMY_INFO``/``PREVIEW_CURSOR`` name a real enemy (a
+    codex/preview cue, not a spawn) and ``STORY``'s ``key`` is a story-asset path
+    (e.g. ``activities/a001/tutorial_a001_01_a``), not an enemy id. Gating on the
+    presence of ``key`` alone both fabricated phantom spawns from the enemy-info
+    cues and leaked a ``STORY`` path as an enemy id that then failed the downstream
+    cross-reference check. Verified against live upstream @``413a81a3``: ``SPAWN``
+    is the sole enemy-spawning ``actionType`` (§V29).
+
+    The enemy id comes from ``key`` (resolved via ``enemyDbRefs``; a spawn ``key``
+    normally equals the enemy id); a spawn's level variant defaults to the ref's
+    declared level.
     """
+    if action.get("actionType") != "SPAWN":
+        return None
     key = action.get("key")
     if not isinstance(key, str) or not key:
         return None
