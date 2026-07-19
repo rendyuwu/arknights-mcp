@@ -287,6 +287,27 @@ def test_download_budget_accumulates_run_level() -> None:
         budget.charge(50)  # 110 > 100 across the run
 
 
+def test_download_budget_check_is_a_no_charge_prefetch_gate() -> None:
+    """§V42: ``check`` fails fast once the cap is blown (so no new parallel fetch
+    starts) but never charges — a run at or under the cap passes untouched."""
+    budget = DownloadBudget(100)
+    budget.check()  # nothing charged yet: no-op
+    budget.charge(100)  # exactly at cap: not over
+    budget.check()  # still fine at the boundary
+    with pytest.raises(SourceAdapterError, match="total download cap"):
+        budget.charge(1)  # 101 > 100 trips the cap (and leaves _used == 101)
+    with pytest.raises(SourceAdapterError, match="total download cap"):
+        budget.check()  # a later worker sees the blown cap and bails without fetching
+
+
+def test_https_fetcher_close_is_safe_with_no_open_connections() -> None:
+    """§T79 cleanup: ``close`` releases the (possibly empty) connection registry
+    without error, so the CLI can always call it in a ``finally``."""
+    fetcher = HttpsFetcher()
+    fetcher.close()  # nothing opened yet
+    fetcher.close()  # idempotent
+
+
 # --- redirect same-domain policy (PRD §17.4) ----------------------------------
 
 

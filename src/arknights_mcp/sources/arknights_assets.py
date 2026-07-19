@@ -15,6 +15,7 @@ refuses non-HTTPS URLs and caps redirects and response size.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import logging
@@ -119,6 +120,17 @@ class DownloadBudget:
             if self._used > self._max:
                 raise SourceAdapterError(f"sync exceeds total download cap ({self._max} bytes)")
 
+    def check(self) -> None:
+        """Raise if the cap is already exhausted, without charging (pre-fetch gate).
+
+        A parallel stager calls this before starting each download so that once one
+        worker trips the cap no further fetch begins; overshoot is bounded to the
+        in-flight set (itself bounded by the worker count), not the whole queue (§V42).
+        """
+        with self._lock:
+            if self._used > self._max:
+                raise SourceAdapterError(f"sync exceeds total download cap ({self._max} bytes)")
+
 
 class Fetcher(Protocol):
     """Fetches the bytes at an HTTPS URL, honoring a per-file byte cap."""
@@ -174,18 +186,31 @@ class HttpsFetcher:
         self._timeout = timeout
         self._allow_cross_domain = allow_cross_domain
         self._local = threading.local()
+        # Every connection ever opened, tracked so ``close`` can release sockets that
+        # were opened on worker threads which have since exited: their thread-local
+        # cache dies with the thread, but the socket would otherwise linger until GC.
+        self._all_conns: list[http.client.HTTPSConnection] = []
+        self._reg_lock = threading.Lock()
 
-    def _connection(self, host: str, port: int | None) -> http.client.HTTPSConnection:
+    def _connection(self, host: str, port: int | None) -> tuple[http.client.HTTPSConnection, bool]:
+        """Return ``(connection, is_fresh)``; ``is_fresh`` marks a just-opened socket.
+
+        A reused (non-fresh) connection may be a stale keep-alive the peer has
+        silently dropped, so the caller retries a network error once on a fresh one.
+        """
         cache: dict[tuple[str, int | None], http.client.HTTPSConnection] | None
         cache = getattr(self._local, "conns", None)
         if cache is None:
             cache = {}
             self._local.conns = cache
         conn = cache.get((host, port))
-        if conn is None:
-            conn = http.client.HTTPSConnection(host, port, timeout=self._timeout)
-            cache[(host, port)] = conn
-        return conn
+        if conn is not None:
+            return conn, False
+        conn = http.client.HTTPSConnection(host, port, timeout=self._timeout)
+        cache[(host, port)] = conn
+        with self._reg_lock:
+            self._all_conns.append(conn)
+        return conn, True
 
     def _drop(self, host: str, port: int | None) -> None:
         """Discard a broken/partly-consumed connection so it is never reused."""
@@ -195,6 +220,21 @@ class HttpsFetcher:
         conn = cache.pop((host, port), None)
         if conn is not None:
             conn.close()
+
+    def close(self) -> None:
+        """Close every connection this fetcher opened, across all worker threads.
+
+        The shared registry lets a single ``close`` from any thread release sockets
+        opened on pool workers that have already exited, so a long CLI ``sync`` does
+        not leak file descriptors until GC.
+        """
+        with self._reg_lock:
+            conns = self._all_conns
+            self._all_conns = []
+        for conn in conns:
+            with contextlib.suppress(OSError):  # defensive: already-closed socket
+                conn.close()
+        self._local.conns = {}
 
     def fetch(self, url: str, *, max_bytes: int) -> bytes:  # pragma: no cover - live network
         if not url.lower().startswith("https://"):
@@ -209,7 +249,7 @@ class HttpsFetcher:
             path = split.path or "/"
             if split.query:
                 path = f"{path}?{split.query}"
-            conn = self._connection(host, port)
+            conn, fresh = self._connection(host, port)
             try:
                 conn.request(
                     "GET",
@@ -249,11 +289,23 @@ class HttpsFetcher:
                         f"download exceeds per-file cap ({max_bytes} bytes): {url!r}"
                     )
                 return data
+            except SourceNotFoundError:
+                # 404/410 drained its body above, so the connection is still
+                # reusable -- keep it. Pruned level files (B34) are the hot path for
+                # 404s; dropping here would rebuild TLS per pruned file and defeat
+                # the keep-alive that §T79 exists to add.
+                raise
             except SourceAdapterError:
                 self._drop(host, port)
                 raise
             except (http.client.HTTPException, OSError) as exc:
                 self._drop(host, port)
+                if not fresh:
+                    # A reused keep-alive socket the peer dropped while idle: the
+                    # request never reached a live server, so reconnect and retry
+                    # once. The next _connection is fresh, so a genuine transport
+                    # fault raises on the retry instead of looping.
+                    continue
                 raise SourceAdapterError(f"network error fetching {url!r}: {exc}") from exc
 
 
@@ -318,6 +370,10 @@ class ArknightsAssetsAdapter:
         """Fetch one allowlisted file into staging (enforcing caps); return parsed JSON."""
         normalized = _validate_relative_path(relative_path)
         url = f"{self.base_url}/{normalized}"
+        # Fail fast if a concurrent worker already tripped the run-level cap so no
+        # further download starts once it is blown (bounds parallel overshoot to the
+        # in-flight set, itself bounded by the worker count, §V42).
+        self._budget.check()
         data = self._fetcher.fetch(url, max_bytes=self._limits.max_file_bytes)
         self._budget.charge(len(data))
         try:
@@ -407,8 +463,15 @@ class ArknightsAssetsAdapter:
         missing = 0
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="arkmcp-sync") as pool:
             futures = [pool.submit(self._fetch_one, p, staging_root, strict=strict) for p in items]
-            for future in as_completed(futures):
-                missing += future.result()  # re-raises a strict fetch failure, fail-closed
+            try:
+                for future in as_completed(futures):
+                    missing += future.result()  # re-raises a strict fetch failure, fail-closed
+            except BaseException:
+                # A fetch failed (strict 404, cap trip, transport fault): cancel every
+                # not-yet-started download so a doomed run stops fanning out work.
+                for f in futures:
+                    f.cancel()
+                raise
         return missing
 
     def stage(self, staging_root: str | Path) -> LocalSnapshotAdapter:

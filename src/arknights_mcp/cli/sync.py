@@ -79,17 +79,27 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
     limits = _download_limits(config)
     budget = DownloadBudget(limits.max_total_bytes)
     _out(f"sync: {_PRIMARY_SOURCE_ID} servers={','.join(servers)}")
-    with tempfile.TemporaryDirectory(prefix="arkmcp-staging-") as staging:
-        imports: list[ServerImport] = []
-        for server in servers:
-            adapter = ArknightsAssetsAdapter(
-                resolved[server],
-                server,
-                fetcher=ctx.fetcher,
-                limits=limits,
-                budget=budget,
-                max_parallel=config.sync.max_parallel_downloads,
-            )
-            local: LocalSnapshotAdapter = adapter.stage(Path(staging) / server)
-            imports.append(ServerImport(server=server, adapter=local, source_id=_PRIMARY_SOURCE_ID))
-        return _build_validate_promote(config, registry, imports, servers=servers)
+    try:
+        with tempfile.TemporaryDirectory(prefix="arkmcp-staging-") as staging:
+            imports: list[ServerImport] = []
+            for server in servers:
+                adapter = ArknightsAssetsAdapter(
+                    resolved[server],
+                    server,
+                    fetcher=ctx.fetcher,
+                    limits=limits,
+                    budget=budget,
+                    max_parallel=config.sync.max_parallel_downloads,
+                )
+                local: LocalSnapshotAdapter = adapter.stage(Path(staging) / server)
+                imports.append(
+                    ServerImport(server=server, adapter=local, source_id=_PRIMARY_SOURCE_ID)
+                )
+            return _build_validate_promote(config, registry, imports, servers=servers)
+    finally:
+        # Release any keep-alive sockets the fetcher opened across worker threads
+        # (§T79): the pool threads have exited, so only the fetcher's own registry
+        # can close them. Not every Fetcher keeps connections (e.g. a test double).
+        close = getattr(ctx.fetcher, "close", None)
+        if callable(close):
+            close()
