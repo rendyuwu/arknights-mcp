@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from arknights_mcp.util.text import is_placeholder
 
@@ -32,7 +32,13 @@ ENV_OIDC_JWKS_URL = "ARKNIGHTS_MCP_OIDC_JWKS_URL"
 # subtable (``[sync.<source_id>]``). Kept at module scope so Pydantic does not
 # capture it as a private model attribute.
 _SYNC_SCALAR_KEYS = frozenset(
-    {"enabled_sources", "allow_remote_download", "retain_versions", "max_total_download_mb"}
+    {
+        "enabled_sources",
+        "allow_remote_download",
+        "retain_versions",
+        "max_total_download_mb",
+        "max_parallel_downloads",
+    }
 )
 
 
@@ -69,8 +75,19 @@ class SyncConfig(_Model):
     allow_remote_download: bool = True
     retain_versions: int = 3
     max_total_download_mb: int = 500
+    # Bounded parallelism for the network sync (§T79/§V42): reuse a keep-alive
+    # connection per worker and fan out downloads over a thread pool. ``1`` forces
+    # the serial fallback; the pool never exceeds this bound (⊥ unbounded fan-out).
+    max_parallel_downloads: int = 8
     # Per-source subtables (``[sync.<source_id>]``) folded here from the raw TOML.
     sources: dict[str, SyncSourceConfig] = Field(default_factory=dict)
+
+    @field_validator("max_parallel_downloads")
+    @classmethod
+    def _at_least_one_worker(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("[sync].max_parallel_downloads must be >= 1")
+        return value
 
     @model_validator(mode="before")
     @classmethod

@@ -21,7 +21,7 @@ from arknights_mcp.sources.arknights_assets import (
     DownloadBudget,
     DownloadLimits,
     HttpsFetcher,
-    _BoundedRedirectHandler,
+    _validate_redirect_target,
     _validate_relative_path,
 )
 from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
@@ -247,30 +247,32 @@ def test_json_depth_cap(tmp_path: Path) -> None:
         child: dict[str, object] = {}
         node["nest"] = child
         node = child
-    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
-    fetcher = DictFetcher({url: json.dumps(deep).encode("utf-8")})
+    files = _fixture_files()
+    files[f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"] = json.dumps(deep).encode("utf-8")
     limits = DownloadLimits(max_json_depth=4)
-    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher, limits=limits)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files), limits=limits)
     with pytest.raises(SourceAdapterError, match="depth cap"):
         adapter.stage(tmp_path / "staging")
 
 
 def test_json_node_cap(tmp_path: Path) -> None:
-    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
     payload = {"enemyData": {f"e{i}": {"name": i} for i in range(50)}}
-    fetcher = DictFetcher({url: json.dumps(payload).encode("utf-8")})
+    files = _fixture_files()
+    files[f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"] = json.dumps(payload).encode(
+        "utf-8"
+    )
     limits = DownloadLimits(max_json_nodes=5)
-    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher, limits=limits)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files), limits=limits)
     with pytest.raises(SourceAdapterError, match="node cap"):
         adapter.stage(tmp_path / "staging")
 
 
 def test_deeply_nested_json_capped_gracefully(tmp_path: Path) -> None:
     """Pathologically deep JSON is rejected as a capped error, not a RecursionError."""
-    url = f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"
+    files = _fixture_files()
     payload = b"[" * 100_000 + b"]" * 100_000  # ~200 KB, under the per-file cap
-    fetcher = DictFetcher({url: payload})
-    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher)
+    files[f"{BASE_URL}/gamedata/excel/enemy_handbook_table.json"] = payload
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files))
     with pytest.raises(SourceAdapterError, match="nesting depth"):
         adapter.stage(tmp_path / "staging")
 
@@ -289,12 +291,115 @@ def test_download_budget_accumulates_run_level() -> None:
 
 
 def test_redirect_refuses_cross_domain() -> None:
-    handler = _BoundedRedirectHandler(5, allowed_host="example.test")
     with pytest.raises(SourceAdapterError, match="cross-domain"):
-        handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/x.json")
+        _validate_redirect_target(
+            "https://attacker.example/x.json",
+            origin_host="example.test",
+            allow_cross_domain=False,
+        )
 
 
 def test_redirect_refuses_non_https_target() -> None:
-    handler = _BoundedRedirectHandler(5, allowed_host="example.test")
     with pytest.raises(SourceAdapterError, match="non-HTTPS"):
-        handler.redirect_request(None, None, 302, "Found", {}, "http://example.test/x.json")
+        _validate_redirect_target(
+            "http://example.test/x.json",
+            origin_host="example.test",
+            allow_cross_domain=False,
+        )
+
+
+def test_redirect_same_domain_allowed() -> None:
+    # A same-host HTTPS redirect passes the gate (no exception).
+    _validate_redirect_target(
+        "https://example.test/other.json",
+        origin_host="example.test",
+        allow_cross_domain=False,
+    )
+
+
+# --- §V42: bounded parallel sync preserves every per-file gate + exact caps ----
+
+
+def _snapshot_relpaths(root: Path) -> set[str]:
+    return {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
+
+
+def test_parallel_and_serial_stage_identical_output(tmp_path: Path) -> None:
+    """§V42/§T79: ``max_parallel=1`` (serial fallback) and a parallel run stage the
+    exact same file set — the staged output is deterministic, independent of worker
+    completion order."""
+    serial = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), max_parallel=1)
+    parallel = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), max_parallel=8)
+
+    serial_root = tmp_path / "serial"
+    parallel_root = tmp_path / "parallel"
+    serial.stage(serial_root)
+    parallel.stage(parallel_root)
+
+    assert _snapshot_relpaths(serial_root) == _snapshot_relpaths(parallel_root)
+    assert "gamedata/excel/stage_table.json" in _snapshot_relpaths(parallel_root)
+    assert "gamedata/levels/main/level_main_04-04.json" in _snapshot_relpaths(parallel_root)
+
+
+def test_total_cap_trips_under_parallel_workers(tmp_path: Path) -> None:
+    """§V42: the run-level total-download cap still trips under N workers (a lost
+    update must not let the run overshoot the cap)."""
+    limits = DownloadLimits(max_file_bytes=10_000, max_total_bytes=64)
+    adapter = ArknightsAssetsAdapter(
+        BASE_URL, "en", fetcher=_fetcher(), limits=limits, max_parallel=8
+    )
+    with pytest.raises(SourceAdapterError, match="total download cap"):
+        adapter.stage(tmp_path / "staging")
+
+
+def test_all_gates_apply_per_file_under_parallel(tmp_path: Path) -> None:
+    """§V42: the per-file byte cap (a §V1 gate) is enforced per file regardless of
+    the worker — a parallel run rejects an oversized file just like the serial one."""
+    limits = DownloadLimits(max_file_bytes=8)
+    adapter = ArknightsAssetsAdapter(
+        BASE_URL, "en", fetcher=_fetcher(), limits=limits, max_parallel=8
+    )
+    with pytest.raises(SourceAdapterError, match="per-file cap"):
+        adapter.stage(tmp_path / "staging")
+
+
+def test_download_budget_charge_is_thread_safe() -> None:
+    """§V42: ``DownloadBudget.charge`` accumulates under a lock ∴ the total is exact
+    under concurrent charges — a naive ``+=`` loses updates under threads."""
+    import threading
+
+    # Cap high enough that no charge trips it; we only assert the running total.
+    budget = DownloadBudget(10_000_000)
+    charges = 200
+    threads = [threading.Thread(target=budget.charge, args=(1,)) for _ in range(charges)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert budget._used == charges  # every charge counted, none lost
+
+
+def test_max_parallel_below_one_rejected() -> None:
+    with pytest.raises(SourceAdapterError, match="max_parallel"):
+        ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), max_parallel=0)
+
+
+def test_pruned_level_skip_count_exact_under_parallel(tmp_path: Path) -> None:
+    """§V42/B34: the 404-skip missing-count aggregation is preserved under parallelism
+    — the sync still completes and stages only the present level file."""
+    files = _fixture_files()
+    stage_table_url = f"{BASE_URL}/gamedata/excel/stage_table.json"
+    stage_table = json.loads(files[stage_table_url])
+    for i in range(5):  # several pruned refs fanned out across workers
+        stage_table["stages"][f"act10d5_{i:02d}"] = {
+            "stageId": f"act10d5_{i:02d}",
+            "levelId": f"Activities/ACT10d5/level_act10d5_{i:02d}",
+        }
+    files[stage_table_url] = json.dumps(stage_table).encode("utf-8")
+
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files), max_parallel=8)
+    local = adapter.stage(tmp_path / "staging")  # must not raise
+
+    assert local.exists("gamedata/levels/main/level_main_04-04.json")
+    for i in range(5):
+        assert not local.exists(f"gamedata/levels/activities/act10d5/level_act10d5_{i:02d}.json")

@@ -15,15 +15,16 @@ refuses non-HTTPS URLs and caps redirects and response size.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
-import urllib.error
-import urllib.request
+import threading
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 from arknights_mcp.importers.normalization import is_clean_level_path, normalize_level_id
 from arknights_mcp.sources.base import (
@@ -57,6 +58,10 @@ CORE_FILES: tuple[str, ...] = (
     "gamedata/excel/zone_table.json",
     "gamedata/excel/stage_table.json",
 )
+
+#: The stage table is fetched + parsed serially before level discovery fans out
+#: (§V42 ordering): the discovered level paths come from it.
+STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 
 #: Operator/module excel tables the pipeline importers read (``import_operators`` →
 #: ``character_table``/``skill_table``; ``import_modules`` → ``uniequip_table``/
@@ -102,11 +107,17 @@ class DownloadBudget:
     def __init__(self, max_total_bytes: int) -> None:
         self._max = max_total_bytes
         self._used = 0
+        # ``self._used += n`` is not atomic under threads (read-modify-write); the
+        # parallel stager (§T79) charges from several workers, so the accumulate +
+        # cap check run under a lock ∴ the total-download cap stays exact and still
+        # fails closed (⊥ overshoot via a lost update; ⊥ TOCTOU past the cap, §V42).
+        self._lock = threading.Lock()
 
     def charge(self, nbytes: int) -> None:
-        self._used += nbytes
-        if self._used > self._max:
-            raise SourceAdapterError(f"sync exceeds total download cap ({self._max} bytes)")
+        with self._lock:
+            self._used += nbytes
+            if self._used > self._max:
+                raise SourceAdapterError(f"sync exceeds total download cap ({self._max} bytes)")
 
 
 class Fetcher(Protocol):
@@ -115,12 +126,41 @@ class Fetcher(Protocol):
     def fetch(self, url: str, *, max_bytes: int) -> bytes: ...
 
 
+#: HTTP status codes that carry a ``Location`` the fetcher follows (capped).
+_REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
+
+
+def _validate_redirect_target(
+    newurl: str, *, origin_host: str | None, allow_cross_domain: bool
+) -> None:
+    """Enforce the same-domain + HTTPS-only redirect policy (§V1/§V42; PRD §17.4).
+
+    A redirect that downgrades to plaintext or leaves the original request's host is
+    refused (raised as ``SourceAdapterError``) unless ``allow_cross_domain`` is set,
+    so a hostile ``Location`` header cannot escape the domain allowlist -- regardless
+    of which worker thread followed the redirect.
+    """
+    if not newurl.lower().startswith("https://"):
+        raise SourceAdapterError(f"refusing non-HTTPS redirect: {newurl!r}")
+    if not allow_cross_domain and origin_host:
+        target_host = (urlsplit(newurl).hostname or "").lower()
+        if target_host != origin_host.lower():
+            raise SourceAdapterError(
+                f"refusing cross-domain redirect to {target_host!r} "
+                f"(allowlisted host is {origin_host.lower()!r}); "
+                f"same-domain policy (PRD §17.4)"
+            )
+
+
 class HttpsFetcher:
     """Default :class:`Fetcher`: HTTPS-only, redirect-capped, size-capped (§V1).
 
-    Redirects are same-domain by default (PRD §17.4): a redirect that leaves the
-    original request's host is refused unless ``allow_cross_domain`` is explicitly
-    set, so the domain allowlist cannot be escaped via a 302.
+    Reuses one keep-alive :class:`http.client.HTTPSConnection` per worker thread
+    (§T79/§V42) so a parallel ``sync`` pays the TLS handshake once per worker
+    instead of once per file. The connection cache is thread-local -- an
+    ``http.client`` connection is not thread-safe, so a connection is never shared
+    across workers. Every §V1 gate (HTTPS-only, per-file byte cap, same-domain +
+    depth-capped redirects) is applied per file regardless of the worker.
     """
 
     def __init__(
@@ -133,75 +173,88 @@ class HttpsFetcher:
         self._max_redirects = max_redirects
         self._timeout = timeout
         self._allow_cross_domain = allow_cross_domain
+        self._local = threading.local()
+
+    def _connection(self, host: str, port: int | None) -> http.client.HTTPSConnection:
+        cache: dict[tuple[str, int | None], http.client.HTTPSConnection] | None
+        cache = getattr(self._local, "conns", None)
+        if cache is None:
+            cache = {}
+            self._local.conns = cache
+        conn = cache.get((host, port))
+        if conn is None:
+            conn = http.client.HTTPSConnection(host, port, timeout=self._timeout)
+            cache[(host, port)] = conn
+        return conn
+
+    def _drop(self, host: str, port: int | None) -> None:
+        """Discard a broken/partly-consumed connection so it is never reused."""
+        cache = getattr(self._local, "conns", None)
+        if cache is None:
+            return
+        conn = cache.pop((host, port), None)
+        if conn is not None:
+            conn.close()
 
     def fetch(self, url: str, *, max_bytes: int) -> bytes:  # pragma: no cover - live network
         if not url.lower().startswith("https://"):
             raise SourceAdapterError(f"refusing non-HTTPS URL: {url!r}")
-        handler = _BoundedRedirectHandler(
-            self._max_redirects,
-            allowed_host=urlsplit(url).hostname,
-            allow_cross_domain=self._allow_cross_domain,
-        )
-        opener = urllib.request.build_opener(handler)
-        try:
-            with opener.open(url, timeout=self._timeout) as response:  # noqa: S310 - https enforced above
-                data: bytes = response.read(max_bytes + 1)
-        except urllib.error.HTTPError as exc:
-            # A referenced file that is absent upstream (404/410) is distinguished
-            # from any other transport failure so the sync stager can skip a pruned
-            # level file (B34) without swallowing a genuine 5xx / auth error. A
-            # cross-domain or non-HTTPS redirect raises SourceAdapterError from the
-            # handler above -- not an HTTPError -- so it is unaffected here.
-            if exc.code in (404, 410):
-                raise SourceNotFoundError(f"upstream file not found ({exc.code}): {url!r}") from exc
-            raise SourceAdapterError(f"HTTP error {exc.code} fetching {url!r}") from exc
-        except urllib.error.URLError as exc:
-            raise SourceAdapterError(f"network error fetching {url!r}: {exc.reason}") from exc
-        if len(data) > max_bytes:
-            raise SourceAdapterError(f"download exceeds per-file cap ({max_bytes} bytes): {url!r}")
-        return data
-
-
-class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Caps redirect depth; refuses non-HTTPS and (by default) cross-domain targets."""
-
-    def __init__(
-        self,
-        max_redirects: int,
-        *,
-        allowed_host: str | None = None,
-        allow_cross_domain: bool = False,
-    ) -> None:
-        self._max = max_redirects
-        self._count = 0
-        self._allowed_host = (allowed_host or "").lower()
-        self._allow_cross_domain = allow_cross_domain
-
-    def redirect_request(
-        self,
-        req: urllib.request.Request,
-        fp: Any,
-        code: int,
-        msg: str,
-        headers: Any,
-        newurl: str,
-    ) -> urllib.request.Request | None:
-        if not newurl.lower().startswith("https://"):
-            raise SourceAdapterError(f"refusing non-HTTPS redirect: {newurl!r}")
-        if not self._allow_cross_domain and self._allowed_host:
-            target_host = (urlsplit(newurl).hostname or "").lower()
-            if target_host != self._allowed_host:
-                raise SourceAdapterError(
-                    f"refusing cross-domain redirect to {target_host!r} "
-                    f"(allowlisted host is {self._allowed_host!r}); "
-                    f"same-domain policy (PRD §17.4)"
+        origin_host = urlsplit(url).hostname
+        current = url
+        redirects = 0
+        while True:
+            split = urlsplit(current)
+            host = split.hostname or ""
+            port = split.port
+            path = split.path or "/"
+            if split.query:
+                path = f"{path}?{split.query}"
+            conn = self._connection(host, port)
+            try:
+                conn.request(
+                    "GET",
+                    path,
+                    headers={"Connection": "keep-alive", "Accept-Encoding": "identity"},
                 )
-        self._count += 1
-        if self._count > self._max:
-            raise SourceAdapterError(f"too many redirects (> {self._max})")
-        return super().redirect_request(  # pragma: no cover - live network
-            req, fp, code, msg, headers, newurl
-        )
+                response = conn.getresponse()
+                status = response.status
+                if status in _REDIRECT_CODES:
+                    location = response.getheader("Location")
+                    response.read()  # drain the body so the connection stays reusable
+                    redirects += 1
+                    if redirects > self._max_redirects:
+                        raise SourceAdapterError(f"too many redirects (> {self._max_redirects})")
+                    if not location:
+                        raise SourceAdapterError(f"redirect without Location from {current!r}")
+                    current = urljoin(current, location)
+                    _validate_redirect_target(
+                        current,
+                        origin_host=origin_host,
+                        allow_cross_domain=self._allow_cross_domain,
+                    )
+                    continue
+                if status in (404, 410):
+                    # A referenced file that is absent upstream is distinguished from
+                    # any other transport failure so the sync stager can skip a pruned
+                    # level file (B34) without swallowing a genuine 5xx / auth error.
+                    response.read()
+                    raise SourceNotFoundError(f"upstream file not found ({status}): {url!r}")
+                if status != 200:
+                    response.read()
+                    raise SourceAdapterError(f"HTTP error {status} fetching {url!r}")
+                # Read one byte past the cap so an over-cap body is detectable.
+                data = response.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    raise SourceAdapterError(
+                        f"download exceeds per-file cap ({max_bytes} bytes): {url!r}"
+                    )
+                return data
+            except SourceAdapterError:
+                self._drop(host, port)
+                raise
+            except (http.client.HTTPException, OSError) as exc:
+                self._drop(host, port)
+                raise SourceAdapterError(f"network error fetching {url!r}: {exc}") from exc
 
 
 def _validate_relative_path(
@@ -240,10 +293,13 @@ class ArknightsAssetsAdapter:
         limits: DownloadLimits = DEFAULT_LIMITS,
         source_id: str = DEFAULT_SOURCE_ID,
         budget: DownloadBudget | None = None,
+        max_parallel: int = 8,
     ) -> None:
         cleaned = base_url.strip()
         if not cleaned.lower().startswith("https://"):
             raise SourceAdapterError(f"sync base_url must be https://, got {base_url!r}")
+        if max_parallel < 1:
+            raise SourceAdapterError(f"max_parallel must be >= 1, got {max_parallel}")
         self.base_url: str = cleaned.rstrip("/")
         self.server: str = server
         self.source_id: str = source_id
@@ -251,6 +307,9 @@ class ArknightsAssetsAdapter:
             fetcher if fetcher is not None else HttpsFetcher(max_redirects=limits.max_redirects)
         )
         self._limits = limits
+        # Bounds the download thread pool (§T79/§V42): 1 forces the serial fallback;
+        # never an unbounded fan-out (2257 refs ⊥ 2257 sockets).
+        self._max_parallel = max_parallel
         # A per-run budget may be injected so a multi-server sync shares one cap;
         # standalone use falls back to a per-adapter budget from ``limits``.
         self._budget = budget if budget is not None else DownloadBudget(limits.max_total_bytes)
@@ -312,20 +371,44 @@ class ArknightsAssetsAdapter:
                 paths.append(resolved)
         return sorted(paths)
 
-    def _download_optional(self, paths: Iterable[str], staging_root: Path) -> int:
-        """Fetch each path, skipping (and counting) any absent upstream (404/410).
+    def _fetch_one(self, path: str, staging_root: Path, *, strict: bool) -> int:
+        """Download one file; return 1 if optional-and-absent upstream, else 0.
 
-        Shared by the operator/module supplementary tables and the discovered level
-        files (§V37): both are referenced-but-possibly-pruned, so a
-        :class:`SourceNotFoundError` is a skip, not fatal, while any other transport
-        failure (5xx, auth, cross-domain redirect) still propagates and fails the run.
+        ``strict`` files (core tables) re-raise a :class:`SourceNotFoundError` so a
+        bad ``base_url`` fails closed; optional files (supplementary tables, pruned
+        level refs) count the 404/410 as a skip. Any other transport failure always
+        propagates.
         """
+        try:
+            self._download(path, staging_root)
+            return 0
+        except SourceNotFoundError:
+            if strict:
+                raise
+            return 1
+
+    def _download_all(self, paths: Iterable[str], staging_root: Path, *, strict: bool) -> int:
+        """Download every path with bounded parallelism; return the missing count.
+
+        Each file is fetched independently: every §V1 gate (allowlist, per-file byte
+        cap, JSON depth/node cap) runs per file inside ``_download`` regardless of the
+        worker, the shared :class:`DownloadBudget` charge is thread-safe, and each file
+        is written to its own normalized path so the staged output does not depend on
+        completion order (§V42). ``max_parallel == 1`` runs the serial path (identical
+        to the old behavior); the returned missing count is the exact sum across
+        workers, and a strict fetch failure re-raises out of the pool (fail-closed).
+        """
+        items = list(paths)
+        if not items:
+            return 0
+        workers = min(self._max_parallel, len(items))
+        if workers <= 1:
+            return sum(self._fetch_one(p, staging_root, strict=strict) for p in items)
         missing = 0
-        for path in paths:
-            try:
-                self._download(path, staging_root)
-            except SourceNotFoundError:
-                missing += 1
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="arkmcp-sync") as pool:
+            futures = [pool.submit(self._fetch_one, p, staging_root, strict=strict) for p in items]
+            for future in as_completed(futures):
+                missing += future.result()  # re-raises a strict fetch failure, fail-closed
         return missing
 
     def stage(self, staging_root: str | Path) -> LocalSnapshotAdapter:
@@ -347,12 +430,12 @@ class ArknightsAssetsAdapter:
         """
         root = Path(staging_root)
         root.mkdir(parents=True, exist_ok=True)
-        stage_table: Any = None
-        for relative_path in CORE_FILES:
-            parsed = self._download(relative_path, root)
-            if relative_path.endswith("stage_table.json"):
-                stage_table = parsed
-        supp_missing = self._download_optional(SUPPLEMENTARY_FILES, root)
+        # The stage table is fetched + parsed serially FIRST: level discovery fans
+        # out from it, so it must be in hand before the pool starts (§V42 ordering).
+        stage_table: Any = self._download(STAGE_TABLE_PATH, root)
+        remaining_core = [f for f in CORE_FILES if f != STAGE_TABLE_PATH]
+        self._download_all(remaining_core, root, strict=True)
+        supp_missing = self._download_all(SUPPLEMENTARY_FILES, root, strict=False)
         if supp_missing:
             _LOG.warning(
                 "sync %s: %d of %d operator/module table(s) were absent upstream "
@@ -362,7 +445,7 @@ class ArknightsAssetsAdapter:
                 len(SUPPLEMENTARY_FILES),
             )
         level_paths = self._discover_level_paths(stage_table)
-        missing = self._download_optional(level_paths, root)
+        missing = self._download_all(level_paths, root, strict=False)
         if missing:
             _LOG.warning(
                 "sync %s: %d of %d referenced level files were absent upstream "

@@ -15,6 +15,9 @@ enabled_sources = ["arknights_assets_gamedata"]
 allow_remote_download = true
 retain_versions = 3
 max_total_download_mb = 500
+# Bounded parallelism for `sync` downloads (keep-alive connection reuse + a
+# thread pool over the fetch set). 1 = serial. Default 8.
+max_parallel_downloads = 8
 
 [sync.arknights_assets_gamedata]
 # Each region must point at a DISTINCT upstream tree so en/cn data is never

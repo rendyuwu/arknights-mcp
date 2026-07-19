@@ -88,6 +88,7 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
                 fetcher=ctx.fetcher,
                 limits=limits,
                 budget=budget,
+                max_parallel=config.sync.max_parallel_downloads,
             )
             local: LocalSnapshotAdapter = adapter.stage(Path(staging) / server)
             imports.append(ServerImport(server=server, adapter=local, source_id=_PRIMARY_SOURCE_ID))
