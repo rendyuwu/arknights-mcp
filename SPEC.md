@@ -161,7 +161,7 @@ T59|x|M7 dependency + project-code license audit|-
 T60|x|M7 source-registry review + simulated takedown/purge drill|V20,V27
 T61|x|M7 local↔remote result parity tests|V14
 T62|x|M7 privacy log scan (no token/prompt/args/body)|V12
-T63|.|M7 no-bulk-reconstruction test|V19
+T63|x|M7 no-bulk-reconstruction test|V19
 T64|.|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
 T65|.|M7 tag private-alpha v0.1.0 release|-
 T66|x|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18,V36
