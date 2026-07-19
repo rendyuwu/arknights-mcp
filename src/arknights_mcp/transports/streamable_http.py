@@ -13,9 +13,24 @@ non-loopback bind, or a loopback bind declared ``behind_proxy`` -- §V40), the A
 app is wrapped in :class:`_BearerAuthASGIApp`, which enforces the §V10
 resource-server checks on every ``/mcp`` request and issues typed ``401``/``403``
 ``WWW-Authenticate`` challenges. A genuine loopback dev bind (not behind a proxy)
-stays authless -- the explicit §V9 exception. Per-principal limits and redacted
-logging remain separate M6 tasks (§T53-§T54). The intended production shape is
-loopback ``127.0.0.1`` behind a TLS-terminating reverse proxy (§I.api; §T55).
+stays authless -- the explicit §V9 exception.
+
+Principal/session isolation lands in §T53: the shared session manager runs
+*stateful* (``stateless=False``), so it keeps one persistent MCP session per
+``Mcp-Session-Id`` and -- crucially -- binds each session to the credential that
+created it, rejecting any request that presents a session id owned by a different
+credential (SDK ``StreamableHTTPSessionManager._handle_stateful_request``). That
+owner-binding only activates when the request carries a validated
+``scope["user"]``; :class:`_BearerAuthASGIApp` therefore attaches an
+:class:`~mcp.server.auth.middleware.bearer_auth.AuthenticatedUser` keyed on
+:attr:`~arknights_mcp.auth.principal.Principal.principal_id` (§V10 ``iss|sub``, the
+one home for the namespacing -- §V37). Without it every session's owner is ``None``
+and any validated principal could resume any other's session -- a cross-user leak.
+The shared read-only core carries no other per-principal state (§V14: same DB +
+same input → identical result ∀ caller), so the session binding is the whole
+isolation surface. Redacted logging remains a separate M6 task (§T54). The intended
+production shape is loopback ``127.0.0.1`` behind a TLS-terminating reverse proxy
+(§I.api; §T55).
 """
 
 from __future__ import annotations
@@ -23,6 +38,8 @@ from __future__ import annotations
 import json
 
 import anyio
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -30,8 +47,15 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from arknights_mcp.app import ApplicationCore
 from arknights_mcp.auth.oidc import AuthError, OidcSettings, OidcTokenVerifier
+from arknights_mcp.auth.principal import Principal
 from arknights_mcp.config import AppConfig
 from arknights_mcp.transports._server import build_server
+
+#: Placeholder carried in the session-owner :class:`AccessToken` in place of the
+#: real bearer. The owner-binding only needs the identity components, and §V12
+#: forbids stashing the raw token anywhere it could be logged; the SDK's
+#: ``authorization_context`` never reads this field.
+_REDACTED_SESSION_TOKEN = "[redacted]"
 
 
 class _SessionManagerASGIApp:
@@ -99,6 +123,30 @@ def _bearer_token(scope: Scope) -> str | None:
     return None
 
 
+def _session_user(principal: Principal) -> AuthenticatedUser:
+    """Project ``principal`` into the SDK's session-owner identity (§T53/§V10).
+
+    The stateful :class:`StreamableHTTPSessionManager` binds each MCP session to
+    ``authorization_context(scope["user"])`` -- a ``(client_id, iss, sub)`` tuple --
+    and rejects a request whose credential does not match the session's owner. We
+    want that owner key to be *exactly* the principal identity §V10 defines:
+    ``iss|sub`` (:attr:`Principal.principal_id`), never the OAuth client (``azp``) --
+    two clients acting for the same subject are the same principal, and a leak
+    across *different* principals must be impossible. So we carry ``principal_id`` in
+    the ``client_id`` slot and leave ``iss``/``sub`` unset: the owner tuple collapses
+    to ``(principal_id, None, None)``, keyed solely on the one-home namespacing
+    (§V37). The real bearer is never stored here (§V12) -- ``authorization_context``
+    ignores the token field.
+    """
+    return AuthenticatedUser(
+        AccessToken(
+            token=_REDACTED_SESSION_TOKEN,
+            client_id=principal.principal_id,
+            scopes=sorted(principal.scopes),
+        )
+    )
+
+
 class _BearerAuthASGIApp:
     """ASGI middleware enforcing §V10 bearer validation on every HTTP request.
 
@@ -107,9 +155,15 @@ class _BearerAuthASGIApp:
     request is rejected with a typed ``WWW-Authenticate`` challenge (401 for a
     bad/absent token, 403 for insufficient scope) and the inner app is never
     reached. Non-``http`` scopes (``lifespan``, ``websocket``) pass straight through
-    so the session manager's task group still starts. The validated
-    :class:`~arknights_mcp.auth.principal.Principal` is stashed on
-    ``scope["state"]["principal"]`` for downstream per-principal isolation (§T53).
+    so the session manager's task group still starts.
+
+    On success the validated :class:`~arknights_mcp.auth.principal.Principal` is
+    stashed on ``scope["state"]["principal"]`` (for §T54 per-principal limits +
+    redacted logging), and an :class:`AuthenticatedUser` keyed on the principal is
+    placed on ``scope["user"]`` so the session manager binds each MCP session to its
+    creator and refuses cross-principal session reuse (§T53 isolation; §V10). Absent
+    ``scope["user"]`` the SDK would own every session as ``None`` -- any validated
+    caller could then resume any other's session.
     """
 
     def __init__(
@@ -139,8 +193,11 @@ class _BearerAuthASGIApp:
             # Fail closed on any unexpected verifier fault; never leak details (§V12).
             await self._reject(send, 401, "invalid_token", "token validation failed")
             return
-        # Attach the validated identity for per-principal isolation (§T53).
+        # Attach the validated identity (§T54 limits/logging) and the session-owner
+        # user so the SDK binds this session to its creator + refuses cross-principal
+        # reuse (§T53 isolation; §V10). Both are set only after validation.
         scope["state"] = {**scope.get("state", {}), "principal": principal}
+        scope["user"] = _session_user(principal)
         await self._app(scope, receive, send)
 
     async def _reject(self, send: Send, status: int, error: str, description: str) -> None:
