@@ -1,13 +1,16 @@
-"""§T47 ``serve`` transport gating (fast, in-process; no subprocess).
+"""§T47/§T51 ``serve`` transport gating (fast, in-process; no subprocess).
 
-The v0.1 milestone ships only the local ``stdio`` transport. Selecting the
-Streamable HTTP transport (§T51/M6) must fail closed with a clean exit rather than
-silently falling back to stdio or starting an unauthenticated remote listener
-(§V9). The stdio handshake itself is covered by the subprocess smoke in
-``tests/integration/test_serve_stdio_smoke.py``.
+Covers the shared stdio server wiring (§V14/§V23) and the Streamable HTTP
+loopback-only guard: selecting ``streamable-http`` with a non-loopback bind must
+fail closed with a clean exit rather than starting an unauthenticated remote
+listener (§V9) -- bearer validation is §T52. The stdio handshake is covered by the
+subprocess smoke in ``tests/integration/test_serve_stdio_smoke.py``; the
+Streamable HTTP handshake by ``tests/integration/test_serve_streamable_http_smoke.py``.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import anyio
 from mcp import types
@@ -32,11 +35,18 @@ def _call_over_wire(name: str, arguments: dict[str, object]) -> types.CallToolRe
     return call_result
 
 
-def test_streamable_http_transport_refused() -> None:
-    # A clean exit 1 via the CLI's handled-error path (§T51 deferred), not a crash.
+def test_streamable_http_nonloopback_refused(tmp_path: Path) -> None:
+    # §V9: streamable-http binds loopback only in v0.1 (bearer validation is §T52),
+    # so a non-loopback bind fails closed to a clean exit 1 via the CLI's
+    # handled-error path -- never an authless remote listener starting.
     from arknights_mcp.cli import main
 
-    rc = main(["serve", "--transport", "streamable-http"])
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[mcp.remote]\nenabled = true\nbind_host = "0.0.0.0"\n',
+        encoding="utf-8",
+    )
+    rc = main(["--config", str(config), "serve", "--transport", "streamable-http"])
     assert rc == 1
 
 

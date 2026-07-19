@@ -1,12 +1,15 @@
-"""``arknights-mcp serve`` -- run the read-only MCP server (§I; §T47).
+"""``arknights-mcp serve`` -- run the read-only MCP server (§I; §T47/§T51).
 
 ``serve`` is not an admin mutation: it opens the promoted build strictly
 read-only (§V2) and never touches the network (§V1). It is the one CLI command
 that runs a transport rather than building/inspecting data.
 
-v0.1 ships the local ``stdio`` transport (§T47). The ``streamable-http`` transport
-(private OAuth/OIDC, §T51/M6) is not available yet: selecting it fails closed with
-a typed error rather than starting an unauthenticated remote listener (§V9).
+Two transports, one shared core (§V14): the local ``stdio`` transport (§T47) and
+the private Streamable HTTP transport (§T51). Both build the same
+:class:`~arknights_mcp.app.ApplicationCore`, so they dispatch the identical tool
+set. Streamable HTTP binds loopback only in v0.1 -- bearer validation is §T52, so a
+non-loopback bind fails closed (§V9) rather than starting an authless remote
+listener.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from arknights_mcp.cli._shared import CliContext
 from arknights_mcp.config import load_config
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.transports.stdio import serve_stdio
+from arknights_mcp.transports.streamable_http import serve_streamable_http
 
 
 def _notice(message: str) -> None:
@@ -29,27 +33,29 @@ def _notice(message: str) -> None:
 def _cmd_serve(args: argparse.Namespace, ctx: CliContext) -> int:
     """Run the MCP server for the selected transport.
 
-    stdio: build the shared core and serve until the client disconnects. The
-    server owns stdout for the MCP protocol (§V13), so this command's own notices
-    go to stderr only.
+    Both transports build the shared core and serve until shutdown. Operational
+    notices go to stderr only; for ``stdio`` stdout is reserved for the MCP
+    JSON-RPC stream (§V13).
     """
-    transport = args.transport
-    if transport == "streamable-http":
-        # Deferred to §T51/M6. Refuse rather than silently fall back to stdio or
-        # start an unauthenticated remote listener (§V9).
-        raise ValueError(
-            "the streamable-http transport is not available in v0.1 (§T51/M6); "
-            "use --transport stdio"
-        )
-
     config = load_config(args.config)
     core = build_application(config)
-    # stderr only: stdout is reserved for the MCP JSON-RPC stream (§V13). Report
-    # the envelope wire version every tool result actually stamps (§V21), not the
-    # unrelated config.mcp.schema_version knob -- the log must match the wire.
-    _notice(f"serve: stdio transport (schema_version {SCHEMA_VERSION})")
     try:
-        serve_stdio(core)
+        if args.transport == "streamable-http":
+            remote = config.mcp.remote
+            # stderr only (§V13): announce the bind before entering the blocking
+            # server loop. Loopback-only in v0.1; a non-loopback bind fails closed
+            # inside serve_streamable_http (§V9/§T52).
+            _notice(
+                f"serve: streamable-http on {remote.bind_host}:{remote.bind_port}"
+                f"{remote.path} (schema_version {SCHEMA_VERSION})"
+            )
+            serve_streamable_http(core, config)
+        else:
+            # Report the envelope wire version every tool result stamps (§V21), not
+            # the unrelated config.mcp.schema_version knob -- the log must match the
+            # wire.
+            _notice(f"serve: stdio transport (schema_version {SCHEMA_VERSION})")
+            serve_stdio(core)
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown
         _notice("serve: shutting down")
     finally:

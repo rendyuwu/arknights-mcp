@@ -148,7 +148,7 @@ T47|x|M5 packaging + fresh-clone install smoke (locked deps, uv run serve --tran
 T48|x|M5 Claude Code + Codex setup docs (current official formats)|-
 T49|x|M5 release audit: no bundled data + policy files complete|V16
 T50|x|M5 perf benchmark (lookup p95 <200ms, stage analysis p95 <500ms, startup <2s)|-
-T51|.|M6 Streamable HTTP transport transports/streamable_http.py reuse tool_registry+services|V14,I.api
+T51|x|M6 Streamable HTTP transport transports/streamable_http.py reuse tool_registry+services|V14,I.api
 T52|.|M6 OAuth/OIDC resource-server validation auth/oidc.py+principal.py+scopes.py|V9,V10
 T53|.|M6 principal/session isolation (no cross-user cache leak)|V14
 T54|.|M6 middleware rate_limit + request_limits + redacted logging|V11,V12
