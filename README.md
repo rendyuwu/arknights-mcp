@@ -75,8 +75,10 @@ uv run arknights-mcp serve --transport stdio
 For client setup, see [`docs/clients/claude-code.md`](docs/clients/claude-code.md)
 (Claude Code) and [`docs/clients/codex.md`](docs/clients/codex.md) (OpenAI
 Codex). Both wire this server over local `stdio` using the current official MCP
-config formats. See `docs/` for architecture, adding a source, and adding a
-rule.
+config formats. For the private remote (Streamable HTTP) transport, see
+[`docs/clients/remote.md`](docs/clients/remote.md) — validating the authenticated
+endpoint against the MCP Inspector, Claude connector, OpenAI API, and ChatGPT
+web. See `docs/` for architecture, adding a source, and adding a rule.
 
 ## Development
 
