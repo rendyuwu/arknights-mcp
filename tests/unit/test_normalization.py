@@ -104,6 +104,77 @@ def test_partial_attributes_only_emit_present_keys() -> None:
     assert "def" not in drone  # absent in the source attributes
 
 
+# --- §V44/B38: level entries are deltas over level 0 --------------------------
+
+# A real multi-level enemy (modelled on ``enemy_1502_crowns``): higher levels
+# redefine only hp/atk/def and leave everything else ``m_defined:false`` (a
+# sentinel ``m_value`` of 0 that means "inherit the base", NOT a real 0).
+REAL_MULTI_LEVEL_DATABASE = {
+    "enemy_x_boss": [
+        {
+            "level": 0,
+            "enemyData": {
+                "attributes": {
+                    "maxHp": {"m_defined": True, "m_value": 6000},
+                    "atk": {"m_defined": True, "m_value": 400},
+                    "def": {"m_defined": True, "m_value": 120},
+                    "magicResistance": {"m_defined": True, "m_value": 50},
+                    "moveSpeed": {"m_defined": True, "m_value": 1.4},
+                    "baseAttackTime": {"m_defined": True, "m_value": 2.8},
+                    "massLevel": {"m_defined": True, "m_value": 1},
+                },
+                "lifePointReduce": {"m_defined": True, "m_value": 2},
+                "motion": {"m_defined": True, "m_value": "WALK"},
+            },
+        },
+        {
+            "level": 2,
+            "enemyData": {
+                "attributes": {
+                    "maxHp": {"m_defined": True, "m_value": 20000},
+                    "atk": {"m_defined": True, "m_value": 700},
+                    "def": {"m_defined": True, "m_value": 250},
+                    "magicResistance": {"m_defined": False, "m_value": 0.0},
+                    "moveSpeed": {"m_defined": False, "m_value": 0.0},
+                    "baseAttackTime": {"m_defined": False, "m_value": 0.0},
+                    "massLevel": {"m_defined": False, "m_value": 0},
+                },
+                "lifePointReduce": {"m_defined": False, "m_value": 0},
+            },
+        },
+    ],
+}
+
+
+def test_undefined_higher_level_stats_inherit_base_not_zero() -> None:
+    """§V44/B38: a higher level that leaves a stat ``m_defined:false`` inherits the
+    level-0 value; the importer must NOT write the sentinel ``m_value`` (0) as a
+    real stat (the B38 bug: a spawned variant reported ``res=0``/``speed=0`` and
+    fed those false zeros to the threat analyzer)."""
+    _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_MULTI_LEVEL_DATABASE)
+    levels = database["enemies"]["enemy_x_boss"]["levels"]
+    var2 = next(lvl for lvl in levels if lvl["level"] == 2)
+    # Redefined stats take the higher-level value.
+    assert var2["hp"] == 20000
+    assert var2["atk"] == 700
+    assert var2["def"] == 250
+    # Unset (m_defined:false) stats inherit level 0, NOT the 0 sentinel.
+    assert var2["res"] == 50
+    assert var2["moveSpeed"] == 1.4
+    assert var2["attackInterval"] == 2.8
+    assert var2["weight"] == 1
+    assert var2["lifePointReduction"] == 2
+
+
+def test_defined_zero_stat_is_kept_not_treated_as_unset() -> None:
+    """A genuinely ``m_defined:true`` value of 0 (e.g. slime ``res``) is a real
+    stat and must survive — the fix keys on ``m_defined``, not on the value being
+    zero, so a true 0 is never confused with an inherited sentinel."""
+    _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
+    slime = database["enemies"]["enemy_1007_slime"]["levels"][0]
+    assert slime["res"] == 0  # magicResistance m_defined:true m_value:0 → kept
+
+
 def test_enemy_sources_idempotent_on_normalized_input() -> None:
     """§V30: already-normalized input passes through unchanged (the synthetic path)."""
     normalized_db = {

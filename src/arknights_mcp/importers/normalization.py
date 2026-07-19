@@ -70,6 +70,22 @@ def _m_value(wrapped: Any) -> Any:
     return wrapped
 
 
+def _defined_m_value(wrapped: Any) -> tuple[bool, Any]:
+    """A real ``{"m_defined", "m_value"}`` cell → ``(defined, value)`` (§V44/B38).
+
+    ``m_defined`` gates whether *this* level entry actually sets the attribute:
+    enemy_database level entries are deltas over level 0, and a ``m_defined:false``
+    cell carries a sentinel ``m_value`` (typically ``0``) that means "unset at this
+    level, inherit the base" — it MUST NOT be written as a real stat (that is B38:
+    a level-1 flyer with ``magicResistance.m_defined=false`` would report ``res=0``
+    instead of the level-0 value). Only an *explicit* ``m_defined:false`` marks a
+    cell unset; a cell missing the flag (a plain/shorthand value) is defined.
+    """
+    if isinstance(wrapped, dict):
+        return bool(wrapped.get("m_defined", True)), wrapped.get("m_value")
+    return True, wrapped
+
+
 def _database_is_normalized(database_raw: Any) -> bool:
     """True iff ``database_raw`` is already in the ``{"enemies": {...}}`` shape."""
     return isinstance(database_raw, dict) and isinstance(database_raw.get("enemies"), dict)
@@ -90,15 +106,43 @@ def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
     if isinstance(attributes, dict):
         for real_key, norm_key in _ENEMY_STAT_MAP.items():
             if real_key in attributes:
-                value = _m_value(attributes[real_key])
-                if value is not None:
+                defined, value = _defined_m_value(attributes[real_key])
+                if defined and value is not None:
                     out[norm_key] = value
     for real_key, norm_key in _ENEMY_DATA_SCALAR_MAP.items():
         if real_key in enemy_data:
-            value = _m_value(enemy_data[real_key])
-            if value is not None:
+            defined, value = _defined_m_value(enemy_data[real_key])
+            if defined and value is not None:
                 out[norm_key] = value
     return out
+
+
+#: Normalized level keys that inherit the base (level-0) value when a higher
+#: level does not redefine them (§V44/B38). Kept in sync with the two stat maps.
+_INHERITED_LEVEL_KEYS: tuple[str, ...] = (
+    *_ENEMY_STAT_MAP.values(),
+    *_ENEMY_DATA_SCALAR_MAP.values(),
+)
+
+
+def _apply_level_deltas(levels: list[dict[str, Any]]) -> None:
+    """Backfill each higher level's unset mapped stats from level 0 (§V44/B38).
+
+    Enemy_database level entries are deltas: a higher level (variant) only carries
+    the attributes it changes, and ``_normalize_enemy_level`` now drops the ones it
+    leaves ``m_defined:false``. Those inherit the base (``level == 0``) value in the
+    real game, so we copy any missing mapped key from the base level. Mutates the
+    list in place; a single-level enemy (no base to inherit past) is unchanged.
+    """
+    if not levels:
+        return
+    base = next((lvl for lvl in levels if lvl.get("level") == 0), levels[0])
+    for lvl in levels:
+        if lvl is base:
+            continue
+        for key in _INHERITED_LEVEL_KEYS:
+            if key not in lvl and key in base:
+                lvl[key] = base[key]
 
 
 def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[str, str]]:
@@ -121,6 +165,7 @@ def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[st
         if not isinstance(game_id, str) or not isinstance(raw_levels, list):
             continue
         levels = [_normalize_enemy_level(rl) for rl in raw_levels]
+        _apply_level_deltas(levels)  # §V44/B38: unset higher-level stats inherit level 0
         enemies[game_id] = {"levels": levels}
         for rl in raw_levels:
             enemy_data = rl.get("enemyData") if isinstance(rl, dict) else None
