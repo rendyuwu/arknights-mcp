@@ -191,6 +191,10 @@ class LimitsConfig(_Model):
     max_concurrent_requests_per_principal: int = 4
     request_timeout_seconds: int = 30
     max_page_size: int = 100
+    # §V11 request cap: max accepted request body size (bytes). Default 1 MiB -- an
+    # MCP ``tools/call`` payload is small; a body past this is refused 413 before the
+    # handler runs. Additive optional field (§V21): absent config → this default.
+    max_request_bytes: int = 1_048_576
 
 
 class PrivacyConfig(_Model):

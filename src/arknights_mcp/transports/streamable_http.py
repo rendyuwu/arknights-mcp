@@ -49,6 +49,11 @@ from arknights_mcp.app import ApplicationCore
 from arknights_mcp.auth.oidc import AuthError, OidcSettings, OidcTokenVerifier
 from arknights_mcp.auth.principal import Principal
 from arknights_mcp.config import AppConfig
+from arknights_mcp.middleware import (
+    RateLimitMiddleware,
+    RedactedLoggingMiddleware,
+    RequestLimitsMiddleware,
+)
 from arknights_mcp.transports._server import build_server
 
 #: Placeholder carried in the session-owner :class:`AccessToken` in place of the
@@ -216,15 +221,62 @@ class _BearerAuthASGIApp:
         await send({"type": "http.response.body", "body": body})
 
 
+def wrap_remote_app(
+    inner: ASGIApp,
+    config: AppConfig,
+    verifier: OidcTokenVerifier,
+    settings: OidcSettings,
+) -> ASGIApp:
+    """Wrap the Streamable HTTP app in the auth-requiring remote middleware stack.
+
+    Composition, outermost → innermost (§T54; §V11/§V12/§V10):
+
+    ``RedactedLoggingMiddleware`` → ``_BearerAuthASGIApp`` → ``RateLimitMiddleware`` →
+    ``RequestLimitsMiddleware`` → ``inner`` (the session-manager app).
+
+    The order is load-bearing:
+
+    * **Logging outermost** so it records *every* request's real outcome, including a
+      ``401`` bearer challenge or a ``429`` limiter rejection, and so it can read the
+      validated principal the bearer layer stashes on the scope once the inner stack
+      returns (§V12).
+    * **Bearer next** so the per-principal limits below it always see a validated
+      :class:`~arknights_mcp.auth.principal.Principal` on the scope; a request that
+      fails auth is rejected before any limiter bucket is touched.
+    * **Rate/concurrency then request cap/timeout inside** so the §V11 controls wrap
+      the actual handler: the concurrency slot is held for the request's whole
+      lifetime, and the timeout bounds the handler's own work.
+
+    Pre-auth flood protection (unauthenticated request storms that never reach a
+    per-principal bucket) is the reverse proxy's job (§I.api; the §T55 nginx example).
+    """
+    limits = config.limits
+    app: ASGIApp = RequestLimitsMiddleware(
+        inner,
+        max_request_bytes=limits.max_request_bytes,
+        timeout_seconds=limits.request_timeout_seconds,
+    )
+    app = RateLimitMiddleware(
+        app,
+        requests_per_minute=limits.requests_per_minute_per_principal,
+        max_concurrent=limits.max_concurrent_requests_per_principal,
+    )
+    app = _BearerAuthASGIApp(app, verifier, settings)
+    app = RedactedLoggingMiddleware(app)
+    return app
+
+
 def serve_streamable_http(core: ApplicationCore, config: AppConfig) -> None:
-    """Blocking entry point: serve ``core`` over Streamable HTTP (§T51/§T52).
+    """Blocking entry point: serve ``core`` over Streamable HTTP (§T51/§T52/§T54).
 
     Binds ``[mcp.remote] bind_host:bind_port`` at ``path``. When the deployment
     requires auth (§V40: a non-loopback bind, or a loopback bind declared
     ``behind_proxy``), the §V9/§V40 startup gate is enforced (HTTPS assumption +
     valid OIDC, else :class:`~arknights_mcp.config.ConfigError`) and the app is
-    wrapped in :class:`_BearerAuthASGIApp`. A genuine loopback dev bind stays
-    authless (§V9 exception). TLS termination is the reverse proxy's job (§I.api).
+    wrapped in the full remote middleware stack (:func:`wrap_remote_app`: redacted
+    logging + bearer validation + per-principal rate/concurrency + per-request
+    size/timeout limits -- §V10/§V11/§V12). A genuine loopback dev bind stays authless
+    and unmetered (§V9 exception). TLS termination is the reverse proxy's job (§I.api).
     """
     import uvicorn
 
@@ -235,7 +287,7 @@ def serve_streamable_http(core: ApplicationCore, config: AppConfig) -> None:
     app: ASGIApp = build_asgi_app(core, path=remote.path)
     if remote.requires_auth:
         settings = OidcSettings.from_auth_config(config.auth)
-        app = _BearerAuthASGIApp(app, OidcTokenVerifier(settings), settings)
+        app = wrap_remote_app(app, config, OidcTokenVerifier(settings), settings)
     server = uvicorn.Server(
         uvicorn.Config(
             app,

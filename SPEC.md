@@ -152,7 +152,7 @@ T50|x|M5 perf benchmark (lookup p95 <200ms, stage analysis p95 <500ms, startup <
 T51|x|M6 Streamable HTTP transport transports/streamable_http.py reuse tool_registry+services|V14,I.api
 T52|x|M6 OAuth/OIDC resource-server validation auth/oidc.py+principal.py+scopes.py|V9,V10,V40
 T53|x|M6 principal/session isolation (no cross-user cache leak)|V14
-T54|.|M6 middleware rate_limit + request_limits + redacted logging|V11,V12
+T54|x|M6 middleware rate_limit + request_limits + redacted logging|V11,V12
 T55|.|M6 deploy examples systemd + nginx HTTPS proxy + docker|V9
 T56|.|M6 remote validation MCP Inspector + Claude connector + OpenAI API; ChatGPT web if workspace supports|V14
 T57|.|M6 remote security/privacy tests (token missing/expired/wrong-issuer/wrong-aud/insufficient-scope, isolation, log scan)|V10,V11,V12
