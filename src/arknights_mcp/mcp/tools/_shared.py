@@ -62,6 +62,34 @@ def run_guarded[Result](
     return shape(result)
 
 
+def run_registry_guarded[Result](
+    get_conn: ConnectionProvider,
+    run: Callable[[sqlite3.Connection | None], Result],
+    shape: Callable[[Result], ResponseEnvelope],
+) -> ResponseEnvelope:
+    """Like :func:`run_guarded`, but the DB only *enriches* an in-memory result.
+
+    For a tool whose payload lives in memory (the source registry) and for which the
+    active build is optional enrichment (the active snapshot per source), a missing
+    build must not withhold the payload: ``get_data_sources`` reports the sources +
+    their license/attribution posture (PRD §10.7/§13.10) even before any build is
+    promoted. So a :class:`DatabaseUnavailable` degrades to ``run(None)`` -- the
+    registry-only projection -- rather than a ``database_unavailable`` envelope. Any
+    *other* exception still fails closed to ``internal_error`` (§V23), and the shaped
+    result is size-capped like every envelope. Entity tools keep :func:`run_guarded`:
+    for them the DB *is* the payload, so a missing build correctly fails closed.
+    """
+    try:
+        try:
+            conn: sqlite3.Connection | None = get_conn()
+        except DatabaseUnavailable:
+            conn = None
+        result = run(conn)
+    except Exception:
+        return internal_error()
+    return shape(result)
+
+
 def evidence_to_dict(item: EvidenceItem) -> dict[str, object]:
     """One typed datum that drove an observation (§V6 evidence).
 

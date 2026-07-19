@@ -28,7 +28,11 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, build_envelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    ConnectionProvider,
+    run_guarded,
+    run_registry_guarded,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.sources import GetDataSourcesInput, GetDataStatusInput
 from arknights_mcp.services.source_status import DataSourcesResult, get_data_sources
@@ -40,8 +44,9 @@ _STATUS_TOOL_TITLE = "Get data status"
 _STATUS_TOOL_DESCRIPTION = (
     "Report the active build's data status: schema + analyzer version, deployment "
     "mode, and the active snapshots per region (source, commit/version, import "
-    "time, age) with any staleness warnings and a suggested admin action. en/cn "
-    "are never mixed."
+    "time, and age in days so the client can judge freshness). Warns when the "
+    "active build has no snapshots or no imported entities, with a suggested admin "
+    "action. en/cn are never mixed."
 )
 
 _SOURCES_TOOL_NAME = "get_data_sources"
@@ -61,6 +66,13 @@ def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
     ``ok``/``data_stale`` verdict becomes the envelope status. The full status body
     (schema/analyzer version, mode, per-region snapshots, warnings, action) is the
     service's own serialization -- reused, not re-enumerated (§V37).
+
+    ``get_data_status`` is a *posture* tool: a non-``ok`` result (``data_stale`` on
+    an empty/unpromoted build) is a reported state, not a failed request, so it
+    keeps the full status body (``warnings`` + ``suggested_action`` name the admin
+    action) rather than the ``{message}`` error-body shape :func:`error` emits.
+    A client reads the degraded posture from the same ``data`` keys as the ``ok``
+    case -- there is no ``message`` key on this tool by design (finding #6).
     """
     provenance = tuple(
         Provenance(server=s.server, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
@@ -79,7 +91,7 @@ def _sources_to_envelope(result: DataSourcesResult) -> ResponseEnvelope:
     return ok(result.to_dict())
 
 
-def build_get_data_status_spec(get_conn: ConnectionProvider, *, mode: str = "local") -> ToolSpec:
+def build_get_data_status_spec(get_conn: ConnectionProvider, *, mode: str) -> ToolSpec:
     """Build the ``get_data_status`` :class:`ToolSpec` (§T77; §V5/§V14).
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
@@ -113,17 +125,25 @@ def build_get_data_sources_spec(
 ) -> ToolSpec:
     """Build the ``get_data_sources`` :class:`ToolSpec` (§T77; §V27/§V34/§V14).
 
-    ``registry`` is the authoritative live source posture (enabled/disabled reflects
-    the machine registry); the service annotates it with the active snapshot per
-    region from the read-only ``get_conn`` build. The projection is the single
-    ``registry.public_view`` allowlist (§V34) -- no secrets, local paths, OAuth
-    config, or policy notes reach the client (§V27). Read-only (§V2) for the shared
-    registry both transports use (§V14).
+    ``registry`` is the source posture (enabled/disabled) as loaded from the machine
+    registry at startup and held for the process lifetime -- a ``source
+    enable``/``disable`` run against a live server (§V20) is reflected only after a
+    restart, matching the active-build refresh policy. The service annotates each
+    source with its active snapshot per region from the read-only ``get_conn`` build
+    (and degrades to the registry-only projection when no build is promoted). The
+    projection is the single ``registry.public_view`` allowlist (§V34) -- no secrets,
+    local paths, OAuth config, or policy notes reach the client (§V27). Read-only
+    (§V2) for the shared registry both transports use (§V14).
     """
 
     def handler(**params: object) -> ResponseEnvelope:
         GetDataSourcesInput.model_validate(params)
-        return run_guarded(
+        # The registry lives in memory; the active build only *enriches* each source
+        # with its latest snapshot. So a missing/unpromoted build degrades to the
+        # registry-only projection (conn=None) rather than failing closed -- the
+        # source/license/attribution posture (PRD §10.7/§13.10) stays reachable
+        # before any build exists (§V27).
+        return run_registry_guarded(
             get_conn,
             lambda conn: get_data_sources(registry, conn),
             _sources_to_envelope,

@@ -40,7 +40,8 @@ from mcp.types import Tool
 from pydantic import ValidationError
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
-from arknights_mcp.importers.pipeline import ServerImport, build_candidate
+from arknights_mcp.db.migrations import build_database
+from arknights_mcp.importers.pipeline import ServerImport, build_candidate, seed_data_sources
 from arknights_mcp.mcp.envelopes import (
     SCHEMA_VERSION,
     STATUS_VALUES,
@@ -125,7 +126,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 @pytest.fixture
 def registry(conn: sqlite3.Connection) -> ToolRegistry:
     """The shared registry both transports dispatch from (§V14)."""
-    return build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY))
+    return build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY), mode="local")
 
 
 def _call(registry: ToolRegistry, name: str, **params: object) -> ResponseEnvelope:
@@ -179,6 +180,22 @@ def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> 
     ):
         env = _call(registry, name, **_VALID_CALLS[name])
         assert env.provenance and all(p.server == "en" for p in env.provenance)
+
+
+def test_data_status_carries_per_snapshot_provenance(registry: ToolRegistry) -> None:
+    # §V5 (finding #4): get_data_status is region-attributed too -- it emits one
+    # provenance entry per active snapshot (server + snapshot_id + imported_at), so
+    # a regression dropping provenance from the status envelope cannot pass green.
+    env = _call(registry, "get_data_status", **_VALID_CALLS["get_data_status"])
+    assert env.status == "ok"
+    snapshots = env.to_dict()["data"]["snapshots"]  # type: ignore[index]
+    assert isinstance(snapshots, list) and snapshots
+    # One provenance entry per active snapshot, each fully populated + en-only.
+    assert len(env.provenance) == len(snapshots)
+    for prov in env.provenance:
+        assert prov.server == "en"
+        assert prov.snapshot_id
+        assert prov.imported_at
 
 
 # --- not_found -> typed status, safe copy -------------------------------------
@@ -263,7 +280,9 @@ def test_registry_dispatch_matches_direct_spec(conn: sqlite3.Connection) -> None
     # §V14: dispatching through the shared registry yields the identical domain
     # result as the tool's own spec on the same DB + input -- there is no
     # per-registry logic for a transport to diverge on.
-    registry = build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY))
+    registry = build_tool_registry(
+        lambda: conn, registry=load_source_registry(REGISTRY), mode="local"
+    )
     cases = (
         (build_get_enemy_spec, "get_enemy", {"server": "en", "game_id": "enemy_1007_slime"}),
         (build_search_entities_spec, "search_entities", {"query": "drone"}),
@@ -290,14 +309,69 @@ def test_every_delivered_status_is_in_vocabulary(registry: ToolRegistry) -> None
 
 def test_database_unavailable_fails_closed_through_registry() -> None:
     # §V23: a DB failure on the shared dispatch path fails closed to a fixed,
-    # path/trace-free envelope -- no leaked file name reaches the client.
+    # path/trace-free envelope -- no leaked file name reaches the client. Every tool
+    # whose payload IS the build fails closed this way; get_data_sources is the one
+    # exception (finding #1) -- its payload is the in-memory registry, so it degrades
+    # to the registry-only projection (covered by its own test below).
     def boom() -> sqlite3.Connection:
         raise DatabaseUnavailable("database not found: /home/ubuntu/cand.sqlite")
 
-    registry = build_tool_registry(boom, registry=load_source_registry(REGISTRY))
+    registry = build_tool_registry(boom, registry=load_source_registry(REGISTRY), mode="local")
     for name, params in _VALID_CALLS.items():
+        if name == "get_data_sources":
+            continue
         env = _call(registry, name, **params)
         assert env.status == "database_unavailable"
         body = str(env.to_dict()["data"])
         assert "/home/ubuntu" not in body
         assert "Traceback" not in body
+
+
+def test_get_data_sources_degrades_to_registry_when_db_unavailable() -> None:
+    # Finding #1 / §V27: get_data_sources' payload is the in-memory source registry;
+    # the active build only enriches with the active snapshot per source. A missing/
+    # unpromoted build must not withhold the source + license/attribution posture
+    # (PRD §10.7/§13.10), so it degrades to the registry-only projection (ok, empty
+    # active_snapshots) rather than failing closed. No path leaks in that body.
+    def boom() -> sqlite3.Connection:
+        raise DatabaseUnavailable("database not found: /home/ubuntu/cand.sqlite")
+
+    registry = build_tool_registry(boom, registry=load_source_registry(REGISTRY), mode="local")
+    env = _call(registry, "get_data_sources", **_VALID_CALLS["get_data_sources"])
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    sources = data["sources"]
+    assert isinstance(sources, list) and sources  # registry still projected
+    assert all(s["active_snapshots"] == [] for s in sources)  # no build => no enrichment
+    body = str(data)
+    assert "/home/ubuntu" not in body
+    assert "Traceback" not in body
+
+
+def test_data_status_data_stale_keeps_full_posture_body(tmp_path: Path) -> None:
+    # Finding #6 / §V23: get_data_status is a posture tool -- a non-ok result
+    # (``data_stale`` on an empty/unpromoted build) is a reported state, not a failed
+    # request, so it keeps the full status body (warnings + suggested_action name the
+    # admin action) instead of the ``{message}`` error-body shape. A client reads the
+    # degraded posture from the same ``data`` keys as the ok case.
+    path = tmp_path / "empty.sqlite"
+    conn = build_database(path)
+    seed_data_sources(conn, load_source_registry(REGISTRY))
+    conn.commit()
+    conn.close()
+    ro = open_read_only(path)
+    registry = build_tool_registry(
+        lambda: ro, registry=load_source_registry(REGISTRY), mode="local"
+    )
+
+    env = _call(registry, "get_data_status")
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    # Full posture body, not the error {message} shape.
+    assert "message" not in data
+    assert data["status"] == "data_stale"
+    assert data["snapshots"] == []
+    assert data["warnings"]  # names the empty-build condition
+    assert data["suggested_action"]  # names the admin action (sync/import)

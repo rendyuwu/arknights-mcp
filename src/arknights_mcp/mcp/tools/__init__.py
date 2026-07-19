@@ -52,7 +52,7 @@ def build_tool_registry(
     get_conn: ConnectionProvider,
     *,
     registry: SourceRegistry,
-    mode: str = "local",
+    mode: str,
 ) -> ToolRegistry:
     """Assemble the shared MCP tool registry with every available tool (§V14/§V37).
 

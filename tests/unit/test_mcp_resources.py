@@ -58,7 +58,7 @@ def conn(tmp_path: Path, registry: SourceRegistry) -> sqlite3.Connection:
 
 @pytest.fixture
 def resources(conn: sqlite3.Connection, registry: SourceRegistry) -> ResourceRegistry:
-    return build_default_resources(lambda: conn, registry=registry)
+    return build_default_resources(lambda: conn, registry=registry, mode="local")
 
 
 def _body(result: ReadResourceResult) -> dict[str, object]:
@@ -232,7 +232,7 @@ def test_database_unavailable_fails_closed(registry: SourceRegistry) -> None:
     def boom() -> sqlite3.Connection:
         raise DatabaseUnavailable("database not found: cand.sqlite")
 
-    res = build_default_resources(boom, registry=registry)
+    res = build_default_resources(boom, registry=registry, mode="local")
     body = _body(res.read("arknights://enemy/en/enemy_1007_slime"))
     assert body["status"] == "database_unavailable"
     # §V23: no local path / file name leaks into the client-facing body.

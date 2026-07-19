@@ -56,7 +56,11 @@ from arknights_mcp.mcp.envelopes import (
     ok,
 )
 from arknights_mcp.mcp.tool_registry import ToolHandler
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    ConnectionProvider,
+    run_guarded,
+    run_registry_guarded,
+)
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.stage import build_get_stage_spec
 from arknights_mcp.services.source_status import DataSourcesResult, get_data_sources
@@ -338,7 +342,10 @@ def _make_sources_handler(
         def shape(result: DataSourcesResult) -> ResponseEnvelope:
             return ok(result.to_dict())
 
-        return run_guarded(get_conn, lambda conn: get_data_sources(registry, conn), shape)
+        # The registry is in memory; the build only enriches with active snapshots,
+        # so an unpromoted build degrades to the registry-only projection rather than
+        # failing closed (mirrors the get_data_sources tool, §V27).
+        return run_registry_guarded(get_conn, lambda conn: get_data_sources(registry, conn), shape)
 
     return handler
 
@@ -366,7 +373,7 @@ def build_default_resources(
     get_conn: ConnectionProvider,
     *,
     registry: SourceRegistry,
-    mode: str = "local",
+    mode: str,
 ) -> ResourceRegistry:
     """Build the shared ``arknights://`` resource registry (§T37; §V14).
 

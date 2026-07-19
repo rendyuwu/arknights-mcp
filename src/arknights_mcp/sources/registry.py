@@ -30,12 +30,42 @@ _MANDATORY_FOR_ENABLED = (
     "last_reviewed_at",
 )
 
-# Fields excluded from every public-safe projection (§V27). This is the single
-# source of truth for "internal-only": both the CLI ``source list --json`` view
-# (:meth:`SourceRegistryEntry.public_view`) and the ``get_data_sources`` service
-# must exclude exactly these and nothing more. ``policy_notes`` may carry takedown
-# correspondence, so it is internal; ``private_hosting_status``/
+# The public-safe field allowlist (§V27/§V34). :meth:`SourceRegistryEntry.public_view`
+# emits *exactly* these fields -- an allowlist, not a denylist, so a field added to
+# the model is withheld from every client until it is explicitly classified here
+# (fail-closed: a future sensitive field cannot leak by default). Both the CLI
+# ``source list --json`` view and the ``get_data_sources`` service route through the
+# one projection, so they cannot diverge (B18). ``private_hosting_status``/
 # ``redistribution_status`` are intended-public posture fields (PRD §13.10).
+_PUBLIC_FIELDS = frozenset(
+    {
+        "source_id",
+        "display_name",
+        "owner_name",
+        "canonical_url",
+        "source_type",
+        "regions",
+        "purpose",
+        "fields_consumed",
+        "adapter_version",
+        "transform_version",
+        "license_identifier",
+        "license_status",
+        "permission_status",
+        "private_hosting_status",
+        "redistribution_status",
+        "attribution_text",
+        "contact_url",
+        "enabled",
+        "last_reviewed_at",
+    }
+)
+
+# Fields deliberately withheld from every public-safe projection (§V27).
+# ``policy_notes`` may carry takedown correspondence, so it is internal. Kept as an
+# explicit set so the field partition (public ∪ internal == every model field, the
+# two disjoint) is checkable in one test: adding a model field forces it into
+# exactly one set rather than defaulting to exposed.
 _INTERNAL_ONLY_FIELDS = frozenset({"policy_notes"})
 
 
@@ -83,13 +113,13 @@ class SourceRegistryEntry(BaseModel):
     def public_view(self) -> dict[str, Any]:
         """Public-safe projection for get_data_sources (§V27).
 
-        Excludes internal-only fields (policy notes, private-hosting posture).
+        Selects *only* the :data:`_PUBLIC_FIELDS` allowlist -- a field added to the
+        model is withheld until explicitly classified public, so a future sensitive
+        field cannot leak by default (fail-closed, unlike a pop-the-denylist dump).
         The registry holds no secrets, local paths, or OAuth config by design.
         """
         data = self.model_dump()
-        for field in _INTERNAL_ONLY_FIELDS:
-            data.pop(field, None)
-        return data
+        return {name: data[name] for name in data if name in _PUBLIC_FIELDS}
 
 
 class SourceRegistry(BaseModel):

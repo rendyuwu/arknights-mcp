@@ -81,9 +81,13 @@ def build_application(config: AppConfig) -> ApplicationCore:
 
     One home for the core wiring (§V14/§V37): both transports call this so they
     dispatch the same registry over the same connection policy. No network, no
-    write handle (§V1/§V2). The machine source registry is loaded here so the
-    ``get_data_sources`` tool projects the live enabled/disabled posture (§V27), and
-    the deployment mode is threaded to ``get_data_status`` (§T77).
+    write handle (§V1/§V2). The machine source registry is loaded here *once* and
+    held in the tool closure for the process lifetime, so the enabled/disabled
+    posture ``get_data_sources`` reports is captured at startup: a ``source
+    enable``/``disable`` run against a live server (§V20 kill switch) is picked up
+    only on restart, mirroring the active-build refresh policy on
+    :class:`ActiveDatabaseProvider`. The deployment mode is threaded to
+    ``get_data_status`` (§T77).
     """
     provider = ActiveDatabaseProvider(
         config.database.data_dir,

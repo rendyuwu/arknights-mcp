@@ -12,6 +12,7 @@ import pytest
 from arknights_mcp.services.source_status import get_data_sources
 from arknights_mcp.sources.registry import (
     _INTERNAL_ONLY_FIELDS,
+    _PUBLIC_FIELDS,
     RegistryError,
     SourceRegistry,
     SourceRegistryEntry,
@@ -90,6 +91,22 @@ def test_public_projections_do_not_diverge() -> None:
     # The service adds exactly the DB-only enrichment and re-forks nothing else.
     assert svc_keys - cli_keys == {"active_snapshots"}
     assert cli_keys == svc_keys - {"active_snapshots"}
+
+
+def test_public_view_is_allowlist_partition() -> None:
+    # §V27/§V34 (finding #5): public_view is an allowlist, not a denylist. Every
+    # model field must be classified as either public or internal-only, and the two
+    # sets are disjoint -- so a field added to SourceRegistryEntry is withheld from
+    # clients until explicitly classified (fail-closed), rather than leaking by
+    # default the way a model_dump()+pop denylist would.
+    model_fields = set(SourceRegistryEntry.model_fields)
+    assert _PUBLIC_FIELDS.isdisjoint(_INTERNAL_ONLY_FIELDS)
+    assert model_fields == _PUBLIC_FIELDS | _INTERNAL_ONLY_FIELDS, (
+        "every SourceRegistryEntry field must be classified public or internal-only"
+    )
+    # The projection emits exactly the public allowlist -- no more, no less.
+    entry = SourceRegistryEntry(source_id="x")
+    assert set(entry.public_view()) == _PUBLIC_FIELDS
 
 
 def test_incomplete_enabled_source_rejected() -> None:
