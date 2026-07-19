@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.sources.base import SourceAdapterError, json_within_limits
 
 
 class LocalSnapshotAdapter:
@@ -55,9 +55,17 @@ class LocalSnapshotAdapter:
     def read_json(self, relative_path: str) -> Any:
         raw = self.read_bytes(relative_path)
         try:
-            return json.loads(raw.decode("utf-8"))
+            parsed = json.loads(raw.decode("utf-8"))
+        except RecursionError as exc:
+            # Pathologically deep JSON blows the parser's stack before the depth cap
+            # can reject it; surface a graceful capped error rather than an uncaught
+            # traceback out of `arknights-mcp import` (B5, matching the network stager).
+            raise SourceAdapterError(f"JSON exceeds safe nesting depth: {relative_path!r}") from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise SourceAdapterError(f"invalid JSON in {relative_path!r}: {exc}") from exc
+        # Bound nesting depth + node count identically to the network path (§V37 home).
+        json_within_limits(parsed)
+        return parsed
 
     def iter_files(self) -> Iterator[str]:
         for path in sorted(self.root.rglob("*")):

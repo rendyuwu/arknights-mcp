@@ -20,7 +20,11 @@ from arknights_mcp.importers.field_policy import (
 )
 from arknights_mcp.importers.levels import LevelImportResult, insert_level, parse_level
 from arknights_mcp.importers.manifest import insert_record_provenance
-from arknights_mcp.importers.normalization import normalize_level, normalize_level_id
+from arknights_mcp.importers.normalization import (
+    is_clean_level_path,
+    normalize_level,
+    normalize_level_id,
+)
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_int, as_str
 
@@ -165,6 +169,21 @@ def import_stages(
         # Real levelId is a Title-case, extension-less reference; rewrite it to the
         # actual snapshot path (§V29/§V30). A no-op for an already-resolvable path.
         level_path = normalize_level_id(stage.level_id)
+        # Confine the normalized path to the levels tree before it is stored or read
+        # (§V36; B17). A crafted levelId can fold back into gamedata/excel or escape
+        # the tree via "..", staying inside the snapshot root so the adapter's
+        # _safe_path passes; the same clean-path gate the network discovery uses must
+        # also guard the local import path, else a stage reads an excel table as a
+        # level file. A non-clean reference is dropped (stage imported with no level).
+        if level_path is not None and not is_clean_level_path(level_path):
+            _LOG.warning(
+                "stage %s: levelId %r normalized to %r which is outside the levels "
+                "tree; refusing to read it as a level file (§V36)",
+                stage.game_id,
+                stage.level_id,
+                level_path,
+            )
+            level_path = None
         zone_pk = (
             zone_pk_by_game_id.get(stage.zone_game_id) if stage.zone_game_id is not None else None
         )

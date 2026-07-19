@@ -235,6 +235,31 @@ def normalize_level_id(level_id: str | None) -> str | None:
     return f"{_LEVEL_PREFIX}{body}{_LEVEL_SUFFIX}"
 
 
+def is_clean_level_path(path: str) -> bool:
+    """Whether a *normalized* levelId path is a safe level-file reference (§V36).
+
+    ``normalize_level_id`` always forces the ``gamedata/levels/`` prefix, so after
+    normalization a crafted ``levelId`` can neither point at an excel table nor
+    escape the tree -- but a mangled reference (e.g. ``gamedata/excel/...`` folded
+    back under the levels prefix via ``..``, or a traversal fragment) must still be
+    dropped rather than read. A clean path is under ``gamedata/levels/`` with a
+    ``.json`` suffix, a non-empty body, no traversal segment, and no nested
+    ``gamedata``/``excel`` segment. Shared by the network discovery gate
+    (:mod:`~arknights_mcp.sources.arknights_assets`) and the local import path
+    (:func:`~arknights_mcp.importers.stages.import_stages`) so both confine the
+    levels tree identically (§V37, §V36; B17).
+    """
+    if not path.startswith(_LEVEL_PREFIX) or not path.endswith(_LEVEL_SUFFIX):
+        return False
+    body = path[len(_LEVEL_PREFIX) : -len(_LEVEL_SUFFIX)]
+    if not body:
+        return False
+    segments = body.split("/")
+    if any(seg in ("", ".", "..") for seg in segments):
+        return False
+    return not any(seg in ("gamedata", "excel") for seg in segments)
+
+
 # --- level file (map / tiles / routes / waves / spawns) -----------------------
 
 #: ``passableMask`` string values that mean at least one mover can enter the tile.

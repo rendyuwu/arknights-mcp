@@ -22,8 +22,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import unquote, urlsplit
 
-from arknights_mcp.importers.normalization import normalize_level_id
-from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.importers.normalization import is_clean_level_path, normalize_level_id
+from arknights_mcp.sources.base import SourceAdapterError, json_within_limits
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 #: Default source id for this adapter (matches the registry entry).
@@ -36,28 +36,6 @@ ALLOWED_PREFIXES: tuple[str, ...] = ("gamedata/excel/", "gamedata/levels/")
 #: than ``ALLOWED_PREFIXES`` so a crafted ``stage_table.levelId`` cannot enqueue an
 #: arbitrary excel table as a "level" file (L8).
 LEVEL_PREFIXES: tuple[str, ...] = ("gamedata/levels/",)
-
-
-def _is_clean_level_path(path: str) -> bool:
-    """Whether a *normalized* levelId path is a safe level-file reference (§V36).
-
-    ``normalize_level_id`` always forces the ``gamedata/levels/`` prefix, so after
-    normalization a crafted ``levelId`` can neither point at an excel table nor
-    escape the tree -- but a mangled reference (e.g. ``gamedata/excel/...`` folded
-    under the levels prefix, or a traversal fragment) must still be dropped rather
-    than fetched. A clean path is under ``gamedata/levels/`` with a ``.json`` suffix,
-    a non-empty body, no traversal segment, and no nested ``gamedata``/``excel``
-    segment.
-    """
-    if not path.startswith("gamedata/levels/") or not path.endswith(".json"):
-        return False
-    body = path[len("gamedata/levels/") : -len(".json")]
-    if not body:
-        return False
-    segments = body.split("/")
-    if any(seg in ("", ".", "..") for seg in segments):
-        return False
-    return not any(seg in ("gamedata", "excel") for seg in segments)
 
 
 #: The fixed core files fetched every sync (enemy + stage/zone tables).
@@ -205,27 +183,6 @@ def _validate_relative_path(
     return PurePosixPath(relative_path).as_posix()
 
 
-def _json_within_limits(obj: Any, *, max_depth: int, max_nodes: int) -> None:
-    """Bound JSON nesting depth and node count (anti-abuse; §V19-adjacent)."""
-    nodes = 0
-
-    def walk(value: Any, depth: int) -> None:
-        nonlocal nodes
-        nodes += 1
-        if nodes > max_nodes:
-            raise SourceAdapterError(f"JSON exceeds node cap ({max_nodes})")
-        if depth > max_depth:
-            raise SourceAdapterError(f"JSON exceeds depth cap ({max_depth})")
-        if isinstance(value, dict):
-            for item in value.values():
-                walk(item, depth + 1)
-        elif isinstance(value, list):
-            for item in value:
-                walk(item, depth + 1)
-
-    walk(obj, 1)
-
-
 class ArknightsAssetsAdapter:
     """Network stager for the primary source; produces a local snapshot (§V1)."""
 
@@ -271,7 +228,7 @@ class ArknightsAssetsAdapter:
             raise SourceAdapterError(f"JSON exceeds safe nesting depth from {url!r}") from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise SourceAdapterError(f"invalid JSON downloaded from {url!r}: {exc}") from exc
-        _json_within_limits(
+        json_within_limits(
             parsed, max_depth=self._limits.max_json_depth, max_nodes=self._limits.max_json_nodes
         )
         target = staging_root / normalized
@@ -309,7 +266,7 @@ class ArknightsAssetsAdapter:
             seen.add(resolved)
             # Confine discovery to the levels tree post-normalization (§V36): a
             # crafted levelId must not fetch an excel table or escape the tree.
-            if _is_clean_level_path(resolved):
+            if is_clean_level_path(resolved):
                 paths.append(resolved)
         return sorted(paths)
 

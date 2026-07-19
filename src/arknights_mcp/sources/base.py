@@ -17,6 +17,45 @@ class SourceAdapterError(Exception):
     """Raised for unsafe paths, missing files, or malformed snapshot content."""
 
 
+#: Default JSON-safety caps every source adapter applies when parsing a file.
+#: A single home (§V37) so the network stager and the local snapshot reader bound
+#: nesting depth and node count identically (anti-abuse; B5, §V22/§V19-adjacent).
+DEFAULT_MAX_JSON_DEPTH = 64
+DEFAULT_MAX_JSON_NODES = 2_000_000
+
+
+def json_within_limits(
+    obj: Any,
+    *,
+    max_depth: int = DEFAULT_MAX_JSON_DEPTH,
+    max_nodes: int = DEFAULT_MAX_JSON_NODES,
+) -> None:
+    """Bound parsed-JSON nesting depth + node count, else raise ``SourceAdapterError``.
+
+    Shared by both adapters so a pathological document is refused identically
+    whether it arrives over the network (:class:`ArknightsAssetsAdapter`) or from a
+    local snapshot (:class:`LocalSnapshotAdapter`). ``walk`` raises the moment the
+    depth cap is exceeded, so it never itself recurses past ``max_depth`` levels.
+    """
+    nodes = 0
+
+    def walk(value: Any, depth: int) -> None:
+        nonlocal nodes
+        nodes += 1
+        if nodes > max_nodes:
+            raise SourceAdapterError(f"JSON exceeds node cap ({max_nodes})")
+        if depth > max_depth:
+            raise SourceAdapterError(f"JSON exceeds depth cap ({max_depth})")
+        if isinstance(value, dict):
+            for item in value.values():
+                walk(item, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, depth + 1)
+
+    walk(obj, 1)
+
+
 @runtime_checkable
 class SourceAdapter(Protocol):
     """Read-only access to a single region's snapshot files.
