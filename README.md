@@ -72,8 +72,11 @@ uv run arknights-mcp import --server en --source-path ./snapshot/en
 uv run arknights-mcp serve --transport stdio
 ```
 
-See `docs/` for architecture, adding a source, adding a rule, and client
-setup (Claude Code, Claude web, Codex, OpenAI API).
+For client setup, see [`docs/clients/claude-code.md`](docs/clients/claude-code.md)
+(Claude Code) and [`docs/clients/codex.md`](docs/clients/codex.md) (OpenAI
+Codex). Both wire this server over local `stdio` using the current official MCP
+config formats. See `docs/` for architecture, adding a source, and adding a
+rule.
 
 ## Development
 
