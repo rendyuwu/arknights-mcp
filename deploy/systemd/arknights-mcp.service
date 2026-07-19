@@ -1,0 +1,71 @@
+# systemd unit for the Arknights Intelligence MCP private remote (§I.api; §T55).
+#
+# Serves the read-only Streamable HTTP transport on loopback for a
+# TLS-terminating reverse proxy (nginx, Cloudflare Tunnel, ...) to front. The
+# bind stays 127.0.0.1, so a loopback bind is NOT proof the listener is private
+# -- `[mcp.remote] behind_proxy = true` in config.toml is what forces the §V9
+# HTTPS + OIDC startup gate and per-request bearer enforcement even on 127.0.0.1
+# (§V40). Without it, this posture would be the authless loopback-dev exception.
+#
+# Secrets are env-only (§V12/§I.env): the non-secret OIDC descriptors
+# (issuer/audience/jwks_url) are read from the EnvironmentFile below, never baked
+# into this unit or committed. Copy arknights-mcp.env.example to
+# /etc/arknights-mcp/arknights-mcp.env, fill it in, then chmod 600 (root-owned).
+#
+# Install (see deploy/README.md for the full walk-through):
+#   sudo useradd --system --home /opt/arknights-mcp --shell /usr/sbin/nologin arknights-mcp
+#   # deploy the code under /opt/arknights-mcp and build the venv:
+#   #   cd /opt/arknights-mcp && sudo -u arknights-mcp uv sync --frozen --no-dev
+#   sudo install -Dm600 deploy/systemd/arknights-mcp.env.example /etc/arknights-mcp/arknights-mcp.env
+#   sudo cp deploy/systemd/arknights-mcp.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now arknights-mcp
+
+[Unit]
+Description=Arknights Intelligence MCP (read-only private remote)
+Documentation=file:///opt/arknights-mcp/deploy/README.md
+# Wanted (not Required) only so the JWKS endpoint is reachable when the first
+# bearer arrives; serve itself never fetches source data at query time (§V1).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arknights-mcp
+Group=arknights-mcp
+WorkingDirectory=/opt/arknights-mcp
+
+# Non-secret OIDC descriptors + any ARKNIGHTS_MCP_* overrides live here, never in
+# this unit or in git (§V12/§I.env). Root-owned, chmod 600.
+EnvironmentFile=/etc/arknights-mcp/arknights-mcp.env
+
+# The console script from the project venv. `serve` opens the promoted build
+# strictly read-only (§V2) and never touches the source network at query time
+# (§V1). config.toml must set `[mcp.remote] behind_proxy = true` (§V40).
+ExecStart=/opt/arknights-mcp/.venv/bin/arknights-mcp --config /opt/arknights-mcp/config.toml serve --transport streamable-http
+
+Restart=on-failure
+RestartSec=5
+
+# --- Hardening: the process only reads its build + reaches the JWKS endpoint ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# The promoted build is opened read-only; grant just the data dir as writable so
+# the manifest/state path is reachable. Everything else stays read-only.
+ReadWritePaths=/opt/arknights-mcp/data
+# No inbound public socket: the reverse proxy is the sole ingress.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

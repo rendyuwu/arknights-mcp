@@ -1,0 +1,46 @@
+# Keep the code-only image code-only (§V16): nothing here reaches a build layer.
+# The build context is the repo root (docker build -f deploy/docker/Dockerfile .),
+# so these excludes bar data + game content + secrets from ever being copied in.
+
+# --- Data & build artifacts: never bake a snapshot or a prebuilt DB (§V16) ---
+data/
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+snapshot/
+snapshots/
+
+# --- Secrets / local env: env-only, never in an image layer (§V12/§I.env) ---
+.env
+.env.*
+!.env.example
+config.toml
+
+# --- Source PRD / spec input docs (not distributed) ---
+Arknights_MCP_PRD_v0.1_FINAL.md
+Arknights_MCP_Agent_Execution_Prompt_FINAL.md
+
+# --- Python build/venv/cache cruft ---
+.venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- VCS / editor / OS ---
+.git/
+.github/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Tests are not needed in the runtime image ---
+tests/

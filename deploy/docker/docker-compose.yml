@@ -1,0 +1,50 @@
+# Compose stack for the Arknights Intelligence MCP private remote (§T55).
+#
+# Two services: the read-only MCP server (loopback-only, code-only image) and an
+# nginx TLS front. The app never publishes a public port itself -- only nginx
+# does (§V9). The app binds inside the compose network and is reachable solely
+# through the proxy, which terminates TLS and forwards to it.
+#
+# Posture (§V9/§V40): config.toml must set `[mcp.remote] behind_proxy = true` so
+# the app enforces the §V9 HTTPS + OIDC gate and per-request bearer validation
+# even though nginx forwards over the private network. Secrets + OIDC descriptors
+# come from arknights-mcp.env (env-only, §V12/§I.env) -- copy the .example, fill
+# it in, and keep it out of git.
+#
+#   docker compose -f deploy/docker/docker-compose.yml up --build
+
+services:
+  mcp:
+    build:
+      # Build context is the repo root so the image sees src/, pyproject, uv.lock;
+      # .dockerignore bars data/snapshots/secrets from the context (§V16).
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    # Non-secret OIDC descriptors + any ARKNIGHTS_MCP_* overrides (§V12/§I.env).
+    env_file:
+      - arknights-mcp.env
+    volumes:
+      # The promoted build, mounted READ-ONLY (§V2/§V16): the image ships no data,
+      # the operator supplies a build. config.toml is mounted read-only too.
+      - ../../data:/app/data:ro
+      - ../../config.toml:/app/config.toml:ro
+    # No `ports:` -- the app is never exposed to the host/internet directly. Only
+    # nginx reaches it, over the internal compose network (§V9).
+    expose:
+      - "8000"
+    restart: on-failure
+
+  nginx:
+    image: nginx:stable
+    depends_on:
+      - mcp
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      # The §T55 nginx example. Point `proxy_pass` at the `mcp` service DNS name
+      # (http://mcp:8000) instead of 127.0.0.1 when running under compose.
+      - ./../nginx/arknights-mcp.conf:/etc/nginx/conf.d/arknights-mcp.conf:ro
+      # Mount your real TLS certs here (§V9). Read-only.
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: on-failure
