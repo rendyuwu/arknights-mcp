@@ -19,15 +19,11 @@ from arknights_mcp.cli._shared import (
     _load,
     _out,
 )
-from arknights_mcp.config import AppConfig, ConfigError
+from arknights_mcp.config import ConfigError
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.validate import validate_database
 from arknights_mcp.services.status import get_data_status
 from arknights_mcp.sources.registry import RegistryError
-
-
-def _mode(config: AppConfig) -> str:
-    return "remote" if config.mcp.remote.enabled else "local"
 
 
 def _cmd_status(args: argparse.Namespace, ctx: CliContext) -> int:
@@ -41,7 +37,8 @@ def _cmd_status(args: argparse.Namespace, ctx: CliContext) -> int:
         return 0
 
     with read_only_connection(active) as conn:
-        status = get_data_status(conn, mode=_mode(config))
+        # Single §V37 home for the mode label (shared with the get_data_status tool).
+        status = get_data_status(conn, mode=config.deployment_mode)
 
     if args.json:
         _out(json.dumps(status.to_dict(), indent=2, sort_keys=True))

@@ -59,7 +59,8 @@ FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 OPERATOR_ROOT = REPO_ROOT / "tests" / "fixtures" / "operator" / "en"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The tool set the assembled registry exposes, in registration order (§V14).
+#: The full §I.tool set of nine the assembled registry exposes, in registration
+#: order (§V14). The two data-metadata tools (§T77) register last.
 _EXPECTED_TOOLS = (
     "search_entities",
     "search_stages",
@@ -68,9 +69,12 @@ _EXPECTED_TOOLS = (
     "get_operator",
     "compare_operator_modules",
     "analyze_stage",
+    "get_data_status",
+    "get_data_sources",
 )
 
-#: One well-formed call per tool -> an ``ok`` result (the "valid" archetype).
+#: One well-formed call per tool -> an ``ok`` result (the "valid" archetype). The
+#: data-metadata tools take no parameters (they report server-side posture).
 _VALID_CALLS: dict[str, dict[str, object]] = {
     "search_entities": {"query": "drone"},
     "search_stages": {"query": "4-4"},
@@ -79,9 +83,14 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "get_operator": {"server": "en", "game_id": "char_002_amiya"},
     "compare_operator_modules": {"server": "en", "game_id": "char_002_amiya"},
     "analyze_stage": {"server": "en", "stage_code": "4-4"},
+    "get_data_status": {},
+    "get_data_sources": {},
 }
 
 #: One well-formed-but-unmatched call per tool -> the typed ``not_found`` status.
+#: The data-metadata tools have no ``not_found`` archetype: they report the active
+#: build's own posture, so a well-formed call always yields a delivered status
+#: (``ok``/``data_stale``), never a missing entity -- they are absent from this map.
 _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "search_entities": {"query": "zzzznotanentity"},
     "search_stages": {"query": "zzzznotastage"},
@@ -116,7 +125,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 @pytest.fixture
 def registry(conn: sqlite3.Connection) -> ToolRegistry:
     """The shared registry both transports dispatch from (§V14)."""
-    return build_tool_registry(lambda: conn)
+    return build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY))
 
 
 def _call(registry: ToolRegistry, name: str, **params: object) -> ResponseEnvelope:
@@ -175,7 +184,7 @@ def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> 
 # --- not_found -> typed status, safe copy -------------------------------------
 
 
-@pytest.mark.parametrize("name", _EXPECTED_TOOLS)
+@pytest.mark.parametrize("name", sorted(_NOT_FOUND_CALLS))
 def test_not_found_call_returns_typed_status(registry: ToolRegistry, name: str) -> None:
     env = _call(registry, name, **_NOT_FOUND_CALLS[name])
     assert env.status == "not_found"
@@ -254,7 +263,7 @@ def test_registry_dispatch_matches_direct_spec(conn: sqlite3.Connection) -> None
     # §V14: dispatching through the shared registry yields the identical domain
     # result as the tool's own spec on the same DB + input -- there is no
     # per-registry logic for a transport to diverge on.
-    registry = build_tool_registry(lambda: conn)
+    registry = build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY))
     cases = (
         (build_get_enemy_spec, "get_enemy", {"server": "en", "game_id": "enemy_1007_slime"}),
         (build_search_entities_spec, "search_entities", {"query": "drone"}),
@@ -270,7 +279,12 @@ def test_registry_dispatch_matches_direct_spec(conn: sqlite3.Connection) -> None
 
 def test_every_delivered_status_is_in_vocabulary(registry: ToolRegistry) -> None:
     for name in _EXPECTED_TOOLS:
-        for params in (_VALID_CALLS[name], _NOT_FOUND_CALLS[name]):
+        # Every tool has a valid call; only the entity/analysis tools have a
+        # not_found archetype (the data-metadata tools report server-side posture).
+        call_sets = [_VALID_CALLS[name]]
+        if name in _NOT_FOUND_CALLS:
+            call_sets.append(_NOT_FOUND_CALLS[name])
+        for params in call_sets:
             assert _call(registry, name, **params).status in STATUS_VALUES
 
 
@@ -280,7 +294,7 @@ def test_database_unavailable_fails_closed_through_registry() -> None:
     def boom() -> sqlite3.Connection:
         raise DatabaseUnavailable("database not found: /home/ubuntu/cand.sqlite")
 
-    registry = build_tool_registry(boom)
+    registry = build_tool_registry(boom, registry=load_source_registry(REGISTRY))
     for name, params in _VALID_CALLS.items():
         env = _call(registry, name, **params)
         assert env.status == "database_unavailable"

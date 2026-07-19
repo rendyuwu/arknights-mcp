@@ -23,6 +23,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.db.promotion import resolve_active_database
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.sources.registry import load_source_registry
 
 
 class ActiveDatabaseProvider:
@@ -80,11 +81,18 @@ def build_application(config: AppConfig) -> ApplicationCore:
 
     One home for the core wiring (§V14/§V37): both transports call this so they
     dispatch the same registry over the same connection policy. No network, no
-    write handle (§V1/§V2).
+    write handle (§V1/§V2). The machine source registry is loaded here so the
+    ``get_data_sources`` tool projects the live enabled/disabled posture (§V27), and
+    the deployment mode is threaded to ``get_data_status`` (§T77).
     """
     provider = ActiveDatabaseProvider(
         config.database.data_dir,
         config.database.current_manifest,
     )
-    registry = build_tool_registry(provider)
+    source_registry = load_source_registry(config.source_registry.machine_registry)
+    registry = build_tool_registry(
+        provider,
+        registry=source_registry,
+        mode=config.deployment_mode,
+    )
     return ApplicationCore(config=config, registry=registry, provider=provider)

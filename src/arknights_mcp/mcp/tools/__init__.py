@@ -21,15 +21,22 @@ from __future__ import annotations
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
+from arknights_mcp.mcp.tools.metadata import (
+    build_get_data_sources_spec,
+    build_get_data_status_spec,
+)
 from arknights_mcp.mcp.tools.module_compare import build_compare_operator_modules_spec
 from arknights_mcp.mcp.tools.operator import build_get_operator_spec
 from arknights_mcp.mcp.tools.search import build_search_entities_spec, build_search_stages_spec
 from arknights_mcp.mcp.tools.stage import build_analyze_stage_spec, build_get_stage_spec
+from arknights_mcp.sources.registry import SourceRegistry
 
-#: The read-only tool set, in a deterministic registration order. Single §V37
-#: home for the tool list: adding a tool means adding its builder here once, and
-#: both transports pick it up (§V14). The still-stubbed tools
-#: (data status/sources) join as their §T tasks land.
+#: The entity/analysis tool builders, each bound to only the read-only connection.
+#: The two data-metadata tools (get_data_status/get_data_sources) need extra
+#: dependencies (deployment mode / the live source registry), so they are wired
+#: separately in :func:`build_tool_registry` rather than in this uniform tuple.
+#: Single §V37 home for the tool list: both transports pick up whatever registers
+#: here (§V14). Registration order is deterministic, so ``list_tools`` is stable.
 _TOOL_BUILDERS = (
     build_search_entities_spec,
     build_search_stages_spec,
@@ -41,16 +48,27 @@ _TOOL_BUILDERS = (
 )
 
 
-def build_tool_registry(get_conn: ConnectionProvider) -> ToolRegistry:
+def build_tool_registry(
+    get_conn: ConnectionProvider,
+    *,
+    registry: SourceRegistry,
+    mode: str = "local",
+) -> ToolRegistry:
     """Assemble the shared MCP tool registry with every available tool (§V14/§V37).
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build; every registered spec is read-only (§V2) and bound to it. Both
-    transports call this so they dispatch one identical tool set (§V14) -- there is
-    no per-transport tool list to drift. Registration order is deterministic, so
-    ``list_tools`` is stable.
+    build; every registered spec is read-only (§V2) and bound to it. ``registry``
+    is the live source posture ``get_data_sources`` projects (§V27), and ``mode``
+    is the deployment-mode label ``get_data_status`` reports. Both transports call
+    this so they dispatch one identical tool set of all nine §I.tool tools (§V14) --
+    there is no per-transport tool list to drift. Registration order is
+    deterministic, so ``list_tools`` is stable.
     """
-    registry = ToolRegistry()
+    tool_registry = ToolRegistry()
     for build in _TOOL_BUILDERS:
-        registry.register(build(get_conn))
-    return registry
+        tool_registry.register(build(get_conn))
+    # The two data-metadata tools (§T77) complete the §I.tool set of nine; they
+    # carry the extra deployment-mode / source-registry deps the entity tools lack.
+    tool_registry.register(build_get_data_status_spec(get_conn, mode=mode))
+    tool_registry.register(build_get_data_sources_spec(get_conn, registry=registry))
+    return tool_registry

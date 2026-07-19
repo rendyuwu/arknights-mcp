@@ -250,6 +250,16 @@ class AppConfig(_Model):
                 + "; ".join(problems)
             )
 
+    @property
+    def deployment_mode(self) -> str:
+        """The deployment-mode label (``"remote"`` | ``"local"``) reported to clients.
+
+        Single home (§V37) for the mode derivation shared by the ``status`` CLI and
+        the ``get_data_status`` MCP tool: ``remote`` iff the Streamable HTTP
+        transport is enabled, else ``local``.
+        """
+        return "remote" if self.mcp.remote.enabled else "local"
+
 
 def load_config(
     path: str | Path | None = None,
