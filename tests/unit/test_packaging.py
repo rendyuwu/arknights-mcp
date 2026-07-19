@@ -14,17 +14,16 @@ Three guarantees the milestone owns:
 
 The wheel is built offline (``build --no-isolation`` against the locked dev-env
 hatchling), so this runs in the default gate with no network (§V16 fetch-free).
+The build itself is the shared ``built_distributions`` session fixture (§V37) --
+one ``python -m build`` for both this smoke and the §T49 release audit.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import zipfile
 from importlib import metadata, resources
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.support import BuiltDistributions
 
 #: Migration stems that must ship in the package (§T12; §T19 domains). Kept in sync
 #: with ``src/arknights_mcp/migrations`` -- a missing/renamed file trips this.
@@ -59,35 +58,17 @@ def test_py_typed_ships_as_package_resource() -> None:
     assert resources.files("arknights_mcp").joinpath("py.typed").is_file()
 
 
-def test_wheel_bundles_migrations_and_py_typed(tmp_path: Path) -> None:
-    # Build the wheel offline (uses the locked-env hatchling; no build isolation,
-    # no network) and inspect its members -- the faithful non-editable-install
-    # check that a source-tree resource lookup cannot make (B16).
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--wheel",
-            "--no-isolation",
-            "--outdir",
-            str(tmp_path),
-            str(REPO_ROOT),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    wheels = list(tmp_path.glob("arknights_mcp-*.whl"))
-    assert len(wheels) == 1, f"expected exactly one wheel, got {wheels}"
-
-    with zipfile.ZipFile(wheels[0]) as zf:
-        names = set(zf.namelist())
+def test_wheel_bundles_migrations_and_py_typed(built_distributions: BuiltDistributions) -> None:
+    # Inspect the offline-built wheel's members -- the faithful non-editable-
+    # install check that a source-tree resource lookup cannot make (B16).
+    wheel = built_distributions.wheel
+    names = set(built_distributions.wheel_sizes)
 
     for stem in _EXPECTED_MIGRATIONS:
         assert f"arknights_mcp/migrations/{stem}.sql" in names
     assert "arknights_mcp/py.typed" in names
     # The console script is recorded so the fresh install exposes ``arknights-mcp``.
     entry_points = next(n for n in names if n.endswith(".dist-info/entry_points.txt"))
-    with zipfile.ZipFile(wheels[0]) as zf:
+    with zipfile.ZipFile(wheel) as zf:
         entry_text = zf.read(entry_points).decode("utf-8")
     assert "arknights-mcp = arknights_mcp.cli:main" in entry_text

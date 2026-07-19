@@ -146,7 +146,7 @@ T45|x|M4 compare_operator_modules tool (levels 1/2/3, modes facts_only + with_ob
 T46|x|M4 module analyzer deterministic observations analyzers/module.py|V6,V7,V26
 T47|x|M5 packaging + fresh-clone install smoke (locked deps, uv run serve --transport stdio)|-
 T48|x|M5 Claude Code + Codex setup docs (current official formats)|-
-T49|.|M5 release audit: no bundled data + policy files complete|V16
+T49|x|M5 release audit: no bundled data + policy files complete|V16
 T50|.|M5 perf benchmark (lookup p95 <200ms, stage analysis p95 <500ms, startup <2s)|-
 T51|.|M6 Streamable HTTP transport transports/streamable_http.py reuse tool_registry+services|V14,I.api
 T52|.|M6 OAuth/OIDC resource-server validation auth/oidc.py+principal.py+scopes.py|V9,V10

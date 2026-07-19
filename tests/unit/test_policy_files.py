@@ -11,19 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tests.support import REQUIRED_POLICY_FILES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-REQUIRED_FILES = [
-    "LICENSE",
-    "NOTICE",
-    "README.md",
-    "DATA_SOURCES.md",
-    "DATA_POLICY.md",
-    "TAKEDOWN_POLICY.md",
-    "PRIVACY.md",
-    "SECURITY.md",
-]
+# Canonical policy-file list lives in tests.support so the release audit (§T49)
+# and this on-disk check read the same set (§V37).
+REQUIRED_FILES = list(REQUIRED_POLICY_FILES)
 
 # Source ids that must appear in the human-readable registry mirror (§V27).
 REGISTRY_SOURCE_IDS = [
