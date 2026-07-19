@@ -158,7 +158,7 @@ T56|x|M6 remote validation MCP Inspector + Claude connector + OpenAI API; ChatGP
 T57|x|M6 remote security/privacy tests (token missing/expired/wrong-issuer/wrong-aud/insufficient-scope, isolation, log scan)|V10,V11,V12
 T58|x|M7 threat-model review|-
 T59|x|M7 dependency + project-code license audit|-
-T60|.|M7 source-registry review + simulated takedown/purge drill|V20,V27
+T60|x|M7 source-registry review + simulated takedown/purge drill|V20,V27
 T61|.|M7 local↔remote result parity tests|V14
 T62|.|M7 privacy log scan (no token/prompt/args/body)|V12
 T63|.|M7 no-bulk-reconstruction test|V19
