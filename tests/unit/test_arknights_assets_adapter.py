@@ -15,6 +15,8 @@ import pytest
 from tests.support import DictFetcher, dict_fetcher_from_snapshot
 
 from arknights_mcp.sources.arknights_assets import (
+    CORE_FILES,
+    SUPPLEMENTARY_FILES,
     ArknightsAssetsAdapter,
     DownloadBudget,
     DownloadLimits,
@@ -26,6 +28,7 @@ from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
+OPERATOR_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "operator" / "en"
 BASE_URL = "https://example.test/repo"
 
 
@@ -120,6 +123,65 @@ def test_stage_core_file_404_still_fatal(tmp_path: Path) -> None:
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files))
     with pytest.raises(SourceNotFoundError):
         adapter.stage(tmp_path / "staging")
+
+
+# --- operator/module tables are fetched by sync (B36; §V41) --------------------
+
+
+def test_core_files_cover_every_importer_table() -> None:
+    """§V41: the sync staged-file set (CORE_FILES ∪ SUPPLEMENTARY_FILES) must be a
+    superset of every ``gamedata/*.json`` source path any pipeline importer reads by
+    default, or a real ``sync`` silently omits an in-scope domain. Operator/module
+    tables import optional-zero at the pipeline, so their omission from the fetch set
+    is NOT caught by the combat-scoped §V30 guard (B36). Introspecting the importer
+    signatures keeps this honest: adding a domain without wiring its file fails here.
+    """
+    import inspect
+
+    from arknights_mcp.importers.enemies import import_enemies
+    from arknights_mcp.importers.modules import import_modules
+    from arknights_mcp.importers.operators import import_operators
+    from arknights_mcp.importers.stages import import_stages
+
+    required: set[str] = set()
+    for fn in (import_enemies, import_stages, import_operators, import_modules):
+        for param in inspect.signature(fn).parameters.values():
+            default = param.default
+            if (
+                isinstance(default, str)
+                and default.startswith("gamedata/")
+                and default.endswith(".json")
+            ):
+                required.add(default)
+
+    staged = set(CORE_FILES) | set(SUPPLEMENTARY_FILES)
+    assert required, "no importer source paths discovered (introspection broke)"
+    assert required <= staged, f"importer tables not staged by sync: {sorted(required - staged)}"
+
+
+def test_stage_downloads_operator_and_module_tables(tmp_path: Path) -> None:
+    """B36/§V41: a snapshot carrying the operator+module excel tables must have them
+    staged, so ``get_operator`` / ``compare_operator_modules`` are non-empty on a
+    synced DB (they were never fetched before, only via the local ``import`` path)."""
+    fetcher = dict_fetcher_from_snapshot(BASE_URL, OPERATOR_FIXTURE_ROOT)
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=fetcher)
+    local = adapter.stage(tmp_path / "staging")
+
+    for table in SUPPLEMENTARY_FILES:
+        assert local.exists(table), f"{table} was not staged"
+
+
+def test_stage_tolerates_missing_operator_tables(tmp_path: Path) -> None:
+    """B36: a combat-only snapshot legitimately lacks the operator/module tables; a
+    404 on them is skipped, not fatal, so such a snapshot still syncs (the pipeline
+    imports those domains empty)."""
+    # The stage_4_4 fixture has no operator/module tables at all.
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
+    local = adapter.stage(tmp_path / "staging")  # must not raise
+
+    assert local.exists("gamedata/excel/stage_table.json")
+    for table in SUPPLEMENTARY_FILES:
+        assert not local.exists(table)
 
 
 def test_level_discovery_normalizes_real_levelid() -> None:

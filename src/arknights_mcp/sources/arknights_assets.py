@@ -19,6 +19,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
@@ -46,12 +47,33 @@ ALLOWED_PREFIXES: tuple[str, ...] = ("gamedata/excel/", "gamedata/levels/")
 LEVEL_PREFIXES: tuple[str, ...] = ("gamedata/levels/",)
 
 
-#: The fixed core files fetched every sync (enemy + stage/zone tables).
+#: The fixed core files fetched every sync (enemy + stage/zone tables). These are
+#: mandatory: a missing one fails the whole sync (a bad ``base_url`` must not
+#: silently produce an empty build). The §V30 silent-empty guard is scoped to this
+#: combat data.
 CORE_FILES: tuple[str, ...] = (
     "gamedata/excel/enemy_handbook_table.json",
     "gamedata/levels/enemydata/enemy_database.json",
     "gamedata/excel/zone_table.json",
     "gamedata/excel/stage_table.json",
+)
+
+#: Operator/module excel tables the pipeline importers read (``import_operators`` →
+#: ``character_table``/``skill_table``; ``import_modules`` → ``uniequip_table``/
+#: ``battle_equip_table``). In-scope for v0.1 (PRD §6.1) but *optional per snapshot*:
+#: a combat-only snapshot legitimately lacks them and the pipeline imports the
+#: domain empty (``operators.py`` / ``modules.py`` return empty if the table is
+#: absent). They are therefore fetched every sync but tolerated-if-absent (404/410
+#: skip+warn, B34 precedent) rather than added to the strict :data:`CORE_FILES` set,
+#: so a combat-only snapshot still syncs. They MUST be attempted, though — else a
+#: real ``sync`` silently builds ``operators=modules=0`` and ``get_operator`` /
+#: ``compare_operator_modules`` return empty (B36; §V41). ``uniequip_data`` is read
+#: from ``uniequip_table``'s ``equipDict`` and is not a separate file.
+SUPPLEMENTARY_FILES: tuple[str, ...] = (
+    "gamedata/excel/character_table.json",
+    "gamedata/excel/skill_table.json",
+    "gamedata/excel/uniequip_table.json",
+    "gamedata/excel/battle_equip_table.json",
 )
 
 
@@ -290,20 +312,38 @@ class ArknightsAssetsAdapter:
                 paths.append(resolved)
         return sorted(paths)
 
+    def _download_optional(self, paths: Iterable[str], staging_root: Path) -> int:
+        """Fetch each path, skipping (and counting) any absent upstream (404/410).
+
+        Shared by the operator/module supplementary tables and the discovered level
+        files (§V37): both are referenced-but-possibly-pruned, so a
+        :class:`SourceNotFoundError` is a skip, not fatal, while any other transport
+        failure (5xx, auth, cross-domain redirect) still propagates and fails the run.
+        """
+        missing = 0
+        for path in paths:
+            try:
+                self._download(path, staging_root)
+            except SourceNotFoundError:
+                missing += 1
+        return missing
+
     def stage(self, staging_root: str | Path) -> LocalSnapshotAdapter:
         """Download the allowlisted snapshot into ``staging_root`` and wrap it.
 
-        Fetches the core files, discovers each stage's level file from the stage
-        table, downloads those too, then returns a local adapter over the staging
-        directory. All downloads obey the configured :class:`DownloadLimits`.
+        Fetches the core files, the operator/module tables, and each stage's level
+        file (discovered from the stage table), then returns a local adapter over the
+        staging directory. All downloads obey the configured :class:`DownloadLimits`.
 
         Core files are mandatory: a missing one fails the whole sync (a bad
-        ``base_url`` must not silently produce an empty build). A discovered level
-        file that is absent upstream (404/410) is skipped with a warning (B34):
-        ``stage_table`` keeps referencing level files for retired events whose data
-        has been pruned from the snapshot, so a missing level is normal, not fatal.
-        The import read path already imports such a stage with no map/waves and the
-        §V30 gate still fails closed if 0 levels import overall.
+        ``base_url`` must not silently produce an empty build). Both the
+        operator/module tables and the discovered level files are fetched but
+        tolerated-if-absent (404/410 skip+warn): a discovered ``levelId`` may point at
+        a retired event whose data is pruned (B34), and a combat-only snapshot may
+        lack the operator/module tables entirely (B36) — the pipeline imports those
+        domains empty (optional per snapshot). Both must still be *attempted*, else a
+        real sync silently omits an in-scope domain (§V41). The §V30 gate still fails
+        closed if 0 levels import overall.
         """
         root = Path(staging_root)
         root.mkdir(parents=True, exist_ok=True)
@@ -312,14 +352,17 @@ class ArknightsAssetsAdapter:
             parsed = self._download(relative_path, root)
             if relative_path.endswith("stage_table.json"):
                 stage_table = parsed
+        supp_missing = self._download_optional(SUPPLEMENTARY_FILES, root)
+        if supp_missing:
+            _LOG.warning(
+                "sync %s: %d of %d operator/module table(s) were absent upstream "
+                "(404/410) and were skipped; their domains import empty",
+                self.server,
+                supp_missing,
+                len(SUPPLEMENTARY_FILES),
+            )
         level_paths = self._discover_level_paths(stage_table)
-        missing = 0
-        for level_path in level_paths:
-            try:
-                self._download(level_path, root)
-            except SourceNotFoundError:
-                # A referenced-but-pruned level file: skip it, don't abort the run.
-                missing += 1
+        missing = self._download_optional(level_paths, root)
         if missing:
             _LOG.warning(
                 "sync %s: %d of %d referenced level files were absent upstream "
