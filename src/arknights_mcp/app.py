@@ -38,6 +38,13 @@ class ActiveDatabaseProvider:
 
     The connection is created on first use and reused; the local ``stdio`` loop
     is single-threaded, so it is opened and used from the same thread.
+
+    The active build is resolved from ``current.json`` exactly once (on first use)
+    and held for the process lifetime -- a build promoted *after* the server has
+    opened its connection is not picked up live (the open fd survives the retention
+    unlink on Linux, so the process keeps serving the old build). Refreshing the
+    served data therefore requires a server restart after ``import``/``sync``; the
+    client setup docs' troubleshooting says so.
     """
 
     def __init__(self, data_dir: str, current_manifest: str | None) -> None:

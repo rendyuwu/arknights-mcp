@@ -23,8 +23,10 @@ uv run arknights-mcp status        # shows the active snapshot + schema version
 ```
 
 `import`, `sync`, `validate`, `status`, and `source` are admin-only CLI
-commands, never MCP tools (§V28). Run them yourself before (and to refresh) the
-server.
+commands, never MCP tools (§V28). Run them yourself before starting the server.
+To refresh, run them and then **restart** the server: it opens the promoted
+build once at startup and holds it for the process lifetime, so a build promoted
+under a running server is not picked up live.
 
 ## Option A — `codex mcp add`
 
@@ -59,15 +61,16 @@ to forward from Codex's own environment), `cwd`, `startup_timeout_sec`,
 
 ### Non-default config path
 
-If your config lives elsewhere, append `--config` to `args` (the default is
-`./config.toml`, resolved against `cwd`):
+If your config lives elsewhere, add `--config` to `args` (the default is
+`./config.toml`, resolved against `cwd`). `--config` is a top-level flag, so it
+goes **before** the `serve` subcommand:
 
 ```toml
 [mcp_servers.arknights]
 command = "uv"
 args = [
-  "run", "arknights-mcp", "serve", "--transport", "stdio",
-  "--config", "/abs/path/to/config.toml",
+  "run", "arknights-mcp", "--config", "/abs/path/to/config.toml",
+  "serve", "--transport", "stdio",
 ]
 cwd = "/abs/path/to/arknights-mcp"
 ```
@@ -85,7 +88,10 @@ then ask something a promoted build can answer, e.g. *"analyze stage 4-4"*.
 
 - **Every query is `not_found` / `data_stale`.** No build is promoted for that
   region, or it is stale. Run `uv run arknights-mcp status`; refresh with
-  `import` or `sync` (§V24 — the server never downloads on demand).
+  `import` or `sync` (§V24 — the server never downloads on demand), **then
+  restart the server** — it holds the build it opened at startup for the process
+  lifetime, so a fresh promote under a running server is not picked up until you
+  restart it.
 - **Server times out on startup.** First launch can trigger `uv sync`. Run `uv
   sync` once beforehand and/or raise `startup_timeout_sec`.
 - **`config.toml` / `data/` not found.** `cwd` (or `uv run --directory`) is

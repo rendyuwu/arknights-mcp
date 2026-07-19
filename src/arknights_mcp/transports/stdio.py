@@ -23,11 +23,12 @@ from typing import Any
 import anyio
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool
+from mcp.types import CallToolResult, Tool
 
 from arknights_mcp import __version__
 from arknights_mcp.app import ApplicationCore
 from arknights_mcp.instructions import server_instructions
+from arknights_mcp.mcp.envelopes import error
 
 #: MCP ``serverInfo.name`` reported on ``initialize`` (matches the console script).
 SERVER_NAME = "arknights-mcp"
@@ -54,12 +55,27 @@ def build_server(core: ApplicationCore) -> Server[object, object]:
         return core.registry.to_mcp_tools()
 
     @server.call_tool()  # type: ignore[untyped-decorator]
-    async def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
         # Single dispatch home (§V14): look up the shared spec and run its handler.
-        # The handler validates its own bounded input model (§V18/§V19) and returns
-        # a typed envelope (§V23); we surface it as structured content.
-        spec = core.registry.get(name)
-        return spec.handler(**arguments).to_dict()
+        # An unknown tool name is a typed result, not a bare protocol error: the SDK
+        # does not validate names against list_tools, so a name outside the registry
+        # would otherwise raise KeyError from ``registry.get`` and surface as an
+        # untyped ``isError`` string. Fail it closed to a typed ``not_found``
+        # envelope (§V23) so every result carries a status from the vocabulary.
+        if name not in core.registry:
+            envelope = error("not_found", f"unknown tool {name!r}")
+        else:
+            # The handler validates its own bounded input model (§V18/§V19) and
+            # returns a typed envelope (§V23).
+            envelope = core.registry.get(name).handler(**arguments)
+        # Carry the envelope as structured content only -- a single copy on the wire
+        # (§V14; smoke test). Returning the dict would make the SDK ALSO emit an
+        # indented ``json.dumps(indent=2)`` copy in ``content``, so a payload the
+        # envelope builder measures once under the §V22 cap would ship ~2x that on
+        # the wire (the B21 wire-vs-measured gap, reintroduced by the transport).
+        # One copy keeps the measured cap == the wire bytes; returning a built
+        # CallToolResult short-circuits the SDK's dict->(structured+text) split.
+        return CallToolResult(content=[], structuredContent=envelope.to_dict())
 
     return server
 

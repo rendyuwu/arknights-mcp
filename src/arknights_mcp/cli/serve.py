@@ -17,6 +17,7 @@ import sys
 from arknights_mcp.app import build_application
 from arknights_mcp.cli._shared import CliContext
 from arknights_mcp.config import load_config
+from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.transports.stdio import serve_stdio
 
 
@@ -43,8 +44,10 @@ def _cmd_serve(args: argparse.Namespace, ctx: CliContext) -> int:
 
     config = load_config(args.config)
     core = build_application(config)
-    # stderr only: stdout is reserved for the MCP JSON-RPC stream (§V13).
-    _notice(f"serve: stdio transport (schema_version {config.mcp.schema_version})")
+    # stderr only: stdout is reserved for the MCP JSON-RPC stream (§V13). Report
+    # the envelope wire version every tool result actually stamps (§V21), not the
+    # unrelated config.mcp.schema_version knob -- the log must match the wire.
+    _notice(f"serve: stdio transport (schema_version {SCHEMA_VERSION})")
     try:
         serve_stdio(core)
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown

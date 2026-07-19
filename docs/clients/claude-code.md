@@ -23,7 +23,9 @@ uv run arknights-mcp status        # shows the active snapshot + schema version
 
 `import`, `sync`, `validate`, `status`, and `source` are admin-only CLI
 commands. They are **not** exposed as MCP tools (§V28), so you run them yourself
-before (and to refresh) the server.
+before starting the server. To refresh, run them and then **restart** the
+server: it opens the promoted build once at startup and holds it for the process
+lifetime, so a build promoted under a running server is not picked up live.
 
 ## Option A — project scope (`.mcp.json`, recommended)
 
@@ -72,12 +74,13 @@ default) instead if you want it only in the current project, only for you.
 ### Non-default config path
 
 If your config lives elsewhere, pass an absolute `--config` (the default is
-`./config.toml`, resolved against the launch directory):
+`./config.toml`, resolved against the launch directory). `--config` is a
+top-level flag, so it goes **before** the `serve` subcommand:
 
 ```bash
 claude mcp add --transport stdio --scope user arknights \
   -- uv run --directory /abs/path/to/arknights-mcp \
-     arknights-mcp serve --transport stdio --config /abs/path/to/config.toml
+     arknights-mcp --config /abs/path/to/config.toml serve --transport stdio
 ```
 
 ## Verify
@@ -96,7 +99,9 @@ Ask something a promoted build can answer, e.g. *"analyze stage 4-4"* or
 - **Server connects but every query is `not_found` / `data_stale`.** No build
   is promoted for that region, or it is stale. Run `uv run arknights-mcp
   status`; build/refresh with `import` or `sync` (§V24 — the server never
-  downloads on demand to fill the gap).
+  downloads on demand to fill the gap), **then restart the server** — it holds
+  the build it opened at startup for the process lifetime, so a fresh promote
+  under a running server is not picked up until you restart it.
 - **`command: expected string` / server skipped.** The JSON entry is
   malformed. For a `stdio` server keep `command`/`args` and omit `type`.
 - **`config.toml` / `data/` not found.** The launch directory is wrong. Use
