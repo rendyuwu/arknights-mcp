@@ -147,6 +147,59 @@ def test_nonloopback_remote_with_https_and_oauth_ok() -> None:
     cfg.assert_remote_startup_safe()  # must not raise
 
 
+def test_loopback_behind_proxy_forces_gate_without_oauth_refuses() -> None:
+    # §V40 (B31): a loopback bind declared behind_proxy serves the public internet
+    # via a proxy/tunnel → the §V9 HTTPS+OIDC gate must fire even on 127.0.0.1.
+    cfg = AppConfig.model_validate(
+        {
+            "mcp": {
+                "remote": {
+                    "enabled": True,
+                    "bind_host": "127.0.0.1",
+                    "behind_proxy": True,
+                    "public_base_url": "https://mcp.example.com",
+                }
+            },
+            # Placeholder OIDC → not valid → refuse.
+            "auth": {"mode": "oidc", "issuer": "<OIDC issuer>"},
+        }
+    )
+    assert cfg.mcp.remote.requires_auth is True
+    with pytest.raises(ConfigError, match="V40"):
+        cfg.assert_remote_startup_safe()
+
+
+def test_loopback_behind_proxy_with_https_and_oauth_ok() -> None:
+    cfg = AppConfig.model_validate(
+        {
+            "mcp": {
+                "remote": {
+                    "enabled": True,
+                    "bind_host": "127.0.0.1",
+                    "behind_proxy": True,
+                    "public_base_url": "https://mcp.example.com",
+                }
+            },
+            "auth": {
+                "mode": "oidc",
+                "issuer": "https://issuer.example.com",
+                "audience": "arknights-mcp",
+                "jwks_url": "https://issuer.example.com/jwks",
+                "required_scopes": ["arknights:read"],
+            },
+        }
+    )
+    cfg.assert_remote_startup_safe()  # must not raise
+
+
+def test_loopback_without_proxy_does_not_require_auth() -> None:
+    # §V40: a genuine loopback dev bind (not behind a proxy) stays the authless
+    # §V9 exception.
+    cfg = AppConfig.model_validate({"mcp": {"remote": {"enabled": True, "bind_host": "127.0.0.1"}}})
+    assert cfg.mcp.remote.requires_auth is False
+    cfg.assert_remote_startup_safe()
+
+
 def test_env_overlays_oidc_issuer() -> None:
     cfg = load_config(EXAMPLE, env={ENV_OIDC_ISSUER: "https://issuer.example.com"})
     assert cfg.auth.issuer == "https://issuer.example.com"

@@ -117,10 +117,27 @@ class McpRemoteConfig(_Model):
     path: str = "/mcp"
     public_base_url: str = "https://mcp.example.com"
     trust_proxy_headers: bool = True
+    # §V40: a reverse proxy / tunnel (e.g. Cloudflare Tunnel) binds the server
+    # loopback yet serves the public internet, so a loopback bind is NOT proof the
+    # listener is private. This explicit intent flag forces the §V9 HTTPS+OIDC gate
+    # and per-request bearer enforcement even on a 127.0.0.1 bind (B31).
+    behind_proxy: bool = False
 
     @property
     def is_loopback(self) -> bool:
         return self.bind_host in LOOPBACK_HOSTS
+
+    @property
+    def requires_auth(self) -> bool:
+        """True when bearer validation must be enforced (§V40).
+
+        Auth enforcement is independent of the bind address: a non-loopback bind
+        always requires auth, and a loopback bind requires it too when
+        ``behind_proxy`` declares a public-facing proxy in front. Only a genuine
+        loopback dev bind (loopback AND not behind a proxy) is the authless §V9
+        exception.
+        """
+        return not self.is_loopback or self.behind_proxy
 
     @property
     def assumes_https(self) -> bool:
@@ -192,28 +209,41 @@ class AppConfig(_Model):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
 
-    def assert_remote_startup_safe(self) -> None:
-        """Enforce §V9: refuse non-loopback remote without HTTPS + valid OAuth.
+    def _remote_safety_problems(self) -> list[str]:
+        """Collect §V9 posture problems for an auth-requiring remote deployment.
 
-        No-op for local-only serving and for loopback development. Raises
-        :class:`ConfigError` otherwise.
+        Single home (§V37) for the HTTPS + valid-OIDC checks shared by the doctor
+        report and the serve-time gate.
         """
         remote = self.mcp.remote
-        if not remote.enabled or remote.is_loopback:
-            return
         problems: list[str] = []
         if not remote.assumes_https:
             problems.append(
-                "public_base_url must be https:// (HTTPS termination) for non-loopback remote"
+                "public_base_url must be https:// (HTTPS termination) for remote serving"
             )
         if not self.auth.is_valid_oidc:
             problems.append(
                 "valid OAuth/OIDC settings required (mode=oidc, issuer, audience, "
-                "jwks_url, required_scopes) for non-loopback remote"
+                "jwks_url, required_scopes) for remote serving"
             )
+        return problems
+
+    def assert_remote_startup_safe(self) -> None:
+        """Enforce §V9/§V40: refuse an auth-requiring remote without HTTPS + OAuth.
+
+        Auth enforcement is decoupled from the bind address (§V40): the gate fires
+        whenever :attr:`McpRemoteConfig.requires_auth` -- a non-loopback bind, or a
+        loopback bind declared ``behind_proxy``. A genuine loopback dev bind (not
+        behind a proxy) is the authless §V9 exception. Raises :class:`ConfigError`
+        on an unsafe posture.
+        """
+        if not self.mcp.remote.requires_auth:
+            return
+        problems = self._remote_safety_problems()
         if problems:
             raise ConfigError(
-                "refusing to start non-loopback remote mode (§V9): " + "; ".join(problems)
+                "refusing to start remote mode without a safe posture (§V9/§V40): "
+                + "; ".join(problems)
             )
 
 

@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "mcp>=1.28.1,<2",
     "pydantic>=2,<3",
+    "pyjwt[crypto]>=2.10,<3",
     "sqlalchemy>=2,<3",
     # Streamable HTTP transport (§T51/§I.api): ASGI app + server. Already resolved
     # transitively via mcp; declared directly now that the transport imports them.

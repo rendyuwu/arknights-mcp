@@ -7,14 +7,16 @@ that runs a transport rather than building/inspecting data.
 Two transports, one shared core (§V14): the local ``stdio`` transport (§T47) and
 the private Streamable HTTP transport (§T51). Both build the same
 :class:`~arknights_mcp.app.ApplicationCore`, so they dispatch the identical tool
-set. Streamable HTTP binds loopback only in v0.1 -- bearer validation is §T52, so a
-non-loopback bind fails closed (§V9) rather than starting an authless remote
-listener.
+set. Streamable HTTP enforces OAuth/OIDC bearer validation (§T52) whenever the
+deployment requires auth (§V40: non-loopback bind, or loopback ``behind_proxy``); a
+genuine loopback dev bind stays authless (§V9 exception). Non-secret OIDC
+descriptors are overlaid from the environment (§I.env) before the startup gate runs.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from arknights_mcp.app import build_application
@@ -37,17 +39,20 @@ def _cmd_serve(args: argparse.Namespace, ctx: CliContext) -> int:
     notices go to stderr only; for ``stdio`` stdout is reserved for the MCP
     JSON-RPC stream (§V13).
     """
-    config = load_config(args.config)
+    # Overlay non-secret OIDC descriptors from the environment (§I.env): issuer,
+    # audience, jwks_url are supplied via env for remote serving.
+    config = load_config(args.config, env=os.environ)
     core = build_application(config)
     try:
         if args.transport == "streamable-http":
             remote = config.mcp.remote
             # stderr only (§V13): announce the bind before entering the blocking
-            # server loop. Loopback-only in v0.1; a non-loopback bind fails closed
-            # inside serve_streamable_http (§V9/§T52).
+            # server loop. An auth-requiring deployment enforces the §V9/§V40 gate +
+            # bearer validation inside serve_streamable_http (§T52).
+            auth_state = "bearer-enforced" if remote.requires_auth else "loopback-dev (authless)"
             _notice(
                 f"serve: streamable-http on {remote.bind_host}:{remote.bind_port}"
-                f"{remote.path} (schema_version {SCHEMA_VERSION})"
+                f"{remote.path} [{auth_state}] (schema_version {SCHEMA_VERSION})"
             )
             serve_streamable_http(core, config)
         else:
