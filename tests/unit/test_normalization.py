@@ -231,6 +231,70 @@ def test_wave_action_key_resolves_to_enemy_and_variant() -> None:
     assert by_enemy["enemy_1007_slime"]["count"] == 3
 
 
+# --- useDb:false inline enemy variant → base prefab (§V43, B37) ---------------
+
+
+def _inline_variant_level(*, with_prefab: bool) -> dict:
+    """A minimal real level whose sole spawn references a ``useDb:false`` inline
+    enemy variant. ``with_prefab=False`` drops the ``prefabKey`` to exercise the
+    preserved fail-closed path (an inline ref that cannot resolve to a base)."""
+    overwritten: dict = {"attributes": {"maxHp": {"m_defined": True, "m_value": 5000}}}
+    if with_prefab:
+        overwritten["prefabKey"] = {"m_defined": True, "m_value": "enemy_1105_tyokai"}
+    return {
+        "mapData": {"map": [[0]], "tiles": [{"tileKey": "t", "passableMask": "ALL"}]},
+        "routes": [{"startPosition": {"row": 0, "col": 0}}],
+        "enemyDbRefs": [
+            {"useDb": True, "id": "enemy_1105_tyokai", "level": 0},
+            {
+                "useDb": False,
+                "id": "enemy_1105_tyokai_b",
+                "level": 0,
+                "overwrittenData": overwritten,
+            },
+        ],
+        "waves": [
+            {
+                "fragments": [
+                    {"actions": [{"actionType": "SPAWN", "key": "enemy_1105_tyokai_b", "count": 1}]}
+                ]
+            }
+        ],
+    }
+
+
+def test_inline_variant_spawn_resolves_to_prefab_base() -> None:
+    """§V43/B37: a ``useDb:false`` inline variant spawn resolves its ``enemyId`` to
+    the ref's base ``prefabKey`` (so the cross-file FK holds) and carries the
+    original inline id as ``variantId`` for traceability — it is never left as the
+    inline id, which is absent from the enemy tables and would fail the level
+    importer's cross-reference check."""
+    level = normalize_level(_inline_variant_level(with_prefab=True))
+    action = level["waves"][0]["fragments"][0]["actions"][0]
+    assert action["enemyId"] == "enemy_1105_tyokai"  # base prefab, resolvable in DB
+    assert action["variantId"] == "enemy_1105_tyokai_b"  # inline id preserved
+    assert action["count"] == 1
+
+
+def test_inline_variant_without_prefab_stays_unresolved_fail_closed() -> None:
+    """§V43/B37: an inline ref with no ``prefabKey`` cannot resolve to a base, so
+    the spawn keeps the inline id (no fabricated resolution) and carries no
+    ``variantId`` — the level importer's cross-reference check still fails closed
+    on it, preserving §V3/§V4 for genuinely-unresolvable refs."""
+    level = normalize_level(_inline_variant_level(with_prefab=False))
+    action = level["waves"][0]["fragments"][0]["actions"][0]
+    assert action["enemyId"] == "enemy_1105_tyokai_b"  # unresolved → fails closed downstream
+    assert "variantId" not in action
+
+
+def test_usedb_true_ref_carries_no_variant_id() -> None:
+    """§V43: a normal ``useDb:true`` spawn resolves directly to the ref id and does
+    not emit a ``variantId`` (so real spawns don't carry a null variant field)."""
+    level = normalize_level(REAL_LEVEL)
+    actions = level["waves"][0]["fragments"][0]["actions"]
+    assert all("variantId" not in a for a in actions)
+
+
 def test_level_idempotent_on_synthetic_shape() -> None:
     """§V30: a synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
     passes through unchanged."""

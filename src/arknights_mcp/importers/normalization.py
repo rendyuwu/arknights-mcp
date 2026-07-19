@@ -297,12 +297,42 @@ def _level_is_grid(level_raw: Any) -> bool:
     return isinstance(map_data, dict) and isinstance(map_data.get("map"), list)
 
 
+def _inline_prefab_key(ref: dict[str, Any]) -> str | None:
+    """A ``useDb:false`` ref's base enemy id from ``overwrittenData.prefabKey.m_value``.
+
+    ``None`` when the ref carries no prefab base (leaves the spawn to fail closed at
+    the level importer's cross-reference check — B37).
+    """
+    overwritten = ref.get("overwrittenData")
+    if not isinstance(overwritten, dict):
+        return None
+    prefab = overwritten.get("prefabKey")
+    if not isinstance(prefab, dict):
+        return None
+    value = prefab.get("m_value")
+    return value if isinstance(value, str) and value else None
+
+
 def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Build ``{action key → {id, level}}`` from the level's ``enemyDbRefs``/``enemies``.
+    """Build ``{action key → {id, variant_id, level}}`` from ``enemyDbRefs``/``enemies``.
 
     A wave action names its enemy under ``key``; the level declares which enemies
-    (and their DB level variant) it uses in ``enemyDbRefs`` (or ``enemies``). The
-    ref's ``id`` is the enemy game id; ``key`` normally equals that id (T66).
+    (and their DB level variant) it uses in ``enemyDbRefs`` (or ``enemies``). Refs
+    split two ways on the ``useDb`` flag (§V43, B37) — resolution keys on that flag
+    per-ref, never on id-membership (the same id may be db-backed in one stage and
+    inline in another; the same inline id may resolve to a different base across
+    levels ∴ no global inline→enemy map exists):
+
+    * ``useDb: true`` — the ref's ``id`` is a real ``enemy_database``/handbook
+      enemy; the spawn resolves straight to it (``key`` normally equals that id).
+    * ``useDb: false`` — a *level-inline* enemy variant (``enemy_..._a``/``_b``/
+      ``_2a``…) whose stats live inline under ``overwrittenData`` and which is
+      **never** in the enemy tables. Its ``overwrittenData.prefabKey`` names the
+      base enemy it derives from (always a real enemy upstream). The spawn resolves
+      to that base ``prefabKey`` so the cross-file FK holds; the original inline id
+      is carried as ``variant_id`` for traceability (persisted via ``variantId`` in
+      the allowlisted spawn ``source_fragment``). The inline ``overwrittenData``
+      stats themselves are not modeled here (§V43 limitation; T80).
     """
     refs = level_raw.get("enemyDbRefs")
     if not isinstance(refs, list):
@@ -317,7 +347,18 @@ def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if not isinstance(rid, str) or not rid:
             continue
         level = ref.get("level")
-        out[rid] = {"id": rid, "level": level if isinstance(level, int) else 0}
+        enemy_id = rid
+        variant_id: str | None = None
+        if ref.get("useDb") is False:
+            prefab = _inline_prefab_key(ref)
+            if prefab is not None:
+                enemy_id = prefab
+                variant_id = rid
+        out[rid] = {
+            "id": enemy_id,
+            "variant_id": variant_id,
+            "level": level if isinstance(level, int) else 0,
+        }
     return out
 
 
@@ -392,7 +433,9 @@ def _normalize_action(
 
     The enemy id comes from ``key`` (resolved via ``enemyDbRefs``; a spawn ``key``
     normally equals the enemy id); a spawn's level variant defaults to the ref's
-    declared level.
+    declared level. For a ``useDb:false`` inline variant the resolved ``enemyId`` is
+    the ref's base ``prefabKey`` and the original inline id is emitted as
+    ``variantId`` for traceability (§V43, B37).
     """
     if action.get("actionType") != "SPAWN":
         return None
@@ -402,7 +445,8 @@ def _normalize_action(
     ref = ref_map.get(key)
     enemy_id = ref["id"] if ref else key
     variant = ref["level"] if ref else action.get("level")
-    return {
+    variant_id = ref.get("variant_id") if ref else None
+    spawn: dict[str, Any] = {
         "enemyId": enemy_id,
         "levelVariant": variant if isinstance(variant, int) else 0,
         "routeIndex": action.get("routeIndex"),
@@ -412,6 +456,9 @@ def _normalize_action(
         "spawnGroup": action.get("hiddenGroup") or action.get("randomSpawnGroupKey") or None,
         "hidden": bool(action.get("hiddenGroup")),
     }
+    if variant_id is not None:
+        spawn["variantId"] = variant_id
+    return spawn
 
 
 def _normalize_waves(

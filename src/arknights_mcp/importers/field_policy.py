@@ -66,6 +66,11 @@ STAGE_ALLOWLIST: frozenset[str] = frozenset(
 SPAWN_ACTION_ALLOWLIST: frozenset[str] = frozenset(
     {
         "enemyId",
+        # B37: for a ``useDb:false`` inline enemy variant, ``enemyId`` is resolved
+        # to the base prefab; ``variantId`` preserves the original inline id (an
+        # id-charset string, not prose) for traceability of which spawn was a
+        # level-inline variant of the base enemy.
+        "variantId",
         "levelVariant",
         "routeIndex",
         "spawnTime",
