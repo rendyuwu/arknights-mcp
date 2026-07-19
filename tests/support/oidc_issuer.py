@@ -59,6 +59,21 @@ class LocalOidcIssuer:
         self._public_key = self._private_key.public_key()
 
     @property
+    def private_key(self) -> Any:
+        """The RSA private key that signs minted tokens (RS256).
+
+        Exposed so adversarial suites can build their own attack-shaped tokens
+        (``alg=none``, HS256 confusion, omitted claims) on the same keypair the
+        :attr:`jwks_resolver` validates against, without duplicating keygen (§V37).
+        """
+        return self._private_key
+
+    @property
+    def public_key(self) -> Any:
+        """The RSA public key matching :attr:`private_key` (also served by the resolver)."""
+        return self._public_key
+
+    @property
     def settings(self) -> OidcSettings:
         """The :class:`OidcSettings` a verifier for this issuer must carry."""
         return OidcSettings(

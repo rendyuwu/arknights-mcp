@@ -14,14 +14,13 @@ import hashlib
 import hmac
 import json
 import time
-from types import SimpleNamespace
 from typing import Any
 
 import anyio
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from tests.support.oidc_issuer import LocalOidcIssuer
 
 from arknights_mcp.auth.oidc import AuthError, OidcSettings, OidcTokenVerifier
 
@@ -29,19 +28,18 @@ ISSUER = "https://issuer.example.com/"
 AUDIENCE = "arknights-mcp"
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
 
-_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_PUBLIC_KEY = _PRIVATE_KEY.public_key()
+# §V37: the honest-token substrate (one RSA keypair + static JWKS resolver) has a
+# single home in tests.support.oidc_issuer -- share it rather than regenerating a
+# parallel keypair here. The adversarial token construction below (HS256 confusion,
+# alg=none, omitted claims) stays local: it builds on the shared keypair but is this
+# attack suite's own concern, deliberately not modeled by the happy-path issuer.
+_ISSUER = LocalOidcIssuer()
+_PRIVATE_KEY = _ISSUER.private_key
+_PUBLIC_KEY = _ISSUER.public_key
 _PUBLIC_PEM = _PUBLIC_KEY.public_bytes(
     serialization.Encoding.PEM,
     serialization.PublicFormat.SubjectPublicKeyInfo,
 )
-
-
-class _StaticJWKS:
-    """Injected JWKS resolver returning the one test public key for any token."""
-
-    def get_signing_key_from_jwt(self, token: str) -> Any:
-        return SimpleNamespace(key=_PUBLIC_KEY)
 
 
 class _RaisingJWKS:
@@ -60,7 +58,7 @@ def _settings(required: tuple[str, ...] = ("arknights:read",)) -> OidcSettings:
 def _verifier(
     *, required: tuple[str, ...] = ("arknights:read",), jwks: Any | None = None
 ) -> OidcTokenVerifier:
-    return OidcTokenVerifier(_settings(required), jwks_client=jwks or _StaticJWKS())
+    return OidcTokenVerifier(_settings(required), jwks_client=jwks or _ISSUER.jwks_resolver)
 
 
 def _payload(**overrides: Any) -> dict[str, Any]:
