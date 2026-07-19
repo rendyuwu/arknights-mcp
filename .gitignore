@@ -41,6 +41,9 @@ coverage.xml
 .env
 .env.*
 !.env.example
+# Runtime config carries deployment-specific values (tunnel host, OIDC descriptors);
+# only the config.example.toml template is tracked.
+config.toml
 
 # --- Editor / OS ---
 .idea/
