@@ -159,7 +159,7 @@ T57|x|M6 remote security/privacy tests (token missing/expired/wrong-issuer/wrong
 T58|x|M7 threat-model review|-
 T59|x|M7 dependency + project-code license audit|-
 T60|x|M7 source-registry review + simulated takedown/purge drill|V20,V27
-T61|.|M7 local↔remote result parity tests|V14
+T61|x|M7 local↔remote result parity tests|V14
 T62|.|M7 privacy log scan (no token/prompt/args/body)|V12
 T63|.|M7 no-bulk-reconstruction test|V19
 T64|.|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
