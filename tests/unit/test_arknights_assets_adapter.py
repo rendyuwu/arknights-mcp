@@ -22,7 +22,7 @@ from arknights_mcp.sources.arknights_assets import (
     _BoundedRedirectHandler,
     _validate_relative_path,
 )
-from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
@@ -31,6 +31,15 @@ BASE_URL = "https://example.test/repo"
 
 def _fetcher() -> DictFetcher:
     return dict_fetcher_from_snapshot(BASE_URL, FIXTURE_ROOT)
+
+
+def _fixture_files() -> dict[str, bytes]:
+    """The fixture snapshot as a mutable ``{url: bytes}`` map (for B34 skip tests)."""
+    return {
+        f"{BASE_URL}/{p.relative_to(FIXTURE_ROOT).as_posix()}": p.read_bytes()
+        for p in FIXTURE_ROOT.rglob("*")
+        if p.is_file()
+    }
 
 
 # --- HTTPS enforcement (§V1) --------------------------------------------------
@@ -78,6 +87,39 @@ def test_stage_downloads_allowlisted_into_local_adapter(tmp_path: Path) -> None:
     assert local.exists("gamedata/levels/main/level_main_04-04.json")
     stage_table = local.read_json("gamedata/excel/stage_table.json")
     assert "main_04-04" in stage_table["stages"]
+
+
+def test_stage_skips_pruned_level_files(tmp_path: Path) -> None:
+    """B34/§V30: real ``stage_table`` keeps ``levelId`` refs for retired events whose
+    level files are pruned from the snapshot; a 404 on a discovered level file is
+    skipped, not fatal, so the whole sync still completes."""
+    files = _fixture_files()
+    # Add a stage referencing a level file that is NOT in the snapshot (a pruned
+    # retired event). DictFetcher raises SourceNotFoundError for the unmapped URL.
+    stage_table_url = f"{BASE_URL}/gamedata/excel/stage_table.json"
+    stage_table = json.loads(files[stage_table_url])
+    stage_table["stages"]["act10d5_01"] = {
+        "stageId": "act10d5_01",
+        "levelId": "Activities/ACT10d5/level_act10d5_01",
+    }
+    files[stage_table_url] = json.dumps(stage_table).encode("utf-8")
+
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files))
+    local = adapter.stage(tmp_path / "staging")  # must not raise
+
+    # The present level was staged; the pruned one was skipped, not staged.
+    assert local.exists("gamedata/levels/main/level_main_04-04.json")
+    assert not local.exists("gamedata/levels/activities/act10d5/level_act10d5_01.json")
+
+
+def test_stage_core_file_404_still_fatal(tmp_path: Path) -> None:
+    """B34: a missing *core* file is never tolerated — a bad ``base_url`` (or a
+    truly broken snapshot) must fail closed, not silently produce an empty build."""
+    files = _fixture_files()
+    del files[f"{BASE_URL}/gamedata/excel/zone_table.json"]  # core file absent
+    adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=DictFetcher(files))
+    with pytest.raises(SourceNotFoundError):
+        adapter.stage(tmp_path / "staging")
 
 
 def test_level_discovery_normalizes_real_levelid() -> None:

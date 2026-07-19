@@ -16,6 +16,8 @@ refuses non-HTTPS URLs and caps redirects and response size.
 from __future__ import annotations
 
 import json
+import logging
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -23,8 +25,14 @@ from typing import Any, Protocol
 from urllib.parse import unquote, urlsplit
 
 from arknights_mcp.importers.normalization import is_clean_level_path, normalize_level_id
-from arknights_mcp.sources.base import SourceAdapterError, json_within_limits
+from arknights_mcp.sources.base import (
+    SourceAdapterError,
+    SourceNotFoundError,
+    json_within_limits,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
+
+_LOG = logging.getLogger(__name__)
 
 #: Default source id for this adapter (matches the registry entry).
 DEFAULT_SOURCE_ID = "arknights_assets_gamedata"
@@ -113,8 +121,20 @@ class HttpsFetcher:
             allow_cross_domain=self._allow_cross_domain,
         )
         opener = urllib.request.build_opener(handler)
-        with opener.open(url, timeout=self._timeout) as response:  # noqa: S310 - https enforced above
-            data: bytes = response.read(max_bytes + 1)
+        try:
+            with opener.open(url, timeout=self._timeout) as response:  # noqa: S310 - https enforced above
+                data: bytes = response.read(max_bytes + 1)
+        except urllib.error.HTTPError as exc:
+            # A referenced file that is absent upstream (404/410) is distinguished
+            # from any other transport failure so the sync stager can skip a pruned
+            # level file (B34) without swallowing a genuine 5xx / auth error. A
+            # cross-domain or non-HTTPS redirect raises SourceAdapterError from the
+            # handler above -- not an HTTPError -- so it is unaffected here.
+            if exc.code in (404, 410):
+                raise SourceNotFoundError(f"upstream file not found ({exc.code}): {url!r}") from exc
+            raise SourceAdapterError(f"HTTP error {exc.code} fetching {url!r}") from exc
+        except urllib.error.URLError as exc:
+            raise SourceAdapterError(f"network error fetching {url!r}: {exc.reason}") from exc
         if len(data) > max_bytes:
             raise SourceAdapterError(f"download exceeds per-file cap ({max_bytes} bytes): {url!r}")
         return data
@@ -276,6 +296,14 @@ class ArknightsAssetsAdapter:
         Fetches the core files, discovers each stage's level file from the stage
         table, downloads those too, then returns a local adapter over the staging
         directory. All downloads obey the configured :class:`DownloadLimits`.
+
+        Core files are mandatory: a missing one fails the whole sync (a bad
+        ``base_url`` must not silently produce an empty build). A discovered level
+        file that is absent upstream (404/410) is skipped with a warning (B34):
+        ``stage_table`` keeps referencing level files for retired events whose data
+        has been pruned from the snapshot, so a missing level is normal, not fatal.
+        The import read path already imports such a stage with no map/waves and the
+        §V30 gate still fails closed if 0 levels import overall.
         """
         root = Path(staging_root)
         root.mkdir(parents=True, exist_ok=True)
@@ -284,6 +312,20 @@ class ArknightsAssetsAdapter:
             parsed = self._download(relative_path, root)
             if relative_path.endswith("stage_table.json"):
                 stage_table = parsed
-        for level_path in self._discover_level_paths(stage_table):
-            self._download(level_path, root)
+        level_paths = self._discover_level_paths(stage_table)
+        missing = 0
+        for level_path in level_paths:
+            try:
+                self._download(level_path, root)
+            except SourceNotFoundError:
+                # A referenced-but-pruned level file: skip it, don't abort the run.
+                missing += 1
+        if missing:
+            _LOG.warning(
+                "sync %s: %d of %d referenced level files were absent upstream "
+                "(404/410) and were skipped; their stages import with no map/waves",
+                self.server,
+                missing,
+                len(level_paths),
+            )
         return LocalSnapshotAdapter(root, self.server, source_id=self.source_id)

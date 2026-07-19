@@ -17,6 +17,16 @@ class SourceAdapterError(Exception):
     """Raised for unsafe paths, missing files, or malformed snapshot content."""
 
 
+class SourceNotFoundError(SourceAdapterError):
+    """Raised when a referenced file is absent upstream (e.g. an HTTP 404/410).
+
+    A subclass so existing ``except SourceAdapterError`` handlers still catch it,
+    but distinct enough that the sync stager can skip a level file that
+    ``stage_table`` references but that has been pruned from the snapshot (B34)
+    without swallowing genuine fetch failures (500, timeout, size cap).
+    """
+
+
 #: Default JSON-safety caps every source adapter applies when parsing a file.
 #: A single home (§V37) so the network stager and the local snapshot reader bound
 #: nesting depth and node count identically (anti-abuse; B5, §V22/§V19-adjacent).

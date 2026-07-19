@@ -18,7 +18,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
 
 #: Repo root (this file is ``<root>/tests/support/__init__.py``).
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -118,7 +118,10 @@ class DictFetcher:
 
     def fetch(self, url: str, *, max_bytes: int) -> bytes:
         if url not in self._files:
-            raise SourceAdapterError(f"not found: {url!r}")
+            # An unmapped URL is a 404: raise the typed not-found (a
+            # SourceAdapterError subclass, so existing handlers still catch it) so
+            # tests can exercise the sync stager's skip-pruned-level path (B34).
+            raise SourceNotFoundError(f"not found: {url!r}")
         data = self._files[url]
         if len(data) > max_bytes:
             raise SourceAdapterError(f"download exceeds per-file cap ({max_bytes} bytes): {url!r}")
