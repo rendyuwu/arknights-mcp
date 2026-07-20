@@ -171,6 +171,20 @@ UNIEQUIP_ALLOWLIST: frozenset[str] = frozenset(
 #: One ``itemCost`` entry for a module upgrade level (all id/count/enum; no prose).
 ITEM_COST_ALLOWLIST: frozenset[str] = frozenset({"id", "count", "type"})
 
+#: One Penguin Statistics ``items`` entry (§V18; §T89). ``itemId`` is the item's
+#: game id (== arknights item id), ``name`` a short display label (kept, like an
+#: operator/enemy name), ``rarity``/``itemType`` structural enums. Prose (icons,
+#: descriptions, sort/existence metadata) is intentionally absent and thus excluded.
+ITEM_ALLOWLIST: frozenset[str] = frozenset({"itemId", "name", "rarity", "itemType"})
+
+#: One Penguin Statistics ``result/matrix`` drop entry (§V18; §T89). All structural:
+#: ``stageId``/``itemId`` are game ids joined to the internal stage/item rows;
+#: ``quantity``/``times`` are the sample counts a drop rate derives from;
+#: ``start``/``end`` bound the sample window. No prose leaf.
+PENGUIN_MATRIX_ALLOWLIST: frozenset[str] = frozenset(
+    {"stageId", "itemId", "quantity", "times", "start", "end"}
+)
+
 
 @dataclass(frozen=True)
 class AllowlistResult:
