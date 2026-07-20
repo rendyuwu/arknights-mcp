@@ -60,6 +60,17 @@ STAGE_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
+#: Structural keys the normalizer may read from a ``useDb:false`` ref's
+#: ``overwrittenData`` when modelling a stage-scoped inline enemy variant (§T80).
+#: ``overwrittenData`` is an ``enemyData``-shaped partial that also carries prose
+#: (``name``/``description``); only these known structural keys are read, so the
+#: variant is built from typed stats (attributes/motion/lifePointReduce) + its
+#: base ``prefabKey`` and never a prose leaf (§V18/§V16). The extracted stat maps
+#: themselves are the §V29-verified enemy-level maps (single home, §V37).
+OVERWRITTEN_DATA_ALLOWLIST: frozenset[str] = frozenset(
+    {"prefabKey", "attributes", "motion", "lifePointReduce", "level"}
+)
+
 #: Structural spawn-action fields kept in ``stage_spawns.source_fragment_json``.
 #: The raw wave action is untrusted and may carry prose/injection fields; only
 #: these known structural keys are retained (§V18 "known keys only, no prose").

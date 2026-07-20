@@ -234,6 +234,7 @@ def import_stages(
                 waves=totals.waves + result.waves,
                 spawns=totals.spawns + result.spawns,
                 stage_enemies=totals.stage_enemies + result.stage_enemies,
+                variants=totals.variants + result.variants,
             )
         elif level_path:
             # A stage that names a level file we cannot resolve is imported with no

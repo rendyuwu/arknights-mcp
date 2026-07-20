@@ -110,6 +110,11 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     # still references a purged enemy, deleting that enemy below raises (§V20).
     _delete_in(conn, "stage_spawns", "wave_pk", wave_pks)
     _delete_in(conn, "stage_enemies", "stage_pk", stage_pks)
+    # stage_enemy_variants (§T80) is referenced by stage_spawns/stage_enemies, both
+    # deleted above; drop it by stage_pk before stages. A variant in a non-purged
+    # stage whose prefab base is a purged enemy makes the enemy delete below raise
+    # (fail-closed, §V20/§V32) -- the same guard as a shared enemy.
+    _delete_in(conn, "stage_enemy_variants", "stage_pk", stage_pks)
     _delete_in(conn, "stage_tiles", "stage_pk", stage_pks)
     _delete_in(conn, "stage_maps", "stage_pk", stage_pks)
     _delete_in(conn, "stage_routes", "stage_pk", stage_pks)

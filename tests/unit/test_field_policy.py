@@ -5,6 +5,7 @@ from __future__ import annotations
 from arknights_mcp.importers.field_policy import (
     ENEMY_HANDBOOK_ALLOWLIST,
     FIELD_POLICY_VERSION,
+    OVERWRITTEN_DATA_ALLOWLIST,
     apply_allowlist,
 )
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text, strip_control_chars
@@ -28,6 +29,26 @@ def test_allowlist_drops_unlisted_prose() -> None:
     assert "description" in result.dropped
     assert "hideInHandbook" in result.dropped
     assert result.kept["enemyId"] == "enemy_1007_slime"
+
+
+def test_overwritten_data_allowlist_drops_variant_prose() -> None:
+    """§T80/§V18: a useDb:false ref's overwrittenData carries prose (name/
+    description) alongside its stats; only the structural keys survive the
+    allowlist, so the inline variant is built without any prose leaf."""
+    raw = {
+        "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+        "attributes": {"def": {"m_defined": True, "m_value": 9999}},
+        "motion": {"m_defined": True, "m_value": "FLY"},
+        "name": {"m_defined": True, "m_value": "A prose display name"},
+        "description": "A lore blurb that must never be imported.",
+    }
+    result = apply_allowlist(raw, OVERWRITTEN_DATA_ALLOWLIST)
+    assert set(result.kept) <= OVERWRITTEN_DATA_ALLOWLIST
+    assert "name" in result.dropped
+    assert "description" in result.dropped
+    assert "prefabKey" in result.kept
+    assert "attributes" in result.kept
+    assert "motion" in result.kept
 
 
 def test_allowlist_sanitizes_kept_strings() -> None:

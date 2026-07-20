@@ -46,6 +46,11 @@ class StageEnemyRow:
     Carries the M3 analyzer stat inputs (``def_`` / ``res`` / ``attack_range`` /
     ``block_behavior``) joined from the matching ``enemy_levels`` variant (§T39);
     they are ``None`` when the level row or the source field is absent (§V26).
+
+    For a stage-scoped inline variant (``variant_id`` set; §T80/§V43) the overridden
+    ``def_`` / ``res`` / ``motion_type`` read the variant's value **over** the base
+    prefab's (COALESCE), so the analyzers see the real per-variant stat; an
+    un-overridden stat falls back to the base.
     """
 
     game_id: str
@@ -65,6 +70,7 @@ class StageEnemyRow:
     res: int | None
     attack_range: float | None
     block_behavior: str | None
+    variant_id: str | None
 
 
 @dataclass(frozen=True)
@@ -112,6 +118,9 @@ class StageSpawnRow:
     interval: float | None
     spawn_group: str | None
     hidden: bool
+    #: The inline-variant id when this spawn is a ``useDb:false`` variant (§T80),
+    #: else ``None``; ``enemy_game_id`` stays the base prefab.
+    variant_id: str | None
 
 
 _STAGE_SELECT = (
@@ -127,17 +136,23 @@ _STAGE_SELECT = (
 _STAGE_BY_CODE_SQL = _STAGE_SELECT + "s.stage_code = ? ORDER BY s.stage_pk LIMIT 1"
 _STAGE_BY_GAME_ID_SQL = _STAGE_SELECT + "s.game_id = ? ORDER BY s.stage_pk LIMIT 1"
 
+# A stage-scoped inline variant (§T80) overlays its stats on the base: COALESCE the
+# variant's def/res/motion over the base enemy_levels/enemies value, so an
+# overridden stat wins and an un-overridden one inherits the base. variant_id is
+# surfaced for traceability (NULL for a plain base-enemy occurrence).
 _OCCURRENCES_SQL = (
     "SELECT e.game_id, e.display_name, e.enemy_class, e.is_boss, e.is_elite, "
-    "e.motion_type, e.attack_type, se.enemy_level_variant, se.total_count, "
-    "se.first_spawn_time, se.last_spawn_time, se.route_count, el.abilities_json, "
-    'el."def", el.res, el.attack_range, el.block_behavior '
+    "COALESCE(v.motion_type, e.motion_type), e.attack_type, se.enemy_level_variant, "
+    "se.total_count, se.first_spawn_time, se.last_spawn_time, se.route_count, "
+    'el.abilities_json, COALESCE(v."def", el."def"), COALESCE(v.res, el.res), '
+    "el.attack_range, el.block_behavior, v.variant_id "
     "FROM stage_enemies se "
     "JOIN enemies e ON e.enemy_pk = se.enemy_pk "
     "LEFT JOIN enemy_levels el "
     "ON el.enemy_pk = se.enemy_pk AND el.level_variant = se.enemy_level_variant "
+    "LEFT JOIN stage_enemy_variants v ON v.variant_pk = se.variant_pk "
     "WHERE se.stage_pk = ? "
-    "ORDER BY e.game_id, se.enemy_level_variant"
+    "ORDER BY e.game_id, se.enemy_level_variant, se.variant_pk"
 )
 
 # Deploy-surface tile counts for the tiles/deploy rule (§T39): a buildable LOWLAND
@@ -182,11 +197,13 @@ _SPAWN_COUNT_SQL = (
 )
 _SPAWNS_SQL = (
     "SELECT w.wave_index, e.game_id, sp.enemy_level_variant, r.route_index, "
-    "sp.spawn_time, sp.count, sp.interval, sp.spawn_group, sp.hidden_or_scripted "
+    "sp.spawn_time, sp.count, sp.interval, sp.spawn_group, sp.hidden_or_scripted, "
+    "v.variant_id "
     "FROM stage_spawns sp "
     "JOIN stage_waves w ON w.wave_pk = sp.wave_pk "
     "JOIN enemies e ON e.enemy_pk = sp.enemy_pk "
     "LEFT JOIN stage_routes r ON r.route_pk = sp.route_pk "
+    "LEFT JOIN stage_enemy_variants v ON v.variant_pk = sp.variant_pk "
     "WHERE w.stage_pk = ? "
     "ORDER BY w.wave_index, sp.spawn_time, e.game_id, sp.spawn_pk "
     "LIMIT ? OFFSET ?"
@@ -245,6 +262,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         res,
         attack_range,
         block_behavior,
+        variant_id,
     ) = row
     return StageEnemyRow(
         game_id=game_id,
@@ -264,6 +282,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         res=res,
         attack_range=attack_range,
         block_behavior=block_behavior,
+        variant_id=variant_id,
     )
 
 
@@ -310,6 +329,7 @@ def _to_stage_spawn_row(row: Any) -> StageSpawnRow:
         interval,
         spawn_group,
         hidden,
+        variant_id,
     ) = row
     return StageSpawnRow(
         wave_index=wave_index,
@@ -321,6 +341,7 @@ def _to_stage_spawn_row(row: Any) -> StageSpawnRow:
         interval=interval,
         spawn_group=spawn_group,
         hidden=bool(hidden),
+        variant_id=variant_id,
     )
 
 

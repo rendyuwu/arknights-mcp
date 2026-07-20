@@ -43,6 +43,7 @@ CRITICAL_TABLES: tuple[str, ...] = (
     "stage_waves",
     "stage_spawns",
     "stage_enemies",
+    "stage_enemy_variants",
     "operators",
     "skills",
     "modules",
@@ -143,7 +144,15 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         "JOIN enemies e ON e.enemy_pk = sp.enemy_pk "
         "WHERE s.server <> e.server"
     ).fetchone()[0]
-    total = mismatched + spawn_mismatch
+    # A stage-scoped inline variant (§T80) must derive from a base enemy in the same
+    # region as its stage (§V5): en/cn never silently mixed via a variant's prefab.
+    variant_mismatch = conn.execute(
+        "SELECT COUNT(*) FROM stage_enemy_variants v "
+        "JOIN stages s ON s.stage_pk = v.stage_pk "
+        "JOIN enemies e ON e.enemy_pk = v.prefab_base_enemy_pk "
+        "WHERE s.server <> e.server"
+    ).fetchone()[0]
+    total = mismatched + spawn_mismatch + variant_mismatch
     if total:
         return CheckResult("orphans", False, f"{total} cross-region enemy reference(s)")
     return CheckResult("orphans", True, "no cross-region references")

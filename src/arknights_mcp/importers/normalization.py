@@ -40,6 +40,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from arknights_mcp.importers.field_policy import OVERWRITTEN_DATA_ALLOWLIST, apply_allowlist
+
 # --- enemy_database + handbook -------------------------------------------------
 
 #: Real ``enemyData.attributes`` stat key → normalized level key (B6 (a)).
@@ -91,17 +93,18 @@ def _database_is_normalized(database_raw: Any) -> bool:
     return isinstance(database_raw, dict) and isinstance(database_raw.get("enemies"), dict)
 
 
-def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
-    """One real level entry ``{level, enemyData:{attributes,...}}`` → normalized dict."""
+def _normalize_enemy_data_stats(enemy_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract the §V29-verified stat set from an ``enemyData``-shaped dict.
+
+    Reads ``attributes.<stat>.m_value`` (via :data:`_ENEMY_STAT_MAP`) and the
+    non-attribute scalars (:data:`_ENEMY_DATA_SCALAR_MAP`), emitting only the
+    *defined* cells (``m_defined``, §V44): an undefined stat is omitted so the
+    consumer inherits the base value rather than a sentinel ``0``. The single home
+    (§V37) shared by the enemy-database level normalizer and the stage-scoped
+    inline-variant extractor (§T80), both of which read the same ``enemyData`` shape
+    (``overwrittenData`` is a partial ``enemyData``).
+    """
     out: dict[str, Any] = {}
-    if not isinstance(raw_level, dict):
-        return out
-    level = raw_level.get("level")
-    if isinstance(level, bool | int | float):
-        out["level"] = level
-    enemy_data = raw_level.get("enemyData")
-    if not isinstance(enemy_data, dict):
-        return out
     attributes = enemy_data.get("attributes")
     if isinstance(attributes, dict):
         for real_key, norm_key in _ENEMY_STAT_MAP.items():
@@ -114,6 +117,31 @@ def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
             defined, value = _defined_m_value(enemy_data[real_key])
             if defined and value is not None:
                 out[norm_key] = value
+    return out
+
+
+def _defined_motion(raw: Any) -> str | None:
+    """A defined ``{m_defined, m_value}`` motion cell → its string, else ``None``.
+
+    An undefined (``m_defined:false``) or absent motion is dropped so a variant
+    inherits the base enemy's motion (§V44 semantics extended to §T80 variants).
+    """
+    defined, value = _defined_m_value(raw)
+    return value if defined and isinstance(value, str) and value else None
+
+
+def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
+    """One real level entry ``{level, enemyData:{attributes,...}}`` → normalized dict."""
+    out: dict[str, Any] = {}
+    if not isinstance(raw_level, dict):
+        return out
+    level = raw_level.get("level")
+    if isinstance(level, bool | int | float):
+        out["level"] = level
+    enemy_data = raw_level.get("enemyData")
+    if not isinstance(enemy_data, dict):
+        return out
+    out.update(_normalize_enemy_data_stats(enemy_data))
     return out
 
 
@@ -407,6 +435,48 @@ def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Stage-scoped inline enemy variants from ``useDb:false`` refs (§T80; §V43).
+
+    Each ``useDb:false`` ref carrying an ``overwrittenData.prefabKey`` is a
+    level-inline enemy variant whose real stats differ from the base prefab (B37).
+    Emit one variant per such ref: its inline id (``variantId``), the base enemy id
+    (``prefabKey``), and the §V29-verified stat overrides that ``overwrittenData``
+    actually *defines* (an undefined stat is omitted so the base is inherited at
+    read). Only the :data:`OVERWRITTEN_DATA_ALLOWLIST` structural keys are read via
+    the shared stat extractor, so prose (``name``/``description``) never enters
+    (§V18/§V16). A ref without a ``prefabKey`` yields no variant — the spawn keeps
+    the unresolved inline id and fails closed downstream (§V43, no fabricated base).
+    """
+    refs = level_raw.get("enemyDbRefs")
+    if not isinstance(refs, list):
+        return []
+    variants: list[dict[str, Any]] = []
+    for ref in refs:
+        if not isinstance(ref, dict) or ref.get("useDb") is not False:
+            continue
+        rid = ref.get("id") or ref.get("key")
+        if not isinstance(rid, str) or not rid:
+            continue
+        prefab = _inline_prefab_key(ref)
+        if prefab is None:
+            continue
+        overwritten = ref.get("overwrittenData")
+        overwritten = overwritten if isinstance(overwritten, dict) else {}
+        # Drop prose (name/description) via the field allowlist before extracting
+        # stats: only the OVERWRITTEN_DATA_ALLOWLIST structural keys survive, and
+        # their nested string leaves are sanitized (§V18/§V31). Stats then come from
+        # the §V29-verified maps over the kept subset.
+        kept = apply_allowlist(overwritten, OVERWRITTEN_DATA_ALLOWLIST).kept
+        variant: dict[str, Any] = {"variantId": rid, "prefabKey": prefab}
+        variant.update(_normalize_enemy_data_stats(kept))
+        motion = _defined_motion(kept.get("motion"))
+        if motion is not None:
+            variant["motion"] = motion
+        variants.append(variant)
+    return variants
+
+
 def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], int, int]:
     """Grid ``map`` + flat ``tiles`` defs → normalized tiles with derived x/y."""
     grid = map_data.get("map")
@@ -567,6 +637,7 @@ def normalize_level(level_raw: Any) -> Any:
         },
         "routes": _normalize_routes(level_raw),
         "waves": _normalize_waves(level_raw, ref_map),
+        "variants": _collect_variants(level_raw),
     }
 
 

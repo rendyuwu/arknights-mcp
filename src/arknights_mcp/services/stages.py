@@ -69,7 +69,12 @@ class StageFacts:
 
 @dataclass(frozen=True)
 class EnemyOccurrenceFacts:
-    """One enemy's typed appearance in the stage (from ``stage_enemies``)."""
+    """One enemy's typed appearance in the stage (from ``stage_enemies``).
+
+    ``variant_id`` is set for a stage-scoped inline variant (§T80/§V43), whose
+    ``motion_type`` and stat inputs already read the variant's value over the base
+    prefab (COALESCE in the repository); ``None`` for a plain base-enemy occurrence.
+    """
 
     game_id: str
     display_name: str | None
@@ -83,6 +88,7 @@ class EnemyOccurrenceFacts:
     first_spawn_time: float | None
     last_spawn_time: float | None
     route_count: int | None
+    variant_id: str | None
 
 
 @dataclass(frozen=True)
@@ -208,6 +214,7 @@ def analyze_stage(
                 first_spawn_time=enemy.first_spawn_time,
                 last_spawn_time=enemy.last_spawn_time,
                 route_count=enemy.route_count,
+                variant_id=enemy.variant_id,
             )
         )
         threat_inputs.append(
@@ -314,7 +321,11 @@ class RouteFacts:
 
 @dataclass(frozen=True)
 class SpawnFacts:
-    """One scheduled spawn on the stage timeline (typed structural fields only)."""
+    """One scheduled spawn on the stage timeline (typed structural fields only).
+
+    ``variant_id`` is the inline-variant id for a ``useDb:false`` spawn (§T80);
+    ``enemy_game_id`` stays the base prefab, so a client can see both.
+    """
 
     wave_index: int
     enemy_game_id: str
@@ -325,6 +336,7 @@ class SpawnFacts:
     interval: float | None
     spawn_group: str | None
     hidden: bool
+    variant_id: str | None
 
 
 @dataclass(frozen=True)
@@ -486,6 +498,7 @@ def get_stage(
                 interval=s.interval,
                 spawn_group=s.spawn_group,
                 hidden=s.hidden,
+                variant_id=s.variant_id,
             )
             for s in repo.spawns(stage_pk, ssize, offset)
         )

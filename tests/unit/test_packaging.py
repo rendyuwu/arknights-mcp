@@ -36,6 +36,7 @@ _EXPECTED_MIGRATIONS = frozenset(
         "0005_analysis_domain",
         "0006_provenance_backfill",
         "0007_search_index",
+        "0008_stage_enemy_variants",
     }
 )
 

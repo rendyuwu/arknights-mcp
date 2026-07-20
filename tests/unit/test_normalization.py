@@ -366,6 +366,106 @@ def test_usedb_true_ref_carries_no_variant_id() -> None:
     assert all("variantId" not in a for a in actions)
 
 
+# --- stage-scoped inline variant stat extraction (§T80; §V29/§V44/§V18) --------
+
+
+def _variant_ref_level(overwritten: dict) -> dict:
+    """A real level whose sole ``useDb:false`` ref carries ``overwritten`` data."""
+    return {
+        "mapData": {"map": [[0]], "tiles": [{"tileKey": "t", "passableMask": "ALL"}]},
+        "routes": [{"startPosition": {"row": 0, "col": 0}}],
+        "enemyDbRefs": [
+            {"useDb": True, "id": "enemy_1105_tyokai", "level": 0},
+            {
+                "useDb": False,
+                "id": "enemy_1105_tyokai_b",
+                "level": 0,
+                "overwrittenData": overwritten,
+            },
+        ],
+        "waves": [{"fragments": [{"actions": []}]}],
+    }
+
+
+def test_collect_variant_extracts_defined_stats() -> None:
+    """§T80/§V29: a variant carries the base prefab id plus the §V29-verified stat
+    overrides that overwrittenData *defines* (attributes.<stat>.m_value + motion)."""
+    level = normalize_level(
+        _variant_ref_level(
+            {
+                "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+                "attributes": {
+                    "def": {"m_defined": True, "m_value": 9999},
+                    "magicResistance": {"m_defined": True, "m_value": 80},
+                    "maxHp": {"m_defined": True, "m_value": 12345},
+                },
+                "motion": {"m_defined": True, "m_value": "FLY"},
+            }
+        )
+    )
+    assert len(level["variants"]) == 1
+    variant = level["variants"][0]
+    assert variant["variantId"] == "enemy_1105_tyokai_b"
+    assert variant["prefabKey"] == "enemy_1105_tyokai"
+    assert variant["def"] == 9999
+    assert variant["res"] == 80  # magicResistance -> res (§V29 map reuse)
+    assert variant["hp"] == 12345  # maxHp -> hp
+    assert variant["motion"] == "FLY"
+
+
+def test_collect_variant_omits_undefined_stat_to_inherit_base() -> None:
+    """§V44: an ``m_defined:false`` cell is a delta sentinel -- it is omitted so the
+    consumer inherits the base value, never written as the sentinel 0."""
+    level = normalize_level(
+        _variant_ref_level(
+            {
+                "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+                "attributes": {
+                    "def": {"m_defined": True, "m_value": 500},
+                    "magicResistance": {"m_defined": False, "m_value": 0},
+                },
+                "motion": {"m_defined": False, "m_value": "FLY"},
+            }
+        )
+    )
+    variant = level["variants"][0]
+    assert variant["def"] == 500
+    assert "res" not in variant  # undefined -> omitted -> inherit base
+    assert "motion" not in variant  # undefined motion -> inherit base
+
+
+def test_collect_variant_drops_overwritten_prose() -> None:
+    """§V18/§V16: name/description prose in overwrittenData is stripped by the field
+    allowlist and never enters the extracted variant."""
+    level = normalize_level(
+        _variant_ref_level(
+            {
+                "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+                "attributes": {"def": {"m_defined": True, "m_value": 500}},
+                "name": {"m_defined": True, "m_value": "SECRET_NAME"},
+                "description": "SECRET_PROSE",
+            }
+        )
+    )
+    variant = level["variants"][0]
+    assert "name" not in variant
+    assert "description" not in variant
+    assert "SECRET_NAME" not in str(variant)
+    assert "SECRET_PROSE" not in str(variant)
+
+
+def test_collect_variants_only_for_inline_refs() -> None:
+    """§V43: a ``useDb:true`` ref yields no variant, and a ``useDb:false`` ref with
+    no prefabKey yields none (its spawn stays unresolved + fails closed downstream)."""
+    # useDb:true ref only.
+    assert normalize_level(REAL_LEVEL)["variants"] == []
+    # useDb:false without a prefabKey -> no variant.
+    no_prefab = normalize_level(
+        _variant_ref_level({"attributes": {"def": {"m_defined": True, "m_value": 500}}})
+    )
+    assert no_prefab["variants"] == []
+
+
 def test_level_idempotent_on_synthetic_shape() -> None:
     """§V30: a synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
     passes through unchanged."""

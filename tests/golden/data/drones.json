@@ -39,7 +39,8 @@
       "level_variant": 0,
       "motion_type": "FLY",
       "route_count": 1,
-      "total_count": 2
+      "total_count": 2,
+      "variant_id": null
     },
     {
       "attack_type": "physical",
@@ -53,7 +54,8 @@
       "level_variant": 0,
       "motion_type": "FLY",
       "route_count": 1,
-      "total_count": 2
+      "total_count": 2,
+      "variant_id": null
     }
   ],
   "server": "en",

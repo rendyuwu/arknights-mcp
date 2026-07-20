@@ -65,6 +65,30 @@ class ParsedWave:
 
 
 @dataclass(frozen=True)
+class ParsedVariant:
+    """A stage-scoped inline enemy variant (``useDb:false`` ref; §T80/§V43).
+
+    ``prefab_base_game_id`` is the base enemy it derives from (resolved to an
+    ``enemy_pk`` FK at insert). Stat fields are the §V29-verified overrides
+    ``overwrittenData`` defined; ``None`` = not overridden, so the base value is
+    inherited at read. ``source_fragment`` is the allowlisted, prose-free trace.
+    """
+
+    variant_id: str
+    prefab_base_game_id: str
+    hp: int | None
+    atk: int | None
+    def_: int | None
+    res: int | None
+    attack_interval: float | None
+    move_speed: float | None
+    weight: int | None
+    life_point_reduction: int | None
+    motion_type: str | None
+    source_fragment: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ParsedLevel:
     width: int | None
     height: int | None
@@ -73,6 +97,7 @@ class ParsedLevel:
     tiles: list[ParsedTile]
     routes: list[ParsedRoute]
     waves: list[ParsedWave]
+    variants: list[ParsedVariant]
 
 
 @dataclass(frozen=True)
@@ -82,6 +107,7 @@ class LevelImportResult:
     waves: int = 0
     spawns: int = 0
     stage_enemies: int = 0
+    variants: int = 0
 
 
 def parse_level(level_raw: Any) -> ParsedLevel:
@@ -170,6 +196,33 @@ def parse_level(level_raw: Any) -> ParsedLevel:
             )
         )
 
+    variants: list[ParsedVariant] = []
+    for raw in level_raw.get("variants", []):
+        if not isinstance(raw, dict):
+            continue
+        variant_id = as_str(raw.get("variantId"), sanitize=True)
+        prefab = as_str(raw.get("prefabKey"), sanitize=True)
+        if not variant_id or not prefab:
+            continue
+        variants.append(
+            ParsedVariant(
+                variant_id=variant_id,
+                prefab_base_game_id=prefab,
+                hp=as_int(raw.get("hp")),
+                atk=as_int(raw.get("atk")),
+                def_=as_int(raw.get("def")),
+                res=as_int(raw.get("res")),
+                attack_interval=as_float(raw.get("attackInterval")),
+                move_speed=as_float(raw.get("moveSpeed")),
+                weight=as_int(raw.get("weight")),
+                life_point_reduction=as_int(raw.get("lifePointReduction")),
+                motion_type=as_str(raw.get("motion"), sanitize=True),
+                # Prose-free trace: the inline id + its base prefab (both id-charset
+                # strings). The overriding stats live in the typed columns above.
+                source_fragment={"variantId": variant_id, "prefabKey": prefab},
+            )
+        )
+
     return ParsedLevel(
         width=as_int(map_data.get("width")),
         height=as_int(map_data.get("height")),
@@ -178,6 +231,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
         tiles=tiles,
         routes=routes,
         waves=waves,
+        variants=variants,
     )
 
 
@@ -269,7 +323,45 @@ def _insert_level(
         )
         route_pk_by_index[route.route_index] = int(cur.lastrowid or 0)
 
-    agg: dict[tuple[int, int], _SpawnAgg] = defaultdict(_SpawnAgg)
+    # Stage-scoped inline enemy variants (§T80/§V43). Each resolves its base prefab
+    # to an enemy_pk (the FK); a base absent from the region's enemies fails closed
+    # (§V3, never a fabricated enemy row). Insert before spawns so a spawn/occurrence
+    # can carry its variant_pk.
+    variant_pk_by_id: dict[str, int] = {}
+    for variant in level.variants:
+        base_pk = enemy_pk_by_game_id.get(variant.prefab_base_game_id)
+        if base_pk is None:
+            raise ImporterError(
+                f"inline variant {variant.variant_id!r} references unknown base enemy "
+                f"{variant.prefab_base_game_id!r} in stage_pk={stage_pk}"
+            )
+        cur = conn.execute(
+            "INSERT INTO stage_enemy_variants "
+            "(stage_pk, variant_id, prefab_base_enemy_pk, hp, atk, def, res, attack_interval, "
+            "move_speed, weight, life_point_reduction, motion_type, source_fragment_json, "
+            "provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                stage_pk,
+                variant.variant_id,
+                base_pk,
+                variant.hp,
+                variant.atk,
+                variant.def_,
+                variant.res,
+                variant.attack_interval,
+                variant.move_speed,
+                variant.weight,
+                variant.life_point_reduction,
+                variant.motion_type,
+                json_or_none(variant.source_fragment),
+                provenance_id,
+            ),
+        )
+        variant_pk_by_id[variant.variant_id] = int(cur.lastrowid or 0)
+
+    # Occurrence identity includes variant_pk so two distinct inline variants of the
+    # same base prefab + level do not collapse (each keeps its own overridden stats).
+    agg: dict[tuple[int, int, int | None], _SpawnAgg] = defaultdict(_SpawnAgg)
     spawns_inserted = 0
     for wave in level.waves:
         cur = conn.execute(
@@ -288,15 +380,25 @@ def _insert_level(
             route_pk = (
                 route_pk_by_index.get(spawn.route_index) if spawn.route_index is not None else None
             )
+            # A useDb:false inline-variant spawn carries the inline id under
+            # ``variantId``; link it to the stage-scoped variant row so reads overlay
+            # its stats over the base prefab (§T80). A useDb:true spawn has none.
+            spawn_variant_id = spawn.source_fragment.get("variantId")
+            variant_pk = (
+                variant_pk_by_id.get(spawn_variant_id)
+                if isinstance(spawn_variant_id, str)
+                else None
+            )
             conn.execute(
                 "INSERT INTO stage_spawns "
-                "(wave_pk, enemy_pk, enemy_level_variant, route_pk, spawn_time, count, "
+                "(wave_pk, enemy_pk, enemy_level_variant, variant_pk, route_pk, spawn_time, count, "
                 "interval, spawn_group, hidden_or_scripted, source_fragment_json, provenance_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     wave_pk,
                     enemy_pk,
                     spawn.level_variant,
+                    variant_pk,
                     route_pk,
                     spawn.spawn_time,
                     spawn.count,
@@ -309,7 +411,7 @@ def _insert_level(
             )
             spawns_inserted += 1
 
-            bucket = agg[(enemy_pk, spawn.level_variant)]
+            bucket = agg[(enemy_pk, spawn.level_variant, variant_pk)]
             bucket.total_count += spawn.count or 0
             if spawn.spawn_time is not None:
                 if bucket.first_spawn_time is None or spawn.spawn_time < bucket.first_spawn_time:
@@ -319,15 +421,20 @@ def _insert_level(
             if route_pk is not None:
                 bucket.route_pks.add(route_pk)
 
-    for (enemy_pk, variant), bucket in sorted(agg.items()):
+    # Sort with a NULL-safe key: a base-enemy occurrence has variant_pk None, which
+    # cannot be ordered against an int; treat it as -1 so ordering stays total.
+    for (enemy_pk, level_variant, variant_pk), bucket in sorted(
+        agg.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2] if kv[0][2] is not None else -1)
+    ):
         conn.execute(
             "INSERT INTO stage_enemies "
-            "(stage_pk, enemy_pk, enemy_level_variant, total_count, first_spawn_time, "
-            "last_spawn_time, route_count, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(stage_pk, enemy_pk, enemy_level_variant, variant_pk, total_count, first_spawn_time, "
+            "last_spawn_time, route_count, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 stage_pk,
                 enemy_pk,
-                variant,
+                level_variant,
+                variant_pk,
                 bucket.total_count,
                 bucket.first_spawn_time,
                 bucket.last_spawn_time,
@@ -342,4 +449,5 @@ def _insert_level(
         waves=len(level.waves),
         spawns=spawns_inserted,
         stage_enemies=len(agg),
+        variants=len(level.variants),
     )
