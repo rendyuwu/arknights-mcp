@@ -22,7 +22,9 @@ CREATE TABLE items (
     UNIQUE (server, game_id)
 );
 
-CREATE INDEX idx_items_game_id ON items (server, game_id);
+-- No explicit items index: UNIQUE(server, game_id) already builds a covering index
+-- that serves the get_stage_drops by-game-id read; a duplicate CREATE INDEX on the
+-- same columns would only add write amplification.
 
 -- One aggregated drop observation per (stage, item): quantity dropped over `times`
 -- sampled runs with penguin's reported drop_rate. region is carried explicitly (§V5)
@@ -42,5 +44,8 @@ CREATE TABLE stage_drops (
     UNIQUE (stage_pk, item_pk)
 );
 
-CREATE INDEX idx_stage_drops_stage ON stage_drops (stage_pk);
+-- No explicit stage_pk index: UNIQUE(stage_pk, item_pk) already builds a composite
+-- index whose leading column serves the get_stage_drops `WHERE stage_pk = ?` read.
+-- Only the reverse item_pk lookup (not a leading column of any unique index) needs
+-- its own index.
 CREATE INDEX idx_stage_drops_item ON stage_drops (item_pk);
