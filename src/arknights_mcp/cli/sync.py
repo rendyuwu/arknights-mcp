@@ -21,14 +21,12 @@ from arknights_mcp.cli._shared import (
     _out,
 )
 from arknights_mcp.config import AppConfig
-from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.penguin_drops import (
     import_penguin_drops,
     penguin_server_for_region,
 )
 from arknights_mcp.importers.pipeline import ServerImport
 from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter
-from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.http_fetch import DownloadBudget, DownloadLimits, Fetcher
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.penguin_statistics import (
@@ -111,8 +109,8 @@ def _ride_along_penguin(
                 # A region with no penguin server (never en/cn here, defensive) is
                 # skipped silently rather than mislabelled (§V54/§V58).
                 continue
-            conn.execute("SAVEPOINT penguin_drops")
             try:
+                conn.execute("SAVEPOINT penguin_drops")
                 adapter = PenguinStatsAdapter(
                     base_url, fetcher=fetcher, limits=limits, budget=budget
                 )
@@ -122,11 +120,22 @@ def _ride_along_penguin(
                     f"  penguin {server}: drops {result.drops_inserted}, "
                     f"skipped {result.drops_skipped}"
                 )
-            except (SourceAdapterError, ImporterError, sqlite3.Error) as exc:
+            except Exception as exc:
                 # Roll back only this region's partial inserts and keep going: a
-                # penguin failure must not fail the game-data build (§V58/§V3).
-                conn.execute("ROLLBACK TO SAVEPOINT penguin_drops")
-                conn.execute("RELEASE SAVEPOINT penguin_drops")
+                # penguin failure of ANY kind (network, import, a malformed payload
+                # surfacing as ValueError/OverflowError, ...) must not fail the
+                # game-data build (§V58/§V3). Fail-open is the whole point of the
+                # ride-along, so the catch is deliberately broad rather than a fixed
+                # error tuple, and SAVEPOINT creation is inside the guard too.
+                try:
+                    # If the failure already aborted the transaction the savepoint is
+                    # gone (its inserts already undone), and if SAVEPOINT itself failed
+                    # there is nothing to release -- swallow the cleanup error rather
+                    # than let it defeat fail-open.
+                    conn.execute("ROLLBACK TO SAVEPOINT penguin_drops")
+                    conn.execute("RELEASE SAVEPOINT penguin_drops")
+                except sqlite3.Error:
+                    pass
                 _out(
                     f"  penguin {server}: unavailable, drops skipped; "
                     f"continuing game-data-only (§V58): {exc}"

@@ -59,16 +59,6 @@ _PENGUIN_US = {
     },
 }
 
-#: A CN (-> cn) payload; used by the --server all savepoint-isolation test where CN
-#: is deliberately NOT served so its region rolls back while en survives.
-_PENGUIN_CN = {
-    "items": [{"itemId": "sugar", "name": "Sugar", "rarity": 3, "itemType": "MATERIAL"}],
-    "result/matrix": {
-        "matrix": [{"stageId": "main_04-04", "itemId": "sugar", "quantity": 600, "times": 4000}]
-    },
-}
-
-
 class _RecordingFetcher(DictFetcher):
     """A :class:`DictFetcher` that records every URL requested (for the opt-in test)."""
 
@@ -213,6 +203,39 @@ def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
         # get_stage_drops reports the stage has no drop cache (not_found), never fresh.
         result = get_stage_drops(conn, server="en", stage_code="4-4")
     assert result.status == "not_found"
+
+
+# --- a non-adapter/non-importer error in the penguin path still fails open (§V58) ---
+
+
+def test_sync_penguin_unexpected_error_still_promotes(tmp_path: Path) -> None:
+    """A penguin payload that raises outside the (adapter, importer, sqlite) error set
+    -- here ``times: 1e999`` parses to ``inf`` and ``as_int(inf)`` raises
+    ``OverflowError`` -- must still be caught so the game-data build promotes (§V58/§V3).
+    A narrow ``except`` tuple would let it escape ``post_build`` and sink the whole sync.
+    """
+    registry = _enabled_registry(tmp_path)
+    config = _write_config(
+        tmp_path,
+        registry=registry,
+        enabled_sources=["arknights_assets_gamedata", "penguin_statistics"],
+        servers=["en"],
+    )
+    bad = {
+        "items": [{"itemId": "sugar", "name": "Sugar", "rarity": 3, "itemType": "MATERIAL"}],
+        "result/matrix": {
+            "matrix": [{"stageId": "main_04-04", "itemId": "sugar", "quantity": 1, "times": 1e999}]
+        },
+    }
+    fetcher = DictFetcher({**_game_files(("en",)), **_penguin_files({"US": bad})})
+    rc = main(["--config", str(config), "sync", "--server", "en"], fetcher=fetcher)
+    assert rc == 0
+
+    with read_only_connection(_active_db(tmp_path / "data")) as conn:
+        # Game data promoted; the poisoned penguin region rolled back (no drops, no items).
+        assert conn.execute("SELECT COUNT(*) FROM stages WHERE server='en'").fetchone()[0] >= 1
+        assert conn.execute("SELECT COUNT(*) FROM stage_drops").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM items WHERE server='en'").fetchone()[0] == 0
 
 
 # --- --server all: one region's penguin fails, the other's drops survive (§V58) ----
