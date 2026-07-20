@@ -109,7 +109,7 @@ def test_manifest_carries_prd_fields(tmp_path: Path) -> None:
         candidate, data_dir=tmp_path / "data", validation_passed=True, timestamp=_ts(10)
     )
     manifest = result.manifest
-    assert manifest.schema_version == "0008_stage_enemy_variants"  # latest migration
+    assert manifest.schema_version == "0009_drops_domain"  # latest migration
     assert manifest.analyzer_version == ANALYZER_VERSION
     assert manifest.database_hash and len(manifest.database_hash) == 64
     assert manifest.snapshots[0]["source_id"] == "arknights_assets_gamedata"
