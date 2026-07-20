@@ -59,6 +59,7 @@ _PENGUIN_US = {
     },
 }
 
+
 class _RecordingFetcher(DictFetcher):
     """A :class:`DictFetcher` that records every URL requested (for the opt-in test)."""
 
@@ -272,7 +273,9 @@ def test_sync_all_rolls_back_only_failing_region(tmp_path: Path) -> None:
 
 
 def test_sync_disabled_penguin_not_fetched(tmp_path: Path) -> None:
-    # penguin_statistics is NOT in enabled_sources; the registry keeps it disabled.
+    # penguin_statistics is NOT in enabled_sources, so the ride-along returns early
+    # (the enabled_sources gate fires before the registry check) -> never fetched,
+    # even though the registry now enables penguin.
     config = _write_config(
         tmp_path,
         registry=REGISTRY,

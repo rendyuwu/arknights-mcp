@@ -102,9 +102,9 @@ private_hosting_status = "permitted_private_noncommercial_with_attribution"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Drop-rate statistics (c) Penguin Statistics, licensed CC BY-NC 4.0."
 contact_url = "https://penguin-stats.io"
-policy_notes = "v0.2 M8 drop-rate source; adapter is CLI-only network fetch (never query-time). Remains disabled until the drop importer + get_stage_drops tool land; when enabled, cached observations must record server, sample size, fetched_at, expires_at, penguin snapshot_id, region, and attribution."
-enabled = false
-last_reviewed_at = "2026-07-20"
+policy_notes = "v0.2 M8 drop-rate source; adapter is CLI-only network fetch (never query-time). Enabled 2026-07-21 (drop importer + get_stage_drops tool landed, T89/T91/T102); cached observations record server, sample size, fetched_at, expires_at, penguin snapshot_id, region, and attribution."
+enabled = true
+last_reviewed_at = "2026-07-21"
 
 [arknights_global_official_news]
 display_name = "Official Arknights (Global) news"

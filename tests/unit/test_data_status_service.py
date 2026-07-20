@@ -101,7 +101,8 @@ def test_data_sources_public_view_with_active_snapshot(tmp_path: Path) -> None:
 
     by_id = {s.source_id: s for s in result.sources}
     assert by_id["arknights_assets_gamedata"].enabled is True
-    assert by_id["penguin_statistics"].enabled is False
+    # penguin_statistics enabled 2026-07-21 (M8 drop importer + tool landed).
+    assert by_id["penguin_statistics"].enabled is True
 
     local = by_id["local_snapshot"]
     assert len(local.active_snapshots) == 1
