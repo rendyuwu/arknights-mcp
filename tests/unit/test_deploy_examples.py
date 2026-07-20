@@ -102,6 +102,13 @@ def test_nginx_terminates_tls_and_proxies_loopback() -> None:
     assert "proxy_http_version 1.1" in text
 
 
+def test_nginx_forwards_oauth_discovery_unauthenticated() -> None:
+    text = _read(NGINX_CONF)
+    # §V45: RFC 9728 protected-resource metadata must reach the app WITHOUT a bearer
+    # so `claude mcp login` can bootstrap; a proxy forwarding only /mcp would 404 it.
+    assert "location /.well-known/oauth-protected-resource" in text
+
+
 def test_nginx_carries_pre_auth_flood_protection() -> None:
     text = _read(NGINX_CONF)
     # §V11 pre-auth ingress caps are the proxy's job (wrap_remote_app pins this

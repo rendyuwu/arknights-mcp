@@ -67,6 +67,18 @@ principals. Unauthenticated request storms never reach a per-principal bucket, s
 capping them is the reverse proxy's responsibility — the nginx example carries
 `limit_req` / `limit_conn` zones for exactly that.
 
+## OAuth discovery must reach the app unauthenticated (§V45)
+
+For interactive login (`claude mcp login`) the app publishes RFC 9728
+protected-resource metadata at `/.well-known/oauth-protected-resource` (and the
+`/mcp`-suffixed form) **without** a bearer, so an MCP OAuth client can discover the
+authorization server from a `401`. A proxy that forwards only `/mcp` would `404`
+that path — the nginx example therefore adds a `location` block forwarding the
+well-known prefix to the app (still capped by the pre-auth ingress zones). The
+metadata advertises the **issuer only**; the client fetches authorization-server
+metadata straight from your provider, so the app never proxies it (§V1). `/mcp`
+itself stays bearer-gated. See [`../docs/clients/remote.md`](../docs/clients/remote.md).
+
 ## Quick start (systemd + nginx)
 
 ```bash

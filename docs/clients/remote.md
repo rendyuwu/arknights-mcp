@@ -74,6 +74,29 @@ curl -sS -i https://mcp.example.com/mcp \
 # → HTTP/1.1 200 (initialize result), not 401
 ```
 
+### OAuth discovery (for interactive login)
+
+For clients that log in interactively (`claude mcp login`) rather than carrying a
+pre-issued bearer, the server publishes **RFC 9728 protected-resource metadata**
+*unauthenticated* (§V45), so the client can discover the authorization server from
+a `401` without a hand-pasted token. The discovery document is reachable with **no**
+`Authorization` header:
+
+```bash
+curl -sS https://mcp.example.com/.well-known/oauth-protected-resource
+# → 200 {"resource":"https://mcp.example.com/mcp",
+#        "authorization_servers":["https://YOUR_TENANT.us.auth0.com/"],
+#        "scopes_supported":["arknights:read"],
+#        "bearer_methods_supported":["header"]}
+```
+
+The metadata advertises the **issuer only**; the client fetches the
+authorization-server metadata straight from your OIDC provider (Auth0's own
+`.well-known`), so this server never proxies it and makes no query-time network call
+(§V1). The `401` on `/mcp` carries a `resource_metadata="…"` hint pointing back at
+this document (RFC 9728 §5.1). Only the two well-known paths bypass auth — `/mcp`
+itself stays bearer-gated (§V10).
+
 ## MCP Inspector
 
 The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) drives a
@@ -97,6 +120,29 @@ In the UI: set **Transport** to *Streamable HTTP*, **URL** to
 
 Record: connected, seven tools, an `ok` call — identical to what `stdio` serves
 (§V14). Clear the bearer and confirm the connection is refused.
+
+## Claude Code (`claude mcp login`)
+
+With OAuth discovery live (above), the Claude Code CLI can bootstrap auth itself —
+no hand-pasted bearer:
+
+```bash
+claude mcp add --transport http arknights https://mcp.example.com/mcp
+claude mcp login arknights   # opens the browser OAuth flow against your provider
+```
+
+The CLI hits `/mcp`, reads the `401`'s `resource_metadata` hint, fetches the
+protected-resource metadata, then the authorization-server metadata from your issuer,
+and runs the OAuth flow for a bearer scoped `arknights:read`. Two provider-side
+prerequisites (Auth0 dashboard, one-time):
+
+- **Dynamic Client Registration** enabled, *or* a pre-registered client whose id the
+  CLI is configured with — MCP interactive login expects one of these.
+- The **API** you registered as the audience (`https://mcp.example.com/mcp`) exposes
+  the `arknights:read` permission/scope, and the login callback URL is allowed.
+
+If your provider allows neither DCR nor a usable public client, fall back to the
+pre-issued M2M bearer flow (`claude mcp add … --header "Authorization: Bearer <token>"`).
 
 ## Claude custom connector
 
