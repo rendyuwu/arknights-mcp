@@ -72,6 +72,15 @@ _ENTITIES_NOT_FOUND_ACTION = (
 _STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
 _STAGES_NOT_FOUND_ACTION = "broaden the query, drop the server filter, or check the stage code"
 
+#: Fixed, safe copy for the §V50 region-availability verdicts, shared by both
+#: search tools (§V37): a region is gated *before* absence is asserted, so a client
+#: never reads a bare ``not_found`` for an empty region index (B42). No query echo,
+#: no path; the suggested action is an admin step, never a query-time download (§V24).
+_UNSUPPORTED_SERVER_MESSAGE = "the requested region is not supported"
+_UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
+_DATA_STALE_MESSAGE = "no active snapshot for the requested region in the active build"
+_DATA_STALE_ACTION = "run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     """One hit as a region-tagged locator (§V5: region travels on every row)."""
@@ -101,6 +110,18 @@ def _guarded_search(
     """
 
     def shape(result: SearchResult) -> ResponseEnvelope:
+        # §V50/§V24: the service gates region availability before asserting
+        # absence, so an unsupported region or an empty region index surfaces as a
+        # typed region verdict -- never a bare ``not_found`` that would wrongly
+        # claim the entity is absent from a region that simply has no data (B42).
+        if result.status == "unsupported_server":
+            return error(
+                "unsupported_server",
+                _UNSUPPORTED_SERVER_MESSAGE,
+                suggested_action=_UNSUPPORTED_SERVER_ACTION,
+            )
+        if result.status == "data_stale":
+            return error("data_stale", _DATA_STALE_MESSAGE, suggested_action=_DATA_STALE_ACTION)
         if result.status == "not_found":
             return error("not_found", not_found_message, suggested_action=not_found_action)
         return ok(

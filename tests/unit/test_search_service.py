@@ -20,7 +20,7 @@ from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.importers.search_index import build_search_index
-from arknights_mcp.services.search import MAX_LIMIT, search_entities
+from arknights_mcp.services.search import MAX_LIMIT, search_entities, search_stages
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -86,6 +86,49 @@ def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
     # §V5: the en Slug is not surfaced under a cn-scoped search.
     assert search_entities(conn, query="slug", server="en").hits
     assert search_entities(conn, query="slug", server="cn").hits == ()
+
+
+# --- §V50/§V24 region availability gate (B42) ---------------------------------
+
+
+def test_cn_without_snapshot_is_data_stale_not_not_found(conn: sqlite3.Connection) -> None:
+    # §V50/§V24: this build has an en snapshot only. A cn-scoped search must honor
+    # region availability BEFORE asserting absence: no cn snapshot -> ``data_stale``,
+    # never a bare ``not_found`` (which would wrongly claim the entity absent on cn).
+    entities = search_entities(conn, query="drone", server="cn")
+    assert entities.status == "data_stale"
+    assert entities.hits == ()
+    stages = search_stages(conn, query="4-4", server="cn")
+    assert stages.status == "data_stale"
+    assert stages.hits == ()
+
+
+def test_unsupported_region_is_unsupported_server(conn: sqlite3.Connection) -> None:
+    # §V50/§V5: a region outside {en, cn} is ``unsupported_server`` -- not a
+    # ``not_found`` and not a silent empty result. The service enforces this even
+    # though the MCP input model also rejects a non-Region ``server`` (§V14 depth).
+    assert search_entities(conn, query="drone", server="jp").status == "unsupported_server"
+    assert search_stages(conn, query="4-4", server="jp").status == "unsupported_server"
+
+
+def test_supported_region_with_snapshot_still_asserts_absence(conn: sqlite3.Connection) -> None:
+    # §V50: ``not_found`` is legitimate once the region index is confirmed present --
+    # an en snapshot exists, so a genuinely-absent en entity is ``not_found``.
+    result = search_entities(conn, query="zzzznotanentity", server="en")
+    assert result.status == "not_found"
+
+
+def test_empty_index_unscoped_search_is_data_stale(tmp_path: Path) -> None:
+    # §V50: an unscoped search against a build with NO active snapshot at all is
+    # ``data_stale`` (the whole index is empty) -- not a bare ``not_found``.
+    path = tmp_path / "empty.sqlite"
+    writer = build_database(path)
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as empty:
+        assert search_entities(empty, query="drone").status == "data_stale"
+        assert search_stages(empty, query="4-4").status == "data_stale"
 
 
 # --- entity-type narrowing ----------------------------------------------------

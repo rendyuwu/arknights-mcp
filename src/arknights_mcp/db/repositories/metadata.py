@@ -66,6 +66,19 @@ class MetadataRepository(Repository):
         """Snapshots attributable to one source (parameterized, §V2)."""
         return [s for s in self.all_snapshots() if s.source_id == source_id]
 
+    def active_servers(self) -> frozenset[str]:
+        """Distinct regions carrying at least one active snapshot (§V5/§V50).
+
+        The sanctioned source of truth for "which regions have imported data".
+        The search service gates region availability on this set *before*
+        asserting an entity absent (§V24/§V50): a region with no snapshot is
+        ``data_stale``, never a bare ``not_found`` that would wrongly claim the
+        entity does not exist on that region. Mirrors the snapshot-presence check
+        the status service already makes over the same table (§V37).
+        """
+        rows = self._all("SELECT DISTINCT server FROM source_snapshots")
+        return frozenset(str(r[0]) for r in rows)
+
     def domain_row_counts(self) -> dict[str, int]:
         """Row counts per domain table; a table absent from the schema counts 0."""
         counts: dict[str, int] = {}

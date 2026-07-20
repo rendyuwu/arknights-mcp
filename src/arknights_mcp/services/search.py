@@ -16,10 +16,11 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
+from arknights_mcp.db.repositories.metadata import MetadataRepository
 from arknights_mcp.db.repositories.search import SearchHitRow, SearchRepository
-from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT
+from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, Region
 
 #: §V19 search-result bounds. Single home is ``models.common`` (§V37); re-exported
 #: under the service-local names the rest of this module already uses.
@@ -31,9 +32,15 @@ _MAX_TOKENS = 16
 #: rebuilt MATCH expression can carry no operator, quote, or ``*`` from user input.
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
-#: Typed outcome; ``not_found`` == the query was well-formed but matched nothing.
-#: The full §V23 status vocabulary is wired into the tool envelope in §T32.
-SearchStatus = Literal["ok", "not_found"]
+#: Typed outcome (a subset of the §V23 status vocabulary wired into the tool
+#: envelope in §T32). ``not_found`` == the region index is present but the
+#: well-formed query matched nothing; ``unsupported_server`` / ``data_stale`` are
+#: the §V50 region-availability verdicts returned *before* asserting absence.
+SearchStatus = Literal["ok", "not_found", "unsupported_server", "data_stale"]
+
+#: §V5 supported regions as a runtime set, derived from the single ``Region``
+#: literal home (§V37) so the search gate and the input model never diverge.
+_REGIONS: frozenset[str] = frozenset(get_args(Region))
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,34 @@ def _validate_limit(limit: int) -> int:
     return value
 
 
+def _region_gate(conn: sqlite3.Connection, server: str | None) -> SearchStatus | None:
+    """Honor region availability (§V24/§V50) before a search asserts absence.
+
+    Returns the gating :data:`SearchStatus` to short-circuit with, or ``None`` when
+    the region index is present and the search may proceed:
+
+    * a ``server`` outside {en, cn} -> ``unsupported_server`` (§V5);
+    * a supported ``server`` with no active snapshot -> ``data_stale`` + a suggested
+      admin action at the tool layer;
+    * an unscoped search (``server`` is ``None``) against a build with *no* active
+      snapshot at all -> ``data_stale`` (the whole index is empty).
+
+    This is the fix for B42: a bare ``not_found`` claims the entity is absent, which
+    is not inferable when the region index is empty. Both ``search_entities`` and
+    ``search_stages`` route through this single home (§V37); it mirrors the
+    snapshot-presence verdict the status service (B24) makes over the same table.
+    """
+    if server is not None and server not in _REGIONS:
+        return "unsupported_server"
+    available = MetadataRepository(conn).active_servers()
+    if server is not None:
+        if server not in available:
+            return "data_stale"
+    elif not available:
+        return "data_stale"
+    return None
+
+
 def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
     """Map repository rows to region-tagged hits + a typed status (§V5/§V23).
 
@@ -122,9 +157,15 @@ def search_entities(
     ``server`` scopes the result to one region (§V5, never silently mixed);
     ``entity_type`` narrows to ``operator`` | ``enemy`` | ``stage``. ``limit`` is
     validated against the §V19 window -- an out-of-range value is *rejected*
-    (``ValueError``), never silently widened. Both transports call this (§V14).
+    (``ValueError``), never silently widened. Region availability is honored
+    *before* asserting absence (§V24/§V50): an unsupported region or a region with
+    no active snapshot returns ``unsupported_server`` / ``data_stale``, never a bare
+    ``not_found`` (see :func:`_region_gate`). Both transports call this (§V14).
     """
     bounded = _validate_limit(limit)
+    gate = _region_gate(conn, server)
+    if gate is not None:
+        return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
         return SearchResult(status="not_found", query=query, hits=())
@@ -148,9 +189,14 @@ def search_stages(
     ``4-4``, case-insensitive) is ranked ahead of a fuzzier name/game-id hit.
     ``server`` scopes to one region (§V5, never silently mixed); ``limit`` is
     validated against the §V19 window -- an out-of-range value is *rejected*
-    (``ValueError``), never silently widened. Both transports call this (§V14).
+    (``ValueError``), never silently widened. Region availability is honored before
+    asserting absence (§V24/§V50, see :func:`_region_gate`). Both transports call
+    this (§V14).
     """
     bounded = _validate_limit(limit)
+    gate = _region_gate(conn, server)
+    if gate is not None:
+        return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
         return SearchResult(status="not_found", query=query, hits=())

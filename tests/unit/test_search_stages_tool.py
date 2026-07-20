@@ -84,7 +84,9 @@ def test_matches_by_name_and_game_id(conn: sqlite3.Connection) -> None:
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
     # §V5: the en 4-4 is not surfaced under a cn-scoped search.
     assert _handler(conn)(query="4-4", server="en").status == "ok"
-    assert _handler(conn)(query="4-4", server="cn").status == "not_found"
+    # §V50/§V24 (B42): cn has no active snapshot in this en-only build, so a
+    # cn-scoped stage search is ``data_stale`` -- never a bare ``not_found``.
+    assert _handler(conn)(query="4-4", server="cn").status == "data_stale"
 
 
 # --- §T33 headline: exact stage_code ranked first -----------------------------

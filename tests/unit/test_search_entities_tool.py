@@ -76,7 +76,10 @@ def test_results_carry_region_and_type(conn: sqlite3.Connection) -> None:
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
     # §V5: the en Slug is not surfaced under a cn-scoped search.
     assert _handler(conn)(query="slug", server="en").status == "ok"
-    assert _handler(conn)(query="slug", server="cn").status == "not_found"
+    # §V50/§V24 (B42): cn has no active snapshot in this en-only build, so a
+    # cn-scoped search is ``data_stale`` -- never a bare ``not_found`` that would
+    # wrongly claim the entity is absent from cn.
+    assert _handler(conn)(query="slug", server="cn").status == "data_stale"
 
 
 def test_entity_type_filter(conn: sqlite3.Connection) -> None:
@@ -100,7 +103,26 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
 
 def test_metacharacter_only_query_is_not_found(conn: sqlite3.Connection) -> None:
     # A query of only FTS metacharacters holds no word token -> nothing to search.
+    # §V50: the region index is present (en snapshot), so absence is assertable.
     assert _handler(conn)(query="*:^()").status == "not_found"
+
+
+# --- §V50/§V24 region availability gate (B42) ---------------------------------
+
+
+def test_region_without_snapshot_is_data_stale_envelope(conn: sqlite3.Connection) -> None:
+    # §V50/§V24 (B42): cn has no active snapshot in this en-only build. A cn search
+    # is ``data_stale`` with a suggested admin action -- never a bare ``not_found``.
+    env = _handler(conn)(query="drone", server="cn")
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert data["message"] == "no active snapshot for the requested region in the active build"
+    # §V24: the suggested action is an admin sync/import, never a query-time download.
+    action = data["suggested_action"]
+    assert isinstance(action, str)
+    assert "arknights-mcp sync" in action
+    assert "download" not in action.lower()
 
 
 # --- §V19: bounded window -----------------------------------------------------
