@@ -13,7 +13,7 @@ import argparse
 import os
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -87,11 +87,18 @@ def _build_validate_promote(
     *,
     servers: Sequence[str],
     min_snapshots: int = 1,
+    post_build: Callable[[Path], None] | None = None,
 ) -> int:
     """Build a candidate from ``imports``, validate it, and promote iff it passes.
 
     Fail-closed (§V3/§V4): on a validation failure the candidate is discarded and
     ``current.json`` is left untouched, so the active database stays active.
+
+    ``post_build`` (used by ``sync`` for the penguin drop ride-along, §V58) runs on
+    the still-writable candidate after the game-data import and before validation, so
+    any drops it imports join the SAME candidate in one atomic build (§V4). It must
+    itself be fail-open (§V58): a penguin failure is caught + warned inside the hook,
+    never re-raised, so the game-data build still promotes (§V3).
     """
     data_dir = config.database.data_dir
     policy_events = read_events(data_dir)
@@ -103,6 +110,8 @@ def _build_validate_promote(
             registry=registry,
             policy_events=policy_events,
         )
+        if post_build is not None:
+            post_build(candidate)
         for snap in result.snapshots:
             _out(
                 f"  imported {snap.server}: {snap.enemies} enemies, "

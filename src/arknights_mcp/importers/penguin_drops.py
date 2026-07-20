@@ -100,6 +100,25 @@ def region_for_penguin_server(penguin_server: str) -> str | None:
     return PENGUIN_SERVER_TO_REGION.get(penguin_server)
 
 
+#: The inverse of :data:`PENGUIN_SERVER_TO_REGION`, derived from it so the two
+#: directions cannot drift (§V37): the sync ride-along (§T102/§V58) maps a fact
+#: region back to the penguin server it fetches from (en->US, cn->CN). Built once at
+#: import; the source map has no duplicate values, so the inverse is unambiguous.
+REGION_TO_PENGUIN_SERVER: dict[str, str] = {
+    region: server for server, region in PENGUIN_SERVER_TO_REGION.items()
+}
+
+
+def penguin_server_for_region(region: str) -> str | None:
+    """Map an en/cn fact region to its penguin server code, or ``None`` if none.
+
+    The inverse of :func:`region_for_penguin_server` (§V54), used by the ``sync``
+    ride-along (§V58): a region with no penguin server (e.g. a jp/kr region that is
+    not in {en,cn} anyway) is skipped silently rather than mislabelled.
+    """
+    return REGION_TO_PENGUIN_SERVER.get(region)
+
+
 def _as_text(value: Any) -> str | None:
     """Stringify a scalar kept field (penguin ``rarity`` is a numeric tier)."""
     if isinstance(value, str):

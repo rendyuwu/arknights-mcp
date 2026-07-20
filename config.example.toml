@@ -30,6 +30,16 @@ servers = ["en", "cn"]
 # en = "<allowlisted EN repository endpoint>"
 # cn = "<allowlisted CN repository endpoint>"
 
+# Penguin Statistics drop-rate cache (v0.2 M8, SPEC §V58). Opt-in: it rides along
+# with `sync` ONLY when penguin_statistics is BOTH in [sync].enabled_sources above
+# AND enabled in the machine registry (`arknights-mcp source enable
+# penguin_statistics`). When enabled, `sync` fetches each region's drops (en->US,
+# cn->CN) into the SAME candidate after the game data; a penguin outage is caught
+# and the build still promotes game-data-only (fail-open, §V58). Penguin data is
+# CC BY-NC 4.0 (noncommercial + attribution, §V53).
+# [sync.penguin_statistics]
+# base_url = "https://penguin-stats.io/PenguinStats/api/v2"  # default if omitted
+
 [source_registry]
 policy_file = "./DATA_SOURCES.md"
 machine_registry = "./config/data_sources.toml"
