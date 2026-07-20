@@ -17,6 +17,12 @@ from arknights_mcp.analyzers.base import (
     StageTiles,
     ThreatRule,
 )
+from arknights_mcp.analyzers.farming import (
+    DropFact,
+    FarmingAnalysis,
+    FarmingContext,
+    analyze_farming,
+)
 from arknights_mcp.analyzers.module import (
     ModuleAnalysis,
     ModuleAnalysisContext,
@@ -32,8 +38,11 @@ from arknights_mcp.analyzers.stage import StageAnalysis, analyze_stage
 __all__ = [
     "ANALYZER_VERSION",
     "THREAT_RULES",
+    "DropFact",
     "EnemyOccurrence",
     "EvidenceItem",
+    "FarmingAnalysis",
+    "FarmingContext",
     "ModuleAnalysis",
     "ModuleAnalysisContext",
     "ModuleInput",
@@ -46,6 +55,7 @@ __all__ = [
     "StageThreatContext",
     "StageTiles",
     "ThreatRule",
+    "analyze_farming",
     "analyze_modules",
     "analyze_stage",
 ]
