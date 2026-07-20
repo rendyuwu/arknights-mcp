@@ -1,13 +1,22 @@
-"""T92: the M8 acceptance test (§V5, §V16, §V53, §V55).
+"""T92/T105: the M8 acceptance tests (§V5, §V16, §V53, §V55, §V60, §V7, §V24).
 
 The milestone gate for M8 (penguin drop-rate intelligence). It drives a *pinned
 penguin snapshot fixture* (``tests/fixtures/penguin/snapshot.json`` -- small, no
 bulk data, §V16) through the entire M8 stack the way a CLI sync would, then reads
-it back through the shared-core service both transports call (§V14):
+it back through the shared-core services both transports call (§V14):
 
   build multi-region candidate (golden en+cn fixtures) -> import_penguin_drops
   (T89) for US->en + CN->cn against a fixture fetcher (never a live fetch, §V52)
-  -> reopen read-only -> get_stage_drops (T91) with an injected clock.
+  -> reopen read-only -> get_stage_drops (T91) / get_item_drops (T104) with an
+  injected clock.
+
+Two directions ride the SAME imported cache (§V37 -- one build fixture, both views):
+T92 asserts the *stage* view (one stage's drops); T105 asserts the *item* view (the
+§V60 reverse -- one item compared across the stages that drop it, ranked ascending by
+sanity per item). The item fixture is natural, not seeded: item ``30012`` drops on two
+en stages (GS-1 @ 60, GS-2 @ 100 sanity/item) plus one cn stage (CN-1 @ 80), so a
+≥2-stage ranking, the en/cn split, and an absent item (``99999`` -- in the matrix but
+never imported) all fall straight out of the real pipeline.
 
 Unlike the per-task unit tests (which seed a single drop row directly), this one
 asserts the whole M8 story end to end:
@@ -45,7 +54,11 @@ import pytest
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.penguin_drops import import_penguin_drops
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.services.drops import StageDropsResult, get_stage_drops
+from arknights_mcp.services.drops import (
+    StageDropsResult,
+    get_item_drops,
+    get_stage_drops,
+)
 from arknights_mcp.services.source_status import get_data_sources
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
@@ -274,3 +287,102 @@ def test_accept_attribution_and_active_snapshots_surfaced(conn: sqlite3.Connecti
     # The imported drop cache is enriched as active en + cn penguin snapshots (§V54).
     servers = {s.server for s in penguin.active_snapshots}
     assert servers == {"en", "cn"}
+
+
+# --- T105 (§V60/§V5/§V55/§V7/§V24): the item -> stage comparison view ----------
+#
+# The §V60 reverse of the stage view above, read back off the SAME imported cache: for
+# a fixed item, rank the stages that drop it ascending by sanity per item. Item 30012
+# drops on two en stages (GS-1 apCost 15 @ rate 0.25 -> 60 sanity/item; GS-2 apCost 15 @
+# rate 0.15 -> 100) and one cn stage (CN-1 apCost 12 @ rate 0.15 -> 80), all straight
+# from the real pipeline -- no direct row seeding.
+
+#: The compared item: it drops on >=2 en stages (a real ranking) and one cn stage (the
+#: §V5 region split), and its id 99999 sibling in the matrix has no item definition (the
+#: §V24 absent case).
+_ITEM = "30012"
+
+
+def test_accept_item_ranked_ascending_over_two_stages(conn: sqlite3.Connection) -> None:
+    # §V60: an item dropping on >=2 stages is ranked ascending by sanity per item;
+    # §V7/§V55: an ordering + evidence, never a best-farm/mandatory verdict.
+    result = get_item_drops(
+        conn, server="en", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH
+    )
+    assert result.status == "ok"
+    assert result.stale is False
+    assert result.item is not None and result.item.server == "en"
+
+    # Two en stages, ranked ascending: GS-1 (60 sanity/item) before GS-2 (100).
+    refs = [o.evidence[0].ref for o in result.observations]
+    assert refs == ["GS-1", "GS-2"]
+    figures = [
+        next(ev.value for ev in o.evidence if ev.field == "sanity_per_item")
+        for o in result.observations
+    ]
+    assert figures == [60.0, 100.0]
+
+    # §V6: every observation carries the five mandated fields, from typed fields only.
+    for o in result.observations:
+        assert o.rule_id == "farming.sanity_per_item"
+        assert o.analyzer_version == result.analyzer_version
+        assert 0.0 <= o.confidence <= 1.0
+        assert {e.field for e in o.evidence} >= {"sanity_cost", "drop_rate", "sanity_per_item"}
+    # A well-sampled fresh figure (times 5000/6000) is stable, above the §V8 threshold.
+    assert all(o.confidence >= 0.5 for o in result.observations)
+
+    # §V60: the mandatory availability / first-clear / byproduct caveats ride the ranking.
+    blob = " ".join(result.limitations).lower()
+    assert "availability" in blob and "first-clear" in blob and "byproduct" in blob
+    # §V7/§V55: no prescriptive language anywhere in the ranking or its caveats.
+    text = " ".join(
+        f"{o.title} {o.summary} {' '.join(o.limitations)}" for o in result.observations
+    ).lower()
+    text += " " + blob
+    assert not any(word in text for word in _PROSCRIBED)
+
+
+def test_accept_item_comparison_is_region_scoped(conn: sqlite3.Connection) -> None:
+    # §V5: the item resolves PER region; an en comparison ranks only en stages and a cn
+    # comparison only cn stages -- en/cn never silently mixed in one item's ranking.
+    en = get_item_drops(conn, server="en", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
+    assert {s.region for s in en.stages} == {"en"}
+    assert [o.evidence[0].ref for o in en.observations] == ["GS-1", "GS-2"]
+    assert all(s.snapshot_id.startswith("en:") for s in en.stages)
+
+    cn = get_item_drops(conn, server="cn", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
+    assert cn.status == "ok"
+    assert cn.item is not None and cn.item.server == "cn"
+    assert {s.region for s in cn.stages} == {"cn"}
+    assert [o.evidence[0].ref for o in cn.observations] == ["CN-1"]
+    # §V54: the cn ranking is backed by a cn-region penguin snapshot, never an en one.
+    assert all(s.snapshot_id.startswith("cn:") for s in cn.stages)
+
+
+def test_accept_item_expired_stage_downgraded_but_still_ranked(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V60/§V53: with an expired cache every figure is downgraded below the §V8
+    # recommendation threshold yet KEPT in the ranking (flagged stale, not dropped).
+    result = get_item_drops(
+        conn, server="en", game_id=_ITEM, include_efficiency=True, now=NOW_EXPIRED
+    )
+    assert result.status == "data_stale"
+    assert result.stale is True
+    # Both en stages are still present in the facts and the ranking, flagged expired.
+    assert {s.stage_code for s in result.stages} == {"GS-1", "GS-2"}
+    assert all(s.expired for s in result.stages)
+    assert [o.evidence[0].ref for o in result.observations] == ["GS-1", "GS-2"]
+    for o in result.observations:
+        assert o.confidence < 0.5
+        assert any("expired" in lim.lower() for lim in o.limitations)
+
+
+def test_accept_absent_item_is_not_found_no_fetch_fallback(conn: sqlite3.Connection) -> None:
+    # §V24: item 99999 rides the US matrix but has no item definition -> skipped at
+    # import -> absent. The comparison is not_found, never a query-time fetch fallback.
+    result = get_item_drops(conn, server="en", game_id="99999", include_efficiency=True)
+    assert result.status == "not_found"
+    assert result.item is None
+    assert result.stages == ()
+    assert result.observations == () and result.limitations == ()
