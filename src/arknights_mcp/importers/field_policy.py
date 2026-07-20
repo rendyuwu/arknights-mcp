@@ -15,7 +15,8 @@ from typing import Any
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 
 #: Bump when any allowlist below changes; stored on snapshots + provenance.
-FIELD_POLICY_VERSION = "1"
+#: 2: B46/§V59 added ``name_i18n`` to ITEM_ALLOWLIST (region-locale item names).
+FIELD_POLICY_VERSION = "2"
 
 # --- Allowlisted SOURCE fields per record type (V18) -------------------------
 # Prose fields (e.g. "description") are intentionally absent and thus excluded.
@@ -173,9 +174,12 @@ ITEM_COST_ALLOWLIST: frozenset[str] = frozenset({"id", "count", "type"})
 
 #: One Penguin Statistics ``items`` entry (§V18; §T89). ``itemId`` is the item's
 #: game id (== arknights item id), ``name`` a short display label (kept, like an
-#: operator/enemy name), ``rarity``/``itemType`` structural enums. Prose (icons,
-#: descriptions, sort/existence metadata) is intentionally absent and thus excluded.
-ITEM_ALLOWLIST: frozenset[str] = frozenset({"itemId", "name", "rarity", "itemType"})
+#: operator/enemy name), ``rarity``/``itemType`` structural enums. ``name_i18n`` is
+#: the per-locale display name (``en``/``zh``/``ja``/``ko``) -- also name-only, not
+#: prose -- kept so the en build surfaces the English label instead of the canonical
+#: Chinese ``name`` (B46/§V59). Prose (icons, descriptions, sort/existence metadata)
+#: is intentionally absent and thus excluded.
+ITEM_ALLOWLIST: frozenset[str] = frozenset({"itemId", "name", "name_i18n", "rarity", "itemType"})
 
 #: One Penguin Statistics ``result/matrix`` drop entry (§V18; §T89). All structural:
 #: ``stageId``/``itemId`` are game ids joined to the internal stage/item rows;

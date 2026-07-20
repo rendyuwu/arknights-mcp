@@ -48,6 +48,12 @@ _LOG = logging.getLogger(__name__)
 #: are dropped -- never mislabelled as en/cn.
 PENGUIN_SERVER_TO_REGION: dict[str, str] = {"US": "en", "CN": "cn"}
 
+#: Fact region -> penguin ``name_i18n`` locale key (B46/§V59). Penguin's top-level
+#: ``name`` is the canonical *Chinese* label; the per-locale strings live under
+#: ``name_i18n`` (en/zh/ja/ko). An en build wants the English name, a cn build the
+#: Chinese one -- reading ``name`` blind mislabels every en item with cn text.
+REGION_TO_NAME_LOCALE: dict[str, str] = {"en": "en", "cn": "zh"}
+
 #: Default lifetime of a cached drop fact before it is served as ``data_stale``
 #: (§V53). The CLI/config may override; kept here as the single default home.
 DEFAULT_DROP_TTL: timedelta = timedelta(days=7)
@@ -130,8 +136,31 @@ def _as_text(value: Any) -> str | None:
     return None
 
 
-def parse_items(items_raw: Any) -> list[ParsedItem]:
-    """Transform the penguin ``items`` payload (a JSON array) into allowlisted items."""
+def _localized_item_name(kept: dict[str, Any], region: str) -> str | None:
+    """Pick the display name for ``region`` from a kept penguin item (B46/§V59).
+
+    Penguin's top-level ``name`` is the canonical *Chinese* label; ``name_i18n`` is
+    the per-locale dict (en/zh/ja/ko). The en region wants ``name_i18n.en``, the cn
+    region ``name_i18n.zh``; a missing/blank locale entry falls back to the canonical
+    ``name`` so a locale gap yields *some* label rather than ``None`` -- never the
+    wrong-language surprise of reading ``name`` blind for en (the B46 defect).
+    """
+    locale = REGION_TO_NAME_LOCALE.get(region)
+    i18n = kept.get("name_i18n")
+    if locale is not None and isinstance(i18n, dict):
+        localized = as_str(i18n.get(locale))
+        if localized:
+            return localized
+    return as_str(kept.get("name"))
+
+
+def parse_items(items_raw: Any, *, region: str) -> list[ParsedItem]:
+    """Transform the penguin ``items`` payload (a JSON array) into allowlisted items.
+
+    ``region`` selects the display-name locale (B46/§V59): en->``name_i18n.en``,
+    cn->``name_i18n.zh``, falling back to the canonical ``name`` when the locale
+    entry is absent.
+    """
     if not isinstance(items_raw, list):
         raise ImporterError("penguin items payload must be a top-level JSON array")
     out: list[ParsedItem] = []
@@ -145,7 +174,7 @@ def parse_items(items_raw: Any) -> list[ParsedItem]:
         out.append(
             ParsedItem(
                 game_id=game_id,
-                display_name=as_str(kept.get("name")),
+                display_name=_localized_item_name(kept, region),
                 rarity=_as_text(kept.get("rarity")),
                 item_type=as_str(kept.get("itemType")),
                 provenance_record=kept,
@@ -306,7 +335,7 @@ def import_penguin_drops(
 
     items_raw = adapter.fetch("items", server=penguin_server)
     matrix_raw = adapter.fetch("result/matrix", server=penguin_server)
-    parsed_items = parse_items(items_raw)
+    parsed_items = parse_items(items_raw, region=region)
     parsed_drops = parse_matrix(matrix_raw)
 
     fetched_dt = fetched_at if fetched_at is not None else datetime.now(tz=UTC)

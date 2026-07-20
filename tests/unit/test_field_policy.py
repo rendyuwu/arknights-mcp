@@ -12,7 +12,8 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text, stri
 
 
 def test_field_policy_version_present() -> None:
-    assert FIELD_POLICY_VERSION == "1"
+    # 2: B46/§V59 added name_i18n to ITEM_ALLOWLIST (region-locale item names).
+    assert FIELD_POLICY_VERSION == "2"
 
 
 def test_allowlist_drops_unlisted_prose() -> None:

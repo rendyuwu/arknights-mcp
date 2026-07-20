@@ -224,10 +224,67 @@ def test_parse_items_drops_unallowlisted_fields() -> None:
                 "iconId": "sprite",
                 "description": "prose that must not be stored",
             }
-        ]
+        ],
+        region="en",
     )
     assert len(parsed) == 1
     assert set(parsed[0].provenance_record) == {"itemId", "name", "rarity", "itemType"}
+
+
+# --- B46/§V59: item display_name = region-locale name, not canonical Chinese ---
+
+
+def _i18n_item() -> dict[str, Any]:
+    """A penguin item as the live API ships it: canonical (Chinese) ``name`` plus a
+    per-locale ``name_i18n`` dict. Reading ``name`` blind mislabels an en build."""
+    return {
+        "itemId": "30012",
+        "name": "固源岩",
+        "name_i18n": {"en": "Orirock Cube", "zh": "固源岩", "ja": "初級源岩", "ko": "원암 큐브"},
+        "rarity": 1,
+        "itemType": "MATERIAL",
+    }
+
+
+def test_v59_en_item_uses_english_locale_name() -> None:
+    parsed = parse_items([_i18n_item()], region="en")
+    assert parsed[0].display_name == "Orirock Cube"
+
+
+def test_v59_cn_item_uses_chinese_locale_name() -> None:
+    parsed = parse_items([_i18n_item()], region="cn")
+    assert parsed[0].display_name == "固源岩"
+
+
+def test_v59_missing_locale_falls_back_to_canonical_name() -> None:
+    # No name_i18n at all -> canonical name is the only label available.
+    bare = parse_items([{"itemId": "30012", "name": "Orirock"}], region="en")
+    assert bare[0].display_name == "Orirock"
+    # name_i18n present but missing the region's locale key -> same fallback.
+    partial = parse_items(
+        [{"itemId": "30012", "name": "固源岩", "name_i18n": {"ja": "初級源岩"}}],
+        region="en",
+    )
+    assert partial[0].display_name == "固源岩"
+
+
+def test_v59_en_item_end_to_end_stores_english_name(tmp_path: Path) -> None:
+    conn = _db(tmp_path)
+    try:
+        _seed_stage(conn, region="en", game_id="main_04-04")
+        fetcher = _FakeFetcher(
+            {
+                "US": _payload(
+                    [{"stageId": "main_04-04", "itemId": "30012", "quantity": 1, "times": 10}],
+                    [_i18n_item()],
+                )
+            }
+        )
+        import_penguin_drops(conn, fetcher, penguin_server="US", fetched_at=_FETCHED)
+        name = conn.execute("SELECT display_name FROM items").fetchone()[0]
+        assert name == "Orirock Cube"
+    finally:
+        conn.close()
 
 
 def test_item_name_control_chars_sanitized(tmp_path: Path) -> None:
@@ -361,4 +418,4 @@ def test_parse_matrix_requires_matrix_key() -> None:
 
 def test_parse_items_requires_array() -> None:
     with pytest.raises(ImporterError, match="array"):
-        parse_items({"itemId": "x"})
+        parse_items({"itemId": "x"}, region="en")
