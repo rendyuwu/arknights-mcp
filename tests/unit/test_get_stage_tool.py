@@ -28,7 +28,7 @@ from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools.stage import build_get_stage_spec
 from arknights_mcp.models.common import PAGE_SIZE_MAX
-from arknights_mcp.services.stages import get_stage
+from arknights_mcp.services.stages import _as_checkpoint_list, get_stage
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -122,6 +122,26 @@ def test_include_spawns(conn: sqlite3.Connection) -> None:
     assert drone["spawn_time"] == 8.0
     assert drone["route_index"] == 0
     assert data["spawns_page"]["total"] == 2  # type: ignore[index]
+
+
+def test_include_routes_checkpoints_is_always_a_list(conn: sqlite3.Connection) -> None:
+    # §V51/B44: checkpoints ride the wire as an array unconditionally; the 4-4
+    # route has none, and the empty set must be `[]`, never the source's `{}`.
+    data = _handler(conn)(server="en", stage_code="4-4", include_routes=True).to_dict()["data"]
+    checkpoints = data["routes"][0]["checkpoints"]  # type: ignore[index]
+    assert checkpoints == []
+    assert isinstance(checkpoints, list)
+
+
+def test_checkpoint_shaper_normalizes_every_source_shape() -> None:
+    # §V51: the RouteFacts shaper coerces any decoded fragment to a JSON array --
+    # the source's empty-set `{}` and a NULL column both become `[]`, a populated
+    # list passes through unchanged (B44: the wire type must not vary row-to-row).
+    assert _as_checkpoint_list({}) == []  # source empty-set serialized as a dict
+    assert _as_checkpoint_list(None) == []  # NULL / undecodable column
+    assert _as_checkpoint_list([]) == []  # already an empty array
+    populated = [{"row": 1, "col": 2}]
+    assert _as_checkpoint_list(populated) == populated  # populated passes through
 
 
 def test_sections_are_independent(conn: sqlite3.Connection) -> None:

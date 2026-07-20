@@ -329,14 +329,32 @@ class TileFacts:
     passable: bool | None
 
 
+def _as_checkpoint_list(decoded: object | None) -> list[object]:
+    """Normalize a decoded route ``checkpoints`` fragment to an array (§V51).
+
+    Checkpoints are semantically an ordered list, but the source serializes an
+    empty set as ``{}`` and a ``NULL`` column decodes to ``None`` -- so the raw
+    wire type varied row-to-row (populated ``[{...}]`` vs empty ``{}``), breaking
+    a client that indexes the field as an array unconditionally (B44). A populated
+    list passes through unchanged; any non-list (``None``, ``{}``, a stray dict)
+    normalizes to ``[]`` so the field is *always* a JSON array on the wire.
+    """
+    return decoded if isinstance(decoded, list) else []
+
+
 @dataclass(frozen=True)
 class RouteFacts:
-    """One enemy route; positions decoded from the stored (sanitized) JSON."""
+    """One enemy route; positions decoded from the stored (sanitized) JSON.
+
+    ``checkpoints`` is always a list (§V51): the shaper normalizes the decoded
+    fragment via :func:`_as_checkpoint_list`, so an empty set is ``[]`` on the
+    wire, never the source's ``{}`` -- positions stay single coordinates.
+    """
 
     route_index: int
     start_position: object | None
     end_position: object | None
-    checkpoints: object | None
+    checkpoints: list[object]
 
 
 @dataclass(frozen=True)
@@ -497,7 +515,7 @@ def get_stage(
                 route_index=r.route_index,
                 start_position=json_load(r.start_position_json),
                 end_position=json_load(r.end_position_json),
-                checkpoints=json_load(r.checkpoints_json),
+                checkpoints=_as_checkpoint_list(json_load(r.checkpoints_json)),
             )
             for r in repo.routes(stage_pk, rsize, offset)
         )

@@ -196,7 +196,7 @@ T82|x|fix B40/P1-14: rename module-comparison "potential levels"→"module level
 T83|x|fix B41/P0-5: reconcile `analyze_stage` detailed contract — add per-enemy stat block (hp,atk,def,res,attack_interval,move_speed,weight) to `EnemyOccurrenceFacts`+`_occurrence_full` \| amend tool desc to the emitted subset; integration test asserts detailed carries the documented fields|V47,I.tool
 T84|x|fix B42/P0-1: region-availability gate in `search_entities`/`search_stages` — non en/cn→`unsupported_server`, en/cn w/o active snapshot→`data_stale`+admin action, ⊥ bare `not_found`; test cn-search w/ no cn snapshot ⊥ not_found|V50,V24,V5
 T85|x|fix B43/P0-4: `lane_route` rule ⊥ label raw `route_count` as lanes — cluster effective-lane groups \| relabel "raw route records"+limitation+downgraded conf; test 26-raw-route stage ⊥ "26 lanes"|V49,V26,V35
-T86|.|fix B44/P1-9: normalize stage route `checkpoints`→always-array in `services/stages.py` RouteFacts shaping (empty→`[]`); test empty checkpoints ⊥ `{}`|V51,V22
+T86|x|fix B44/P1-9: normalize stage route `checkpoints`→always-array in `services/stages.py` RouteFacts shaping (empty→`[]`); test empty checkpoints ⊥ `{}`|V51,V22
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL
