@@ -37,6 +37,7 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     ConnectionProvider,
     observation_to_dict,
+    page_to_dict,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -44,7 +45,6 @@ from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetSta
 from arknights_mcp.services.stages import (
     EnemyOccurrenceFacts,
     RouteFacts,
-    SectionPage,
     SpawnFacts,
     StageAnalysisResult,
     StageDetailResult,
@@ -84,16 +84,6 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
         "sanity_cost": stage.sanity_cost,
         "recommended_level": stage.recommended_level,
         "max_life_points": stage.max_life_points,
-    }
-
-
-def _page_to_dict(page: SectionPage) -> dict[str, object]:
-    """The §V19 page descriptor -- ``has_more`` signals another bounded page."""
-    return {
-        "page": page.page,
-        "page_size": page.page_size,
-        "total": page.total,
-        "has_more": page.has_more,
     }
 
 
@@ -152,13 +142,13 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
     if result.stage_map is not None and result.tiles_page is not None:
         data["map"] = _map_header_to_dict(result.stage_map)
         data["tiles"] = [_tile_to_dict(t) for t in result.tiles]
-        data["tiles_page"] = _page_to_dict(result.tiles_page)
+        data["tiles_page"] = page_to_dict(result.tiles_page)
     if result.routes_page is not None:
         data["routes"] = [_route_to_dict(r) for r in result.routes]
-        data["routes_page"] = _page_to_dict(result.routes_page)
+        data["routes_page"] = page_to_dict(result.routes_page)
     if result.spawns_page is not None:
         data["spawns"] = [_spawn_to_dict(s) for s in result.spawns]
-        data["spawns_page"] = _page_to_dict(result.spawns_page)
+        data["spawns_page"] = page_to_dict(result.spawns_page)
 
     prov = result.stage.provenance
     return ok(

@@ -49,10 +49,15 @@ from arknights_mcp.db.repositories.drops import (
     StageDropRow,
 )
 from arknights_mcp.db.repositories.stages import StageRepository
+from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
 from arknights_mcp.services.stages import (
+    SectionPage,
     StageFacts,
+    StageProvenance,
     _resolve_stage,
+    _section_page,
     _stage_facts,
+    _validate_page,
 )
 
 #: Typed outcome of a drop lookup. ``data_stale`` is reported when at least one
@@ -154,22 +159,36 @@ class ItemStageDropFacts:
 
 @dataclass(frozen=True)
 class ItemDropsResult:
-    """Domain result of :func:`get_item_drops` (§T103/§V60).
+    """Domain result of :func:`get_item_drops` (§T103/§V60; §V19/§V22).
 
     Carries the region-attributed ``item`` (§V5) and the per-stage drop facts, each
-    with its OWN penguin provenance chain (§V54). ``stages`` is the raw per-stage facts
+    with its OWN penguin provenance chain (§V54). ``stages`` is the per-stage facts
     (ordered by ``stage_code`` then ``game_id``); ``observations`` is the RANKED
     (ascending sanity-per-item) efficiency comparison, populated only when
     ``include_efficiency`` was requested (§V55/§V60), with ``analyzer_version`` then
     the analyzer that produced them and ``limitations`` the mandatory §V60 comparison
     caveats. ``stale`` mirrors the ``data_stale`` status.
+
+    The reverse item->stage view is unbounded (a common material drops across
+    ~100-200 stages), so both growable lists are **paged** (§V22/§V19, B21): ``stages``
+    and ``observations`` each hold only the requested page while their ``*_page``
+    descriptor reports the full ``total`` + ``has_more``. The stale verdict, the ranked
+    ORDER, and ``provenance`` are all computed over the FULL set BEFORE slicing, so
+    page 1 is always the most-efficient N and ``data_stale`` holds even when the
+    expired stage falls on a later page. ``provenance`` is the distinct penguin
+    snapshots (``snapshot_id`` + ``imported_at``) backing the full comparison, all
+    sharing the item's region (§V5); ``efficiency_page`` is ``None`` when
+    ``include_efficiency`` was not requested.
     """
 
     status: ItemDropsStatus
     server: str
     item: ItemFacts | None
     stages: tuple[ItemStageDropFacts, ...]
+    stages_page: SectionPage | None
     observations: tuple[Observation, ...]
+    efficiency_page: SectionPage | None
+    provenance: tuple[StageProvenance, ...]
     limitations: tuple[str, ...]
     warnings: tuple[str, ...]
     analyzer_version: str | None
@@ -344,12 +363,35 @@ def _item_not_found(server: str) -> ItemDropsResult:
         server=server,
         item=None,
         stages=(),
+        stages_page=None,
         observations=(),
+        efficiency_page=None,
+        provenance=(),
         limitations=(),
         warnings=(),
         analyzer_version=None,
         stale=False,
     )
+
+
+def _item_provenance(stages: tuple[ItemStageDropFacts, ...]) -> tuple[StageProvenance, ...]:
+    """The distinct penguin snapshots backing the FULL comparison (§V5/§V54, B21).
+
+    Derived over the whole stage set (never the current page) so paging never drops
+    a snapshot from the provenance list. The comparison is region-scoped (§V5), so
+    every stage shares the item's region; the distinct ``(snapshot_id, imported_at)``
+    pairs are emitted in first-seen (already stage-ordered) order so the list is
+    deterministic + reproducible (§V26). Typically one penguin snapshot per region.
+    """
+    seen: set[tuple[str, str]] = set()
+    provenance: list[StageProvenance] = []
+    for s in stages:
+        key = (s.snapshot_id, s.imported_at)
+        if key in seen:
+            continue
+        seen.add(key)
+        provenance.append(StageProvenance(snapshot_id=s.snapshot_id, imported_at=s.imported_at))
+    return tuple(provenance)
 
 
 def get_item_drops(
@@ -358,6 +400,10 @@ def get_item_drops(
     server: str,
     game_id: str,
     include_efficiency: bool = False,
+    stages_page: int = 1,
+    stages_page_size: int = PAGE_SIZE_DEFAULT,
+    efficiency_page: int = 1,
+    efficiency_page_size: int = PAGE_SIZE_DEFAULT,
     now: datetime | None = None,
 ) -> ItemDropsResult:
     """Compare one item's drop-across-stages facts + optional ranked efficiency (§T103).
@@ -373,10 +419,22 @@ def get_item_drops(
     but flagged, and the status is ``data_stale`` (§V53) -- expired figures are
     downgraded, never dropped from the comparison (§V60). When ``include_efficiency``
     is set, the deterministic §T103 analyzer ranks the stages ascending by sanity per
-    item (§V55/§V60), carrying the mandatory §V60 comparison caveats. ``now`` is
-    injectable for deterministic expiry testing; it defaults to the current UTC time.
-    Both transports call this same function (§V14).
+    item (§V55/§V60), carrying the mandatory §V60 comparison caveats.
+
+    The reverse view is unbounded (a common material drops across ~100-200 stages),
+    so both growable lists are **paged** (§V22/§V19, B21): ``stages_page`` cursors the
+    per-stage facts and ``efficiency_page`` the ranked observations, each its own
+    cursor. Both are validated against the §V19 window here too (mirroring the model
+    gate -- one contract, both places, never a silent clamp). The stale verdict, the
+    ranked ORDER, and the provenance are computed over the FULL set BEFORE slicing, so
+    page 1 is always the most-efficient N and ``data_stale`` holds even when the only
+    expired stage falls on a later page. ``now`` is injectable for deterministic expiry
+    testing; it defaults to the current UTC time. Both transports call this same
+    function (§V14).
     """
+    sp, ssize = _validate_page(stages_page, stages_page_size)
+    ep, esize = _validate_page(efficiency_page, efficiency_page_size)
+
     clock = now if now is not None else datetime.now(tz=UTC)
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=UTC)
@@ -393,10 +451,14 @@ def get_item_drops(
         # a not_found envelope.
         return _item_not_found(server)
 
-    stages = tuple(_item_stage_drop_facts(row, clock) for row in drop_rows)
-    stale = any(s.expired for s in stages)
+    # The FULL set drives the stale verdict + provenance + (below) the ranking, so
+    # neither ever depends on which page was requested (§V22/§V19, B21).
+    all_stages = tuple(_item_stage_drop_facts(row, clock) for row in drop_rows)
+    stale = any(s.expired for s in all_stages)
+    provenance = _item_provenance(all_stages)
 
     observations: tuple[Observation, ...] = ()
+    efficiency_page_info: SectionPage | None = None
     limitations: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     analyzer_version: str | None = None
@@ -404,6 +466,8 @@ def get_item_drops(
         # §V60: rank the stages ascending by sanity per item over typed fields only
         # (§V55). Each stage carries its OWN §V53 expiry so an expired figure is
         # downgraded per stage (a limitation) yet KEPT in the ranking, not dropped.
+        # Rank the FULL set, THEN slice to the requested page: page 1 is the
+        # most-efficient N and the global order holds across pages (B21).
         analysis = analyze_item_farming(
             ItemFarmingContext(
                 server=item.server,
@@ -417,21 +481,29 @@ def get_item_drops(
                         sample_size=s.times,
                         expired=s.expired,
                     )
-                    for s in stages
+                    for s in all_stages
                 ),
             )
         )
-        observations = analysis.observations
+        ranked = analysis.observations
+        efficiency_page_info = _section_page(ep, esize, len(ranked))
+        observations = ranked[(ep - 1) * esize : ep * esize]
         limitations = analysis.limitations
         warnings = analysis.warnings
         analyzer_version = analysis.analyzer_version
+
+    stages_page_info = _section_page(sp, ssize, len(all_stages))
+    stages = all_stages[(sp - 1) * ssize : sp * ssize]
 
     return ItemDropsResult(
         status="data_stale" if stale else "ok",
         server=item.server,
         item=_item_facts(item),
         stages=stages,
+        stages_page=stages_page_info,
         observations=observations,
+        efficiency_page=efficiency_page_info,
+        provenance=provenance,
         limitations=limitations,
         warnings=warnings,
         analyzer_version=analyzer_version,

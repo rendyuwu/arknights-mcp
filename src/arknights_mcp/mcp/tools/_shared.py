@@ -23,6 +23,7 @@ from collections.abc import Callable
 from arknights_mcp.analyzers import EvidenceItem, Observation
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
+from arknights_mcp.services.stages import SectionPage
 
 #: Supplies the process-wide read-only connection to the promoted build. The
 #: app/transport layer owns the connection's lifecycle (opened once, reused); a
@@ -88,6 +89,21 @@ def run_registry_guarded[Result](
     except Exception:
         return internal_error()
     return shape(result)
+
+
+def page_to_dict(page: SectionPage) -> dict[str, object]:
+    """The §V19 page descriptor -- ``has_more`` signals another bounded page.
+
+    Shared §V37 home: both ``get_stage`` (map/routes/spawns) and ``get_item_drops``
+    (stages/efficiency) return bounded sections, so the page-descriptor wire mapping
+    lives here once rather than in each tool module.
+    """
+    return {
+        "page": page.page,
+        "page_size": page.page_size,
+        "total": page.total,
+        "has_more": page.has_more,
+    }
 
 
 def evidence_to_dict(item: EvidenceItem) -> dict[str, object]:

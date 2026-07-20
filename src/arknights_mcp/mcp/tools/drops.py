@@ -42,6 +42,7 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     ConnectionProvider,
     observation_to_dict,
+    page_to_dict,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -229,7 +230,7 @@ def _item_stage_drop_to_dict(stage: ItemStageDropFacts) -> dict[str, object]:
 
 
 def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
-    """Map the item-comparison domain result to a typed §V23 envelope (§V5/§V60).
+    """Map the item-comparison domain result to a typed §V23 envelope (§V5/§V19/§V60).
 
     ``ok`` and ``data_stale`` both deliver the per-stage drop facts (an expired stage
     is flagged and downgraded, not dropped from the ranking, §V60); ``not_found``
@@ -237,8 +238,15 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     suggested admin action. The ranked efficiency observations ride only when
     ``include_efficiency`` produced them, each keeping its five §V6 fields (§V55),
     alongside the mandatory §V60 comparison caveats. Provenance is the item's own
-    region attribution (§V5); each stage's penguin snapshot/expiry stamps travel in
-    the stage rows themselves (§V54).
+    region attribution (§V5), derived over the FULL comparison in the service (never
+    the current page, B21); each stage's penguin snapshot/expiry stamps travel in the
+    stage rows themselves (§V54).
+
+    Both growable lists are paged (§V22/§V19, B21): ``stages`` and ``observations``
+    each carry their page and a ``*_page`` descriptor (``has_more``) so a client pages
+    deterministically instead of pulling an unbounded slice; the ranking + stale
+    verdict + provenance were fixed over the full set upstream, so a page never shifts
+    them.
     """
     if result.status == "not_found" or result.item is None:
         return error("not_found", _ITEM_NOT_FOUND_MESSAGE, suggested_action=_ITEM_NOT_FOUND_ACTION)
@@ -253,52 +261,41 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
         },
         "stages": [_item_stage_drop_to_dict(s) for s in result.stages],
     }
+    if result.stages_page is not None:
+        data["stages_page"] = page_to_dict(result.stages_page)
     if result.analyzer_version is not None:
-        # include_efficiency was requested: surface the ranked §T103 observations, the
-        # mandatory §V60 comparison caveats, and the §V26 warnings (a stage excluded
-        # for a missing sanity cost / drop rate).
-        data["efficiency"] = {
+        # include_efficiency was requested: surface the ranked §T103 observations (this
+        # page of the global ranking), its page descriptor, the mandatory §V60 comparison
+        # caveats, and the §V26 warnings (a stage excluded for a missing sanity cost /
+        # drop rate).
+        efficiency: dict[str, object] = {
             "observations": [observation_to_dict(o) for o in result.observations],
             "limitations": list(result.limitations),
             "warnings": list(result.warnings),
         }
+        if result.efficiency_page is not None:
+            efficiency["page"] = page_to_dict(result.efficiency_page)
+        data["efficiency"] = efficiency
 
     # A stale result is a *delivered* comparison with one or more aged stage figures,
     # not a failed request, so it keeps the full ``data`` (stages + optional ranked
     # efficiency); the client reads the stale posture from the per-stage ``expired``
     # flags + the staleness limitation (mirrors get_stage_drops). The item is
     # penguin-sourced, so the envelope provenance is the distinct penguin snapshots
-    # that backed the delivered drops (§V5); the item's comparison is region-scoped
-    # (§V5), so every provenance row shares the item's region. The per-stage penguin
-    # snapshot/expiry stamps still travel in the stage rows themselves (§V54).
+    # that backed the FULL comparison (§V5/§V54, derived in the service so a later page
+    # never drops one); the comparison is region-scoped (§V5), so every provenance row
+    # shares the item's region. The per-stage penguin snapshot/expiry stamps still
+    # travel in the stage rows themselves (§V54).
     return build_envelope(
         "data_stale" if result.stale else "ok",
         data=data,
-        provenance=_stage_provenance(result),
+        provenance=tuple(
+            Provenance(server=result.server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
+            for p in result.provenance
+        ),
         limitations=(_STALE_LIMITATION,) if result.stale else (),
         analyzer_version=result.analyzer_version,
     )
-
-
-def _stage_provenance(result: ItemDropsResult) -> tuple[Provenance, ...]:
-    """The distinct penguin snapshots that backed the delivered drops (§V5/§V54).
-
-    The comparison is region-scoped, so every row shares the item's region; the
-    distinct ``(snapshot_id, imported_at)`` pairs are emitted in first-seen (already
-    stage-ordered) order so the provenance list is deterministic + reproducible
-    (§V26). Typically one penguin snapshot per region.
-    """
-    seen: set[tuple[str, str, str]] = set()
-    provenance: list[Provenance] = []
-    for s in result.stages:
-        key = (s.region, s.snapshot_id, s.imported_at)
-        if key in seen:
-            continue
-        seen.add(key)
-        provenance.append(
-            Provenance(server=s.region, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
-        )
-    return tuple(provenance)
 
 
 def build_get_item_drops_spec(get_conn: ConnectionProvider) -> ToolSpec:
@@ -312,9 +309,10 @@ def build_get_item_drops_spec(get_conn: ConnectionProvider) -> ToolSpec:
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V5/§V18 gate: the bounded model requires a region + the item game_id, caps
-        # the id length, and rejects an unknown parameter *before* any query runs -- a
-        # ValidationError propagates as a protocol-level rejection.
+        # §V5/§V18/§V19 gate: the bounded model requires a region + the item game_id,
+        # caps the id length, rejects an out-of-range page_size, and rejects an unknown
+        # parameter *before* any query runs -- a ValidationError propagates as a
+        # protocol-level rejection, never a silently widened page (§V19).
         parsed = GetItemDropsInput.model_validate(params)
         return run_guarded(
             get_conn,
@@ -323,6 +321,10 @@ def build_get_item_drops_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 server=parsed.server,
                 game_id=parsed.game_id,
                 include_efficiency=parsed.include_efficiency,
+                stages_page=parsed.stages_page.page,
+                stages_page_size=parsed.stages_page.page_size,
+                efficiency_page=parsed.efficiency_page.page,
+                efficiency_page_size=parsed.efficiency_page.page_size,
             ),
             _shape_item,
         )

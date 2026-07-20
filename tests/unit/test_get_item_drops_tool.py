@@ -80,10 +80,14 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"item", "stages"}  # no efficiency block without the flag
+    # §V19: the stages section always rides its bounded page descriptor; no efficiency
+    # block without the flag.
+    assert set(data) == {"item", "stages", "stages_page"}
     assert data["item"]["game_id"] == "sugar"  # type: ignore[index]
     stages = data["stages"]
     assert isinstance(stages, list) and len(stages) == 2
+    # §V22/§V19: a two-stage item fits page 1 with no further page.
+    assert data["stages_page"] == {"page": 1, "page_size": 50, "total": 2, "has_more": False}  # type: ignore[index]
     for stage in stages:
         assert stage["region"] == "en"
         # §V54: each stage carries its OWN penguin provenance chain.
@@ -205,6 +209,99 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert any("expired" in lim.lower() for lim in expired_ob["limitations"])
     # A staleness limitation names the refresh action; never presented as fresh.
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
+
+
+# --- §V22/§V19: both growable lists are paged (B21) ---------------------------
+
+
+def test_stages_are_paged(tmp_path: Path) -> None:
+    # §V22/§V19: the per-stage facts page through their own bounded cursor so a common
+    # item (dropping across many stages) never overflows the response cap (B21).
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path, [StageDropSeed("a-1"), StageDropSeed("b-2"), StageDropSeed("c-3")]
+    )
+    handler = _handler(open_read_only(path))
+    env1 = handler(server="en", game_id="sugar", stages_page={"page": 1, "page_size": 2})
+    data1 = env1.to_dict()["data"]
+    # Ordered by stage_code; page 1 holds the first two + signals another bounded page.
+    assert [s["stage_code"] for s in data1["stages"]] == ["a-1", "b-2"]  # type: ignore[index]
+    assert data1["stages_page"] == {"page": 1, "page_size": 2, "total": 3, "has_more": True}  # type: ignore[index]
+    env2 = handler(server="en", game_id="sugar", stages_page={"page": 2, "page_size": 2})
+    data2 = env2.to_dict()["data"]
+    assert [s["stage_code"] for s in data2["stages"]] == ["c-3"]  # type: ignore[index]
+    assert data2["stages_page"]["has_more"] is False  # type: ignore[index]
+
+
+def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -> None:
+    # §V60 + B21: the ranking is computed over the FULL set, THEN sliced -- page 1 is
+    # the most-efficient N in GLOBAL order, never a per-page re-rank.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("e1", sanity_cost=6, drop_rate=0.5),  # 12
+            StageDropSeed("e2", sanity_cost=18, drop_rate=0.25),  # 72
+            StageDropSeed("e3", sanity_cost=30, drop_rate=0.25),  # 120
+            StageDropSeed("e4", sanity_cost=10, drop_rate=0.5),  # 20
+            StageDropSeed("e5", sanity_cost=40, drop_rate=0.25),  # 160
+        ],
+    )
+    handler = _handler(open_read_only(path))
+    eff1 = handler(
+        server="en",
+        game_id="sugar",
+        include_efficiency=True,
+        efficiency_page={"page": 1, "page_size": 2},
+    ).to_dict()["data"]["efficiency"]  # type: ignore[index]
+    # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
+    assert [o["evidence"][0]["ref"] for o in eff1["observations"]] == ["e1", "e4"]
+    assert eff1["page"] == {"page": 1, "page_size": 2, "total": 5, "has_more": True}
+    eff2 = handler(
+        server="en",
+        game_id="sugar",
+        include_efficiency=True,
+        efficiency_page={"page": 2, "page_size": 2},
+    ).to_dict()["data"]["efficiency"]  # type: ignore[index]
+    # Page 2 continues the SAME global ranking (not the two lowest of a fresh re-rank).
+    assert [o["evidence"][0]["ref"] for o in eff2["observations"]] == ["e2", "e3"]
+    assert eff2["page"]["has_more"] is True
+    # §V60: the mandatory comparison caveats ride every page, not just page 1.
+    assert "availability" in " ".join(eff2["limitations"]).lower()
+
+
+def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
+    # §V53 + B21: the stale verdict is computed over the FULL set, so data_stale holds
+    # even when the only expired stage falls on a later page -- page 1 is never
+    # presented as fresh just because its rows happen to be unexpired.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("a-1", expires_at=FUTURE_EXPIRY),
+            StageDropSeed("z-9", expires_at=PAST_EXPIRY),
+        ],
+    )
+    env = _handler(open_read_only(path))(
+        server="en", game_id="sugar", stages_page={"page": 1, "page_size": 1}
+    )
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    # The returned page holds only the fresh stage; the expired one is off-page...
+    assert [s["stage_code"] for s in data["stages"]] == ["a-1"]  # type: ignore[index]
+    assert data["stages"][0]["expired"] is False  # type: ignore[index]
+    assert data["stages_page"]["has_more"] is True  # type: ignore[index]
+    # ...yet the staleness posture holds (never presented as fresh).
+    assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
+
+
+def test_out_of_range_page_size_rejected(tmp_path: Path) -> None:
+    # §V19: an out-of-range page_size is rejected at the model gate, never silently
+    # widened -- one contract, both places (mirrors get_stage).
+    with pytest.raises(ValidationError):
+        _handler(open_read_only(_candidate(tmp_path)))(
+            server="en", game_id="sugar", stages_page={"page_size": 101}
+        )
 
 
 # --- §V24: absent item / no drop cache -> not_found, no fetch fallback ---------
