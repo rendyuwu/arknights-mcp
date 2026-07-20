@@ -258,8 +258,11 @@ def test_occurrence_reads_variant_stats_over_base(tmp_path: Path) -> None:
     assert var_b.motion_type == "FLY"  # variant motion over base
 
     var_c = occ["enemy_1105_tyokai_c"]
+    assert var_c.hp == 12345  # _c overrides maxHp -> variant hp over base (§V47 COALESCE)
+    assert var_c.atk == 300  # _c doesn't override atk -> inherits base through the variant row
     assert var_c.def_ == 100  # _c overrides only hp -> def inherits base
     assert var_c.res == 10
+    assert var_b.hp == 5000  # _b overrides def/res/motion, not hp -> hp inherits base
 
 
 def test_get_stage_and_analyze_surface_variant_id(tmp_path: Path) -> None:
