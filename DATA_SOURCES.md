@@ -18,7 +18,7 @@ an attribution offer, nor a takedown offer is treated as permission to reuse.
 No raw snapshots or prebuilt databases are distributed. Every source has a
 removal mechanism.
 
-_Last reviewed: 2026-07-20._
+_Last reviewed: 2026-07-21._
 
 ---
 
@@ -67,35 +67,37 @@ _Last reviewed: 2026-07-20._
 - **Enabled:** no — the adapter and registry entry exist, but the source stays disabled by default until the drop importer and `get_stage_drops` tool are complete and the enablement is reviewed.
 - **Current snapshot commit / retrieved at:** n/a (populated per import).
 
-## `arknights_global_official_news` — future announcement metadata, **disabled**
+## `arknights_global_official_news` — announcement metadata (v0.2 M9), **disabled by default**
 
 - **Owner / maintainer:** Official Arknights (Global) — Hypergryph / Yostar.
 - **Canonical URL:** https://www.arknights.global/
 - **Source type / regions:** first-party announcement website; region `en`.
-- **Fields / domains consumed:** none in v0.1. If enabled later, metadata only — title, publication time, event start/end, region, announcement type, and canonical link. Never article bodies, promotional images, or full copied announcements.
+- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — nothing else. Never the article body, HTML, prose, promotional images, image URLs, or full copied announcements.
 - **Adapter / transform versions:** `official_news` adapter (disabled; metadata-only maximum scope).
-- **License / permission status:** first-party copyrighted website; metadata-only policy pending implementation review.
+- **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
 - **Redistribution status:** prohibited.
 - **Required attribution:** "Announcement dates from official Arknights channels © Hypergryph / Yostar."
 - **Contact / issue URL:** official channels.
-- **Enabled:** no (disabled by default; remains disabled until the core importer is stable and the source policy is reviewed).
+- **Enabled:** no — disabled by default. Enablement requires the metadata-only importer (SPEC §T95/§T96) to be stable plus a separate enablement review; metadata-only remains the maximum scope even when enabled.
 - **Current snapshot commit / retrieved at:** n/a.
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited).
 
-## `arknights_cn_official_news` — future announcement metadata, **disabled**
+## `arknights_cn_official_news` — announcement metadata (v0.2 M9), **disabled by default**
 
 - **Owner / maintainer:** Official Arknights (CN) — Hypergryph.
 - **Canonical URL:** https://ak.hypergryph.com/
 - **Source type / regions:** first-party announcement website; region `cn`.
-- **Fields / domains consumed:** none in v0.1 (same metadata-only posture as the Global news source above).
+- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — same metadata-only posture as the Global news source above. Never the article body, HTML, prose, images, or image URLs.
 - **Adapter / transform versions:** `official_news` adapter (disabled).
-- **License / permission status:** first-party copyrighted website; metadata-only policy pending review.
+- **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
 - **Redistribution status:** prohibited.
 - **Required attribution:** "Announcement dates from official Arknights channels © Hypergryph."
 - **Contact / issue URL:** official channels.
-- **Enabled:** no.
+- **Enabled:** no — disabled by default (same enablement gate as the Global news source).
 - **Current snapshot commit / retrieved at:** n/a.
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited).
 
 ## `local_snapshot` — user-supplied snapshot adapter, **enabled (adapter)**
 

@@ -112,20 +112,27 @@ owner_name = "Hypergryph / Yostar"
 canonical_url = "https://www.arknights.global/"
 source_type = "official_announcement_website"
 regions = ["en"]
-purpose = "Future event/banner/maintenance date metadata (metadata-only maximum scope)."
-fields_consumed = []
+purpose = "Event/banner/maintenance announcement metadata (metadata-only maximum scope, D14)."
+fields_consumed = [
+    "announce_id",
+    "title",
+    "date",
+    "url",
+    "category",
+    "region",
+]
 adapter_version = "0.0"
 transform_version = "0"
 license_identifier = ""
 license_status = "first_party_copyrighted_website"
-permission_status = "metadata_only_pending_review"
+permission_status = "metadata_only_maximum_scope_reviewed"
 private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph / Yostar."
 contact_url = "https://www.arknights.global/"
-policy_notes = "Disabled by default; if enabled later, store only title, publication time, event start/end, region, announcement type, and canonical link. Never article bodies."
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Disabled by default; enablement requires the metadata-only importer (T95/T96) to be stable plus a separate enablement review."
 enabled = false
-last_reviewed_at = "2026-07-17"
+last_reviewed_at = "2026-07-21"
 
 [arknights_cn_official_news]
 display_name = "Official Arknights (CN) news"
@@ -133,17 +140,24 @@ owner_name = "Hypergryph"
 canonical_url = "https://ak.hypergryph.com/"
 source_type = "official_announcement_website"
 regions = ["cn"]
-purpose = "Future CN event/banner/maintenance date metadata (metadata-only maximum scope)."
-fields_consumed = []
+purpose = "CN event/banner/maintenance announcement metadata (metadata-only maximum scope, D14)."
+fields_consumed = [
+    "announce_id",
+    "title",
+    "date",
+    "url",
+    "category",
+    "region",
+]
 adapter_version = "0.0"
 transform_version = "0"
 license_identifier = ""
 license_status = "first_party_copyrighted_website"
-permission_status = "metadata_only_pending_review"
+permission_status = "metadata_only_maximum_scope_reviewed"
 private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph."
 contact_url = "https://ak.hypergryph.com/"
-policy_notes = "Disabled by default; same metadata-only posture as the Global news source."
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Disabled by default; enablement requires the metadata-only importer (T95/T96) to be stable plus a separate enablement review."
 enabled = false
-last_reviewed_at = "2026-07-17"
+last_reviewed_at = "2026-07-21"
