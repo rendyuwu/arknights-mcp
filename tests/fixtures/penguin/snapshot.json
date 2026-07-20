@@ -1,0 +1,39 @@
+{
+  "US": {
+    "items": [
+      {
+        "itemId": "30012",
+        "name": "Orirock",
+        "rarity": 0,
+        "itemType": "MATERIAL",
+        "iconId": "sprite_item_30012",
+        "description": "PENGUINPROSE drop-rate item description that must never ship to a client - see V16."
+      },
+      {
+        "itemId": "30013",
+        "name": "Orirock Cube",
+        "rarity": 1,
+        "itemType": "MATERIAL"
+      }
+    ],
+    "result/matrix": {
+      "matrix": [
+        {"stageId": "gs_drones", "itemId": "30012", "quantity": 1250, "times": 5000, "start": 1600000000000},
+        {"stageId": "gs_drones", "itemId": "30013", "quantity": 8, "times": 40},
+        {"stageId": "gs_arts", "itemId": "30012", "quantity": 900, "times": 6000},
+        {"stageId": "gs_absent", "itemId": "30012", "quantity": 1, "times": 10},
+        {"stageId": "gs_drones", "itemId": "99999", "quantity": 1, "times": 10}
+      ]
+    }
+  },
+  "CN": {
+    "items": [
+      {"itemId": "30012", "name": "源石碎片", "rarity": 0, "itemType": "MATERIAL"}
+    ],
+    "result/matrix": {
+      "matrix": [
+        {"stageId": "cs_1", "itemId": "30012", "quantity": 600, "times": 4000}
+      ]
+    }
+  }
+}
