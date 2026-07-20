@@ -94,10 +94,20 @@ def test_occurrences_from_stage_enemies(conn: sqlite3.Connection) -> None:
     assert drone.motion_type == "FLY"
     assert drone.is_elite is True
     assert drone.first_spawn_time == 8.0
+    # §V47: the occurrence carries the per-enemy stat block (level 0 fixture values).
+    assert drone.hp == 900
+    assert drone.atk == 260
+    assert drone.def_ == 0
+    assert drone.res == 10
+    assert drone.attack_interval == 1.6
+    assert drone.move_speed == 1.0
+    assert drone.weight == 1
 
     slug = by_id["enemy_1007_slime"]
     assert slug.total_count == 3
     assert slug.motion_type == "WALK"
+    assert slug.hp == 1650
+    assert slug.def_ == 100
 
 
 def test_aerial_observation_carries_v6_fields(conn: sqlite3.Connection) -> None:

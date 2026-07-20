@@ -245,7 +245,11 @@ def _occurrence_compact(occ: EnemyOccurrenceFacts) -> dict[str, object]:
 
 
 def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
-    """The full typed occurrence for ``depth=detailed`` (class/motion/attack + timing)."""
+    """The full typed occurrence for ``depth=detailed``: identity + class/motion/attack
+    + timing PLUS the §V47 per-enemy stat block (hp/atk/def/res/attack_interval/
+    move_speed/weight). The stat block reads variant stats over base (§V46 COALESCE),
+    so the description's "full per-enemy stat/timing context" is honoured, not just
+    advertised (B41). A stat is ``null`` when the source field is absent (§V26)."""
     return {
         "game_id": occ.game_id,
         "display_name": occ.display_name,
@@ -257,6 +261,13 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         "level_variant": occ.level_variant,
         "variant_id": occ.variant_id,
         "total_count": occ.total_count,
+        "hp": occ.hp,
+        "atk": occ.atk,
+        "def": occ.def_,
+        "res": occ.res,
+        "attack_interval": occ.attack_interval,
+        "move_speed": occ.move_speed,
+        "weight": occ.weight,
         "first_spawn_time": occ.first_spawn_time,
         "last_spawn_time": occ.last_spawn_time,
         "route_count": occ.route_count,

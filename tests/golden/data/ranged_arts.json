@@ -22,19 +22,26 @@
   ],
   "occurrences": [
     {
+      "atk": 300,
+      "attack_interval": 2.5,
       "attack_type": "magical",
+      "def_": 100,
       "display_name": "Arts Caster",
       "enemy_class": "ELITE",
       "first_spawn_time": 5.0,
       "game_id": "enemy_caster",
+      "hp": 1200,
       "is_boss": false,
       "is_elite": true,
       "last_spawn_time": 5.0,
       "level_variant": 0,
       "motion_type": "WALK",
+      "move_speed": 0.8,
+      "res": 30,
       "route_count": 1,
       "total_count": 2,
-      "variant_id": null
+      "variant_id": null,
+      "weight": 3
     }
   ],
   "server": "en",

@@ -111,6 +111,30 @@ def test_detailed_roster_carries_full_typed_context(conn: sqlite3.Connection) ->
     assert {"enemy_class", "attack_type", "level_variant", "route_count"} <= set(drone)
 
 
+def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Connection) -> None:
+    # §V47 (B41): the detailed occurrence must emit the per-enemy stat block its tool
+    # description promises ("full per-enemy stat/timing context") -- not just identity +
+    # timing. The integration test pins the contract so a desc ⊃ output regression trips.
+    data = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()["data"]
+    stat_keys = {"hp", "atk", "def", "res", "attack_interval", "move_speed", "weight"}
+    for occ in data["occurrences"]:  # type: ignore[index]
+        assert stat_keys <= set(occ), f"detailed occurrence missing stats: {occ['game_id']}"
+    by_id = {o["game_id"]: o for o in data["occurrences"]}  # type: ignore[index]
+    # Concrete typed values from the pinned fixture (level 0), not just key presence.
+    drone = by_id["enemy_1105_drone"]
+    assert drone["hp"] == 900
+    assert drone["atk"] == 260
+    assert drone["def"] == 0
+    assert drone["res"] == 10
+    assert drone["attack_interval"] == 1.6
+    assert drone["move_speed"] == 1.0
+    assert drone["weight"] == 1
+    # The stat block is what detailed adds over standard: compact roster omits them.
+    compact = _handler(conn)(server="en", stage_code="4-4", depth="standard").to_dict()["data"]
+    for occ in compact["occurrences"]:  # type: ignore[index]
+        assert not (stat_keys & set(occ))
+
+
 # --- §V6 evidence-backed observations -----------------------------------------
 
 

@@ -22,19 +22,26 @@
   ],
   "occurrences": [
     {
+      "atk": 240,
+      "attack_interval": 1.6,
       "attack_type": "physical",
+      "def_": 0,
       "display_name": "侦察机",
       "enemy_class": "ELITE",
       "first_spawn_time": 4.0,
       "game_id": "enemy_cn_drone",
+      "hp": 850,
       "is_boss": false,
       "is_elite": true,
       "last_spawn_time": 4.0,
       "level_variant": 0,
       "motion_type": "FLY",
+      "move_speed": 1.0,
+      "res": 10,
       "route_count": 1,
       "total_count": 2,
-      "variant_id": null
+      "variant_id": null,
+      "weight": 1
     }
   ],
   "server": "cn",

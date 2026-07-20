@@ -71,9 +71,15 @@ class StageFacts:
 class EnemyOccurrenceFacts:
     """One enemy's typed appearance in the stage (from ``stage_enemies``).
 
+    Carries the §V47 per-enemy stat block (``hp`` / ``atk`` / ``def_`` / ``res`` /
+    ``attack_interval`` / ``move_speed`` / ``weight``) the ``analyze_stage``
+    ``depth=detailed`` occurrence promises; each is ``None`` when the level row or
+    the source field is absent (§V26).
+
     ``variant_id`` is set for a stage-scoped inline variant (§T80/§V43), whose
-    ``motion_type`` and stat inputs already read the variant's value over the base
-    prefab (COALESCE in the repository); ``None`` for a plain base-enemy occurrence.
+    ``motion_type`` and stat block already read the variant's value over the base
+    prefab (COALESCE in the repository; §V46); ``None`` for a plain base-enemy
+    occurrence.
     """
 
     game_id: str
@@ -88,6 +94,13 @@ class EnemyOccurrenceFacts:
     first_spawn_time: float | None
     last_spawn_time: float | None
     route_count: int | None
+    hp: int | None
+    atk: int | None
+    def_: int | None
+    res: int | None
+    attack_interval: float | None
+    move_speed: float | None
+    weight: int | None
     variant_id: str | None
 
 
@@ -214,6 +227,13 @@ def analyze_stage(
                 first_spawn_time=enemy.first_spawn_time,
                 last_spawn_time=enemy.last_spawn_time,
                 route_count=enemy.route_count,
+                hp=enemy.hp,
+                atk=enemy.atk,
+                def_=enemy.def_,
+                res=enemy.res,
+                attack_interval=enemy.attack_interval,
+                move_speed=enemy.move_speed,
+                weight=enemy.weight,
                 variant_id=enemy.variant_id,
             )
         )
