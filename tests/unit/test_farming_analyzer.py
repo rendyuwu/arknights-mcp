@@ -129,6 +129,17 @@ def test_expired_cache_downgrades_to_limitation() -> None:
     assert any("expired" in lim for lim in obs.limitations)
 
 
+def test_expired_and_thin_sample_carries_both_limitations() -> None:
+    # §V6/§V55: when a drop is BOTH expired and below the sample floor, neither cause
+    # masks the other -- both caveats are recorded (a client sees the figure is stale
+    # AND noisy), not just the expiry note.
+    thin = _drop(sample_size=SAMPLE_SIZE_FLOOR - 1)
+    obs = _only(analyze_farming(_ctx(thin, expired=True)))
+    assert obs.confidence < 0.5
+    assert any("expired" in lim for lim in obs.limitations)
+    assert any("below the" in lim and "floor" in lim for lim in obs.limitations)
+
+
 # --- §V26: missing inputs -> warning, never a fabricated conclusion -------------
 
 

@@ -54,6 +54,14 @@ _CONF_EXPIRED = 0.3
 #: recommendation; below it must be reported as a limitation.
 _RECOMMENDATION_THRESHOLD = 0.5
 
+# §V8 self-check: the conservative confidences must stay strictly below the
+# recommendation threshold and the stable confidence at/above it, so a future tune of
+# any _CONF_* constant across 0.5 fails loudly here rather than silently flipping a
+# thin-sample/expired figure into a recommendation (the §V8 boundary is executable,
+# not just documented).
+assert _CONF_THIN_SAMPLE < _RECOMMENDATION_THRESHOLD <= _CONF_STABLE
+assert _CONF_EXPIRED < _RECOMMENDATION_THRESHOLD
+
 
 @dataclass(frozen=True)
 class DropFact:
@@ -119,22 +127,23 @@ def _drop_observation(drop: DropFact, *, sanity_cost: int, expired: bool) -> Obs
     sanity_per_item = sanity_cost / drop.drop_rate
 
     limitations: list[str] = []
-    # Confidence ladder: expired cache dominates (§V53/§V55), then a thin sample
-    # (§V8/§V55); a fresh, well-sampled rate keeps the stable confidence.
+    # Each conservatism condition INDEPENDENTLY lowers confidence (lowest wins) and
+    # records its own limitation, so a drop that is both expired AND thin-sampled
+    # carries BOTH caveats -- §V6 wants complete limitations, not a dominant-cause-only
+    # note (§V8/§V53/§V55). A fresh, well-sampled rate keeps the stable confidence.
+    confidence = _CONF_STABLE
     if expired:
-        confidence = _CONF_EXPIRED
+        confidence = min(confidence, _CONF_EXPIRED)
         limitations.append(
             "drop cache expired; farming efficiency downgraded to a limitation, "
             "not a fresh recommendation -- re-sync the penguin drop source"
         )
-    elif drop.sample_size is not None and drop.sample_size < SAMPLE_SIZE_FLOOR:
-        confidence = _CONF_THIN_SAMPLE
+    if drop.sample_size is not None and drop.sample_size < SAMPLE_SIZE_FLOOR:
+        confidence = min(confidence, _CONF_THIN_SAMPLE)
         limitations.append(
             f"drop sample of {drop.sample_size} run(s) is below the "
             f"{SAMPLE_SIZE_FLOOR}-run floor; the rate is noisy and the figure uncertain"
         )
-    else:
-        confidence = _CONF_STABLE
 
     if drop.sample_size is None:
         # A rate with no reported sample size is unverifiable for stability (§V26).
