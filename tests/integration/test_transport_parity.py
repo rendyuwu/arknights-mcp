@@ -78,10 +78,11 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_operator", {"server": "en", "game_id": "char_002_amiya"}),
     ("compare_operator_modules", {"server": "en", "game_id": "char_002_amiya"}),
     ("analyze_stage", {"server": "en", "stage_code": "4-4"}),
-    # No penguin drop cache in the promoted fixture build, so this resolves to
+    # No penguin drop cache in the promoted fixture build, so these resolve to
     # not_found -- a legitimate identical domain result across both wires (like the
     # two operator tools), which the parity check still covers.
     ("get_stage_drops", {"server": "en", "stage_code": "4-4"}),
+    ("get_item_drops", {"server": "en", "game_id": "sugar"}),
     ("get_data_status", {}),
     ("get_data_sources", {}),
 )

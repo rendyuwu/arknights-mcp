@@ -72,6 +72,7 @@ _EXPECTED_TOOLS = (
     "compare_operator_modules",
     "analyze_stage",
     "get_stage_drops",
+    "get_item_drops",
     "get_data_status",
     "get_data_sources",
 )
@@ -87,6 +88,7 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "compare_operator_modules": {"server": "en", "game_id": "char_002_amiya"},
     "analyze_stage": {"server": "en", "stage_code": "4-4"},
     "get_stage_drops": {"server": "en", "stage_code": "4-4"},
+    "get_item_drops": {"server": "en", "game_id": "sugar"},
     "get_data_status": {},
     "get_data_sources": {},
 }

@@ -53,6 +53,7 @@ _EXPECTED_TOOLS = frozenset(
         "compare_operator_modules",
         "analyze_stage",
         "get_stage_drops",
+        "get_item_drops",
         "get_data_status",
         "get_data_sources",
     }

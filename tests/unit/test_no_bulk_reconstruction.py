@@ -57,6 +57,7 @@ _EXPECTED_TOOLS = frozenset(
         "compare_operator_modules",
         "analyze_stage",
         "get_stage_drops",
+        "get_item_drops",
         "get_data_status",
         "get_data_sources",
     }
@@ -73,6 +74,7 @@ _KEYED_ENTITY_TOOLS = frozenset(  # one entity by unique key/selector, no list k
         "compare_operator_modules",
         "analyze_stage",
         "get_stage_drops",
+        "get_item_drops",
     }
 )
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
