@@ -1,17 +1,24 @@
 """Shared test helper: seed a penguin drop-rate cache into a candidate build.
 
-Both the ``get_stage_drops`` tool tests (§T91) and the MCP Inspector contract need
-a penguin ``stage_drops`` row so the drop tool has a live target; the seed logic
-lives here once (§V37) rather than being copy-pasted into each. It writes the shape
-the T89 importer produces: a penguin ``source_snapshots`` row (its OWN provenance
-chain, distinct from the game-data fact, §V54) + an ``items`` row + one
-``stage_drops`` row stamped with ``fetched_at`` / ``expires_at`` (§V53), so the
-caller controls the fresh/stale verdict deterministically.
+Both the ``get_stage_drops`` tool tests (§T91), the ``get_item_drops`` read layer
+(§T103), and the MCP Inspector contract need a penguin ``stage_drops`` row so the
+drop tools have a live target; the seed logic lives here once (§V37) rather than
+being copy-pasted into each. It writes the shape the T89 importer produces: a penguin
+``source_snapshots`` row (its OWN provenance chain, distinct from the game-data fact,
+§V54) + an ``items`` row + ``stage_drops`` rows stamped with ``fetched_at`` /
+``expires_at`` (§V53), so the caller controls the fresh/stale verdict deterministically.
+
+:func:`seed_stage_drop` seeds one item onto an existing fixture stage (the stage view,
+§T91); :func:`seed_item_across_stages` creates several stages that all drop one item
+(the reverse item->stage comparison, §T103/§V60), each with its own sanity cost / drop
+rate / expiry so a ranking + a per-stage stale verdict are both testable.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 #: Deterministic expiry stamps: 2099 is always in the future, 2020 always past, so
@@ -82,6 +89,113 @@ def seed_stage_drop(
                 prov,
             ),
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@dataclass(frozen=True)
+class StageDropSeed:
+    """One synthetic stage that drops the compared item (item->stage seed; §T103).
+
+    ``sanity_cost`` / ``drop_rate`` / ``times`` drive the §V55 efficiency figure and
+    ranking; ``expires_at`` controls this stage's own §V53 fresh/stale verdict; a
+    ``None`` on ``sanity_cost`` or ``drop_rate`` exercises the §V26 exclude-with-warning
+    path.
+    """
+
+    stage_code: str
+    sanity_cost: int | None = 18
+    drop_rate: float | None = 0.25
+    expires_at: str = FUTURE_EXPIRY
+    times: int | None = 5000
+    region: str = "en"
+
+
+def seed_item_across_stages(
+    path: Path,
+    seeds: Sequence[StageDropSeed],
+    *,
+    item_game_id: str = "sugar",
+    item_display_name: str | None = "Sugar",
+) -> None:
+    """Seed ONE item dropped by several synthetic stages (the §T103/§V60 reverse view).
+
+    Creates one ``items`` row per region present in ``seeds`` and, for each seed, a
+    synthetic ``stages`` row (with its own ``sanity_cost``) plus a ``stage_drops`` row
+    stamped with the seed's ``expires_at`` / ``drop_rate`` / ``times``. This lets a test
+    rank the item across ≥2 stages, mix a per-stage fresh/stale verdict, and (by
+    passing a ``cn`` seed) assert the comparison is region-scoped (§V5). Opens a
+    read-write handle (the candidate is written before it is promoted + reopened
+    read-only); ``penguin_statistics`` is already in ``data_sources`` from
+    ``build_candidate`` so the snapshot FK holds.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        item_pks: dict[str, int] = {}
+        snapshot_ids: set[str] = set()
+        for i, seed in enumerate(seeds):
+            snapshot_id = f"pg:{seed.region}"
+            if snapshot_id not in snapshot_ids:
+                conn.execute(
+                    "INSERT INTO source_snapshots (snapshot_id, source_id, server, fetched_at, "
+                    "imported_at, manifest_hash, status, field_policy_version) VALUES "
+                    "(?, 'penguin_statistics', ?, '2026-07-19T00:00:00+00:00', "
+                    "'2026-07-19T00:00:00+00:00', 'ph', 'imported', '1')",
+                    (snapshot_id, seed.region),
+                )
+                snapshot_ids.add(snapshot_id)
+            prov = conn.execute(
+                "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
+                "record_hash, transform_version, field_policy_version) VALUES "
+                "(?, 'result/matrix', ?, 'rh', '1', '1')",
+                (snapshot_id, f"{seed.stage_code}/{item_game_id}"),
+            ).lastrowid
+            if seed.region not in item_pks:
+                item_pks[seed.region] = conn.execute(
+                    "INSERT INTO items (server, game_id, display_name, rarity, item_type, "
+                    "provenance_id) VALUES (?, ?, ?, '3', 'MATERIAL', ?)",
+                    (seed.region, item_game_id, item_display_name, prov),
+                ).lastrowid
+            # A synthetic stage keyed by (region, game_id); game_id kept unique per seed.
+            stage_game_id = f"synthetic_{seed.region}_{i}"
+            stage_prov = conn.execute(
+                "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
+                "record_hash, transform_version, field_policy_version) VALUES "
+                "(?, 'stage_table', ?, 'rh', '1', '1')",
+                (snapshot_id, stage_game_id),
+            ).lastrowid
+            stage_pk = conn.execute(
+                "INSERT INTO stages (server, game_id, stage_code, display_name, sanity_cost, "
+                "provenance_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    seed.region,
+                    stage_game_id,
+                    seed.stage_code,
+                    seed.stage_code,
+                    seed.sanity_cost,
+                    stage_prov,
+                ),
+            ).lastrowid
+            quantity = (
+                None if seed.drop_rate is None else int(round(seed.drop_rate * (seed.times or 0)))
+            )
+            conn.execute(
+                "INSERT INTO stage_drops (stage_pk, item_pk, region, quantity, times, drop_rate, "
+                "snapshot_id, fetched_at, expires_at, provenance_id) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, '2026-07-19T00:00:00+00:00', ?, ?)",
+                (
+                    stage_pk,
+                    item_pks[seed.region],
+                    seed.region,
+                    quantity,
+                    seed.times,
+                    seed.drop_rate,
+                    snapshot_id,
+                    seed.expires_at,
+                    prov,
+                ),
+            )
         conn.commit()
     finally:
         conn.close()
