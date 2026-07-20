@@ -1,7 +1,7 @@
 """§T45 ``compare_operator_modules`` tool tests (§V5/§V7/§V23; §I.tool).
 
 The tool is the model -> service -> envelope bridge for comparing one operator's
-modules across potential levels; these drive it end to end against the production
+modules across module levels; these drive it end to end against the production
 read-only path (§V2) using the operator fixture (Amiya: one CX-1 module with three
 real levels -- atk 34/48/66, +150 Max HP at level 3, a trait change at level 1 and
 a talent change at level 2). They assert:
@@ -209,7 +209,7 @@ def test_empty_levels_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_level_rejected(conn: sqlite3.Connection) -> None:
-    # §T45: module potential levels are bounded to {1, 2, 3}; 4 is rejected.
+    # §T45: module levels are bounded to {1, 2, 3}; 4 is rejected.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id=_AMIYA, levels=[4])
 
@@ -226,6 +226,21 @@ def test_service_is_read_only(conn: sqlite3.Connection) -> None:
     before = conn.total_changes
     compare_operator_modules(conn, server="en", game_id=_AMIYA, mode="with_observations")
     assert conn.total_changes == before
+
+
+def test_description_names_module_levels_not_potential(conn: sqlite3.Connection) -> None:
+    # §V48/B40: the comparison axis is MODULE levels (1/2/3), NOT operator potential.
+    # A client reads the tool description + input schema literally; calling the axis
+    # "potential levels" conflates the module upgrade tier with the separate,
+    # potential-gated talent axis (§T45) -> wrong tool selection. Pin the wording.
+    spec = build_compare_operator_modules_spec(lambda: conn)
+    desc = spec.description.lower()
+    assert "module levels" in desc
+    assert "potential" not in desc
+    # The bounded input schema is client-facing (§V21): its description (the model
+    # docstring) must not mislabel the axis either.
+    schema_desc = str(spec.to_mcp_tool().inputSchema.get("description", "")).lower()
+    assert "potential" not in schema_desc
 
 
 def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) -> None:

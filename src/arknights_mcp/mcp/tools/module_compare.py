@@ -44,7 +44,7 @@ from arknights_mcp.services.module_compare import (
 _TOOL_NAME = "compare_operator_modules"
 _TOOL_TITLE = "Compare operator modules"
 _TOOL_DESCRIPTION = (
-    "Compare one Arknights operator's modules across the requested potential levels "
+    "Compare one Arknights operator's modules across the requested module levels "
     "(a subset of 1/2/3, default all three) by region + game_id. Each module lists "
     "its per-level stat bonuses, trait changes, talent changes, and upgrade cost "
     "side by side; a level a module does not define is marked present=false. mode "

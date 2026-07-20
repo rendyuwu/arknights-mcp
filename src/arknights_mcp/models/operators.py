@@ -4,7 +4,7 @@ Covers ``get_operator`` (§T44) and ``compare_operator_modules`` (§T45). Heavy
 operator sections (phases, skills, talents, modules) are opt-in include flags that
 default ``False`` so the default response stays small (§V22); ``provenance`` and a
 lightweight ``summary`` default on so a fact always carries its region attribution
-(§V5). Module comparison is bounded to the three real potential levels (§V19).
+(§V5). Module comparison is bounded to the three real module levels (§V19).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from arknights_mcp.models.common import MAX_ID_LEN, Region, StrictModel
 #: Facts-only vs facts + deterministic module observations (§V7 conservative).
 CompareMode = Literal["facts_only", "with_observations"]
 
-#: Valid module potential levels in-game (§T45: levels 1/2/3).
+#: Valid module levels in-game (§T45: module upgrade tiers 1/2/3, not operator potential).
 _VALID_MODULE_LEVELS = frozenset({1, 2, 3})
 
 
@@ -44,7 +44,7 @@ class GetOperatorInput(StrictModel):
 class CompareOperatorModulesInput(StrictModel):
     """Parameters for ``compare_operator_modules`` (§I; §V7).
 
-    Compares one operator's modules at the requested potential ``levels`` (§T45:
+    Compares one operator's modules at the requested module ``levels`` (§T45:
     subset of {1, 2, 3}, deduped, non-empty; defaults to all three). ``mode``
     chooses facts only vs facts + conservative deterministic observations (§V7).
     """
