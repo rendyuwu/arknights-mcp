@@ -277,7 +277,18 @@ def test_lane_route_fires_on_multiple_routes() -> None:
     assert obs.rule_id == LANE_ROUTE_ID
     _assert_v6_fields(obs)
     assert obs.evidence[0].value == 3
-    assert "3 distinct enemy routes" in obs.summary
+    assert obs.evidence[0].note == "3 raw route records"
+
+
+def test_lane_route_raw_count_is_not_labelled_lanes() -> None:
+    # §V49/B43: a stage with 26 raw route records must NOT headline "26 lanes" -- the
+    # raw route-record count overstates distinct lanes. It fires at reduced confidence
+    # with a limitation that the raw count is not the lane count.
+    obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), route_count=26)))["lane_route"]
+    assert "26 lanes" not in obs.summary
+    assert "26 raw route records" in obs.evidence[0].note
+    assert obs.confidence < 0.85  # raw count is not an authoritative lane measure
+    assert any("distinct lanes" in lim for lim in obs.limitations)
 
 
 def test_lane_route_single_route_does_not_fire() -> None:

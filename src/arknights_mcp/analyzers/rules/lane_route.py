@@ -1,12 +1,21 @@
-"""Lane/route threat rule (§V6, §V26): flags stages whose enemies advance along
-several distinct routes, so threats approach from multiple lanes at once and a
-single defensive line cannot cover every path.
+"""Lane/route threat rule (§V6, §V26, §V49): flags stages whose enemies advance
+along several route records, so threats plausibly approach from more than one path
+and a single defensive line may not cover every approach.
 
-Reads the typed stage-level ``route_count`` (the number of distinct enemy routes)
-and, as reinforcing evidence, each enemy's own ``route_count`` (how many routes it
-splits across). No route data loaded -> the rule skips rather than concluding from
-absent data (§V26). The headline is the distinct-route count -- a stage property,
-not an enemy tally -- so §V35 does not conflate it with the evidence rows.
+Reads the typed stage-level ``route_count`` (the number of raw enemy-route RECORDS)
+and, as reinforcing evidence, each enemy's own ``route_count`` (how many route
+records it splits across). No route data loaded -> the rule skips rather than
+concluding from absent data (§V26).
+
+§V49/B43: the raw ``route_count`` is a count of route RECORDS, which often share
+start/end/checkpoint geometry (4-4: 26 records, far fewer distinct lanes). It is
+therefore NOT a player-facing lane tally. The context carries only the scalar count
+(no route geometry to cluster into effective lanes), so this rule takes §V49 pick
+(b): it labels the evidence "raw route records", records the limitation that the
+raw count is not the distinct-lane count, and reports at reduced confidence -- never
+headlining "N lanes". Same raw-field-not-a-semantic-claim class as §V39 (preDelay)
+/ §V44 (m_defined). The headline is the stage-level record count -- a stage
+property, not an enemy tally -- so §V35 does not conflate it with the evidence rows.
 """
 
 from __future__ import annotations
@@ -21,14 +30,22 @@ from arknights_mcp.analyzers.rules._common import by_game_id, count_note
 
 RULE_ID = "threat.lane_route"
 
-#: At least this many distinct routes makes a stage multi-lane.
+#: At least this many raw route records makes a stage plausibly multi-lane.
 _MULTI_LANE = 2
 
-_CONFIDENCE = 0.85  # authoritative typed route count
+#: §V49/B43: the raw route-record count overstates distinct lanes (records share
+#: geometry) and the context carries no geometry to cluster -> the conclusion is a
+#: plausible multi-path signal, not an authoritative lane measure, so confidence is
+#: reduced from the old authoritative 0.85.
+_CONFIDENCE = 0.5
+
+#: §V49/B43: stamped on every firing so the client knows the raw record count is not
+#: the distinct-lane count and the geometry was not clustered into effective lanes.
+_RAW_ROUTE_LIMITATION = "raw route count != distinct lanes; geometry not clustered"
 
 
 class LaneRouteRule:
-    """Flags stages fielding enemies across multiple approach lanes (§V6, §V26)."""
+    """Flags stages fielding enemies across multiple route records (§V6, §V26, §V49)."""
 
     rule_id = RULE_ID
 
@@ -43,10 +60,10 @@ class LaneRouteRule:
                 ref=stage_ref,
                 field="route_count",
                 value=route_count,
-                note=f"{route_count} distinct routes",
+                note=f"{route_count} raw route records",
             )
         ]
-        # Enemies that themselves split across several routes reinforce the threat.
+        # Enemies that themselves split across several route records reinforce the threat.
         for occ in by_game_id(ctx.occurrences):
             if occ.route_count is not None and occ.route_count > 1:
                 evidence.append(
@@ -63,13 +80,15 @@ class LaneRouteRule:
                 rule_id=RULE_ID,
                 category="threat",
                 tag="lane_route",
-                title="Multiple approach lanes",
+                title="Multiple approach routes",
                 summary=(
-                    f"Stage fields {route_count} distinct enemy routes; threats approach from "
-                    "several lanes at once, so a single defensive line cannot cover every path."
+                    f"Stage carries {route_count} raw enemy-route records; enemies advance along "
+                    "more than one path, so a single defensive line may not cover every approach. "
+                    "The raw record count overstates distinct lanes -- records may share "
+                    "start/end/checkpoint geometry -- so it is not a lane tally."
                 ),
                 confidence=_CONFIDENCE,
                 evidence=tuple(evidence),
-                limitations=(),
+                limitations=(_RAW_ROUTE_LIMITATION,),
             )
         )

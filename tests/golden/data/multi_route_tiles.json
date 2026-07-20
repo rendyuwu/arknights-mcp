@@ -4,20 +4,22 @@
     {
       "analyzer_version": "1",
       "category": "threat",
-      "confidence": 0.85,
+      "confidence": 0.5,
       "evidence": [
         {
           "field": "route_count",
-          "note": "2 distinct routes",
+          "note": "2 raw route records",
           "ref": "GS-3",
           "value": 2
         }
       ],
-      "limitations": [],
+      "limitations": [
+        "raw route count != distinct lanes; geometry not clustered"
+      ],
       "rule_id": "threat.lane_route",
-      "summary": "Stage fields 2 distinct enemy routes; threats approach from several lanes at once, so a single defensive line cannot cover every path.",
+      "summary": "Stage carries 2 raw enemy-route records; enemies advance along more than one path, so a single defensive line may not cover every approach. The raw record count overstates distinct lanes -- records may share start/end/checkpoint geometry -- so it is not a lane tally.",
       "tag": "lane_route",
-      "title": "Multiple approach lanes"
+      "title": "Multiple approach routes"
     },
     {
       "analyzer_version": "1",
