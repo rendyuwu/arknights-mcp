@@ -9,7 +9,7 @@ core; the in-process contract test proves the *registry* adds no divergent logic
 None of them compares the two *wires* against each other. This test does exactly
 that: it drives both real transports against the *same promoted build* and asserts
 the ``initialize`` handshake, the ``tools/list`` enumeration, and every one of the
-nine ``tools/call`` domain payloads come back byte-identical across modes.
+``tools/call`` domain payloads come back byte-identical across modes.
 
 How the two wires share one build (§V37 DRY):
 
@@ -78,6 +78,10 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_operator", {"server": "en", "game_id": "char_002_amiya"}),
     ("compare_operator_modules", {"server": "en", "game_id": "char_002_amiya"}),
     ("analyze_stage", {"server": "en", "stage_code": "4-4"}),
+    # No penguin drop cache in the promoted fixture build, so this resolves to
+    # not_found -- a legitimate identical domain result across both wires (like the
+    # two operator tools), which the parity check still covers.
+    ("get_stage_drops", {"server": "en", "stage_code": "4-4"}),
     ("get_data_status", {}),
     ("get_data_sources", {}),
 )

@@ -56,6 +56,7 @@ _EXPECTED_TOOLS = frozenset(
         "get_operator",
         "compare_operator_modules",
         "analyze_stage",
+        "get_stage_drops",
         "get_data_status",
         "get_data_sources",
     }
@@ -66,7 +67,13 @@ _EXPECTED_TOOLS = frozenset(
 _SEARCH_TOOLS = frozenset({"search_entities", "search_stages"})  # bounded window
 _STAGE_DETAIL_TOOLS = frozenset({"get_stage"})  # selector-gated + paged sections
 _KEYED_ENTITY_TOOLS = frozenset(  # one entity by unique key/selector, no list knob
-    {"get_enemy", "get_operator", "compare_operator_modules", "analyze_stage"}
+    {
+        "get_enemy",
+        "get_operator",
+        "compare_operator_modules",
+        "analyze_stage",
+        "get_stage_drops",
+    }
 )
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
 

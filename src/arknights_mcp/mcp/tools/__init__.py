@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
+from arknights_mcp.mcp.tools.drops import build_get_stage_drops_spec
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.metadata import (
     build_get_data_sources_spec,
@@ -45,6 +46,7 @@ _TOOL_BUILDERS = (
     build_get_operator_spec,
     build_compare_operator_modules_spec,
     build_analyze_stage_spec,
+    build_get_stage_drops_spec,
 )
 
 
@@ -60,15 +62,15 @@ def build_tool_registry(
     build; every registered spec is read-only (§V2) and bound to it. ``registry``
     is the live source posture ``get_data_sources`` projects (§V27), and ``mode``
     is the deployment-mode label ``get_data_status`` reports. Both transports call
-    this so they dispatch one identical tool set of all nine §I.tool tools (§V14) --
+    this so they dispatch one identical tool set of all ten §I.tool tools (§V14) --
     there is no per-transport tool list to drift. Registration order is
     deterministic, so ``list_tools`` is stable.
     """
     tool_registry = ToolRegistry()
     for build in _TOOL_BUILDERS:
         tool_registry.register(build(get_conn))
-    # The two data-metadata tools (§T77) complete the §I.tool set of nine; they
-    # carry the extra deployment-mode / source-registry deps the entity tools lack.
+    # The two data-metadata tools (§T77) round out the §I.tool set; they carry the
+    # extra deployment-mode / source-registry deps the entity tools lack.
     tool_registry.register(build_get_data_status_spec(get_conn, mode=mode))
     tool_registry.register(build_get_data_sources_spec(get_conn, registry=registry))
     return tool_registry

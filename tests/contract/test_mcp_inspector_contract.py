@@ -38,6 +38,7 @@ from pathlib import Path
 import pytest
 from mcp.types import Tool
 from pydantic import ValidationError
+from tests.support.drops import seed_stage_drop
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.db.migrations import build_database
@@ -60,8 +61,8 @@ FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 OPERATOR_ROOT = REPO_ROOT / "tests" / "fixtures" / "operator" / "en"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The full §I.tool set of nine the assembled registry exposes, in registration
-#: order (§V14). The two data-metadata tools (§T77) register last.
+#: The full §I.tool set the assembled registry exposes, in registration order
+#: (§V14). The two data-metadata tools (§T77) register last.
 _EXPECTED_TOOLS = (
     "search_entities",
     "search_stages",
@@ -70,6 +71,7 @@ _EXPECTED_TOOLS = (
     "get_operator",
     "compare_operator_modules",
     "analyze_stage",
+    "get_stage_drops",
     "get_data_status",
     "get_data_sources",
 )
@@ -84,6 +86,7 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "get_operator": {"server": "en", "game_id": "char_002_amiya"},
     "compare_operator_modules": {"server": "en", "game_id": "char_002_amiya"},
     "analyze_stage": {"server": "en", "stage_code": "4-4"},
+    "get_stage_drops": {"server": "en", "stage_code": "4-4"},
     "get_data_status": {},
     "get_data_sources": {},
 }
@@ -100,13 +103,15 @@ _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "get_operator": {"server": "en", "game_id": "char_999_ghost"},
     "compare_operator_modules": {"server": "en", "game_id": "char_999_ghost"},
     "analyze_stage": {"server": "en", "stage_code": "99-99"},
+    "get_stage_drops": {"server": "en", "stage_code": "99-99"},
 }
 
 
 @pytest.fixture
 def conn(tmp_path: Path) -> sqlite3.Connection:
     """Build a read-only candidate from the 4-4 fixture (stage + two enemies) plus
-    the en operator fixture (Amiya), so every M-tier tool has a live target."""
+    the en operator fixture (Amiya) + a seeded penguin drop cache, so every M-tier
+    tool -- including get_stage_drops -- has a live target."""
     path = tmp_path / "cand.sqlite"
     build_candidate(
         path,
@@ -120,6 +125,8 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
         ],
         registry=load_source_registry(REGISTRY),
     )
+    # A fresh (far-future expiry) drop so the get_stage_drops valid archetype -> ok.
+    seed_stage_drop(path)
     return open_read_only(path)
 
 

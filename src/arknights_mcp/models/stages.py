@@ -88,3 +88,17 @@ class AnalyzeStageInput(_StageSelector):
     """
 
     depth: AnalysisDepth = "standard"
+
+
+class GetStageDropsInput(_StageSelector):
+    """Parameters for ``get_stage_drops`` (§I; §V53/§V55).
+
+    Selects a stage (region + one selector, §V5) whose penguin drop-rate cache to
+    report. ``include_efficiency`` opts into the deterministic §T90 farming
+    observations (sanity per item); off by default so the base response is the
+    compact drop facts + provenance + expiry (§V22). Reuses the shared region +
+    exactly-one-selector gate (§V37), so a drop lookup is region-attributed and
+    unambiguous like the other stage tools.
+    """
+
+    include_efficiency: bool = False
