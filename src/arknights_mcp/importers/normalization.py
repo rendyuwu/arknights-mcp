@@ -447,11 +447,21 @@ def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
     the shared stat extractor, so prose (``name``/``description``) never enters
     (§V18/§V16). A ref without a ``prefabKey`` yields no variant — the spawn keeps
     the unresolved inline id and fails closed downstream (§V43, no fabricated base).
+
+    The ref *source* (``enemyDbRefs`` falling back to ``enemies``) and the per-id
+    last-wins dedup MUST mirror :func:`_enemy_ref_map` exactly (§V46). A spawn the
+    ref map resolves to a ``variantId`` with no matching variant row here would
+    dangle — ``variant_pk`` NULL, def/res/motion overrides silently dropped back to
+    the §V43 limitation with no error. A duplicate inline id emitted twice would
+    collide on ``UNIQUE(stage_pk, variant_id)`` and abort the whole candidate build;
+    the ref map already collapses duplicates last-wins, so this must too.
     """
     refs = level_raw.get("enemyDbRefs")
     if not isinstance(refs, list):
+        refs = level_raw.get("enemies")
+    if not isinstance(refs, list):
         return []
-    variants: list[dict[str, Any]] = []
+    variants: dict[str, dict[str, Any]] = {}
     for ref in refs:
         if not isinstance(ref, dict) or ref.get("useDb") is not False:
             continue
@@ -473,8 +483,8 @@ def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
         motion = _defined_motion(kept.get("motion"))
         if motion is not None:
             variant["motion"] = motion
-        variants.append(variant)
-    return variants
+        variants[rid] = variant  # last-wins dedup, mirroring _enemy_ref_map
+    return list(variants.values())
 
 
 def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], int, int]:

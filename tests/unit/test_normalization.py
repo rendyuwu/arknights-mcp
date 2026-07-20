@@ -466,6 +466,53 @@ def test_collect_variants_only_for_inline_refs() -> None:
     assert no_prefab["variants"] == []
 
 
+def test_collect_variants_reads_enemies_fallback() -> None:
+    """§V46: ``_collect_variants`` must mirror ``_enemy_ref_map``'s ``enemyDbRefs`` ->
+    ``enemies`` fallback. A level declaring its refs under ``enemies`` still yields the
+    variant row; otherwise the spawn's ``variantId`` (emitted by the ref map, which
+    reads the same fallback) would dangle with no variant row -> variant_pk NULL ->
+    def/res/motion overrides silently dropped back to the §V43 limitation."""
+    level_raw = _variant_ref_level(
+        {
+            "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+            "attributes": {"def": {"m_defined": True, "m_value": 9999}},
+        }
+    )
+    # Move the refs to the ``enemies`` key (the structural alternative to enemyDbRefs).
+    level_raw["enemies"] = level_raw.pop("enemyDbRefs")
+    level = normalize_level(level_raw)
+    assert len(level["variants"]) == 1
+    assert level["variants"][0]["variantId"] == "enemy_1105_tyokai_b"
+    assert level["variants"][0]["def"] == 9999
+
+
+def test_collect_variants_dedups_duplicate_inline_id() -> None:
+    """§V46: a duplicate inline ref id must be collapsed last-wins (as ``_enemy_ref_map``
+    does), not emitted twice -- two rows with the same id would collide on
+    ``UNIQUE(stage_pk, variant_id)`` and abort the candidate build."""
+    level_raw = _variant_ref_level(
+        {
+            "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+            "attributes": {"def": {"m_defined": True, "m_value": 100}},
+        }
+    )
+    # Append a second ref with the SAME inline id but a different def override.
+    level_raw["enemyDbRefs"].append(
+        {
+            "useDb": False,
+            "id": "enemy_1105_tyokai_b",
+            "level": 0,
+            "overwrittenData": {
+                "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
+                "attributes": {"def": {"m_defined": True, "m_value": 200}},
+            },
+        }
+    )
+    variants = normalize_level(level_raw)["variants"]
+    assert len(variants) == 1  # collapsed, not duplicated
+    assert variants[0]["def"] == 200  # last-wins
+
+
 def test_level_idempotent_on_synthetic_shape() -> None:
     """§V30: a synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
     passes through unchanged."""

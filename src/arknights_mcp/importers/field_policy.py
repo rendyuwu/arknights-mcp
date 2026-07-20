@@ -66,9 +66,11 @@ STAGE_ALLOWLIST: frozenset[str] = frozenset(
 #: (``name``/``description``); only these known structural keys are read, so the
 #: variant is built from typed stats (attributes/motion/lifePointReduce) + its
 #: base ``prefabKey`` and never a prose leaf (§V18/§V16). The extracted stat maps
-#: themselves are the §V29-verified enemy-level maps (single home, §V37).
+#: themselves are the §V29-verified enemy-level maps (single home, §V37). The
+#: variant's *level* is the ref's own ``level`` field (resolved in ``_enemy_ref_map``),
+#: never ``overwrittenData.level`` -- so ``level`` is deliberately absent here.
 OVERWRITTEN_DATA_ALLOWLIST: frozenset[str] = frozenset(
-    {"prefabKey", "attributes", "motion", "lifePointReduce", "level"}
+    {"prefabKey", "attributes", "motion", "lifePointReduce"}
 )
 
 #: Structural spawn-action fields kept in ``stage_spawns.source_fragment_json``.
