@@ -39,3 +39,21 @@ databases, artwork, audio, story scripts, voice lines, wiki/community prose,
 or full announcement bodies. Users build their own local database from
 approved snapshots via the `arknights-mcp import` / `arknights-mcp sync`
 commands.
+
+------------------------------------------------------------------------------
+Third-party data source attributions (V27, V53; DATA_SOURCES.md)
+------------------------------------------------------------------------------
+
+Data imported at CLI time from third-party sources remains governed by those
+sources' own terms, and each carries the attribution recorded in the source
+registry (config/data_sources.toml) and DATA_SOURCES.md. In particular:
+
+  Penguin Statistics (https://penguin-stats.io)
+    Observed drop-rate statistics are © Penguin Statistics and are licensed
+    under Creative Commons Attribution-NonCommercial 4.0 International
+    (CC BY-NC 4.0). They are used NON-COMMERCIALLY, with attribution, and are
+    never redistributed as a bundled cache. See:
+    https://creativecommons.org/licenses/by-nc/4.0/
+
+Attribution for these sources is surfaced at runtime by the `get_data_sources`
+MCP tool and the `arknights://sources` resource.

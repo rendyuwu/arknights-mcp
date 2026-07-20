@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from arknights_mcp.sources.arknights_assets import HttpsFetcher
+from arknights_mcp.sources.http_fetch import HttpsFetcher
 from arknights_mcp.sources.kengxxiao_validator import cross_check_raw_enemy_databases
 
 _XVAL_ENV = os.environ.get("ARKMCP_KENGXXIAO_XVAL", "")

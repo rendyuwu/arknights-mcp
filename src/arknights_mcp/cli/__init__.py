@@ -37,7 +37,7 @@ from arknights_mcp.cli.source import (
 from arknights_mcp.cli.status import _cmd_doctor, _cmd_status
 from arknights_mcp.cli.sync import _cmd_sync
 from arknights_mcp.cli.validate import _cmd_validate
-from arknights_mcp.sources.arknights_assets import Fetcher
+from arknights_mcp.sources.http_fetch import Fetcher
 
 # Re-exported so ``arknights_mcp.cli.is_placeholder`` resolves to the single
 # shared home and the §V37 no-re-duplication guard (test_text.py) still holds.

@@ -25,8 +25,8 @@ from arknights_mcp.db.purge import PurgeError
 from arknights_mcp.db.validate import format_report, validate_database
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.sources.arknights_assets import Fetcher
 from arknights_mcp.sources.base import SourceAdapterError
+from arknights_mcp.sources.http_fetch import Fetcher
 from arknights_mcp.sources.registry import RegistryError, SourceRegistry, load_source_registry
 
 DEFAULT_CONFIG_PATH = "config.toml"

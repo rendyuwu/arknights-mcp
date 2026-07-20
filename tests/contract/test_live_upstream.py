@@ -36,7 +36,7 @@ import pytest
 from arknights_mcp.cli import main
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.promotion import resolve_active_database
-from arknights_mcp.sources.arknights_assets import HttpsFetcher
+from arknights_mcp.sources.http_fetch import HttpsFetcher
 
 _LIVE_ENV = os.environ.get("ARKMCP_LIVE_UPSTREAM", "")
 pytestmark = pytest.mark.skipif(

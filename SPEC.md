@@ -18,10 +18,10 @@ read-only Python 3.12 Arknights Intelligence MCP. 1 shared core → 2 transports
 - data acquire: user local snapshots + explicit allowlisted repo sync only. ⊥ arbitrary URL downloader.
 - code-only distribution. ⊥ bundled raw snapshot | prebuilt DB.
 - private + noncommercial v0.1. public service = separate readiness gate (out of scope). ⊥ single public-mode flag.
-- ⊥ wiki/community prose, art, audio, story, voice, full announcement bodies. announcements metadata-only + disabled v0.1.
+- ⊥ wiki/community prose, art, audio, story, voice, full announcement bodies. announcements metadata-only (v0.1 disabled → v0.2 enabled after policy review, D14/§V56); full announcement BODY ⊥ ever.
 - ⊥ game login | roster storage (v0.1) | squad optimizer | combat sim | banner/gacha planning.
-- regions v0.1: `en`, `cn`.
-- primary source `arknights_assets_gamedata`; CN validator `kengxxiao_gamedata` (CI only); `penguin_statistics` + official news disabled v0.1.
+- regions: FACT regions `en`,`cn` (v0.1+v0.2). v0.2 adds extra-locale NAME aliases (jp/kr, §V57) — alias locale ≠ fact region, ⊥ new fact regions.
+- sources: primary `arknights_assets_gamedata`; CN validator `kengxxiao_gamedata` (CI only). v0.2 ENABLES `penguin_statistics` (drop-rate cache, CC BY-NC 4.0, NC-only, §V52-V55) + official announcement adapter (metadata-only, D14/§V56).
 - CI: lint + type + test on Linux/`ubuntu-latest` only. ⊥ Windows|macOS (Docker-based ∴ OS-portable; no macOS device ∴ ⊥ real test).
 
 ## §I INTERFACES
@@ -36,10 +36,10 @@ CLI (`arknights-mcp`, admin-only, may touch allowlisted net):
 - cmd: `arknights-mcp serve --transport stdio|streamable-http`
 
 MCP tools (read-only, same registry both transports, typed envelope: `schema_version`,`status`,facts/data,`provenance`,`limitations`,`analyzer_version`):
-- tool: `search_entities` `get_operator` `compare_operator_modules` `get_enemy` `search_stages` `get_stage` `analyze_stage` `get_data_status` `get_data_sources`
+- tool: `search_entities` `get_operator` `compare_operator_modules` `get_enemy` `search_stages` `get_stage` `analyze_stage` `get_data_status` `get_data_sources` `get_stage_drops` `get_announcements` (v0.2). `search_entities` gains additive `locale` param (v0.2, §V57)
 
 MCP resources (optional, read-only):
-- resource: `arknights://operator/{server}/{game_id}` `arknights://enemy/{server}/{game_id}` `arknights://stage/{server}/{stage_id}` `arknights://status/{server}` `arknights://sources`
+- resource: `arknights://operator/{server}/{game_id}` `arknights://enemy/{server}/{game_id}` `arknights://stage/{server}/{stage_id}` `arknights://status/{server}` `arknights://sources` `arknights://announcements/{server}` (v0.2)
 
 Files:
 - file: `config.toml` (`config.example.toml`) → `[database][sync][analysis][mcp][auth][limits][privacy]`
@@ -108,95 +108,31 @@ V49: analyzer lane/route rule ⊥ equate raw stage `route_count` (count of raw r
 V50: `search_entities`/`search_stages` ! honor §V24 region availability BEFORE asserting absence. region ∉ {en,cn} → `unsupported_server`; region ∈ {en,cn} w/ NO active snapshot → `data_stale` + suggested admin action; ⊥ bare `not_found` (that asserts the entity absent — ⊥ inferable when the region index is empty). `not_found` only after the region index is confirmed present. extends B24 (region verdict wired into `arknights://status` resource) to the search tool surface — same one-surface-not-both class. (B42)
 V51: stage route `checkpoints` wire shape = ALWAYS a JSON array; empty → `[]`, ⊥ `{}` | raw source dict passthrough. `get_stage` RouteFacts shaping normalizes the decoded fragment to a list ∴ a client indexes `checkpoints` as an array unconditionally (schema-consistency, §V21 stable contract). (B44)
 
+V52: v0.2 `penguin_statistics` drop-rate cache ⊥ weaken §V1: penguin fetched ONLY @ CLI sync/import, ⊥ any query-time MCP call. drop cache served from read-only SQLite only (§V2). same import-time-only class as `arknights_assets`.
+V53: drop-rate FACT carries expiry + attribution. `stage_drops` row ! `fetched_at` + `expires_at` + penguin `snapshot_id` (provenance) + region (§V17). served past `expires_at` → typed `data_stale` limitation + suggested admin re-sync (§V24); ⊥ present expired as fresh. penguin = CC BY-NC 4.0 ∴ attribution surfaced in `get_data_sources` + `NOTICE`; NC ∴ noncommercial-only (aligns D12; imported data separately governed §V16).
+V54: drop rate = penguin-sourced FACT (own provenance chain), distinct from `arknights_assets` game-data FACT; ⊥ silently merge 2 provenance chains in 1 envelope (§V5/§V6 tier discipline). penguin server → region map: CN penguin→cn, US/Global penguin→en; JP/KR penguin servers ∉ {en,cn} v0.2 ∴ dropped, ⊥ mislabel as en/cn.
+V55: farming-efficiency = deterministic OBSERVATION (§V6): `rule_id` + evidence (stage `sanity_cost` + drop rate + sample size) + confidence + limitations + `analyzer_version`. computed on typed numeric fields only (§V26), ⊥ NL. drop-sample below floor → reduce confidence + limitation (extends §V8); ⊥ "best farm" mandatory | universal-best label (§V7). expired drop cache (§V53) → efficiency downgraded to limitation, ⊥ fresh recommendation.
+V56: announcement importer metadata-ONLY (extends §V16): store `announce_id` + title (name string, capped+sanitized §V18) + date + url + category + region; ⊥ body | html | prose | image | image-url. adapter disabled by default; enable ! explicit config + policy review recorded in source registry (`last_reviewed`, D14). announcement region ∈ {en,cn}, ⊥ mixed (§V5). full announcement BODY ⊥ ever (§V16 release-artifact + runtime store).
+V57: extra-locale alias = NAME-only + `locale` tag (extends D6/§V18): store canonical name/alias per locale (jp/kr v0.2); ⊥ machine-translated description | prose (D6 no bulk MT). alias `locale` ≠ entity fact region — a cn|en entity ? carry jp/kr NAME alias; alias match returns entity's OWN region facts (§V5 preserved, ⊥ region widen). `entity_fts` carries locale-tagged aliases (single §V37 rebuild home, `GROUP_CONCAT ... ORDER BY` per B22); `search_entities` `locale` param additive (§V21) + multi-locale match ⊥ widen region availability (§V50).
+
 ## §T TASKS
 
 id|status|task|cites
-T1|x|M0 git init repo + .gitignore (exclude data/builds, *.sqlite, snapshots, .venv, __pycache__)|V16
-T2|x|M0 scaffold pyproject.toml + package src/arknights_mcp/ layout per PRD §20|-
-T3|x|M0 pin deps → uv.lock (mcp>=1.28.1,<2, pydantic v2, sqlalchemy core, ruff, mypy, pytest)|V25
-T4|x|M0 policy files DATA_SOURCES.md DATA_POLICY.md TAKEDOWN_POLICY.md PRIVACY.md NOTICE SECURITY.md + README unofficial disclaimer + LICENSE Apache-2.0|V16,V27
-T5|x|M0 CLAUDE.md + AGENTS.md agent guardrails|-
-T6|x|M0 ADRs: dual-transport-1-core, immutable-promotion, no-query-net, code-only-dist, registry-takedown, oauth-remote|V1,V3,V4,V9,V14
-T7|x|M0 CI lint+type+test matrix Windows+macOS+Linux|-
-T8|x|M0 config.py + config.example.toml loader; refuse non-loopback remote w/o HTTPS+OAuth|V9
-T9|x|M0 machine source registry config/data_sources.toml + sources/registry.py loader|V27
-T10|x|M0 local snapshot adapter sources/base.py + local_snapshot.py|V1
-T11|x|M0 field allowlist importers/field_policy.py + manifest/checksum importers/manifest.py|V17,V18
-T12|x|M0 minimal migrations: schema_migrations data_sources source_snapshots record_provenance source_policy_events|V17
-T13|x|M0 enemy parser importers/enemies.py → enemies + enemy_levels|V18
-T14|x|M0 stage + level/map/wave/spawn parser importers/stages.py+levels.py for pinned 4-4|V18
-T15|x|M0 minimal 4-4 fixture tests/fixtures/stage_4_4 (only test-required fields; no full dump)|V16
-T16|x|M0 one deterministic threat rule + evidence analyzers/rules + analyzers/stage.py|V6,V26
-T17|x|M0 internal analyze_stage service services/stages.py|V6,V14
-T18|x|M0 accept test: 4-4 → stage + enemy occurrence + provenance + threat finding; no wiki text|V5,V6,V16
-T19|x|M1 full migrations operator+enemy+stage+analysis tables per PRD §12|-
-T20|x|M1 read-only db/connection.py + db/repositories parameterized queries|V2
-T21|x|M1 CLI sync + arknights_assets.py adapter (allowlist, HTTPS, size/depth/count/redirect limits)|V1,I.cmd
-T22|x|M1 CLI import (local snapshot)|V1,I.cmd
-T23|x|M1 CLI validate (integrity_check, foreign_key_check, critical-table, orphan, FTS smoke, golden)|V4,I.cmd
-T24|x|M1 versioned data/builds/*.sqlite + atomic current.json promote; retain N prev; unchanged→no-op|V3,V4
-T25|x|M1 CLI status + doctor|I.cmd
-T26|x|M1 source list/enable/disable/purge --rebuild + source_policy_events|V20,V28,I.cmd
-T27|x|M1 get_data_status + get_data_sources services|V27
-T28|x|M1 takedown drill test: disable+purge+rebuild, current DB stays until validate|V20
-T29|x|M2 mcp/tool_registry.py + envelopes.py (schema_version, status, provenance, read-only hints)|V21,V22,V23
-T30|x|M2 bounded Pydantic input/output models models/|V22
-T31|x|M2 FTS5 index (names, aliases, stage_code, game_id, tags) + search service|-
-T32|x|M2 search_entities tool|V19,V23,I.tool
-T33|x|M2 search_stages tool (exact stage_code rank first)|V19,I.tool
-T34|x|M2 get_stage tool (include_map/routes/spawns flags + pagination)|V19,V22,I.tool
-T35|x|M2 get_enemy tool|V5,V23,I.tool
-T36|x|M2 instructions.py (facts/observations/recommendations distinction in first 512 chars)|V6,V7
-T37|x|M2 optional MCP resources arknights:// + mcp/resources.py|V27,I.resource
-T38|x|M2 local MCP Inspector contract tests (valid/ambiguous/not_found/invalid)|V14,V23
-T39|x|M3 rule engine: aerial, block-bypass, def/res skew, ranged-arts, support-aura, pressure-spike, lane/route, tiles/deploy, crowd-control|V6,V7,V26
-T40|x|M3 analyze_stage tool (depth summary/standard/detailed)|V6,V7,I.tool
-T41|x|M3 golden suite: 4-4 + drones + ranged-arts + multi-route/tiles + operator + CN-only region sep|V5,V6
-T42|x|M4 operator+skill+talent importer (character_table, skill_table, aliases)|V18
-T43|x|M4 module importer (uniequip_table, uniequip_data, battle_equip_table)|V18
-T44|x|M4 get_operator tool (include summary/phases/skills/talents/modules/provenance) + operator golden extends T41 suite (deferred from T41: M3 had no operator read path — `services/operators.py` stub, importer T42 + this tool unbuilt ∴ operator facts+region+provenance scenario → `tests/golden` lands here w/ get_operator)|V5,I.tool
-T45|x|M4 compare_operator_modules tool (levels 1/2/3, modes facts_only + with_observations)|V7,I.tool
-T46|x|M4 module analyzer deterministic observations analyzers/module.py|V6,V7,V26
-T47|x|M5 packaging + fresh-clone install smoke (locked deps, uv run serve --transport stdio)|-
-T48|x|M5 Claude Code + Codex setup docs (current official formats)|-
-T49|x|M5 release audit: no bundled data + policy files complete|V16
-T50|x|M5 perf benchmark (lookup p95 <200ms, stage analysis p95 <500ms, startup <2s)|-
-T51|x|M6 Streamable HTTP transport transports/streamable_http.py reuse tool_registry+services|V14,I.api
-T52|x|M6 OAuth/OIDC resource-server validation auth/oidc.py+principal.py+scopes.py|V9,V10,V40
-T53|x|M6 principal/session isolation (no cross-user cache leak)|V14
-T54|x|M6 middleware rate_limit + request_limits + redacted logging|V11,V12
-T55|x|M6 deploy examples systemd + nginx HTTPS proxy + docker|V9
-T56|x|M6 remote validation MCP Inspector + Claude connector + OpenAI API; ChatGPT web if workspace supports|V14
-T57|x|M6 remote security/privacy tests (token missing/expired/wrong-issuer/wrong-aud/insufficient-scope, isolation, log scan)|V10,V11,V12
-T58|x|M7 threat-model review|-
-T59|x|M7 dependency + project-code license audit|-
-T60|x|M7 source-registry review + simulated takedown/purge drill|V20,V27
-T61|x|M7 local↔remote result parity tests|V14
-T62|x|M7 privacy log scan (no token/prompt/args/body)|V12
-T63|x|M7 no-bulk-reconstruction test|V19
-T64|x|M7 security/policy suite (path traversal, oversized/nested JSON, SQL injection, control chars, prompt injection)|V2,V18,V19
-T65|x|M7 tag private-alpha v0.1.0 release|-
-T66|x|M1 fix B6: `importers/normalization.py` raw→normalized transform for real `arknights_assets_gamedata` schema (enemy_database id-keyed list + `m_value` attrs + `motion`; `levelId` Title-case → lowercase + `gamedata/levels/` prefix + `.json`; tiles grid-index → x/y; wave action `key` → enemy ref via level `enemies`/`enemyDbRefs`)|V29,V30,V18,V36
-T67|x|M1 real-shape contract test: fixture built from real enemy_database/stage_table/level shapes (⊥ synthetic-only); assert `sync`/`import` 4-4 → non-empty enemies+tiles+spawns+`stage_enemies`|V29,V30
-T68|x|M1 CI-only real-shape validation vs LIVE upstream (T67 is fixture-only ∴ proves internal consistency, ⊥ real-upstream fidelity of inferred mappings): fetch pinned `arknights_assets_gamedata` (+ `kengxxiao_gamedata` CN validator) commit, run `sync`/`import`, assert real 4-4 → non-null `hp`/`res`/`attackInterval`/`weight`/`lifePointReduction`/`motion` + non-empty tiles/spawns/`stage_enemies`; ⊥ commit fetched raw data (V16 code-only, fetch→discard). on pass → promote inferred mappings (`massLevel`→weight, `lifePointReduce`→lifePointReduction, `preDelay`→spawnTime, `maxTimeWaitingForNextWave`→maxTimeWaiting, positional route/wave index) into §V29 + drop `normalization.py` "inferred" caveat|V16,V29,V30,C
-T69|x|M1 CI-only `kengxxiao_gamedata` CN cross-validator (deferred from T68): kengxxiao CN `enemy_database.json` = `{"enemies":[{"Key":<id>,"Value":[levels]}]}` (list, ⊥ id-keyed dict of `arknights_assets`) ∴ needs own normalization bridge before pipeline import. fetch pinned kengxxiao CN commit `6b6ac60f` + primary CN, cross-check shared enemy stats (`maxHp`/`baseAttackTime`/`massLevel`/`motion`) agree EN-source-CN vs kengxxiao-CN; ⊥ runtime dep; ⊥ override primary; ⊥ commit fetched raw data|V29,V30,C
-T70|x|DRY: extract dup coerce helpers `_as_int`/`_as_float`/`_as_str`/`_json_or_none` (3 copies: `importers/enemies.py:66-81` + `levels.py:87-100` + `stages.py:64-69`) → 1 shared home (`util/coerce.py`); resolve `_as_str` divergence (levels `sanitize_text` vs enemies/stages raw) via explicit `sanitize=` param, ⊥ silent variant copies|V37
-T71|x|DRY: unify `_is_placeholder` (2 copies: `cli.py:114` `(str)` + `config.py:41` `(str\|None)`) → 1 shared fn (`str\|None` signature)|V37
-T72|x|DRY: dedup `INSERT INTO record_provenance` (`enemies.py:167` inline vs `stages.py:121` `_insert_provenance` helper) → shared helper in `importers/manifest.py`; both importers route through it|V37,V17
-T73|x|DRY: extract repeated `sqlite3.IntegrityError`→`ImporterError` guard (3 sites: `enemies.py:225` + `levels.py:226` + `db/purge.py`) → 1 shared guard (ctx mgr\|decorator)|V37,V33
-T74|x|fix B18: `get_data_sources`/service `SourceInfo` route through single `registry.public_view()` projection ∴ `source list --json` + MCP tool emit identical field set (minus DB-only `active_snapshots`); strengthen `test_public_projections_do_not_diverge` → assert `cli_keys == svc_keys - {active_snapshots}`, ⊥ weak named-field check|V34,V27
-T75|x|V38: split `cli.py` (604 ln, ≥3 cmd groups) → `cli/` package: 1 module/command-group (`sync`\|`import`\|`validate`\|`status`+`doctor`\|`source`) + shared `cli/_shared.py` helpers; pure structural move, ⊥ behavior change|V38
-T76|x|fix B30: `analyzers/rules/pressure_spike.py` ⊥ conclude burst from cross-wave `first/last_spawn_time` min/max (fragment-relative preDelay, ≠ elapsed) → per V39 pick (c) downgrade conf + record limitation, \| (a)/(b) expose wave+fragment offset to `StageThreatContext` for real window; add `test_analyzer_rules.py` case: 1 enemy across ≥6 fragments @low `preDelay` ⊥ report spike (\| reports w/ limitation + reduced conf)|V39,V26
-T77|x|M2 (deferred): build `get_data_status` + `get_data_sources` MCP tools over the T27 domain services (`services/status.py` + `services/source_status.py`); register both in `mcp/tools/__init__._TOOL_BUILDERS` (§V14/§V37 single home) → both transports dispatch all 9 §I.tool tools (currently 7). typed envelope §V21/§V22/§V23; `get_data_sources` public-safe via `registry.public_view` (§V27/§V34, ⊥ secrets\|paths\|OAuth config\|takedown notes); `get_data_status` region + provenance, en/cn ⊥ mixed (§V5). add MCP Inspector contract tests (PRD §24.7 acceptance: ∀ 9 tools pass). NB: `arknights://status`+`arknights://sources` resources (T37) already surface this data, but PRD §13.9/§13.10 label both `Tool` ∴ tool surface required unless ADR drops them from §I|V5,V21,V22,V23,V27,V34,V14,I.tool
-T78|x|amend `.github/workflows/ci.yml` `lint-type-test` matrix → drop `macos-latest`+`windows-latest`, keep `ubuntu-latest` only (Docker ∴ OS-portable; no macOS device ∴ ⊥ real test). update stale `# SPEC §C` comment L19. `live-upstream`+`cn-cross-validate` jobs already `ubuntu-latest` (no change). also bump `actions/checkout@v4`→`@v5` + `astral-sh/setup-uv@v5`→`@v7` (both → node24) ∀ 3 jobs ∴ clear Node20-deprecation warning|C
-T79|x|speed up `sync` ~20x+ (curr serial 2257 reqs, new TCP+TLS handshake/file + 1 RTT/file → 8–15 min; git clone faster ∵ 1 conn+packed): COMBINE (a) HTTP keep-alive — reuse 1 persistent connection/worker (`http.client`\|`requests.Session`) ∴ kill per-file TLS handshake (~3–5x); (b) bounded `ThreadPoolExecutor` fan-out over `CORE_FILES`+`SUPPLEMENTARY_FILES`+discovered level paths (~8–16x). new `[sync].max_parallel_downloads` knob (default 8; =1 serial). `DownloadBudget` gets a `Lock` (charge under lock ∴ cap exact). `stage_table` fetched+parsed serially FIRST, then level discovery fans out. preserve ∀ §V1 gates per-file + §V41 fetch set + B34 404-skip + warning aggregation. tests: total-cap still trips under N workers + budget count exact + ∀ allowlisted files staged (order-independent) + `max_parallel_downloads=1` == old serial behavior|V1,V41,V42,C
-T80|x|full stage-scoped inline-enemy stat modeling (resolve B37 §V43 limitation): `useDb:false` `overwrittenData` carries real per-variant stats (hp/def/motion/tags/immunes) ≠ base prefab (452 EN refs, 378 count toward clear) → model as STAGE-SCOPED variant rows (⊥ global enemy rows: 9 ids → diff prefab base across levels, 10 ids db-backed elsewhere) w/ `prefab_base` FK + provenance + region; strip `overwrittenData` name/description prose via field allowlist; reuse §V29 `attributes.<stat>.m_value` maps; `get_stage`/threat analyzers read variant stats over base. until then spawn attributes to base-prefab (§V43)|V29,V43,V18
-T81|x|M6 interactive OAuth discovery (unblock `claude mcp login`): serve RFC 9728 Protected Resource Metadata UNAUTHENTICATED so an MCP OAuth client bootstraps auth from a 401 (⊥ hand-pasted bearer). new `_ProtectedResourceMetadataASGIApp` in `transports/streamable_http.py` above `_BearerAuthASGIApp` (inside logging) answers GET/HEAD `/.well-known/oauth-protected-resource`(+`/mcp` suffix) 200 w/ `{resource, authorization_servers:[issuer], scopes_supported, bearer_methods_supported:["header"]}`; `/mcp` STILL 401. advertise issuer ONLY (⊥ serve|proxy AS metadata ∴ ⊥ query-time net §V1); `_BearerAuthASGIApp` challenge gains `resource_metadata="<prm url>"` (RFC 9728 §5.1). wired in `wrap_remote_app` (auth-requiring path only §V40). tests: PRM reachable w/o bearer @ both well-known paths while `/mcp` 401s (unit ASGI + wire e2e via `remote_harness`); challenge carries resource_metadata; doc carries no secret. then `claude mcp add --transport http arknights <url>` + `claude mcp login arknights`. docs: `docs/clients/remote.md` discovery smoke + `deploy/README.md`|V45,V9,V10,V40,V1,I.api
-T82|x|fix B40/P1-14: rename module-comparison "potential levels"→"module levels" in `compare_operator_modules` tool desc (`mcp/tools/module_compare.py:47`) + `models/operators.py:7,21,47`; doc-terminology regression test asserts wording|V48,V21
-T83|x|fix B41/P0-5: reconcile `analyze_stage` detailed contract — add per-enemy stat block (hp,atk,def,res,attack_interval,move_speed,weight) to `EnemyOccurrenceFacts`+`_occurrence_full` \| amend tool desc to the emitted subset; integration test asserts detailed carries the documented fields|V47,I.tool
-T84|x|fix B42/P0-1: region-availability gate in `search_entities`/`search_stages` — non en/cn→`unsupported_server`, en/cn w/o active snapshot→`data_stale`+admin action, ⊥ bare `not_found`; test cn-search w/ no cn snapshot ⊥ not_found|V50,V24,V5
-T85|x|fix B43/P0-4: `lane_route` rule ⊥ label raw `route_count` as lanes — cluster effective-lane groups \| relabel "raw route records"+limitation+downgraded conf; test 26-raw-route stage ⊥ "26 lanes"|V49,V26,V35
-T86|x|fix B44/P1-9: normalize stage route `checkpoints`→always-array in `services/stages.py` RouteFacts shaping (empty→`[]`); test empty checkpoints ⊥ `{}`|V51,V22
+T87|x|M8 enable `penguin_statistics` source: `sources/penguin_statistics.py` adapter (allowlist, HTTPS, size/depth/count/redirect limits, CLI-only fetch) + registry entry (owner/URL/purpose/regions/CC BY-NC 4.0/attribution/last_reviewed) + `DATA_SOURCES.md` + `NOTICE` NC attribution|V52,V27,V53,C
+T88|.|M8 migration 0009 `items` + `stage_drops` (item_id, stage_id, quantity, times, drop_rate, `fetched_at`, `expires_at`, penguin `snapshot_id`, region, provenance FK)|V17,V53
+T89|.|M8 penguin importer `importers/penguin_drops.py` → items + stage_drops; field allowlist + recursive sanitize; penguin server→region map (US/Global→en, CN→cn; jp/kr dropped); stamp expiry + provenance; §V30 non-empty-or-fail|V17,V18,V53,V54,V30
+T90|.|M8 farming-efficiency analyzer `analyzers/farming.py` + rule(s): expected `sanity_cost`÷drop_rate → sanity/item; sample-size floor → reduce conf + limitation; deterministic typed-field evidence; ⊥ mandatory/best-farm label|V6,V8,V26,V55,V7
+T91|.|M8 `get_stage_drops` MCP tool (drop facts + region + penguin provenance + expiry; `include_efficiency` flag → farming observations; past-`expires_at`→`data_stale` limitation); typed envelope; register in `_TOOL_BUILDERS` (both transports)|V5,V21,V22,V23,V52,V53,V55,V14,I.tool
+T92|.|M8 golden/accept: pinned penguin snapshot fixture (⊥ commit bulk data, §V16) → drops + attribution + expiry; expired cache→`data_stale`; farming efficiency obs w/ confidence+limitation; en/cn ⊥ mixed|V5,V16,V53,V55
+T93|.|M9 source policy review → `DATA_SOURCES.md` + registry entry for announcement source (metadata-only, disabled-by-default, `last_reviewed`, D14)|V27,V56
+T94|.|M9 migration 0010 `announcements` (announce_id, title, date, url, category, region, provenance FK)|V17,V56
+T95|.|M9 announcement adapter `sources/announcements.py` + importer `importers/announcements.py` metadata-ONLY (announce_id/title/date/url/category); ⊥ body/html/prose/image; recursive allowlist+cap+sanitize; region en/cn; §V30 guard|V16,V18,V56,V30
+T96|.|M9 `get_announcements` MCP tool (metadata list, region, optional since/until date filter, bounded pagination); typed envelope; ⊥ prose; register both transports|V5,V19,V22,V23,V56,V14,I.tool
+T97|.|M9 accept: enabled announcement source → metadata rows (no body); disabled-by-default gate honored; en/cn separation; `get_data_sources` shows attribution + `last_reviewed`|V16,V27,V56,V5
+T98|.|M10 migration 0011 add `locale` col to alias table (+ index); backfill existing en/cn aliases w/ locale tag|V17,V57
+T99|.|M10 extra-locale alias source + importer (jp/kr canonical NAMES only, ⊥ MT prose/description); locale-tagged rows; entity fact region unchanged|V18,V57,V30
+T100|.|M10 rebuild `entity_fts` w/ locale-tagged aliases (single §V37 home, `GROUP_CONCAT ... ORDER BY` per B22); `search_entities` additive `locale` param + multi-locale match ⊥ widen region availability|V37,V50,V57,V21
+T101|.|M10 accept: jp/kr alias search resolves entity → returns entity's OWN region facts (⊥ region mix); alias locale ≠ fact region; ⊥ translated prose stored|V5,V57,V16
 
 id|date|cause|fix
 B1|2026-07-17|V5: `sync` reused 1 region-agnostic `base_url` ∀ server → en+cn fetch identical bytes labeled diff region; validation passes on mislabeled data|per-region `base_url_for(server)` (`{server}` token / `base_urls` map) + `_cmd_sync` guard refuses if 2 servers resolve same URL

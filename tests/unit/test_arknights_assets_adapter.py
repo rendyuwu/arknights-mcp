@@ -18,13 +18,15 @@ from arknights_mcp.sources.arknights_assets import (
     CORE_FILES,
     SUPPLEMENTARY_FILES,
     ArknightsAssetsAdapter,
+    _validate_relative_path,
+)
+from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
+from arknights_mcp.sources.http_fetch import (
     DownloadBudget,
     DownloadLimits,
     HttpsFetcher,
     _validate_redirect_target,
-    _validate_relative_path,
 )
-from arknights_mcp.sources.base import SourceAdapterError, SourceNotFoundError
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"

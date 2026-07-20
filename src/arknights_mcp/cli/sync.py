@@ -20,11 +20,8 @@ from arknights_mcp.cli._shared import (
 )
 from arknights_mcp.config import AppConfig
 from arknights_mcp.importers.pipeline import ServerImport
-from arknights_mcp.sources.arknights_assets import (
-    ArknightsAssetsAdapter,
-    DownloadBudget,
-    DownloadLimits,
-)
+from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter
+from arknights_mcp.sources.http_fetch import DownloadBudget, DownloadLimits
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.util.text import is_placeholder
 

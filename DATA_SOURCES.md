@@ -18,7 +18,7 @@ an attribution offer, nor a takedown offer is treated as permission to reuse.
 No raw snapshots or prebuilt databases are distributed. Every source has a
 removal mechanism.
 
-_Last reviewed: 2026-07-17._
+_Last reviewed: 2026-07-20._
 
 ---
 
@@ -52,20 +52,20 @@ _Last reviewed: 2026-07-17._
 - **Enabled:** no (development / CI validation only; disabled by default in production).
 - **Current snapshot commit / retrieved at:** n/a.
 
-## `penguin_statistics` — future drop statistics, **disabled (v0.1)**
+## `penguin_statistics` — drop-rate statistics (v0.2 M8), **disabled by default**
 
 - **Owner / maintainer:** Penguin Statistics.
 - **Canonical URL:** https://penguin-stats.io
-- **Source type / regions:** observed drop-rate statistics via documented API; multi-region.
-- **Fields / domains consumed:** none in v0.1. Future cached observations would include server, time interval, sample size, fetched time, expiry, attribution, and source URL.
-- **Adapter / transform versions:** `penguin_stats` adapter (not implemented in v0.1).
-- **License / permission status:** CC BY-NC 4.0 per its API documentation; attribution required; non-commercial only.
-- **Private-hosting status:** deferred to a later phase.
-- **Redistribution status:** prohibited.
+- **Source type / regions:** observed drop-rate statistics via the documented Penguin Statistics v2 API; regions `en`, `cn` (penguin server `US`/`Global` → `en`, `CN` → `cn`; `JP`/`KR` are out of scope and dropped, not mislabelled).
+- **Fields / domains consumed (allowlisted endpoints only):** `result/matrix` (drop matrix), `stages`, and `items` metadata. No prose, art, or other content. Cached drop observations record server, sample size, fetched time, expiry, penguin snapshot id, region, and attribution.
+- **Adapter / transform versions:** adapter `penguin_statistics` v0.1 (CLI-only network fetch — HTTPS-only, endpoint allowlist, size / JSON-depth / node-count / redirect caps; never invoked at query time). Field policy / transform not yet defined (drop importer lands with `get_stage_drops`).
+- **License / permission status:** CC BY-NC 4.0 per its API documentation; attribution required; **non-commercial only**.
+- **Private-hosting status:** permitted for a private, non-commercial instance with attribution.
+- **Redistribution status:** prohibited — code-only releases; no bundled drop caches.
 - **Required attribution:** "Drop-rate statistics © Penguin Statistics, licensed CC BY-NC 4.0."
 - **Contact / issue URL:** https://penguin-stats.io
-- **Enabled:** no (Phase 2 candidate).
-- **Current snapshot commit / retrieved at:** n/a.
+- **Enabled:** no — the adapter and registry entry exist, but the source stays disabled by default until the drop importer and `get_stage_drops` tool are complete and the enablement is reviewed.
+- **Current snapshot commit / retrieved at:** n/a (populated per import).
 
 ## `arknights_global_official_news` — future announcement metadata, **disabled**
 
