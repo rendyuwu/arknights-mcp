@@ -10,6 +10,7 @@ and the §V33 duplicate-id guard.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,7 +62,16 @@ def _db(tmp_path: Path) -> sqlite3.Connection:
 
 
 def _entry(announce_id: str, **extra: Any) -> dict[str, Any]:
-    return {"announceId": announce_id, "title": "Maintenance", "category": "maintenance", **extra}
+    # A complete valid metadata entry: a real feed row always carries a date (§V61), so
+    # the helper does too -- otherwise every all-``_entry`` feed would (correctly) trip
+    # the §V61 date-only degradation guard (B47).
+    return {
+        "announceId": announce_id,
+        "title": "Maintenance",
+        "date": "2026-07-21T00:00:00+00:00",
+        "category": "maintenance",
+        **extra,
+    }
 
 
 # --- field allowlist: metadata-only, no body/prose (§V16/§V18/§V56) -----------
@@ -116,10 +126,17 @@ def test_title_control_chars_sanitized(tmp_path: Path) -> None:
     conn = _db(tmp_path)
     try:
         # U+202E RIGHT-TO-LEFT OVERRIDE (a Cf bidi control) must be stripped. A mapped
-        # field (category) is present so the §V30/§V61 all-NULL degradation guard is not
+        # ``date`` is present so the §V30/§V61 date-only degradation guard (B47) is not
         # the thing under test here.
         fetcher = _FakeFetcher(
-            [{"announceId": "ann-1001", "title": "Ann‮ouncement", "category": "event"}]
+            [
+                {
+                    "announceId": "ann-1001",
+                    "title": "Ann‮ouncement",
+                    "date": "2026-07-21T00:00:00+00:00",
+                    "category": "event",
+                }
+            ]
         )
         import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
         title = conn.execute("SELECT title FROM announcements").fetchone()[0]
@@ -459,8 +476,8 @@ def test_feed_with_ids_but_no_mapped_fields_fails_closed(tmp_path: Path) -> None
 
 
 def test_partial_mapped_feed_promotes(tmp_path: Path) -> None:
-    # At least one row carries a mapped field -> NOT an all-NULL degradation; the build
-    # proceeds (§V61 guards the all-NULL case only, not a single sparse row).
+    # At least one row carries a mapped date -> NOT a date-degradation; the build
+    # proceeds (§V61/B47 guards the all-rows-no-date case only, not a single sparse row).
     conn = _db(tmp_path)
     try:
         fetcher = _FakeFetcher(
@@ -471,5 +488,132 @@ def test_partial_mapped_feed_promotes(tmp_path: Path) -> None:
         )
         result = import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
         assert result.announcements_inserted == 2
+    finally:
+        conn.close()
+
+
+# --- B47: date-only field-map break trips the degradation guard ----------------
+
+
+def test_feed_with_url_category_but_no_date_fails_closed(tmp_path: Path) -> None:
+    # B47/§V61: a field-map break that nulls ONLY date (webUrl->url + group->category
+    # still resolve) MUST fail closed. The since/until filter (§T96) keys on date alone,
+    # so a date-only break silently empties every windowed query -- the exact trap. The
+    # old all-3-null guard missed it (url/category were non-null, so all(...) was False).
+    conn = _db(tmp_path)
+    try:
+        fetcher = _FakeFetcher(
+            [
+                {"announceId": "ann-1001", "webUrl": "https://x/1", "group": "SYSTEM"},
+                {"announceId": "ann-1002", "webUrl": "https://x/2", "group": "ACTIVITY"},
+            ]
+        )
+        with pytest.raises(ImporterError, match="mapped date"):
+            import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
+        # Fail closed BEFORE the snapshot write (§V3): no snapshot, no rows.
+        snaps = conn.execute(
+            "SELECT COUNT(*) FROM source_snapshots "
+            "WHERE source_id = 'arknights_global_official_news'"
+        ).fetchone()[0]
+        assert snaps == 0
+        assert conn.execute("SELECT COUNT(*) FROM announcements").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+# --- B47: calendar-invalid day/month -> None, never a fabricated impossible date --
+
+
+def test_calendar_invalid_day_yields_no_date() -> None:
+    # B47/§V26: a day beyond the month's real length is calendar-invalid -> None, not a
+    # fabricated "2026-02-31". datetime.date construction rejects the impossible date.
+    for month, day in ((2, 31), (4, 31), (2, 30), (6, 31)):
+        parsed = parse_announcements(
+            [{"announceId": "a", "day": day, "month": month, "group": "SYSTEM"}],
+            fetched_at=_FETCHED,
+        )
+        assert parsed[0].date is None, f"{month}/{day} should be rejected as calendar-invalid"
+        # group still maps, so this row is a valid-but-dateless case, not a degradation.
+        assert parsed[0].category == "SYSTEM"
+
+
+def test_leap_day_valid_when_a_nearby_leap_year_fits() -> None:
+    # B47: 2/29 is valid in a leap year; nearest-year search picks 2024 (a leap year).
+    parsed = parse_announcements(
+        [{"announceId": "a", "day": 29, "month": 2, "group": "SYSTEM"}],
+        fetched_at=datetime(2024, 2, 20, tzinfo=UTC),
+    )
+    assert parsed[0].date == "2024-02-29"
+
+
+def test_feb_29_yields_no_date_when_no_nearby_leap_year() -> None:
+    # B47: 2/29 with no leap year in prior/current/next -> None (genuinely ambiguous),
+    # never a fabricated non-leap Feb 29.
+    parsed = parse_announcements(
+        [{"announceId": "a", "day": 29, "month": 2, "group": "SYSTEM"}],
+        fetched_at=datetime(2026, 2, 20, tzinfo=UTC),
+    )
+    assert parsed[0].date is None
+
+
+# --- B47: year inferred by NEAREST, not blind "future month -> prior year" -------
+
+
+def test_pre_announced_future_month_keeps_current_year() -> None:
+    # B47: an August entry fetched in July is a PRE-announcement -> current year. The old
+    # "entry month > fetch month -> prior year" rule stamped it 2025 (a year early).
+    parsed = parse_announcements(
+        [{"announceId": "a", "day": 15, "month": 8, "group": "SYSTEM"}],
+        fetched_at=datetime(2026, 7, 21, tzinfo=UTC),
+    )
+    assert parsed[0].date == "2026-08-15"
+
+
+def test_new_year_utc_boundary_resolves_to_nearest_year() -> None:
+    # B47: a Jan-1 entry fetched Dec-31 23:30 UTC (server already Jan 1) resolves to the
+    # nearest real date 2026-01-01, not 2025 from the old naive month-compare rule.
+    parsed = parse_announcements(
+        [{"announceId": "a", "day": 1, "month": 1, "group": "SYSTEM"}],
+        fetched_at=datetime(2025, 12, 31, 23, 30, tzinfo=UTC),
+    )
+    assert parsed[0].date == "2026-01-01"
+
+
+# --- B48: byte-identical re-import maps to a typed ImporterError (§V33) ----------
+
+
+def test_byte_identical_reimport_maps_to_importer_error(tmp_path: Path) -> None:
+    # B48/§V33: a byte-identical feed re-import for the same region on one connection
+    # collides the deterministic snapshot_id PK. It must surface as a typed ImporterError
+    # (like the row-insert guard right below it), NOT an uncaught sqlite3.IntegrityError
+    # that escapes the typed-error discipline.
+    conn = _db(tmp_path)
+    try:
+        feed = [_entry("ann-1001")]
+        import_announcements(conn, _FakeFetcher(feed), region="en", fetched_at=_FETCHED)
+        with pytest.raises(ImporterError, match="snapshot"):
+            import_announcements(conn, _FakeFetcher(feed), region="en", fetched_at=_FETCHED)
+    finally:
+        conn.close()
+
+
+# --- B47: the skipped-entry warning is emitted exactly once ---------------------
+
+
+def test_skipped_entries_warned_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    # B47: the missing-announceId skipped-count warning was recomputed + re-logged at the
+    # tail; it must now be emitted exactly once.
+    conn = _db(tmp_path)
+    try:
+        fetcher = _FakeFetcher(
+            [
+                _entry("ann-1001"),
+                {"title": "no id", "date": "2026-07-01", "category": "event"},  # no announceId
+            ]
+        )
+        with caplog.at_level(logging.WARNING, logger="arknights_mcp.importers.announcements"):
+            import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
+        skipped_warnings = [r for r in caplog.records if "skipped" in r.getMessage()]
+        assert len(skipped_warnings) == 1
     finally:
         conn.close()

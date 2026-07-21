@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
 from arknights_mcp.importers.enemies import ImporterError
@@ -99,21 +99,36 @@ def _normalize_date(kept: dict[str, Any], *, fetched_at: datetime) -> str | None
     """Resolve an ISO ``YYYY-MM-DD`` publication date from a feed entry (§V61).
 
     Prefers an explicit ISO ``date`` when the feed carries one (the T95 shape); the
-    real official feed instead carries ``day``+``month`` ints and NO year, so the year
-    is inferred from ``fetched_at`` with a Dec->Jan rollover guard: an entry whose month
-    is later than the fetch month must belong to the prior year (e.g. a December
-    announcement first seen the following January). An out-of-range or non-int
-    day/month yields ``None`` (the date stays absent) rather than a fabricated value.
+    real official feed instead carries ``day``+``month`` ints and NO year (§V61). The
+    year is inferred by choosing whichever of the prior/current/next year places the
+    ``month``+``day`` CLOSEST to ``fetched_at``: a near-future month is a pre-announcement
+    kept in the current year, an entry just past the Dec->Jan boundary rolls back a year,
+    and the UTC-vs-server date skew near New Year resolves to the nearest real date --
+    not a blind "future month => prior year" that mislabels every pre-announced
+    maintenance a year early and flips the year on the UTC boundary (B47). Constructing
+    via :class:`datetime.date` also rejects a calendar-invalid ``day``/``month`` (e.g.
+    2/31, 4/31, or 2/29 off a leap year) so an impossible date becomes ``None`` rather
+    than a fabricated string (§V26); a non-int day/month is likewise absent, never faked.
     """
     explicit = as_str(kept.get("date"))
     if explicit is not None:
         return explicit
     month = as_int(kept.get("month"))
     day = as_int(kept.get("day"))
-    if month is None or day is None or not (1 <= month <= 12) or not (1 <= day <= 31):
+    if month is None or day is None:
         return None
-    year = fetched_at.year - 1 if month > fetched_at.month else fetched_at.year
-    return f"{year:04d}-{month:02d}-{day:02d}"
+    reference = fetched_at.date()
+    best: date | None = None
+    best_distance = 0
+    for year in (reference.year - 1, reference.year, reference.year + 1):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue  # calendar-invalid (e.g. 2/31, or 2/29 off a leap year): skip
+        distance = abs((candidate - reference).days)
+        if best is None or distance < best_distance:
+            best, best_distance = candidate, distance
+    return best.isoformat() if best is not None else None
 
 
 def _normalize_url(kept: dict[str, Any]) -> str | None:
@@ -189,20 +204,31 @@ def _insert_snapshot(
     manifest_hash = sha256_hex(canonical_json(feed_raw))
     snapshot_id = make_snapshot_id(region, manifest_hash)
     imported_at = datetime.now(tz=UTC).isoformat()
-    conn.execute(
-        "INSERT INTO source_snapshots (snapshot_id, source_id, server, fetched_at, imported_at, "
-        "manifest_hash, status, field_policy_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            snapshot_id,
-            source_id,
-            region,
-            fetched_at,
-            imported_at,
-            manifest_hash,
-            "imported",
-            FIELD_POLICY_VERSION,
-        ),
-    )
+    # A byte-identical re-fetch for the same region yields the same deterministic
+    # snapshot_id (§V37); on one connection that collides the source_snapshots PK. Map
+    # it to a typed ImporterError like the row insert below (§V33), not an uncaught
+    # sqlite3.IntegrityError that escapes the typed-error discipline and tears down the
+    # build (§V3) -- the ride-along's fail-open catch then rolls back this region.
+    with integrity_guard(
+        f"announcement snapshot {snapshot_id!r} duplicates (region={region}, "
+        "byte-identical feed re-import)",
+        ImporterError,
+    ):
+        conn.execute(
+            "INSERT INTO source_snapshots (snapshot_id, source_id, server, fetched_at, "
+            "imported_at, manifest_hash, status, field_policy_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                source_id,
+                region,
+                fetched_at,
+                imported_at,
+                manifest_hash,
+                "imported",
+                FIELD_POLICY_VERSION,
+            ),
+        )
     return snapshot_id
 
 
@@ -251,19 +277,25 @@ def import_announcements(
             "announcements %s: %d feed entr(y|ies) skipped (missing announceId)", region, skipped
         )
 
-    # §V30/§V61: rows survived the allowlist (carry an announceId) yet EVERY one has
-    # date=url=category all NULL -- the field-map found none of its keys, so the feed
-    # shape does not match what the importer normalizes. This is the §V61 degradation
-    # trap: the rows would insert, the missing-announceId guard would NOT trip, yet the
-    # since/until filter (§T96) is silently broken. Fail closed BEFORE the snapshot write
-    # so the degraded build is discarded and the active DB stays untouched (§V3). A feed
-    # whose entries genuinely carry NONE of date/url/category is indistinguishable from a
-    # shape mismatch, so both are refused rather than promoted as a working build.
-    if parsed and all(a.date is None and a.url is None and a.category is None for a in parsed):
+    # §V30/§V61: rows survived the allowlist (carry an announceId) yet EVERY one has a
+    # NULL ``date`` -- the day/month (or explicit date) map found none of its keys, so
+    # the feed shape drifted from what the importer normalizes. This is the §V61
+    # degradation trap: the rows would insert, the missing-announceId guard would NOT
+    # trip, yet the since/until filter (§T96) keys on ``date`` ALONE, so every windowed
+    # query silently returns empty -- worse than inert. The original guard tripped only
+    # when date=url=category were ALL null together, so a break that nulled just ``date``
+    # (while url/category still mapped) slipped through (B47). Guarding ``date`` on its
+    # own is strictly stronger (an all-three-null set already has date all-null) and
+    # closes that gap. Fail closed BEFORE the snapshot write so the degraded build is
+    # discarded and the active DB stays untouched (§V3). A feed whose entries genuinely
+    # carry no readable date is indistinguishable from a broken date-map, so both are
+    # refused rather than promoted as a silently degraded build. (url/category are not
+    # filter keys, so their absence degrades visibly, not silently -- not a trip.)
+    if parsed and all(a.date is None for a in parsed):
         raise ImporterError(
             f"{region}: announcement feed had {len(parsed)} entr(y|ies) but none carried a "
-            "mapped date/url/category; refusing a silent degraded announcement build "
-            "(§V30/§V61) -- the feed field-map matched no known shape"
+            "mapped date; refusing a silent degraded announcement build "
+            "(§V30/§V61) -- the feed field-map matched no known date shape"
         )
 
     fetched_iso = fetched_dt.isoformat()
@@ -306,22 +338,12 @@ def import_announcements(
             )
         inserted += 1
 
-    # §V30: a non-empty feed that stored zero rows is a silent-empty regression (every
-    # entry missing an announceId, or a shape the allowlist stripped to nothing). Fail
-    # closed so the candidate is discarded and the active DB stays untouched (§V3). An
-    # empty feed (parsed == []) is a legitimate empty build -- announcements is not a
-    # CRITICAL_TABLE (the adapter is disabled by default, D14/§V56).
-    if parsed and inserted == 0:  # pragma: no cover - parsed rows always insert or raise
-        raise ImporterError(
-            f"{region}: announcement feed had {len(parsed)} entr(y|ies) but none stored; "
-            "refusing a silent empty announcement build (§V30)"
-        )
-
-    skipped = _skipped_count(feed_raw, parsed)
-    if skipped:
-        _LOG.warning(
-            "announcements %s: %d feed entr(y|ies) skipped (missing announceId)", region, skipped
-        )
+    # Every parsed row inserts or raises via ``integrity_guard`` above, so ``inserted``
+    # equals ``len(parsed)`` here -- the §V30 silent-empty case (a non-empty feed that
+    # stored nothing) is already caught upstream by the missing-announceId guard (skipped
+    # and not parsed) and the §V61 all-NULL-date guard, both BEFORE the snapshot write.
+    # ``skipped`` was computed + warned once at the top; reuse it rather than re-walk the
+    # feed and re-log the same warning.
     return AnnouncementImportResult(
         region=region,
         snapshot_id=snapshot_id,

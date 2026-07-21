@@ -182,6 +182,27 @@ def _ride_along_penguin(
     _ride_along(candidate, servers=servers, label="penguin", per_server=_import)
 
 
+def _announcement_region_eligible(config: AppConfig, registry: SourceRegistry, server: str) -> bool:
+    """Whether one region actually has an announcement feed to fetch (§V56/§V58).
+
+    Eligible == the region's source id resolves AND the source is both in
+    ``[sync].enabled_sources`` and registry-enabled AND a ``feed_url`` is configured.
+    The operator-supplied feed URL has no shipped default, so an enabled-but-unconfigured
+    source has nothing to fetch -- treated as "off" here so the ride-along skips the
+    write connection entirely (the same "off by default until a feed_url is set" state
+    the efficiency pre-check guards against).
+    """
+    source_id = source_id_for_region(server)
+    if source_id is None:
+        return False
+    if source_id not in config.sync.enabled_sources:
+        return False
+    entry = registry.get(source_id)
+    if entry is None or not entry.enabled:
+        return False
+    return _announcement_feed_url(config, source_id) is not None
+
+
 def _ride_along_announcements(
     candidate: Path,
     *,
@@ -205,7 +226,16 @@ def _ride_along_announcements(
     Fail-open (§V58, must not break §V3): a feed/import failure rolls back only THAT
     region and the build continues game-data-only -- ``announcements`` is outside
     CRITICAL_TABLES (0010), so an empty announcement domain is legitimate.
+
+    Mirrors penguin's pre-check: if NO region is eligible (source enabled +
+    registry-enabled + a configured ``feed_url``), return before ``_ride_along`` opens a
+    writable connection and churns per-server savepoints for no work. The announcement
+    source ships enabled by default (§V56) but the operator-supplied ``feed_url`` has no
+    default, so a fresh install has nothing to fetch -- the hot promote path should not
+    pay for a write connection on every such sync.
     """
+    if not any(_announcement_region_eligible(config, registry, server) for server in servers):
+        return
 
     def _import(conn: sqlite3.Connection, server: str) -> str | None:
         source_id = source_id_for_region(server)
