@@ -65,10 +65,14 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def test_migration_0009_is_latest_schema_version(tmp_path: Path) -> None:
+def test_migration_0009_is_applied(tmp_path: Path) -> None:
+    # 0009 must be among the applied migrations (later migrations may follow it, so
+    # this asserts application, not that it is the latest version).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
-        assert read_schema_version(conn) == "0009_drops_domain"
+        applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+        assert "0009_drops_domain" in applied
+        assert read_schema_version(conn) >= "0009_drops_domain"
     finally:
         conn.close()
 

@@ -129,7 +129,7 @@ T90|x|M8 farming-efficiency analyzer `analyzers/farming.py` + rule(s): expected 
 T91|x|M8 `get_stage_drops` MCP tool (drop facts + region + penguin provenance + expiry; `include_efficiency` flag → farming observations; past-`expires_at`→`data_stale` limitation); typed envelope; register in `_TOOL_BUILDERS` (both transports)|V5,V21,V22,V23,V52,V53,V55,V14,I.tool
 T92|x|M8 golden/accept: pinned penguin snapshot fixture (⊥ commit bulk data, §V16) → drops + attribution + expiry; expired cache→`data_stale`; farming efficiency obs w/ confidence+limitation; en/cn ⊥ mixed|V5,V16,V53,V55
 T93|x|M9 source policy review → `DATA_SOURCES.md` + registry entry for announcement source (metadata-only, disabled-by-default, `last_reviewed`, D14)|V27,V56
-T94|.|M9 migration 0010 `announcements` (announce_id, title, date, url, category, region, provenance FK)|V17,V56
+T94|x|M9 migration 0010 `announcements` (announce_id, title, date, url, category, region, provenance FK)|V17,V56
 T95|.|M9 announcement adapter `sources/announcements.py` + importer `importers/announcements.py` metadata-ONLY (announce_id/title/date/url/category); ⊥ body/html/prose/image; recursive allowlist+cap+sanitize; region en/cn; §V30 guard|V16,V18,V56,V30
 T96|.|M9 `get_announcements` MCP tool (metadata list, region, optional since/until date filter, bounded pagination); typed envelope; ⊥ prose; register both transports|V5,V19,V22,V23,V56,V14,I.tool
 T97|.|M9 accept: enabled announcement source → metadata rows (no body); disabled-by-default gate honored; en/cn separation; `get_data_sources` shows attribution + `last_reviewed`|V16,V27,V56,V5
