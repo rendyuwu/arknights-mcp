@@ -304,3 +304,58 @@ def test_unknown_extra_locale_region_rejected(tmp_path: Path) -> None:
             import_locale_aliases(conn, fetcher, region="en")
     finally:
         conn.close()
+
+
+# --- T109 idempotency: re-import does not double-insert (§V57/0012) ------------
+
+
+def test_reimport_is_idempotent_no_duplicate_alias_rows(tmp_path: Path) -> None:
+    # §T109: the sync ride-along re-imports these aliases on every run. Migration 0012's
+    # UNIQUE(entity_pk, alias, locale) + INSERT OR IGNORE make a re-run a no-op -- exactly
+    # one alias row survives, so a re-sync/backfill never doubles the FTS GROUP_CONCAT
+    # token (§V37/B22). The second run reports 0 newly-inserted rows (rowcount-based),
+    # while candidate_names is unchanged (the names are still parsed + matched).
+    conn = _db(tmp_path)
+    try:
+        _seed_operator(conn, region="en", game_id="char_002_amiya", name="Amiya")
+        _seed_enemy(conn, region="en", game_id="enemy_1007_slime", name="Originium Slug")
+        payload = {
+            "character_table": {"char_002_amiya": {"name": "アーミヤ"}},
+            "enemy_handbook": {"enemyData": {"enemy_1007_slime": {"name": "ゲル"}}},
+        }
+
+        first = import_locale_aliases(conn, _FakeFetcher(payload), region="jp")
+        assert (first.operator_aliases_inserted, first.enemy_aliases_inserted) == (1, 1)
+
+        second = import_locale_aliases(conn, _FakeFetcher(payload), region="jp")
+        # Re-run: nothing new is inserted (OR IGNORE suppressed both), but the names were
+        # still parsed -- candidate_names is unchanged.
+        assert (second.operator_aliases_inserted, second.enemy_aliases_inserted) == (0, 0)
+        assert second.candidate_names == first.candidate_names
+
+        # Exactly one row per (entity, alias, locale) survives -- no duplication.
+        assert conn.execute("SELECT COUNT(*) FROM operator_aliases").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM enemy_aliases").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_reimport_matched_guard_does_not_false_trip_under_or_ignore(tmp_path: Path) -> None:
+    # §V30/B51: the fail-closed guard keys on MATCHED game_ids, NOT the physical insert
+    # count -- so a re-run whose inserts are all suppressed by OR IGNORE must NOT trip the
+    # guard (the game_ids still match an existing entity). A regression to an
+    # inserted-count guard would raise here on the second run.
+    conn = _db(tmp_path)
+    try:
+        _seed_operator(conn, region="en", game_id="char_002_amiya", name="Amiya")
+        payload = {
+            "character_table": {"char_002_amiya": {"name": "アーミヤ"}},
+            "enemy_handbook": {},
+        }
+        import_locale_aliases(conn, _FakeFetcher(payload), region="jp")
+        # Second run: 0 inserted, but op matched > 0 -> no ImporterError.
+        second = import_locale_aliases(conn, _FakeFetcher(payload), region="jp")
+        assert second.operator_aliases_inserted == 0
+        assert conn.execute("SELECT COUNT(*) FROM operator_aliases").fetchone()[0] == 1
+    finally:
+        conn.close()

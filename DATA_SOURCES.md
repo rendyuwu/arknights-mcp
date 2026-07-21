@@ -101,6 +101,22 @@ _Last reviewed: 2026-07-21._
 - **Current snapshot commit / retrieved at:** n/a.
 - **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified, §V61).
 
+## `arknights_extra_locale_names` — extra-locale NAME aliases (v0.2 M10), **enabled**
+
+- **Owner / maintainer:** ArknightsAssets / ArknightsGamedata project.
+- **Canonical URL:** https://github.com/ArknightsAssets/ArknightsGamedata
+- **Source type / regions:** structured game-data snapshot; NAME locales `jp`, `kr`. These are NAME locales, **not** fact regions (§V57): a jp/kr NAME is attached as a locale-tagged search alias onto the *existing* en/cn entity that shares its `game_id`, and an alias match returns the entity's OWN en/cn region facts — jp/kr never become fact regions.
+- **Fields / domains consumed (NAME-only, §V57/§V18):** the canonical `name` from `character_table.json` (operators) and `enemy_handbook_table.json` (enemies) — nothing else. A machine-translated `description` / prose is never read or stored (D6 forbids bulk MT).
+- **Adapter / transform versions:** adapter `extra_locale_aliases` v0.1 (CLI-only network fetch — HTTPS-only, endpoint allowlist, size / JSON-depth / node-count / redirect caps; never invoked at query time, §V1). Field policy / transform v1.
+- **License / permission status:** no explicit dataset license assumed; not granted, cautious private MVP (same posture as the primary snapshot).
+- **Private-hosting status:** permitted private, authenticated, with attribution and kill switch.
+- **Redistribution status:** prohibited.
+- **Required attribution:** "Game data snapshots courtesy of the ArknightsAssets/ArknightsGamedata project. Arknights game content © Hypergryph / Yostar."
+- **Contact / issue URL:** https://github.com/ArknightsAssets/ArknightsGamedata/issues
+- **Enabled:** yes — enabled 2026-07-21 (importer + FTS rebuild + `search_entities` `locale` param landed T99/T100/T101; `sync` ride-along wired T109). The ride-along fetches a locale only when the source id is in `[sync].enabled_sources` **and** a `[sync.arknights_extra_locale_names].base_url` is configured for that locale (there is NO shipped default URL, so an unconfigured install fetches nothing).
+- **Current snapshot commit / retrieved at:** n/a.
+- **Last reviewed:** 2026-07-21.
+
 ## `local_snapshot` — user-supplied snapshot adapter, **enabled (adapter)**
 
 - **Owner / maintainer:** the local operator (user-supplied files).

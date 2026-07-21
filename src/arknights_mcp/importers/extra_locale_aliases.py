@@ -83,10 +83,17 @@ class _AliasTarget:
     insert_sql: str
 
 
+# ``INSERT OR IGNORE`` (not a bare INSERT): the extra-locale ride-along re-imports
+# these aliases on every ``sync`` (T109), so a re-run / backfill must not double-insert
+# the same (entity, alias, locale) row -- a duplicate would surface twice in the FTS
+# ``GROUP_CONCAT`` (§V37/B22). Migration 0012 adds the UNIQUE(entity_pk, alias, locale)
+# index this conflict clause fires against. The §V30 guard keys on MATCHED game_ids,
+# NOT the physical insert count, so it stays correct when a re-run's insert is ignored
+# (B51): a re-run still MATCHES the game_ids even when the row is suppressed.
 _OPERATOR_TARGET = _AliasTarget(
     select_pk_sql="SELECT operator_pk FROM operators WHERE game_id = ?",
     insert_sql=(
-        "INSERT INTO operator_aliases "
+        "INSERT OR IGNORE INTO operator_aliases "
         "(operator_pk, alias, language, normalized_alias, alias_type, locale) "
         "VALUES (?, ?, ?, ?, ?, ?)"
     ),
@@ -95,7 +102,7 @@ _OPERATOR_TARGET = _AliasTarget(
 _ENEMY_TARGET = _AliasTarget(
     select_pk_sql="SELECT enemy_pk FROM enemies WHERE game_id = ?",
     insert_sql=(
-        "INSERT INTO enemy_aliases "
+        "INSERT OR IGNORE INTO enemy_aliases "
         "(enemy_pk, alias, language, normalized_alias, alias_type, locale) "
         "VALUES (?, ?, ?, ?, ?, ?)"
     ),
@@ -174,11 +181,16 @@ def _insert_locale_aliases(
         if pk_rows:
             matched += 1
         for (entity_pk,) in pk_rows:
-            conn.execute(
+            cur = conn.execute(
                 target.insert_sql,
                 (entity_pk, name, None, name.casefold(), "locale_name", locale),
             )
-            inserted += 1
+            # Count via ``rowcount`` so ``inserted`` stays truthful under the
+            # ``INSERT OR IGNORE`` idempotency (T109 / 0012): a re-run of a row already
+            # present is suppressed (``rowcount == 0``), so a re-import reports 0 new
+            # rows rather than re-counting the existing ones. ``matched`` (above) is the
+            # §V30 substrate and is unaffected -- a re-run still matches the game_ids.
+            inserted += cur.rowcount
     return inserted, matched
 
 

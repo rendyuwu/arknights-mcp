@@ -161,3 +161,27 @@ contact_url = "https://ak.hypergryph.com/"
 policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (§V56 flip: metadata-only importer + get_announcements landed, T95/T96/T97; sync ride-along wired T106). Verified feed endpoint 2026-07-21 (§T107/§V61): https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json; feed carries day/month/webUrl/group, field-mapped to date/url/category. Metadata-only remains the PERMANENT ceiling regardless of enabled state."
 enabled = true
 last_reviewed_at = "2026-07-21"
+
+[arknights_extra_locale_names]
+display_name = "ArknightsGamedata extra-locale NAMEs (jp/kr)"
+owner_name = "ArknightsAssets / ArknightsGamedata project"
+canonical_url = "https://github.com/ArknightsAssets/ArknightsGamedata"
+source_type = "structured_game_data_snapshot"
+regions = ["jp", "kr"]
+purpose = "Extra-locale canonical NAMEs (jp/kr) attached as locale-tagged search aliases onto existing en/cn entities (§V57 NAME-only). jp/kr are NAME locales, NOT fact regions: an alias match returns the entity's OWN en/cn region facts."
+fields_consumed = [
+    "character_table.json (name only)",
+    "enemy_handbook_table.json (name only)",
+]
+adapter_version = "0.1"
+transform_version = "1"
+license_identifier = ""
+license_status = "no_explicit_dataset_license_assumed"
+permission_status = "not_granted_cautious_private_mvp"
+private_hosting_status = "permitted_private_authenticated_with_attribution_and_kill_switch"
+redistribution_status = "prohibited_code_only"
+attribution_text = "Game data snapshots courtesy of the ArknightsAssets/ArknightsGamedata project. Arknights game content (c) Hypergryph / Yostar."
+contact_url = "https://github.com/ArknightsAssets/ArknightsGamedata/issues"
+policy_notes = "v0.2 M10 extra-locale NAME aliases (§V57): imports ONLY the per-locale canonical NAME (jp/kr) as a locale-tagged search alias on the existing en/cn entity; never a machine-translated description or prose (D6/§V18). jp/kr are NAME locales, NOT new fact regions -- an alias match still returns the entity's OWN en/cn region facts. Adapter is CLI-only network fetch (never query-time, §V1). Enabled 2026-07-21 (importer + FTS rebuild + search locale param landed T99/T100/T101; sync ride-along wired T109). Rides along with sync only when the source id is in [sync].enabled_sources AND a [sync.arknights_extra_locale_names].base_url is configured per locale (there is NO shipped default URL)."
+enabled = true
+last_reviewed_at = "2026-07-21"

@@ -31,6 +31,7 @@ EXPECTED_SOURCE_IDS = {
     "penguin_statistics",
     "arknights_global_official_news",
     "arknights_cn_official_news",
+    "arknights_extra_locale_names",
 }
 
 

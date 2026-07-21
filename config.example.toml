@@ -59,6 +59,23 @@ servers = ["en", "cn"]
 # [sync.arknights_cn_official_news]
 # feed_url = "https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json"
 
+# Extra-locale NAME aliases (v0.2 M10, SPEC §V57/§T109). Enabled by default in the
+# machine registry. It rides along with `sync` ONLY when the source id is BOTH in
+# [sync].enabled_sources above AND a base_url is configured per locale below (there is
+# NO shipped default URL). When wired, `sync` fetches each extra locale's gamedata tree
+# (jp/kr), keeps ONLY the canonical NAME, and attaches it as a locale-tagged search alias
+# onto the EXISTING en/cn entity that shares its game_id -- jp/kr are NAME locales, not
+# fact regions, so the entity still returns its OWN en/cn region facts (§V57). No
+# machine-translated description/prose is ever stored (D6/§V18). A fetch outage is caught
+# and the build still promotes game-data-only (fail-open, §V58). Point each locale at its
+# distinct gamedata tree (a "{server}" token below is substituted per locale, or give
+# each locale its own [.base_urls] entry):
+# [sync.arknights_extra_locale_names]
+# base_url = "<allowlisted extra-locale gamedata endpoint>/{server}"
+# [sync.arknights_extra_locale_names.base_urls]
+# jp = "<allowlisted JP gamedata endpoint>"
+# kr = "<allowlisted KR gamedata endpoint>"
+
 [source_registry]
 policy_file = "./DATA_SOURCES.md"
 machine_registry = "./config/data_sources.toml"
