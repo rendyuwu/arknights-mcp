@@ -117,7 +117,12 @@ def _names_from_id_keyed(raw: Any) -> dict[str, str]:
             continue
         kept = apply_allowlist(entry, LOCALE_NAME_ALLOWLIST).kept
         name = as_str(kept.get("name"))
-        if name is not None:
+        # ``if name`` (not ``is not None``): a name that sanitized down to "" (all
+        # control/whitespace) must not become an empty alias row -- it would be junk
+        # in FTS and, worse, would count toward the §V30 "matched something" tally
+        # and mask a real scheme mismatch. Matches the operator self-alias convention
+        # (_operator_aliases uses ``if name:``).
+        if name:
             out[game_id] = name
     return out
 
