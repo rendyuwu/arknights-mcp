@@ -87,6 +87,10 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     # default, D14/§V56), so this resolves to an empty ``ok`` list -- a legitimate
     # identical domain result across both wires, which the parity check still covers.
     ("get_announcements", {"server": "en"}),
+    # No gacha_table in the promoted fixture build (tolerant-absent, §V41/B36), so this
+    # resolves to an empty ``ok`` list -- a legitimate identical domain result across
+    # both wires, which the parity check still covers.
+    ("get_banners", {"server": "en"}),
     ("get_data_status", {}),
     ("get_data_sources", {}),
 )

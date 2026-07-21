@@ -86,6 +86,7 @@ def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None
         "arknights://enemy/{server}/{game_id}",
         "arknights://stage/{server}/{stage_id}",
         "arknights://status/{server}",
+        "arknights://banners/{server}",
     }
 
 
@@ -187,6 +188,25 @@ def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistr
     assert isinstance(prov, list) and prov and prov[0]["server"] == "en"
 
 
+def test_banners_read_is_region_scoped_ok_list(resources: ResourceRegistry) -> None:
+    # §T114/§V62: banners/{server} dispatches get_banners -> a typed ok list body. The
+    # 4-4 fixture has no gacha_table, so a region is a legitimate empty ``ok`` list
+    # (tolerant-absent, §V41/B36), never a not_found.
+    body = _body(resources.read("arknights://banners/en"))
+    assert body["status"] == "ok"
+    data = body["data"]
+    assert set(data) == {"banners", "page"}  # type: ignore[arg-type]
+    assert data["banners"] == []  # type: ignore[index]
+    assert data["page"]["total"] == 0  # type: ignore[index]
+
+
+def test_banners_unsupported_region_fails_closed(resources: ResourceRegistry) -> None:
+    # §V5: a bad region short-circuits to unsupported_server, never a leaked value.
+    body = _body(resources.read("arknights://banners/jp"))
+    assert body["status"] == "unsupported_server"
+    assert "jp" not in json.dumps(body["data"])
+
+
 def test_status_other_region_has_no_snapshots(resources: ResourceRegistry) -> None:
     # Only the en fixture is imported; cn is region-scoped to an empty snapshot list.
     body = _body(resources.read("arknights://status/cn"))
@@ -247,6 +267,7 @@ def test_reads_do_not_write(resources: ResourceRegistry, conn: sqlite3.Connectio
     resources.read("arknights://enemy/en/enemy_1007_slime")
     resources.read("arknights://stage/en/main_04-04")
     resources.read("arknights://status/en")
+    resources.read("arknights://banners/en")
     resources.read("arknights://sources")
     assert conn.total_changes == before
 

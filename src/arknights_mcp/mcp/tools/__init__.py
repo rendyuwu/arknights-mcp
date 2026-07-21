@@ -21,6 +21,7 @@ from __future__ import annotations
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
 from arknights_mcp.mcp.tools.announcements import build_get_announcements_spec
+from arknights_mcp.mcp.tools.banners import build_get_banners_spec
 from arknights_mcp.mcp.tools.drops import (
     build_get_item_drops_spec,
     build_get_stage_drops_spec,
@@ -53,6 +54,7 @@ _TOOL_BUILDERS = (
     build_get_stage_drops_spec,
     build_get_item_drops_spec,
     build_get_announcements_spec,
+    build_get_banners_spec,
 )
 
 
@@ -68,7 +70,7 @@ def build_tool_registry(
     build; every registered spec is read-only (§V2) and bound to it. ``registry``
     is the live source posture ``get_data_sources`` projects (§V27), and ``mode``
     is the deployment-mode label ``get_data_status`` reports. Both transports call
-    this so they dispatch one identical tool set of all ten §I.tool tools (§V14) --
+    this so they dispatch one identical tool set of every §I.tool tool (§V14) --
     there is no per-transport tool list to drift. Registration order is
     deterministic, so ``list_tools`` is stable.
     """

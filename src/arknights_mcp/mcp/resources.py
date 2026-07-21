@@ -10,6 +10,7 @@ The surface mirrors PRD §13.11 / §I.resource::
     arknights://enemy/{server}/{game_id}    (template)
     arknights://stage/{server}/{stage_id}   (template)
     arknights://status/{server}             (template)
+    arknights://banners/{server}            (template)
     arknights://sources                     (fixed)
 
 ``arknights://operator/{server}/{game_id}`` is intentionally **not** registered
@@ -61,6 +62,7 @@ from arknights_mcp.mcp.tools._shared import (
     run_guarded,
     run_registry_guarded,
 )
+from arknights_mcp.mcp.tools.banners import build_get_banners_spec
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.stage import build_get_stage_spec
 from arknights_mcp.services.source_status import DataSourcesResult, get_data_sources
@@ -78,6 +80,7 @@ _REGIONS = frozenset({"en", "cn"})
 _ENEMY_TEMPLATE = "arknights://enemy/{server}/{game_id}"
 _STAGE_TEMPLATE = "arknights://stage/{server}/{stage_id}"
 _STATUS_TEMPLATE = "arknights://status/{server}"
+_BANNERS_TEMPLATE = "arknights://banners/{server}"
 _SOURCES_URI = "arknights://sources"
 
 #: Fixed, safe copy for the typed failure envelopes (§V23 -- no echo of untrusted
@@ -328,6 +331,28 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
     return handler
 
 
+def _make_banners_handler(get_conn: ConnectionProvider) -> ResourceHandler:
+    """Region-scoped ``arknights://banners/{server}`` over the ``get_banners`` tool (§V14).
+
+    Dispatches the exact ``get_banners`` tool handler with the URI region (and the
+    bounded defaults for the since/until window + page), so the resource adds no domain
+    logic (§V37) and returns the same typed envelope the tool returns -- newest-first,
+    region-attributed, metadata-only (§V62), with the §V62/§V26 caveats in
+    ``limitations``. A bad region short-circuits to ``unsupported_server`` (§V5); a
+    region with no banners is a legitimate empty ``ok`` list (gacha_table is tolerant-
+    absent, §V41/B36). The DB-unavailable / internal guard is the tool's shared one.
+    """
+    tool_handler = build_get_banners_spec(get_conn).handler
+
+    def handler(params: Mapping[str, str]) -> ResponseEnvelope:
+        guard = _unsupported_region(params)
+        if guard is not None:
+            return guard
+        return tool_handler(server=params["server"])
+
+    return handler
+
+
 def _make_sources_handler(
     get_conn: ConnectionProvider, registry: SourceRegistry
 ) -> ResourceHandler:
@@ -362,6 +387,12 @@ _STAGE_DESCRIPTION = (
 _STATUS_DESCRIPTION = (
     "Active-build data status for one region: schema + analyzer version, active "
     "snapshots (source/commit/import time/age), and any staleness warnings."
+)
+_BANNERS_DESCRIPTION = (
+    "Banner ARCHIVE metadata for one region: each pool's id, display name, open/end "
+    "schedule, rule type, and TYPED featured operators, newest-first with region + "
+    "provenance. Metadata-only (no gacha prose); a historical FACT, not gacha planning. "
+    "en/cn never mixed."
 )
 _SOURCES_DESCRIPTION = (
     "The public-safe source registry: id, owner, canonical URL, purpose, regions, "
@@ -412,6 +443,15 @@ def build_default_resources(
             description=_STATUS_DESCRIPTION,
             uri_template=_STATUS_TEMPLATE,
             handler=_make_status_handler(get_conn, mode),
+        )
+    )
+    resources.register(
+        ResourceSpec(
+            name="banners",
+            title="Arknights banners",
+            description=_BANNERS_DESCRIPTION,
+            uri_template=_BANNERS_TEMPLATE,
+            handler=_make_banners_handler(get_conn),
         )
     )
     resources.register(

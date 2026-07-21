@@ -26,6 +26,7 @@ so a region is always attributed and the two are never silently mixed.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -102,6 +103,31 @@ class PageInfo(StrictModel):
     page_size: int = Field(ge=1, le=PAGE_SIZE_MAX)
     total: int = Field(ge=0)
     has_more: bool
+
+
+def validate_iso_bound(value: str | None) -> str | None:
+    """Reject a since/until date bound that is not an ISO date/datetime (§V19; §V37).
+
+    The single home (§V37) for the date-filter bound validator shared by every list
+    tool with a since/until window (``get_announcements`` §T96/B48, ``get_banners``
+    §T114). The stored date column is compared lexicographically at the SQL layer (an
+    ISO-8601 string sorts in date order), so a non-date bound like ``"july"`` passes the
+    length cap yet sorts BEFORE every ISO date, silently emptying the windowed query
+    with no error -- a caller cannot tell "nothing in range" from "malformed bound"
+    (B48). :func:`datetime.fromisoformat` accepts both a bare ISO date and a full ISO
+    datetime (and validates the calendar parts), so a value it rejects surfaces as a
+    protocol-level ``ValidationError`` at the model gate rather than a degenerate empty
+    result.
+    """
+    if value is None:
+        return value
+    try:
+        datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"since/until must be an ISO date (YYYY-MM-DD) or ISO datetime (§V19); got {value!r}"
+        ) from exc
+    return value
 
 
 def tool_input_schema(model: type[BaseModel]) -> dict[str, Any]:

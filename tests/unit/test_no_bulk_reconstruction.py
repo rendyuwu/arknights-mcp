@@ -59,6 +59,7 @@ _EXPECTED_TOOLS = frozenset(
         "get_stage_drops",
         "get_item_drops",
         "get_announcements",
+        "get_banners",
         "get_data_status",
         "get_data_sources",
     }
@@ -78,7 +79,9 @@ _KEYED_ENTITY_TOOLS = frozenset(  # one entity by unique key/selector, no list k
         "get_item_drops",
     }
 )
-_LIST_TOOLS = frozenset({"get_announcements"})  # region-scoped list, bounded top-level page
+_LIST_TOOLS = frozenset(  # region-scoped list, bounded top-level page
+    {"get_announcements", "get_banners"}
+)
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
 
 #: A tool name that leaks any of these is an enumeration/admin surface (§V19/§V28).

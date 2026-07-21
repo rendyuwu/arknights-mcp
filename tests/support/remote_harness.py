@@ -53,6 +53,7 @@ EXPECTED_TOOLS = frozenset(
         "get_stage_drops",
         "get_item_drops",
         "get_announcements",
+        "get_banners",
         "get_data_status",
         "get_data_sources",
     }
