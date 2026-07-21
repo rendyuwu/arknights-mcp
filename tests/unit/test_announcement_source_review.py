@@ -41,14 +41,15 @@ _ANNOUNCEMENT_SOURCES = {
 }
 
 
-def test_announcement_sources_present_disabled_and_region_scoped() -> None:
-    # §V56/D14: both official news entries exist, are disabled by default, and are
-    # region-scoped (en/cn never mixed, §V5).
+def test_announcement_sources_present_enabled_and_region_scoped() -> None:
+    # §V56/D14/§T106: both official news entries exist, are ENABLED by default (the M9
+    # review satisfied the D14 gate; the metadata-only importer + get_announcements
+    # landed), and are region-scoped (en/cn never mixed, §V5).
     reg = load_source_registry(REGISTRY, validate=False)
     for source_id, region in _ANNOUNCEMENT_SOURCES.items():
         entry = reg.get(source_id)
         assert entry is not None, f"missing announcement source: {source_id}"
-        assert entry.enabled is False, f"{source_id} must be disabled by default (§V56)"
+        assert entry.enabled is True, f"{source_id} must be enabled by default (§V56/§T106)"
         assert entry.regions == [region], f"{source_id} region must be [{region!r}] (§V5)"
 
 

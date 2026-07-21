@@ -141,15 +141,16 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 # --- disabled-by-default gate honored (§V56/D14) ------------------------------
 
 
-def test_disabled_by_default_gate_honored() -> None:
-    # §V56/D14: the shipped registry ships both official-news sources DISABLED; a real
-    # sync would never fetch them until an explicit, reviewed enablement. The M9
-    # importer landing does not flip the gate.
+def test_enabled_by_default_gate_honored() -> None:
+    # §V56/D14/§T106: the M9 review satisfied the D14 gate (metadata-only importer +
+    # get_announcements landed), so the shipped registry ships both official-news
+    # sources ENABLED. Enabling in the registry is the gate; the sync ride-along still
+    # additionally requires the source in [sync].enabled_sources + a configured feed_url.
     reg = load_source_registry(REGISTRY, validate=False)
     for source_id, region in _ANNOUNCEMENT_SOURCES.items():
         entry = reg.get(source_id)
         assert entry is not None, f"missing announcement source: {source_id}"
-        assert entry.enabled is False, f"{source_id} must be disabled by default (§V56/D14)"
+        assert entry.enabled is True, f"{source_id} must be enabled by default (§V56/§T106)"
         assert entry.regions == [region], f"{source_id} region must be [{region!r}] (§V5)"
 
 
@@ -231,8 +232,8 @@ def test_get_data_sources_shows_attribution_and_last_reviewed(conn: sqlite3.Conn
         # §V27: attribution + last_reviewed present.
         assert str(view["attribution_text"]).strip(), f"{source_id}: attribution missing"
         assert view["last_reviewed_at"] == "2026-07-21", f"{source_id}: review date not surfaced"
-        # §V27: the disabled posture is reported truthfully (the gate is public).
-        assert view["enabled"] is False
+        # §V27/§T106: the enabled posture is reported truthfully (the gate is public).
+        assert view["enabled"] is True
         # §V27: policy_notes is withheld from every public projection.
         assert "policy_notes" not in view
         # §V16/§V56: no consumed field names a body/html/prose/image scope.

@@ -62,6 +62,11 @@ class SyncSourceConfig(_Model):
     # to ``base_url``; a ``{server}`` token in either is substituted per region so a
     # single region-partitioned repo can serve distinct en/cn trees (§V5).
     base_urls: dict[str, str] = Field(default_factory=dict)
+    # A single feed endpoint for sources fetched from ONE URL rather than a
+    # region-partitioned tree (the announcement feeds, §T106/§V56). Kept distinct
+    # from ``base_url`` so an announcement source configures its feed without a
+    # spurious ``{server}`` tree; unset/placeholder -> the ride-along skips it.
+    feed_url: str = ""
     servers: list[str] = Field(default_factory=lambda: ["en", "cn"])
 
     def base_url_for(self, server: str) -> str:

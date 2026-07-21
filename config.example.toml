@@ -40,6 +40,20 @@ servers = ["en", "cn"]
 # [sync.penguin_statistics]
 # base_url = "https://penguin-stats.io/PenguinStats/api/v2"  # default if omitted
 
+# Official announcement metadata (v0.2 M9, SPEC §V56/§T106). Enabled by default in
+# the machine registry (metadata-only maximum scope, D14 review recorded). It rides
+# along with `sync` ONLY when the source id is BOTH in [sync].enabled_sources above
+# AND a feed_url is configured below (there is NO shipped default feed URL). When
+# wired, `sync` fetches each region's announcement feed (en->Global, cn->CN) into the
+# SAME candidate after the game data and stores ONLY the metadata allowlist
+# (announce_id/title/date/url/category) -- never the article body/html/prose/image
+# (§V16). A feed outage is caught and the build still promotes game-data-only
+# (fail-open, §V58). Add the source ids to [sync].enabled_sources and set the feeds:
+# [sync.arknights_global_official_news]
+# feed_url = "<official Global announcement feed URL>"
+# [sync.arknights_cn_official_news]
+# feed_url = "<official CN announcement feed URL>"
+
 [source_registry]
 policy_file = "./DATA_SOURCES.md"
 machine_registry = "./config/data_sources.toml"

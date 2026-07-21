@@ -130,8 +130,8 @@ private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph / Yostar."
 contact_url = "https://www.arknights.global/"
-policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Disabled by default; enablement requires the metadata-only importer (T95/T96) to be stable plus a separate enablement review."
-enabled = false
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (§V56 flip: metadata-only importer + get_announcements landed, T95/T96/T97; sync ride-along wired T106). Metadata-only remains the PERMANENT ceiling regardless of enabled state."
+enabled = true
 last_reviewed_at = "2026-07-21"
 
 [arknights_cn_official_news]
@@ -158,6 +158,6 @@ private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph."
 contact_url = "https://ak.hypergryph.com/"
-policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Disabled by default; enablement requires the metadata-only importer (T95/T96) to be stable plus a separate enablement review."
-enabled = false
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (§V56 flip: metadata-only importer + get_announcements landed, T95/T96/T97; sync ride-along wired T106). Metadata-only remains the PERMANENT ceiling regardless of enabled state."
+enabled = true
 last_reviewed_at = "2026-07-21"

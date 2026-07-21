@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from arknights_mcp.cli._shared import (
@@ -21,11 +21,16 @@ from arknights_mcp.cli._shared import (
     _out,
 )
 from arknights_mcp.config import AppConfig
+from arknights_mcp.importers.announcements import import_announcements
 from arknights_mcp.importers.penguin_drops import (
     import_penguin_drops,
     penguin_server_for_region,
 )
 from arknights_mcp.importers.pipeline import ServerImport
+from arknights_mcp.sources.announcements import (
+    AnnouncementsAdapter,
+    source_id_for_region,
+)
 from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter
 from arknights_mcp.sources.http_fetch import DownloadBudget, DownloadLimits, Fetcher
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -65,6 +70,76 @@ def _penguin_base_url(config: AppConfig) -> str:
     return PENGUIN_BASE_URL if is_placeholder(base_url) else base_url
 
 
+def _announcement_feed_url(config: AppConfig, source_id: str) -> str | None:
+    """Resolve an announcement feed URL from ``[sync.<source_id>].feed_url`` (§T106).
+
+    Unlike penguin (which has a documented default endpoint), the official feed URL
+    is operator-supplied and has no shipped default -- an unset/placeholder value
+    returns ``None`` so the ride-along skips that region rather than fetching a
+    guessed URL (§V56/§V1).
+    """
+    source_cfg = config.sync.sources.get(source_id)
+    feed_url = source_cfg.feed_url if source_cfg is not None else ""
+    return None if is_placeholder(feed_url) else feed_url
+
+
+def _ride_along(
+    candidate: Path,
+    *,
+    servers: Sequence[str],
+    label: str,
+    per_server: Callable[[sqlite3.Connection, str], str | None],
+) -> None:
+    """Import an optional per-region ride-along source into the candidate (§V58/§V37).
+
+    The one shared home for the penguin-drop (§T102) and announcement (§T106)
+    ride-alongs: both fetch a secondary source AFTER the game-data import, into the
+    SAME candidate, before validate/promote, so the extra rows join one atomic build
+    (§V4/§V58). The candidate connection runs in autocommit mode so each region's
+    ``RELEASE`` commits its rows independently, and each region is imported under a
+    per-server ``SAVEPOINT`` so a fetch/import failure rolls back only THAT region's
+    partial inserts (all-or-nothing per server, §V58).
+
+    Fail-open (§V58, must not break §V3): a failure of ANY kind (network, importer
+    :class:`ImporterError` incl. its own §V30 non-empty-or-fail, a duplicate collision,
+    or a malformed payload surfacing as ``ValueError``/``OverflowError``) is caught +
+    warned, the region's savepoint is rolled back, and the build continues game-data-only
+    -- the ride-along tables are outside CRITICAL_TABLES, so an empty domain is legitimate.
+    The catch is deliberately broad rather than a fixed error tuple, and ``SAVEPOINT``
+    creation is inside the guard, because fail-open is the whole point.
+
+    ``per_server`` runs on the writable candidate for one region and returns a success
+    message to print, or ``None`` to skip the region without a success line (a region
+    with no source for this ride-along, or an opt-out that the callback logged itself).
+    """
+    conn = sqlite3.connect(str(candidate), isolation_level=None)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        for server in servers:
+            try:
+                conn.execute("SAVEPOINT ride_along")
+                message = per_server(conn, server)
+                conn.execute("RELEASE SAVEPOINT ride_along")
+                if message is not None:
+                    _out(f"  {message}")
+            except Exception as exc:
+                # Roll back only this region's partial inserts and keep going; if the
+                # failure already aborted the transaction the savepoint is gone, and if
+                # SAVEPOINT itself failed there is nothing to release -- swallow the
+                # cleanup error rather than let it defeat fail-open (§V58/§V3).
+                try:
+                    conn.execute("ROLLBACK TO SAVEPOINT ride_along")
+                    conn.execute("RELEASE SAVEPOINT ride_along")
+                except sqlite3.Error:
+                    pass
+                _out(
+                    f"  {label} {server}: unavailable, skipped; "
+                    f"continuing game-data-only (§V58): {exc}"
+                )
+    finally:
+        conn.close()
+
+
 def _ride_along_penguin(
     candidate: Path,
     *,
@@ -80,18 +155,11 @@ def _ride_along_penguin(
     Runs only when ``penguin_statistics`` is both in ``[sync].enabled_sources`` and
     registry-enabled -- otherwise it fetches nothing (§V58 opt-in). Per region it maps
     the fact region back to its penguin server (inverse §V54: en->US, cn->CN; a region
-    with no penguin server is skipped silently) and imports that server's drops under a
-    per-server ``SAVEPOINT`` so a fetch/import failure rolls back only THAT region's
-    partial inserts (all-or-nothing per server, §V58).
-
-    Fail-open (§V58, must not break §V3): a penguin network failure, an
-    :class:`ImporterError` (including its own §V30 non-empty-or-fail), or a duplicate
-    collision is caught + warned, the region's savepoint is rolled back, and the build
-    continues game-data-only. ``items``/``stage_drops`` are outside the critical tables
-    (0009), so an empty drops domain is legitimate -- never a §V30 combat regression.
-
-    The candidate connection runs in autocommit mode so each region's ``RELEASE``
-    commits its drops independently, keeping the per-region rollback isolated.
+    with no penguin server is skipped silently), then imports that server's drops under
+    the shared per-server-savepoint, fail-open ride-along (:func:`_ride_along`, §V37):
+    a penguin failure of any kind rolls back only THAT region and the build continues
+    game-data-only. ``items``/``stage_drops`` are outside CRITICAL_TABLES (0009), so an
+    empty drops domain is legitimate -- never a §V30 combat regression.
     """
     if _PENGUIN_SOURCE_ID not in config.sync.enabled_sources:
         return
@@ -100,48 +168,74 @@ def _ride_along_penguin(
         return
 
     base_url = _penguin_base_url(config)
-    conn = sqlite3.connect(str(candidate), isolation_level=None)
-    try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        for server in servers:
-            penguin_server = penguin_server_for_region(server)
-            if penguin_server is None:
-                # A region with no penguin server (never en/cn here, defensive) is
-                # skipped silently rather than mislabelled (§V54/§V58).
-                continue
-            try:
-                conn.execute("SAVEPOINT penguin_drops")
-                adapter = PenguinStatsAdapter(
-                    base_url, fetcher=fetcher, limits=limits, budget=budget
-                )
-                result = import_penguin_drops(conn, adapter, penguin_server=penguin_server)
-                conn.execute("RELEASE SAVEPOINT penguin_drops")
-                _out(
-                    f"  penguin {server}: drops {result.drops_inserted}, "
-                    f"skipped {result.drops_skipped}"
-                )
-            except Exception as exc:
-                # Roll back only this region's partial inserts and keep going: a
-                # penguin failure of ANY kind (network, import, a malformed payload
-                # surfacing as ValueError/OverflowError, ...) must not fail the
-                # game-data build (§V58/§V3). Fail-open is the whole point of the
-                # ride-along, so the catch is deliberately broad rather than a fixed
-                # error tuple, and SAVEPOINT creation is inside the guard too.
-                try:
-                    # If the failure already aborted the transaction the savepoint is
-                    # gone (its inserts already undone), and if SAVEPOINT itself failed
-                    # there is nothing to release -- swallow the cleanup error rather
-                    # than let it defeat fail-open.
-                    conn.execute("ROLLBACK TO SAVEPOINT penguin_drops")
-                    conn.execute("RELEASE SAVEPOINT penguin_drops")
-                except sqlite3.Error:
-                    pass
-                _out(
-                    f"  penguin {server}: unavailable, drops skipped; "
-                    f"continuing game-data-only (§V58): {exc}"
-                )
-    finally:
-        conn.close()
+
+    def _import(conn: sqlite3.Connection, server: str) -> str | None:
+        penguin_server = penguin_server_for_region(server)
+        if penguin_server is None:
+            # A region with no penguin server (never en/cn here, defensive) is
+            # skipped silently rather than mislabelled (§V54/§V58).
+            return None
+        adapter = PenguinStatsAdapter(base_url, fetcher=fetcher, limits=limits, budget=budget)
+        result = import_penguin_drops(conn, adapter, penguin_server=penguin_server)
+        return f"penguin {server}: drops {result.drops_inserted}, skipped {result.drops_skipped}"
+
+    _ride_along(candidate, servers=servers, label="penguin", per_server=_import)
+
+
+def _ride_along_announcements(
+    candidate: Path,
+    *,
+    config: AppConfig,
+    registry: SourceRegistry,
+    servers: Sequence[str],
+    fetcher: Fetcher | None,
+    limits: DownloadLimits,
+    budget: DownloadBudget,
+) -> None:
+    """Import announcement metadata into the candidate before validation (§V56/§T106).
+
+    Mirrors the penguin ride-along (:func:`_ride_along`, §V37). Per region it resolves
+    the announcement source id (en->Global, cn->CN; a region outside {en,cn} has none)
+    and runs only when that source is both in ``[sync].enabled_sources`` and
+    registry-enabled AND a ``[sync.<source_id>].feed_url`` is configured -- the official
+    feed URL has no shipped default, so an unset feed skips that region rather than
+    guessing a URL (§V56/§V1). The metadata-only importer stores only the §V56 allowlist;
+    the article body is never fetched into storage (§V16).
+
+    Fail-open (§V58, must not break §V3): a feed/import failure rolls back only THAT
+    region and the build continues game-data-only -- ``announcements`` is outside
+    CRITICAL_TABLES (0010), so an empty announcement domain is legitimate.
+    """
+
+    def _import(conn: sqlite3.Connection, server: str) -> str | None:
+        source_id = source_id_for_region(server)
+        if source_id is None:
+            # No announcement source for this region (never en/cn here, defensive).
+            return None
+        if source_id not in config.sync.enabled_sources:
+            return None
+        entry = registry.get(source_id)
+        if entry is None or not entry.enabled:
+            return None
+        feed_url = _announcement_feed_url(config, source_id)
+        if feed_url is None:
+            # Enabled but no feed URL configured yet -- skip rather than fetch a
+            # guessed endpoint (§V56/§V1). Logged so the operator sees why it is empty.
+            _out(
+                f"  announcements {server}: no feed_url configured "
+                f"([sync.{source_id}].feed_url); skipped"
+            )
+            return None
+        adapter = AnnouncementsAdapter(
+            feed_url, server, fetcher=fetcher, limits=limits, budget=budget
+        )
+        result = import_announcements(conn, adapter, region=server)
+        return (
+            f"announcements {server}: {result.announcements_inserted} "
+            f"(skipped {result.announcements_skipped})"
+        )
+
+    _ride_along(candidate, servers=servers, label="announcements", per_server=_import)
 
 
 def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
@@ -199,6 +293,15 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
 
             def _post_build(candidate: Path) -> None:
                 _ride_along_penguin(
+                    candidate,
+                    config=config,
+                    registry=registry,
+                    servers=servers,
+                    fetcher=ctx.fetcher,
+                    limits=limits,
+                    budget=budget,
+                )
+                _ride_along_announcements(
                     candidate,
                     config=config,
                     registry=registry,
