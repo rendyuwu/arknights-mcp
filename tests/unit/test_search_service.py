@@ -349,18 +349,15 @@ def test_locale_filter_excludes_stages(tmp_path: Path) -> None:
 
 
 def test_search_locale_domain_matches_field_policy_maps() -> None:
-    # §V37: the ``SearchLocale`` filter domain is kept in lock-step with the single
-    # ``field_policy`` locale-map home rather than re-declared. The searchable
-    # locales are exactly the fact-region locales (REGION_TO_NAME_LOCALE values) plus
-    # the extra-locale alias tags (EXTRA_LOCALE_FOR_REGION values); a new locale added
-    # to either map without widening ``SearchLocale`` (or vice versa) fails here.
+    # §V37/B50: the ``SearchLocale`` filter domain is kept in lock-step with the single
+    # ``field_policy`` extra-locale map rather than re-declared. The searchable locales
+    # are EXACTLY the extra-locale alias tags (EXTRA_LOCALE_FOR_REGION values, jp/kr ->
+    # ja/ko) -- the fact-region locales (en/zh) are excluded (degenerate ≈ ``server=``
+    # + asymmetric-broken, B50). A new extra locale added to the map without widening
+    # ``SearchLocale`` (or vice versa) fails here.
     from typing import get_args
 
-    from arknights_mcp.importers.field_policy import (
-        EXTRA_LOCALE_FOR_REGION,
-        REGION_TO_NAME_LOCALE,
-    )
+    from arknights_mcp.importers.field_policy import EXTRA_LOCALE_FOR_REGION
     from arknights_mcp.models.common import SearchLocale
 
-    expected = set(REGION_TO_NAME_LOCALE.values()) | set(EXTRA_LOCALE_FOR_REGION.values())
-    assert set(get_args(SearchLocale)) == expected
+    assert set(get_args(SearchLocale)) == set(EXTRA_LOCALE_FOR_REGION.values())

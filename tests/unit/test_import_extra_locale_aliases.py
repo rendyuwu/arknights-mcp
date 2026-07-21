@@ -235,6 +235,52 @@ def test_non_empty_source_matching_nothing_fails_closed(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_per_domain_guard_enemy_mismatch_fails_closed_despite_operator_match(
+    tmp_path: Path,
+) -> None:
+    # §V30/B51: the guard is PER DOMAIN, keyed on MATCHED game_ids -- a sibling
+    # domain's success must NOT mask a per-domain game_id-scheme mismatch. Here the
+    # operator name matches (op_matched > 0) but every enemy name is under a wrong
+    # scheme (enemy_matched == 0). The old combined-count guard saw inserted > 0 and
+    # promoted a build whose enemy aliases silently attached nothing; the per-domain
+    # guard fails closed and names the missed domain.
+    conn = _db(tmp_path)
+    try:
+        _seed_operator(conn, region="en", game_id="char_002_amiya", name="Amiya")
+        _seed_enemy(conn, region="en", game_id="enemy_1007_slime", name="Originium Slug")
+        fetcher = _FakeFetcher(
+            {
+                # operator matches; every enemy name is under a wrong game_id scheme.
+                "character_table": {"char_002_amiya": {"name": "アーミヤ"}},
+                "enemy_handbook": {"enemyData": {"WRONG_enemy_scheme": {"name": "ゲル"}}},
+            }
+        )
+        with pytest.raises(ImporterError, match="enemy"):
+            import_locale_aliases(conn, fetcher, region="jp")
+    finally:
+        conn.close()
+
+
+def test_per_domain_guard_operator_mismatch_fails_closed_despite_enemy_match(
+    tmp_path: Path,
+) -> None:
+    # §V30/B51: the mirror case -- enemy matches but the operator scheme mismatches.
+    conn = _db(tmp_path)
+    try:
+        _seed_operator(conn, region="en", game_id="char_002_amiya", name="Amiya")
+        _seed_enemy(conn, region="en", game_id="enemy_1007_slime", name="Originium Slug")
+        fetcher = _FakeFetcher(
+            {
+                "character_table": {"WRONG_char_scheme": {"name": "アーミヤ"}},  # 0 match
+                "enemy_handbook": {"enemyData": {"enemy_1007_slime": {"name": "ゲル"}}},  # matches
+            }
+        )
+        with pytest.raises(ImporterError, match="operator"):
+            import_locale_aliases(conn, fetcher, region="jp")
+    finally:
+        conn.close()
+
+
 def test_empty_source_imports_zero_without_error(tmp_path: Path) -> None:
     # A genuinely empty source (no candidate names) is a legitimate empty import.
     conn = _db(tmp_path)

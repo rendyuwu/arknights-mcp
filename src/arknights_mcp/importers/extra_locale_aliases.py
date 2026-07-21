@@ -151,26 +151,35 @@ def _insert_locale_aliases(
     target: _AliasTarget,
     *,
     locale: str,
-) -> int:
+) -> tuple[int, int]:
     """Attach each name as a locale alias on every en/cn row of its game_id (§V57).
 
     A game_id present in both regions gets the alias on both rows (so the alias
     resolves the entity in either region it was imported for); a game_id absent from
     the entity table contributes no alias (nothing to attach to). ``normalized_alias``
     is the casefolded name (matching the operator alias importer, §V37); ``alias_type``
-    marks it a locale name and ``locale`` carries the language tag. Returns the number
-    of alias rows written.
+    marks it a locale name and ``locale`` carries the language tag.
+
+    Returns ``(inserted, matched)``: ``inserted`` counts alias rows written; ``matched``
+    counts source names whose game_id resolved to ≥1 existing entity. The two differ
+    when a game_id spans both regions (1 match -> 2 inserts) or is absent (0/0). The
+    §V30 guard keys on ``matched`` -- NOT ``inserted`` -- so it stays correct under a
+    future ``INSERT OR IGNORE`` idempotency pass (a re-run matches the game_ids even
+    when the row insert is suppressed, T109) (B51).
     """
     inserted = 0
+    matched = 0
     for game_id, name in names.items():
         pk_rows = conn.execute(target.select_pk_sql, (game_id,)).fetchall()
+        if pk_rows:
+            matched += 1
         for (entity_pk,) in pk_rows:
             conn.execute(
                 target.insert_sql,
                 (entity_pk, name, None, name.casefold(), "locale_name", locale),
             )
             inserted += 1
-    return inserted
+    return inserted, matched
 
 
 def import_locale_aliases(
@@ -197,22 +206,34 @@ def import_locale_aliases(
     enemy_names = parse_enemy_handbook_names(payload.get("enemy_handbook"))
     candidate_names = len(op_names) + len(enemy_names)
 
-    op_inserted = _insert_locale_aliases(conn, op_names, _OPERATOR_TARGET, locale=locale)
-    enemy_inserted = _insert_locale_aliases(conn, enemy_names, _ENEMY_TARGET, locale=locale)
-    inserted = op_inserted + enemy_inserted
+    op_inserted, op_matched = _insert_locale_aliases(
+        conn, op_names, _OPERATOR_TARGET, locale=locale
+    )
+    enemy_inserted, enemy_matched = _insert_locale_aliases(
+        conn, enemy_names, _ENEMY_TARGET, locale=locale
+    )
 
-    # §V30: the source carried candidate names yet none matched an existing en/cn
-    # entity -- a game_id scheme mismatch (or the entities were never imported), which
-    # would silently attach zero aliases. Fail closed so the candidate is discarded
-    # and the active DB stays untouched (§V3), rather than promote a build whose
-    # extra-locale search is silently dead. A genuinely empty source (no candidate
-    # names) imports zero without error -- the extra-locale domain is optional.
-    if candidate_names and inserted == 0:
-        raise ImporterError(
-            f"{region}: extra-locale source carried {candidate_names} name(s) but none "
-            "matched an existing en/cn entity by game_id; refusing a silent empty "
-            "extra-locale alias build (§V30)"
-        )
+    # §V30 PER-DOMAIN (B51): the guard keys on MATCHED game_ids per domain, NOT the
+    # combined insert count. A source feeds two domains (operator + enemy, §V57); a
+    # sibling's success must not mask a per-domain game_id-scheme mismatch. If a domain
+    # carried candidate names yet none matched an existing en/cn entity by game_id, that
+    # domain's aliases would silently attach nothing while the other domain succeeds ->
+    # a promoted build whose extra-locale search is half-dead. Fail closed so the
+    # candidate is discarded and the active DB stays untouched (§V3). Keying on MATCHED
+    # (not inserted) stays correct under T109 ``INSERT OR IGNORE`` idempotency: a re-run
+    # still matches the game_ids even when the row insert is suppressed. A genuinely
+    # empty domain (no candidate names) imports zero without error -- extra locale is
+    # optional.
+    for domain, names, matched in (
+        ("operator", op_names, op_matched),
+        ("enemy", enemy_names, enemy_matched),
+    ):
+        if names and matched == 0:
+            raise ImporterError(
+                f"{region}: extra-locale {domain} source carried {len(names)} name(s) "
+                f"but none matched an existing en/cn {domain} by game_id; refusing a "
+                f"silent empty extra-locale alias build for the {domain} domain (§V30)"
+            )
     if candidate_names:
         _LOG.info(
             "extra-locale %s (%s): %d operator + %d enemy alias(es) from %d candidate name(s)",

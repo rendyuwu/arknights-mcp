@@ -33,9 +33,11 @@ class SearchEntitiesInput(StrictModel):
     the §V19 window (default 10, max 50) -- an out-of-range value is rejected.
 
     ``locale`` (§V57, additive/optional §V21) filters to entities carrying a
-    name/alias in that locale (``en``/``zh``/``ja``/``ko``). It is a NAME-tag axis,
+    jp/kr NAME alias in that locale (``ja``/``ko`` only, B50). It is a NAME-tag axis,
     NOT a fact region: a match still returns the entity's OWN en/cn facts and never
-    widens region availability (§V50). ``None`` = no locale filter (prior behavior).
+    widens region availability (§V50). The fact-region locales (``en``/``zh``) are not
+    filter values -- they are degenerate (≈ ``server=``) and asymmetric-broken (only
+    operators self-alias). ``None`` = no locale filter (prior behavior).
     """
 
     query: str = Field(min_length=1, max_length=MAX_QUERY_LEN)
