@@ -67,37 +67,39 @@ _Last reviewed: 2026-07-21._
 - **Enabled:** no — the adapter and registry entry exist, but the source stays disabled by default until the drop importer and `get_stage_drops` tool are complete and the enablement is reviewed.
 - **Current snapshot commit / retrieved at:** n/a (populated per import).
 
-## `arknights_global_official_news` — announcement metadata (v0.2 M9), **disabled by default**
+## `arknights_global_official_news` — announcement metadata (v0.2 M9), **enabled**
 
 - **Owner / maintainer:** Official Arknights (Global) — Hypergryph / Yostar.
 - **Canonical URL:** https://www.arknights.global/
+- **Feed endpoint (verified 2026-07-21, SPEC §V61):** `https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json` — the client `network_config` key `an` value with the canonical `Android` platform substituted for `{0}` (`IOS` returns identical content). Distinct first-party host per region so en/cn are never mixed (§V5).
 - **Source type / regions:** first-party announcement website; region `en`.
-- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — nothing else. Never the article body, HTML, prose, promotional images, image URLs, or full copied announcements.
-- **Adapter / transform versions:** `official_news` adapter (disabled; metadata-only maximum scope).
+- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — nothing else. The real feed names three of these differently (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`, field-mapped by the importer, §V61); those source keys are int/enum/name strings, never prose. Never the article body, HTML, prose, promotional images, image URLs, or full copied announcements.
+- **Adapter / transform versions:** `official_news` adapter (metadata-only maximum scope).
 - **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
 - **Redistribution status:** prohibited.
 - **Required attribution:** "Announcement dates from official Arknights channels © Hypergryph / Yostar."
 - **Contact / issue URL:** official channels.
-- **Enabled:** no — disabled by default. Enablement requires the metadata-only importer (SPEC §T95/§T96) to be stable plus a separate enablement review; metadata-only remains the maximum scope even when enabled.
+- **Enabled:** yes — enabled 2026-07-21 (§V56 flip, M9 review satisfied D14). Metadata-only remains the PERMANENT ceiling regardless of enabled state; widening requires a new review. The `sync` ride-along fetches this feed only when the source id is in `[sync].enabled_sources` and `[sync.arknights_global_official_news].feed_url` is set (§T106/§T107).
 - **Current snapshot commit / retrieved at:** n/a.
-- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited).
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified, §V61).
 
-## `arknights_cn_official_news` — announcement metadata (v0.2 M9), **disabled by default**
+## `arknights_cn_official_news` — announcement metadata (v0.2 M9), **enabled**
 
 - **Owner / maintainer:** Official Arknights (CN) — Hypergryph.
 - **Canonical URL:** https://ak.hypergryph.com/
+- **Feed endpoint (verified 2026-07-21, SPEC §V61):** `https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json` — distinct first-party host from the Global feed so en/cn are never mixed (§V5).
 - **Source type / regions:** first-party announcement website; region `cn`.
-- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — same metadata-only posture as the Global news source above. Never the article body, HTML, prose, images, or image URLs.
-- **Adapter / transform versions:** `official_news` adapter (disabled).
+- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — same metadata-only posture as the Global news source above, including the §V61 field-map (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`). Never the article body, HTML, prose, images, or image URLs.
+- **Adapter / transform versions:** `official_news` adapter (metadata-only maximum scope).
 - **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
 - **Redistribution status:** prohibited.
 - **Required attribution:** "Announcement dates from official Arknights channels © Hypergryph."
 - **Contact / issue URL:** official channels.
-- **Enabled:** no — disabled by default (same enablement gate as the Global news source).
+- **Enabled:** yes — enabled 2026-07-21 (same posture + ride-along gate as the Global news source).
 - **Current snapshot commit / retrieved at:** n/a.
-- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited).
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified, §V61).
 
 ## `local_snapshot` — user-supplied snapshot adapter, **enabled (adapter)**
 

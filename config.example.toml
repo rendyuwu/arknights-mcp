@@ -49,10 +49,15 @@ servers = ["en", "cn"]
 # (announce_id/title/date/url/category) -- never the article body/html/prose/image
 # (§V16). A feed outage is caught and the build still promotes game-data-only
 # (fail-open, §V58). Add the source ids to [sync].enabled_sources and set the feeds:
+# The feed URLs below were verified live 2026-07-21 (§V61). Each region points at a
+# distinct first-party host (§V5); the en URL is the client network_config `an` value
+# with the canonical `Android` platform. The feed carries announceId/title/day/month/
+# webUrl/group and the importer field-maps day+month->date, webUrl->url, group->category,
+# keeping ONLY that metadata -- never the article body/html/image (§V16).
 # [sync.arknights_global_official_news]
-# feed_url = "<official Global announcement feed URL>"
+# feed_url = "https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json"
 # [sync.arknights_cn_official_news]
-# feed_url = "<official CN announcement feed URL>"
+# feed_url = "https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json"
 
 [source_registry]
 policy_file = "./DATA_SOURCES.md"

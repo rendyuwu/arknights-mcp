@@ -16,7 +16,9 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 
 #: Bump when any allowlist below changes; stored on snapshots + provenance.
 #: 2: B46/§V59 added ``name_i18n`` to ITEM_ALLOWLIST (region-locale item names).
-FIELD_POLICY_VERSION = "2"
+#: 3: T107/§V61 added ``day``/``month``/``webUrl``/``group`` to ANNOUNCEMENT_ALLOWLIST
+#:    (real official feed field-map: day+month->date, webUrl->url, group->category).
+FIELD_POLICY_VERSION = "3"
 
 # --- Allowlisted SOURCE fields per record type (V18) -------------------------
 # Prose fields (e.g. "description") are intentionally absent and thus excluded.
@@ -189,17 +191,22 @@ PENGUIN_MATRIX_ALLOWLIST: frozenset[str] = frozenset(
     {"stageId", "itemId", "quantity", "times", "start", "end"}
 )
 
-#: One official-announcement feed entry (§V18; §T95; §V56 metadata-ONLY). The scope
-#: is the maximum permitted by D14/§V56: an ``announceId`` (the feed's stable id),
+#: One official-announcement feed entry (§V18; §T95; §T107; §V56 metadata-ONLY). The
+#: scope is the maximum permitted by D14/§V56: an ``announceId`` (the feed's stable id),
 #: a ``title`` (a short name string, kept + sanitized + length-capped like an
 #: operator/enemy name), a publication ``date``, a canonical ``url``, and a
-#: ``category`` enum. The article BODY / HTML / prose / promotional image / image-url
-#: are deliberately ABSENT and thus dropped -- the full announcement body is never
-#: stored (§V16 extends to the announcement domain, §V56). The 0010 schema likewise
-#: has no column for any of them, so a body cannot be persisted even if a future
-#: allowlist regressed.
+#: ``category`` enum. The real official feed (verified 2026-07-21, §V61) names three of
+#: these differently, so the source keys the field-map reads are ALSO allowlisted:
+#: ``day``/``month`` (ints -> normalized to an ISO ``date`` in ``parse_announcements``),
+#: ``webUrl`` (-> ``url``), and ``group`` (an enum/name string -> ``category``). Both the
+#: canonical and the source key names are kept so a feed carrying either shape maps
+#: cleanly; each is an id/int/enum/name string, never prose (§V18). The article BODY /
+#: HTML / prose / promotional image / image-url are deliberately ABSENT and thus dropped
+#: -- the full announcement body is never stored (§V16 extends to the announcement
+#: domain, §V56). The 0010 schema likewise has no column for any of them, so a body
+#: cannot be persisted even if a future allowlist regressed.
 ANNOUNCEMENT_ALLOWLIST: frozenset[str] = frozenset(
-    {"announceId", "title", "date", "url", "category"}
+    {"announceId", "title", "date", "url", "category", "day", "month", "webUrl", "group"}
 )
 
 

@@ -34,7 +34,7 @@ from arknights_mcp.importers.field_policy import (
 )
 from arknights_mcp.importers.manifest import insert_record_provenance, make_snapshot_id
 from arknights_mcp.sources.announcements import source_id_for_region
-from arknights_mcp.util.coerce import as_str
+from arknights_mcp.util.coerce import as_int, as_str
 from arknights_mcp.util.hashing import canonical_json, sha256_hex
 from arknights_mcp.util.sqlite import integrity_guard
 
@@ -95,12 +95,62 @@ def _feed_entries(feed_raw: Any) -> list[Any]:
     )
 
 
-def parse_announcements(feed_raw: Any) -> list[ParsedAnnouncement]:
-    """Transform an announcement feed into allowlisted metadata rows (§V18/§V56).
+def _normalize_date(kept: dict[str, Any], *, fetched_at: datetime) -> str | None:
+    """Resolve an ISO ``YYYY-MM-DD`` publication date from a feed entry (§V61).
+
+    Prefers an explicit ISO ``date`` when the feed carries one (the T95 shape); the
+    real official feed instead carries ``day``+``month`` ints and NO year, so the year
+    is inferred from ``fetched_at`` with a Dec->Jan rollover guard: an entry whose month
+    is later than the fetch month must belong to the prior year (e.g. a December
+    announcement first seen the following January). An out-of-range or non-int
+    day/month yields ``None`` (the date stays absent) rather than a fabricated value.
+    """
+    explicit = as_str(kept.get("date"))
+    if explicit is not None:
+        return explicit
+    month = as_int(kept.get("month"))
+    day = as_int(kept.get("day"))
+    if month is None or day is None or not (1 <= month <= 12) or not (1 <= day <= 31):
+        return None
+    year = fetched_at.year - 1 if month > fetched_at.month else fetched_at.year
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def _normalize_url(kept: dict[str, Any]) -> str | None:
+    """Prefer a canonical ``url``; fall back to the real feed's ``webUrl`` (§V61)."""
+    explicit = as_str(kept.get("url"))
+    return explicit if explicit is not None else as_str(kept.get("webUrl"))
+
+
+def _normalize_category(kept: dict[str, Any]) -> str | None:
+    """Prefer a canonical ``category``; fall back to the real feed's ``group`` (§V61).
+
+    ``group`` is an enum/name string in the real feed but may arrive as a numeric enum;
+    a ``bool`` (an ``int`` subclass) is rejected so a stray flag never reads as ``"1"``.
+    """
+    explicit = as_str(kept.get("category"))
+    if explicit is not None:
+        return explicit
+    group = kept.get("group")
+    if isinstance(group, str):
+        return group  # already sanitized by the allowlist
+    if isinstance(group, bool):
+        return None
+    if isinstance(group, int | float):
+        return str(int(group))
+    return None
+
+
+def parse_announcements(feed_raw: Any, *, fetched_at: datetime) -> list[ParsedAnnouncement]:
+    """Transform an announcement feed into allowlisted metadata rows (§V18/§V56/§V61).
 
     Only the §V56 metadata keys survive the allowlist; the article body / html /
     prose / image is dropped. An entry missing an ``announceId`` is skipped so no
-    row is fabricated without its stable id (fail-closed).
+    row is fabricated without its stable id (fail-closed). The real official feed names
+    three fields differently (verified 2026-07-21, §V61), so they are field-mapped to
+    the canonical shape: ``day``+``month``->ISO ``date`` (year inferred from
+    ``fetched_at``), ``webUrl``->``url``, ``group``->``category``; an explicit canonical
+    key still wins when present (the T95 shape).
     """
     out: list[ParsedAnnouncement] = []
     for entry in _feed_entries(feed_raw):
@@ -114,9 +164,9 @@ def parse_announcements(feed_raw: Any) -> list[ParsedAnnouncement]:
             ParsedAnnouncement(
                 announce_id=announce_id,
                 title=as_str(kept.get("title")),
-                date=as_str(kept.get("date")),
-                url=as_str(kept.get("url")),
-                category=as_str(kept.get("category")),
+                date=_normalize_date(kept, fetched_at=fetched_at),
+                url=_normalize_url(kept),
+                category=_normalize_category(kept),
                 provenance_record=kept,
             )
         )
@@ -178,8 +228,11 @@ def import_announcements(
     if resolved_source_id is None:  # pragma: no cover - guarded by _ALLOWED_REGIONS above
         raise ImporterError(f"no announcement source for region {region!r} (§V56)")
 
+    # Resolve the fetch timestamp BEFORE parsing: the year-less real feed infers each
+    # entry's year from it (§V61 day+month->date), and the snapshot row stamps it (§V17).
+    fetched_dt = fetched_at if fetched_at is not None else datetime.now(tz=UTC)
     feed_raw = adapter.fetch()
-    parsed = parse_announcements(feed_raw)
+    parsed = parse_announcements(feed_raw, fetched_at=fetched_dt)
     skipped = _skipped_count(feed_raw, parsed)
 
     # §V30: a feed that carried candidate entries but produced zero rows is a
@@ -198,7 +251,22 @@ def import_announcements(
             "announcements %s: %d feed entr(y|ies) skipped (missing announceId)", region, skipped
         )
 
-    fetched_iso = (fetched_at if fetched_at is not None else datetime.now(tz=UTC)).isoformat()
+    # §V30/§V61: rows survived the allowlist (carry an announceId) yet EVERY one has
+    # date=url=category all NULL -- the field-map found none of its keys, so the feed
+    # shape does not match what the importer normalizes. This is the §V61 degradation
+    # trap: the rows would insert, the missing-announceId guard would NOT trip, yet the
+    # since/until filter (§T96) is silently broken. Fail closed BEFORE the snapshot write
+    # so the degraded build is discarded and the active DB stays untouched (§V3). A feed
+    # whose entries genuinely carry NONE of date/url/category is indistinguishable from a
+    # shape mismatch, so both are refused rather than promoted as a working build.
+    if parsed and all(a.date is None and a.url is None and a.category is None for a in parsed):
+        raise ImporterError(
+            f"{region}: announcement feed had {len(parsed)} entr(y|ies) but none carried a "
+            "mapped date/url/category; refusing a silent degraded announcement build "
+            "(§V30/§V61) -- the feed field-map matched no known shape"
+        )
+
+    fetched_iso = fetched_dt.isoformat()
     snapshot_id = _insert_snapshot(
         conn,
         region=region,

@@ -82,7 +82,8 @@ def test_parse_keeps_only_metadata_and_drops_body() -> None:
                 "content": "prose",
                 "imageUrl": "https://cdn/x.png",
             }
-        ]
+        ],
+        fetched_at=_FETCHED,
     )
     assert len(parsed) == 1
     kept = parsed[0].provenance_record
@@ -114,8 +115,12 @@ def test_end_to_end_stores_no_body_column(tmp_path: Path) -> None:
 def test_title_control_chars_sanitized(tmp_path: Path) -> None:
     conn = _db(tmp_path)
     try:
-        # U+202E RIGHT-TO-LEFT OVERRIDE (a Cf bidi control) must be stripped.
-        fetcher = _FakeFetcher([{"announceId": "ann-1001", "title": "Ann‮ouncement"}])
+        # U+202E RIGHT-TO-LEFT OVERRIDE (a Cf bidi control) must be stripped. A mapped
+        # field (category) is present so the §V30/§V61 all-NULL degradation guard is not
+        # the thing under test here.
+        fetcher = _FakeFetcher(
+            [{"announceId": "ann-1001", "title": "Ann‮ouncement", "category": "event"}]
+        )
         import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
         title = conn.execute("SELECT title FROM announcements").fetchone()[0]
         assert "‮" not in title
@@ -313,4 +318,158 @@ def test_duplicate_announce_id_maps_to_importer_error(tmp_path: Path) -> None:
 
 def test_parse_rejects_non_list_non_wrapped_shape() -> None:
     with pytest.raises(ImporterError, match="must be a JSON array"):
-        parse_announcements("not a feed")
+        parse_announcements("not a feed", fetched_at=_FETCHED)
+
+
+# --- T107/§V61: real official feed field-map (day/month/webUrl/group) ----------
+
+
+def _real_feed_entry(announce_id: str, **extra: Any) -> dict[str, Any]:
+    """A real-official-feed-shaped entry (§V61): day/month ints, webUrl, group."""
+    return {
+        "announceId": announce_id,
+        "title": "Maintenance",
+        "day": 15,
+        "month": 7,
+        "webUrl": f"https://ak-conf.hypergryph.com/news/{announce_id}",
+        "group": "SYSTEM",
+        **extra,
+    }
+
+
+def test_parse_maps_real_feed_shape_to_canonical_fields() -> None:
+    # §V61: the real feed names three fields differently; the field-map normalizes
+    # day+month->date (year from fetched_at), webUrl->url, group->category.
+    parsed = parse_announcements(
+        [
+            {
+                "announceId": "ann-1001",
+                "title": "Event",
+                "day": 15,
+                "month": 7,
+                "webUrl": "https://ak-conf.hypergryph.com/news/ann-1001",
+                "group": "ACTIVITY",
+                # forbidden non-metadata (§V16): must never survive the allowlist.
+                "webBody": "the full article body that must never be stored",
+                "imgUrl": "https://cdn/x.png",
+            }
+        ],
+        fetched_at=_FETCHED,
+    )
+    assert len(parsed) == 1
+    ann = parsed[0]
+    assert ann.date == "2026-07-15"  # year inferred from _FETCHED (2026-07-21)
+    assert ann.url == "https://ak-conf.hypergryph.com/news/ann-1001"
+    assert ann.category == "ACTIVITY"
+    # The forbidden body/image never survived (§V16/§V18).
+    assert "webBody" not in ann.provenance_record
+    assert "imgUrl" not in ann.provenance_record
+
+
+def test_real_feed_shape_stores_non_null_date_url_category(tmp_path: Path) -> None:
+    conn = _db(tmp_path)
+    try:
+        fetcher = _FakeFetcher([_real_feed_entry("ann-1001")])
+        import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
+        row = conn.execute("SELECT date, url, category FROM announcements").fetchone()
+        assert row == (
+            "2026-07-15",
+            "https://ak-conf.hypergryph.com/news/ann-1001",
+            "SYSTEM",
+        )
+    finally:
+        conn.close()
+
+
+def test_explicit_canonical_key_wins_over_source_key() -> None:
+    # A feed carrying BOTH the canonical and the source key keeps the canonical value
+    # (the T95 shape stays valid alongside the §V61 field-map).
+    parsed = parse_announcements(
+        [
+            {
+                "announceId": "ann-1001",
+                "date": "2026-01-02T00:00:00+00:00",
+                "url": "https://canonical/url",
+                "category": "canonical",
+                "day": 15,
+                "month": 7,
+                "webUrl": "https://source/webUrl",
+                "group": "SOURCE",
+            }
+        ],
+        fetched_at=_FETCHED,
+    )
+    ann = parsed[0]
+    assert ann.date == "2026-01-02T00:00:00+00:00"
+    assert ann.url == "https://canonical/url"
+    assert ann.category == "canonical"
+
+
+def test_december_entry_seen_in_january_rolls_year_back() -> None:
+    # §V61 Dec->Jan rollover: an entry whose month is AFTER the fetch month belongs to
+    # the prior year (a December announcement first seen the following January).
+    fetched_january = datetime(2027, 1, 5, tzinfo=UTC)
+    parsed = parse_announcements(
+        [{"announceId": "ann-1001", "day": 20, "month": 12, "group": "SYSTEM"}],
+        fetched_at=fetched_january,
+    )
+    assert parsed[0].date == "2026-12-20"
+
+
+def test_numeric_group_enum_maps_to_category() -> None:
+    parsed = parse_announcements(
+        [{"announceId": "ann-1001", "day": 1, "month": 7, "group": 3}],
+        fetched_at=_FETCHED,
+    )
+    assert parsed[0].category == "3"
+
+
+def test_out_of_range_day_month_yields_no_date() -> None:
+    parsed = parse_announcements(
+        [{"announceId": "ann-1001", "day": 99, "month": 13, "group": "SYSTEM"}],
+        fetched_at=_FETCHED,
+    )
+    assert parsed[0].date is None
+    # group still maps, so the row is not an all-NULL degradation.
+    assert parsed[0].category == "SYSTEM"
+
+
+# --- §V30/§V61 degradation guard: rows survive but every mapped field is NULL --
+
+
+def test_feed_with_ids_but_no_mapped_fields_fails_closed(tmp_path: Path) -> None:
+    conn = _db(tmp_path)
+    try:
+        # Entries carry an announceId (so the missing-id guard does NOT trip) but none
+        # of date/url/category/day/month/webUrl/group -> every row all-NULL mapped.
+        fetcher = _FakeFetcher(
+            [{"announceId": "ann-1001", "title": "x"}, {"announceId": "ann-1002", "title": "y"}]
+        )
+        with pytest.raises(ImporterError, match="silent degraded announcement build"):
+            import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
+        # Fail closed BEFORE the snapshot write: no announcement snapshot persisted (§V3).
+        snaps = conn.execute(
+            "SELECT COUNT(*) FROM source_snapshots "
+            "WHERE source_id = 'arknights_global_official_news'"
+        ).fetchone()[0]
+        assert snaps == 0
+        assert conn.execute("SELECT COUNT(*) FROM announcements").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_partial_mapped_feed_promotes(tmp_path: Path) -> None:
+    # At least one row carries a mapped field -> NOT an all-NULL degradation; the build
+    # proceeds (§V61 guards the all-NULL case only, not a single sparse row).
+    conn = _db(tmp_path)
+    try:
+        fetcher = _FakeFetcher(
+            [
+                {"announceId": "ann-1001", "title": "no mapped fields"},
+                _real_feed_entry("ann-1002"),
+            ]
+        )
+        result = import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
+        assert result.announcements_inserted == 2
+    finally:
+        conn.close()
