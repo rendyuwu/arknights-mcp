@@ -409,3 +409,51 @@ def test_operator_and_aliases_feed_search_index(tmp_path: Path) -> None:
         "SELECT COUNT(*) FROM entity_fts WHERE entity_fts MATCH 'Amiya'"
     ).fetchone()[0]
     assert matched == 1
+
+
+def test_en_operator_aliases_stamped_with_en_locale(tmp_path: Path) -> None:
+    # T98/§V57: the importer stamps each alias with its region's locale at insert time
+    # (the real fresh-build "backfill" -- migration 0011's UPDATE hits an empty
+    # candidate). An en operator's aliases are English -> locale 'en'.
+    root = _adapter(tmp_path)
+    conn = build_database(tmp_path / "cand.sqlite")
+    _seed_snapshot(conn)
+    import_operators(conn, LocalSnapshotAdapter(root, server="en"), "en:test000000")
+    conn.commit()
+    locales = {row[0] for row in conn.execute("SELECT locale FROM operator_aliases")}
+    assert locales == {"en"}
+
+
+def test_cn_operator_aliases_stamped_with_zh_locale(tmp_path: Path) -> None:
+    # §V57: a cn operator's canonical strings are Chinese -> locale 'zh' (not 'cn').
+    # The locale tag is NOT the fact region -- server stays 'cn' (§V5 unchanged).
+    root = tmp_path / "cn"
+    (root / "gamedata" / "excel").mkdir(parents=True)
+    (root / "gamedata" / "excel" / "character_table.json").write_text(
+        _json.dumps(CHARACTER), encoding="utf-8"
+    )
+    (root / "gamedata" / "excel" / "skill_table.json").write_text(
+        _json.dumps(SKILLS), encoding="utf-8"
+    )
+    conn = build_database(tmp_path / "cand.sqlite")
+    conn.execute(
+        "INSERT INTO data_sources (source_id, display_name, owner_name, canonical_url, "
+        "source_type, regions_json, adapter_version, license_status, permission_status, "
+        "redistribution_status, attribution_text, enabled, last_reviewed_at) "
+        "VALUES ('local_snapshot','Local','op','local://x','t','[\"cn\"]','1','l','p','r','a',1,"
+        "'2026-07-21')"
+    )
+    conn.execute(
+        "INSERT INTO source_snapshots (snapshot_id, source_id, server, imported_at, "
+        "manifest_hash, status, field_policy_version) VALUES "
+        "('cn:test000000','local_snapshot','cn','2026-07-21T00:00:00+00:00','mh','imported','1')"
+    )
+    conn.commit()
+    import_operators(conn, LocalSnapshotAdapter(root, server="cn"), "cn:test000000")
+    conn.commit()
+    rows = conn.execute(
+        "SELECT o.server, a.locale FROM operator_aliases a "
+        "JOIN operators o ON o.operator_pk = a.operator_pk"
+    ).fetchall()
+    assert rows  # at least one alias inserted
+    assert all(server == "cn" and locale == "zh" for server, locale in rows)

@@ -134,7 +134,7 @@ T94|x|M9 migration 0010 `announcements` (announce_id, title, date, url, category
 T95|x|M9 announcement adapter `sources/announcements.py` + importer `importers/announcements.py` metadata-ONLY (announce_id/title/date/url/category); ⊥ body/html/prose/image; recursive allowlist+cap+sanitize; region en/cn; §V30 guard|V16,V18,V56,V30
 T96|x|M9 `get_announcements` MCP tool (metadata list, region, optional since/until date filter, bounded pagination); typed envelope; ⊥ prose; register both transports|V5,V19,V22,V23,V56,V14,I.tool
 T97|x|M9 accept: enabled announcement source → metadata rows (no body); disabled-by-default gate honored; en/cn separation; `get_data_sources` shows attribution + `last_reviewed`|V16,V27,V56,V5
-T98|.|M10 migration 0011 add `locale` col to alias table (+ index); backfill existing en/cn aliases w/ locale tag|V17,V57
+T98|x|M10 migration 0011 add `locale` col to alias table (+ index); backfill existing en/cn aliases w/ locale tag|V17,V57
 T99|.|M10 extra-locale alias source + importer (jp/kr canonical NAMES only, ⊥ MT prose/description); locale-tagged rows; entity fact region unchanged|V18,V57,V30
 T100|.|M10 rebuild `entity_fts` w/ locale-tagged aliases (single §V37 home, `GROUP_CONCAT ... ORDER BY` per B22); `search_entities` additive `locale` param + multi-locale match ⊥ widen region availability|V37,V50,V57,V21
 T101|.|M10 accept: jp/kr alias search resolves entity → returns entity's OWN region facts (⊥ region mix); alias locale ≠ fact region; ⊥ translated prose stored|V5,V57,V16

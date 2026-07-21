@@ -20,6 +20,15 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    (real official feed field-map: day+month->date, webUrl->url, group->category).
 FIELD_POLICY_VERSION = "3"
 
+#: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
+#: strings are in that region's language: an en entity's name is English (locale
+#: ``en``), a cn entity's name is Chinese (locale ``zh``). Two consumers share this
+#: single home (§V37): ``penguin_drops`` picks ``name_i18n.<locale>`` for an item's
+#: display name, and ``operators`` stamps the same tag on each locale alias (T98).
+#: The locale tag is NOT a fact region -- an en/cn entity still returns its OWN
+#: region facts (§V57). Migration 0011's SQL backfill mirrors this cn->zh coupling.
+REGION_TO_NAME_LOCALE: dict[str, str] = {"en": "en", "cn": "zh"}
+
 # --- Allowlisted SOURCE fields per record type (V18) -------------------------
 # Prose fields (e.g. "description") are intentionally absent and thus excluded.
 

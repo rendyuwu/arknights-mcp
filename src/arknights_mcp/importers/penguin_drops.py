@@ -33,6 +33,7 @@ from arknights_mcp.importers.field_policy import (
     FIELD_POLICY_VERSION,
     ITEM_ALLOWLIST,
     PENGUIN_MATRIX_ALLOWLIST,
+    REGION_TO_NAME_LOCALE,
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import insert_record_provenance, make_snapshot_id
@@ -47,12 +48,6 @@ _LOG = logging.getLogger(__name__)
 #: the Chinese server. ``JP``/``KR`` penguin servers are outside {en,cn} in v0.2 and
 #: are dropped -- never mislabelled as en/cn.
 PENGUIN_SERVER_TO_REGION: dict[str, str] = {"US": "en", "CN": "cn"}
-
-#: Fact region -> penguin ``name_i18n`` locale key (B46/§V59). Penguin's top-level
-#: ``name`` is the canonical *Chinese* label; the per-locale strings live under
-#: ``name_i18n`` (en/zh/ja/ko). An en build wants the English name, a cn build the
-#: Chinese one -- reading ``name`` blind mislabels every en item with cn text.
-REGION_TO_NAME_LOCALE: dict[str, str] = {"en": "en", "cn": "zh"}
 
 #: Default lifetime of a cached drop fact before it is served as ``data_stale``
 #: (§V53). The CLI/config may override; kept here as the single default home.

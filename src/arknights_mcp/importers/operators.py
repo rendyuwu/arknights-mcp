@@ -30,6 +30,7 @@ from arknights_mcp.importers.field_policy import (
     CHARACTER_ALLOWLIST,
     PHASE_ALLOWLIST,
     PHASE_ATTR_ALLOWLIST,
+    REGION_TO_NAME_LOCALE,
     SKILL_LEVEL_ALLOWLIST,
     SKILL_LINK_ALLOWLIST,
     SP_DATA_ALLOWLIST,
@@ -470,7 +471,7 @@ def insert_operators(
             )
             operator_pk = int(cur.lastrowid or 0)
             counts["operators"] += 1
-            counts["aliases"] += _insert_aliases(conn, operator_pk, op.aliases)
+            counts["aliases"] += _insert_aliases(conn, operator_pk, op.aliases, server)
             counts["phases"] += _insert_phases(conn, operator_pk, op.phases)
             counts["links"] += _insert_skill_links(
                 conn, operator_pk, op.game_id, op.skill_links, skill_pk_by_game_id
@@ -486,12 +487,24 @@ def insert_operators(
     )
 
 
-def _insert_aliases(conn: sqlite3.Connection, operator_pk: int, aliases: list[ParsedAlias]) -> int:
+def _insert_aliases(
+    conn: sqlite3.Connection, operator_pk: int, aliases: list[ParsedAlias], server: str
+) -> int:
+    # Stamp each alias with its language-locale tag (§V57/T98). An en/cn operator's
+    # canonical name+appellation are in that region's language, so the locale is
+    # derived from the fact region via the shared REGION_TO_NAME_LOCALE map (en->en,
+    # cn->zh; single §V37 home). This is the real fresh-build "backfill": migration
+    # 0011's UPDATE runs against an empty candidate, so the importer is the guarantor
+    # that new alias rows carry a locale. The tag is NOT a fact region -- the operator
+    # still returns its own region facts (§V57). An unmapped region falls back to the
+    # raw server string rather than NULL, so the column is always populated.
+    locale = REGION_TO_NAME_LOCALE.get(server, server)
     for alias in aliases:
         conn.execute(
             "INSERT INTO operator_aliases "
-            "(operator_pk, alias, language, normalized_alias, alias_type) VALUES (?, ?, ?, ?, ?)",
-            (operator_pk, alias.alias, None, alias.normalized_alias, alias.alias_type),
+            "(operator_pk, alias, language, normalized_alias, alias_type, locale) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (operator_pk, alias.alias, None, alias.normalized_alias, alias.alias_type, locale),
         )
     return len(aliases)
 
