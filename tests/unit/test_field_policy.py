@@ -15,7 +15,8 @@ def test_field_policy_version_present() -> None:
     # 2: B46/§V59 added name_i18n to ITEM_ALLOWLIST (region-locale item names).
     # 3: T107/§V61 added day/month/webUrl/group to ANNOUNCEMENT_ALLOWLIST (real feed
     #    field-map: day+month->date, webUrl->url, group->category).
-    assert FIELD_POLICY_VERSION == "3"
+    # 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
+    assert FIELD_POLICY_VERSION == "4"
 
 
 def test_allowlist_drops_unlisted_prose() -> None:

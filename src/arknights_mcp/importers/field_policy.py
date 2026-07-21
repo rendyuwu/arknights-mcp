@@ -18,7 +18,8 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #: 2: B46/§V59 added ``name_i18n`` to ITEM_ALLOWLIST (region-locale item names).
 #: 3: T107/§V61 added ``day``/``month``/``webUrl``/``group`` to ANNOUNCEMENT_ALLOWLIST
 #:    (real official feed field-map: day+month->date, webUrl->url, group->category).
-FIELD_POLICY_VERSION = "3"
+#: 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
+FIELD_POLICY_VERSION = "4"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -28,6 +29,15 @@ FIELD_POLICY_VERSION = "3"
 #: The locale tag is NOT a fact region -- an en/cn entity still returns its OWN
 #: region facts (§V57). Migration 0011's SQL backfill mirrors this cn->zh coupling.
 REGION_TO_NAME_LOCALE: dict[str, str] = {"en": "en", "cn": "zh"}
+
+#: Extra-locale alias region -> locale tag (§V57/T99). The v0.2 extra-locale alias
+#: import adds jp/kr canonical NAMES as locale-tagged aliases on the existing en/cn
+#: entities (matched by ``game_id``). The alias-region argument the importer takes
+#: (``jp``/``kr``) maps to the stored locale tag (``ja``/``ko``), the same locale
+#: codes penguin's ``name_i18n`` uses. This is NOT a fact region: a jp/kr NAME is
+#: only an extra searchable alias on an en/cn entity, and an alias match still
+#: returns the entity's OWN region facts (§V57 -- region availability never widens).
+EXTRA_LOCALE_FOR_REGION: dict[str, str] = {"jp": "ja", "kr": "ko"}
 
 # --- Allowlisted SOURCE fields per record type (V18) -------------------------
 # Prose fields (e.g. "description") are intentionally absent and thus excluded.
