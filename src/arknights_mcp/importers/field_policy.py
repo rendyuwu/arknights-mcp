@@ -189,6 +189,19 @@ PENGUIN_MATRIX_ALLOWLIST: frozenset[str] = frozenset(
     {"stageId", "itemId", "quantity", "times", "start", "end"}
 )
 
+#: One official-announcement feed entry (§V18; §T95; §V56 metadata-ONLY). The scope
+#: is the maximum permitted by D14/§V56: an ``announceId`` (the feed's stable id),
+#: a ``title`` (a short name string, kept + sanitized + length-capped like an
+#: operator/enemy name), a publication ``date``, a canonical ``url``, and a
+#: ``category`` enum. The article BODY / HTML / prose / promotional image / image-url
+#: are deliberately ABSENT and thus dropped -- the full announcement body is never
+#: stored (§V16 extends to the announcement domain, §V56). The 0010 schema likewise
+#: has no column for any of them, so a body cannot be persisted even if a future
+#: allowlist regressed.
+ANNOUNCEMENT_ALLOWLIST: frozenset[str] = frozenset(
+    {"announceId", "title", "date", "url", "category"}
+)
+
 
 @dataclass(frozen=True)
 class AllowlistResult:
