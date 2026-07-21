@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
+from arknights_mcp.mcp.tools.announcements import build_get_announcements_spec
 from arknights_mcp.mcp.tools.drops import (
     build_get_item_drops_spec,
     build_get_stage_drops_spec,
@@ -51,6 +52,7 @@ _TOOL_BUILDERS = (
     build_analyze_stage_spec,
     build_get_stage_drops_spec,
     build_get_item_drops_spec,
+    build_get_announcements_spec,
 )
 
 

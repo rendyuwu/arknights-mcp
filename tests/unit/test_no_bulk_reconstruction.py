@@ -58,6 +58,7 @@ _EXPECTED_TOOLS = frozenset(
         "analyze_stage",
         "get_stage_drops",
         "get_item_drops",
+        "get_announcements",
         "get_data_status",
         "get_data_sources",
     }
@@ -77,6 +78,7 @@ _KEYED_ENTITY_TOOLS = frozenset(  # one entity by unique key/selector, no list k
         "get_item_drops",
     }
 )
+_LIST_TOOLS = frozenset({"get_announcements"})  # region-scoped list, bounded top-level page
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
 
 #: A tool name that leaks any of these is an enumeration/admin surface (§V19/§V28).
@@ -156,7 +158,9 @@ def test_every_tool_is_classified_and_bounded(tool_registry: ToolRegistry) -> No
     # §V19: the classification must partition the *whole* registry -- an unclassified
     # tool (a plausible unbounded escape hatch) fails here and forces a reviewer to
     # place it in a bounded category.
-    covered = _SEARCH_TOOLS | _STAGE_DETAIL_TOOLS | _KEYED_ENTITY_TOOLS | _POSTURE_TOOLS
+    covered = (
+        _SEARCH_TOOLS | _STAGE_DETAIL_TOOLS | _KEYED_ENTITY_TOOLS | _LIST_TOOLS | _POSTURE_TOOLS
+    )
     assert set(tool_registry.names()) == covered
 
     for spec in tool_registry.specs():
@@ -183,6 +187,15 @@ def test_every_tool_is_classified_and_bounded(tool_registry: ToolRegistry) -> No
             assert props & {"game_id", "stage_code"}
             assert "server" in schema.get("required", [])
             assert (props & _ENUMERATION_KNOBS) == set()
+        elif spec.name in _LIST_TOOLS:
+            # Region-scoped list: server required, the ONLY enumeration knob is a
+            # bounded top-level PageParams ``page`` (page_size <= MAX); no offset/
+            # cursor/limit free-slice, so the list is walkable only page by bounded
+            # page, never dumpable.
+            assert "server" in schema.get("required", [])
+            page_size = schema["$defs"]["PageParams"]["properties"]["page_size"]
+            assert page_size["maximum"] == PAGE_SIZE_MAX
+            assert (props & _ENUMERATION_KNOBS) == {"page"}
         else:  # posture tools: no client-controlled enumeration input at all
             assert props == set()
 

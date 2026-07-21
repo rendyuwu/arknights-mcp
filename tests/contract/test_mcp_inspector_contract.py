@@ -73,6 +73,7 @@ _EXPECTED_TOOLS = (
     "analyze_stage",
     "get_stage_drops",
     "get_item_drops",
+    "get_announcements",
     "get_data_status",
     "get_data_sources",
 )
@@ -89,6 +90,7 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "analyze_stage": {"server": "en", "stage_code": "4-4"},
     "get_stage_drops": {"server": "en", "stage_code": "4-4"},
     "get_item_drops": {"server": "en", "game_id": "sugar"},
+    "get_announcements": {"server": "en"},
     "get_data_status": {},
     "get_data_sources": {},
 }

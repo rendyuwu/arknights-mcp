@@ -83,6 +83,10 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     # two operator tools), which the parity check still covers.
     ("get_stage_drops", {"server": "en", "stage_code": "4-4"}),
     ("get_item_drops", {"server": "en", "game_id": "sugar"}),
+    # No announcement feed in the promoted fixture build (the source is disabled by
+    # default, D14/§V56), so this resolves to an empty ``ok`` list -- a legitimate
+    # identical domain result across both wires, which the parity check still covers.
+    ("get_announcements", {"server": "en"}),
     ("get_data_status", {}),
     ("get_data_sources", {}),
 )
