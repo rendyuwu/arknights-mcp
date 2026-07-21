@@ -33,12 +33,30 @@ class SearchHitRow:
 # The ``(? IS NULL OR col = ?)`` pairs make server / entity_type optional filters
 # while keeping every value bound (no interpolation, §V2). ``ORDER BY rank`` is
 # FTS5's bm25 ordering: best match first.
+#
+# The locale filter (§V57) is the trailing ``(? IS NULL OR EXISTS ...)`` clause: when
+# a locale is bound, a hit survives only if its entity carries an alias tagged with
+# that locale in ``operator_aliases`` / ``enemy_aliases`` (the two alias tables that
+# carry the §T98 ``locale`` column). Stages have no alias table, so a locale-scoped
+# search never returns a stage -- correct, since a stage carries no locale name. The
+# ``EXISTS`` sub-selects key on the UNINDEXED ``entity_pk`` + ``entity_type`` so the
+# filter is a pure post-match narrowing; every value stays bound (§V2). A ``NULL``
+# locale short-circuits the whole clause, so the unfiltered path is byte-unchanged
+# (§V21 additive).
 _SEARCH_SQL = (
     "SELECT entity_type, server, entity_pk, game_id, name, stage_code "
     "FROM entity_fts "
     "WHERE entity_fts MATCH ? "
     "AND (? IS NULL OR server = ?) "
     "AND (? IS NULL OR entity_type = ?) "
+    "AND (? IS NULL OR ("
+    "  (entity_type = 'operator' AND EXISTS ("
+    "    SELECT 1 FROM operator_aliases oa "
+    "    WHERE oa.operator_pk = entity_fts.entity_pk AND oa.locale = ?)) "
+    "  OR (entity_type = 'enemy' AND EXISTS ("
+    "    SELECT 1 FROM enemy_aliases ea "
+    "    WHERE ea.enemy_pk = entity_fts.entity_pk AND ea.locale = ?)) "
+    ")) "
     "ORDER BY rank "
     "LIMIT ?"
 )
@@ -80,15 +98,29 @@ class SearchRepository(Repository):
         *,
         server: str | None,
         entity_type: str | None,
+        locale: str | None = None,
         limit: int,
     ) -> list[SearchHitRow]:
         """Return up to ``limit`` ranked hits for the FTS ``match`` expression.
 
         ``match`` is a pre-built FTS5 expression (already tokenized + quoted by the
-        service); ``server`` / ``entity_type`` are optional filters (``None`` =
-        unfiltered). ``limit`` is expected pre-clamped to the §V19 bound.
+        service); ``server`` / ``entity_type`` / ``locale`` are optional filters
+        (``None`` = unfiltered). A ``locale`` filter (§V57) keeps only entities
+        carrying an alias in that locale (operators/enemies; a stage has no locale
+        alias so a locale-scoped search never returns one). ``limit`` is expected
+        pre-clamped to the §V19 bound.
         """
-        params = (match, server, server, entity_type, entity_type, limit)
+        params = (
+            match,
+            server,
+            server,
+            entity_type,
+            entity_type,
+            locale,
+            locale,
+            locale,
+            limit,
+        )
         return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
 
     def search_stages(

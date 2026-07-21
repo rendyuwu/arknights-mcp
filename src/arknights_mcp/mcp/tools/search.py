@@ -50,8 +50,10 @@ _ENTITIES_TOOL_TITLE = "Search entities"
 _ENTITIES_TOOL_DESCRIPTION = (
     "Search indexed Arknights operators, enemies, and stages by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
-    "get_operator / get_enemy / get_stage for full facts. Results are bounded "
-    "(default 10, max 50) and en/cn are never mixed."
+    "get_operator / get_enemy / get_stage for full facts. An optional locale "
+    "(en/zh/ja/ko) filters to entities carrying a name/alias in that locale -- a "
+    "name-tag filter only, it never changes an entity's own en/cn region facts. "
+    "Results are bounded (default 10, max 50) and en/cn are never mixed."
 )
 _STAGES_TOOL_NAME = "search_stages"
 _STAGES_TOOL_TITLE = "Search stages"
@@ -158,6 +160,7 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 query=parsed.query,
                 server=parsed.server,
                 entity_type=parsed.entity_type,
+                locale=parsed.locale,
                 limit=parsed.limit,
             ),
             not_found_message=_ENTITIES_NOT_FOUND_MESSAGE,

@@ -33,6 +33,15 @@ from pydantic import BaseModel, ConfigDict, Field
 #: §V5 supported regions. A factual tool requires one; search may filter by one.
 Region = Literal["en", "cn"]
 
+#: §V57 searchable name/alias locales: the fact-region locales (``en``/``zh``) plus
+#: the extra-locale alias tags (``ja``/``ko``). This is the ``search_entities``
+#: ``locale`` filter domain -- a NAME-tag axis, NOT a fact region: a ``locale`` match
+#: returns the entity's OWN en/cn facts and never widens region availability (§V50).
+#: Kept in lock-step with the ``field_policy`` locale maps
+#: (``REGION_TO_NAME_LOCALE`` values ∪ ``EXTRA_LOCALE_FOR_REGION`` values) by a §V37
+#: regression test rather than an import, so ``models`` stays below ``importers``.
+SearchLocale = Literal["en", "zh", "ja", "ko"]
+
 #: §V19 search-result window. Single home for these bounds (§V37): the search
 #: service imports them rather than re-declaring, so model + service never diverge.
 SEARCH_DEFAULT_LIMIT = 10

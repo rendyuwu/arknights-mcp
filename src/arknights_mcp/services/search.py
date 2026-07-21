@@ -150,6 +150,7 @@ def search_entities(
     query: str,
     server: str | None = None,
     entity_type: str | None = None,
+    locale: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> SearchResult:
     """Search indexed entities for ``query``. Read-only; parameterized SQL only (§V2).
@@ -161,6 +162,12 @@ def search_entities(
     *before* asserting absence (§V24/§V50): an unsupported region or a region with
     no active snapshot returns ``unsupported_server`` / ``data_stale``, never a bare
     ``not_found`` (see :func:`_region_gate`). Both transports call this (§V14).
+
+    ``locale`` (§V57) filters to entities carrying a name/alias in that locale
+    (``en``/``zh``/``ja``/``ko``); it is a NAME-tag axis, NOT a fact region. The
+    region gate runs *independently* of ``locale`` -- a jp/kr locale search over a
+    region with no snapshot is still ``data_stale``, so a locale match never widens
+    region availability (§V50/§V57). ``None`` = no locale filter.
     """
     bounded = _validate_limit(limit)
     gate = _region_gate(conn, server)
@@ -171,7 +178,7 @@ def search_entities(
         return SearchResult(status="not_found", query=query, hits=())
 
     repo = SearchRepository(conn)
-    rows = repo.search(match, server=server, entity_type=entity_type, limit=bounded)
+    rows = repo.search(match, server=server, entity_type=entity_type, locale=locale, limit=bounded)
     return _result_from_rows(query, rows)
 
 

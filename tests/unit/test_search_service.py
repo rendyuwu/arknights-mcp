@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from arknights_mcp.db.connection import open_read_only
-from arknights_mcp.db.migrations import build_database
+from arknights_mcp.db.migrations import build_database, open_writable
+from arknights_mcp.importers.extra_locale_aliases import import_locale_aliases
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.importers.search_index import build_search_index
+from arknights_mcp.importers.search_index import build_search_index, rebuild_search_index
 from arknights_mcp.services.search import MAX_LIMIT, search_entities, search_stages
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
@@ -27,6 +29,16 @@ from arknights_mcp.sources.registry import load_source_registry
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
+
+
+class _FakeFetcher:
+    """In-memory extra-locale fetcher (no network, §V1) for the T100 rebuild test."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = payload
+
+    def fetch(self) -> dict[str, Any]:
+        return self._payload
 
 
 @pytest.fixture
@@ -237,3 +249,118 @@ def test_operator_tags_and_aliases_indexed(tmp_path: Path) -> None:
         by_alias = search_entities(conn, query="Rhodes").hits
         assert any(h.game_id == "char_002_amiya" for h in by_tag)
         assert any(h.game_id == "char_002_amiya" for h in by_alias)
+
+
+# --- §T100 / §V57: locale-tagged aliases in the rebuilt FTS index --------------
+
+
+def _build_with_jp_alias(tmp_path: Path) -> Path:
+    """Build the en 4-4 candidate, attach a jp NAME alias to an existing enemy, and
+    rebuild the FTS index so it carries the locale-tagged alias (§T100/§V37).
+
+    Exercises the single §V37 rebuild home (:func:`rebuild_search_index`): the jp
+    alias is inserted into ``enemy_aliases`` AFTER the in-pipeline build, then the
+    index is rebuilt from the surviving rows so the ja alias becomes searchable --
+    the exact T100 "rebuild ``entity_fts`` with locale-tagged aliases" flow.
+    """
+    path = tmp_path / "cand.sqlite"
+    adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
+    build_candidate(
+        path,
+        [ServerImport("en", adapter, "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+    )
+    writer = open_writable(path)
+    try:
+        # The fixture 4-4 carries enemy_1105_drone (en display "Drone"); attach its
+        # katakana NAME as a jp locale alias via the T99 importer, then rebuild.
+        fetcher = _FakeFetcher(
+            {
+                "character_table": {},
+                "enemy_handbook": {"enemyData": {"enemy_1105_drone": {"name": "ドローン"}}},
+            }
+        )
+        import_locale_aliases(writer, fetcher, region="jp")
+        rebuild_search_index(writer)
+        writer.commit()
+    finally:
+        writer.close()
+    return path
+
+
+def test_jp_alias_is_searchable_after_rebuild(tmp_path: Path) -> None:
+    # §T100/§V57: the rebuilt index carries the locale-tagged ja alias, so the
+    # katakana NAME resolves the en enemy -- and the hit returns the entity's OWN
+    # en region (an alias match never widens/relabels region, §V5/§V57).
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="ドローン").hits
+        drone = next(h for h in hits if h.game_id == "enemy_1105_drone")
+        assert drone.server == "en"
+
+
+def test_locale_filter_narrows_to_locale_alias(tmp_path: Path) -> None:
+    # §V57: a locale filter keeps only entities carrying an alias in that locale.
+    # The drone got a ja alias, so it survives a locale=ja filter; there is no ko
+    # alias in this build, so locale=ko yields nothing for the same query.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        ja = search_entities(conn, query="drone", locale="ja").hits
+        assert any(h.game_id == "enemy_1105_drone" for h in ja)
+        ko = search_entities(conn, query="drone", locale="ko")
+        assert ko.status == "not_found"
+        assert ko.hits == ()
+
+
+def test_locale_none_is_unchanged_from_prior_behavior(tmp_path: Path) -> None:
+    # §V21: locale defaults to None -> the search is byte-for-byte the prior path.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        assert (
+            search_entities(conn, query="drone").hits
+            == search_entities(conn, query="drone", locale=None).hits
+        )
+
+
+def test_locale_does_not_widen_region_availability(tmp_path: Path) -> None:
+    # §V50/§V57: an extra-locale search NEVER widens region availability. This build
+    # has an en snapshot only. A ja-locale search scoped to cn (no cn snapshot) is
+    # still ``data_stale`` -- the region gate runs independently of locale, so a
+    # jp/kr alias can never make a region look present when it is not.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        stale = search_entities(conn, query="drone", locale="ja", server="cn")
+        assert stale.status == "data_stale"
+        assert stale.hits == ()
+        # Scoped to the region that DOES have the snapshot, the ja alias resolves and
+        # the facts stay en (§V57: alias match returns the entity's OWN region).
+        ok = search_entities(conn, query="drone", locale="ja", server="en")
+        assert ok.status == "ok"
+        assert all(h.server == "en" for h in ok.hits)
+
+
+def test_locale_filter_excludes_stages(tmp_path: Path) -> None:
+    # §V57: stages have no alias table, so a locale-scoped search never returns a
+    # stage. 4-4 matches by stage_code unfiltered, but drops under any locale filter.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        assert any(h.entity_type == "stage" for h in search_entities(conn, query="4-4").hits)
+        assert search_entities(conn, query="4-4", locale="ja").hits == ()
+
+
+def test_search_locale_domain_matches_field_policy_maps() -> None:
+    # §V37: the ``SearchLocale`` filter domain is kept in lock-step with the single
+    # ``field_policy`` locale-map home rather than re-declared. The searchable
+    # locales are exactly the fact-region locales (REGION_TO_NAME_LOCALE values) plus
+    # the extra-locale alias tags (EXTRA_LOCALE_FOR_REGION values); a new locale added
+    # to either map without widening ``SearchLocale`` (or vice versa) fails here.
+    from typing import get_args
+
+    from arknights_mcp.importers.field_policy import (
+        EXTRA_LOCALE_FOR_REGION,
+        REGION_TO_NAME_LOCALE,
+    )
+    from arknights_mcp.models.common import SearchLocale
+
+    expected = set(REGION_TO_NAME_LOCALE.values()) | set(EXTRA_LOCALE_FOR_REGION.values())
+    assert set(get_args(SearchLocale)) == expected
