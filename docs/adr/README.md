@@ -13,3 +13,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0004](0004-code-only-distribution.md) | Code-only distribution | D4, D11 | §V16, §V17, §V19 |
 | [0005](0005-source-registry-and-takedown.md) | Source registry, attribution, takedown/purge | D13, D14 | §V20, §V27, §V28 |
 | [0006](0006-oauth-oidc-remote-auth.md) | OAuth/OIDC private remote; fail closed | D15, D12, D13 | §V9, §V10, §V11, §V12 |
+| [0007](0007-banner-archive-carve.md) | Banner archive carve — historical FACT in, planning out | D5 | §V62, §V16, §V5 |

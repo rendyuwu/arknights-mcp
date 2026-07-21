@@ -21,10 +21,12 @@ EXPECTED_ADRS = [
     "0004-code-only-distribution.md",
     "0005-source-registry-and-takedown.md",
     "0006-oauth-oidc-remote-auth.md",
+    "0007-banner-archive-carve.md",
 ]
 
-# Invariants T6 cites — each must be referenced by at least one ADR.
-REQUIRED_INVARIANT_CITES = ["V1", "V3", "V4", "V9", "V14"]
+# Invariants the ADR corpus must cite — each referenced by at least one ADR.
+# T110 adds §V62 (banner archive carve, ADR 0007).
+REQUIRED_INVARIANT_CITES = ["V1", "V3", "V4", "V9", "V14", "V62"]
 
 
 @pytest.mark.parametrize("name", EXPECTED_ADRS)
