@@ -76,11 +76,19 @@ STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 #: real ``sync`` silently builds ``operators=modules=0`` and ``get_operator`` /
 #: ``compare_operator_modules`` return empty (B36; §V41). ``uniequip_data`` is read
 #: from ``uniequip_table``'s ``equipDict`` and is not a separate file.
+#:
+#: ``gacha_table`` (§T111/§V62) is the same class: the banner-archive importer reads
+#: its ``gachaPoolClient`` from the SAME snapshot as the combat data, but a banner
+#: is a standalone FACT and a combat-only snapshot legitimately lacks the table, so
+#: it too is fetched every sync yet tolerated-if-absent (404/410 skip+warn) rather
+#: than a mandatory :data:`CORE_FILES` entry (§V62; the §V41 introspection test still
+#: asserts the banner importer's default path is in this staged set).
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/character_table.json",
     "gamedata/excel/skill_table.json",
     "gamedata/excel/uniequip_table.json",
     "gamedata/excel/battle_equip_table.json",
+    "gamedata/excel/gacha_table.json",
 )
 
 

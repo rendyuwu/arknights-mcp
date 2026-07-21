@@ -19,7 +19,9 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #: 3: T107/§V61 added ``day``/``month``/``webUrl``/``group`` to ANNOUNCEMENT_ALLOWLIST
 #:    (real official feed field-map: day+month->date, webUrl->url, group->category).
 #: 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
-FIELD_POLICY_VERSION = "4"
+#: 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists (banner
+#:    archive: typed schedule facts + typed featured-op ids only, no gacha prose).
+FIELD_POLICY_VERSION = "5"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -227,6 +229,34 @@ PENGUIN_MATRIX_ALLOWLIST: frozenset[str] = frozenset(
 ANNOUNCEMENT_ALLOWLIST: frozenset[str] = frozenset(
     {"announceId", "title", "date", "url", "category", "day", "month", "webUrl", "group"}
 )
+
+#: Scalar banner-archive fields from a ``gacha_table.json`` ``gachaPoolClient`` entry
+#: (§V18; §T111; §V62 metadata-ONLY). All structural: ``gachaPoolId`` is the pool's
+#: game id, ``gachaPoolName`` a short display label (kept + sanitized + length-capped
+#: like an operator/enemy name), ``openTime``/``endTime`` unix-epoch ints (normalized
+#: to ISO in the importer), ``gachaRuleType`` an enum. The prose/promotional fields
+#: ``gachaPoolSummary``/``gachaPoolDetail``/``dynMeta`` html/image are deliberately
+#: ABSENT and thus dropped -- the banner archive is a metadata-only historical FACT,
+#: never gacha prose (§V16 release-artifact + runtime store extends to the banner
+#: domain, §V56 ceiling class). The typed featured-op ids live under the nested
+#: ``limitParam``/``dynMeta`` parents, which are NOT kept whole here (``dynMeta`` also
+#: carries prose): each is sub-extracted with its own allowlist below, so no prose
+#: leaf can ride in via a raw nested structure (§V31), the same pattern as
+#: ``uniequip_table.itemCost`` (ITEM_COST_ALLOWLIST) and ``overwrittenData``.
+BANNER_ALLOWLIST: frozenset[str] = frozenset(
+    {"gachaPoolId", "gachaPoolName", "openTime", "endTime", "gachaRuleType"}
+)
+
+#: The ``limitParam`` sub-block of a ``LIMITED`` banner. ``limitedCharId`` is the
+#: single featured limited operator's char id (an id-charset string, not prose);
+#: everything else (event/mission metadata) is dropped (§V18; §V62 typed featured-op).
+LIMIT_PARAM_ALLOWLIST: frozenset[str] = frozenset({"limitedCharId"})
+
+#: The ``dynMeta`` sub-block of a CLASSIC-family banner. ``attainRare6CharList`` is the
+#: array of featured 6-star char ids (id-charset strings). ``dynMeta`` ALSO carries
+#: prose/html/image (``gachaPoolSummary``-style rate-up copy), so it is NEVER kept
+#: whole -- only this one typed array survives (§V18/§V16 metadata-only; §V62).
+DYN_META_ALLOWLIST: frozenset[str] = frozenset({"attainRare6CharList"})
 
 
 @dataclass(frozen=True)

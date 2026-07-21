@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from arknights_mcp.importers.field_policy import (
+    BANNER_ALLOWLIST,
+    DYN_META_ALLOWLIST,
     ENEMY_HANDBOOK_ALLOWLIST,
     FIELD_POLICY_VERSION,
+    LIMIT_PARAM_ALLOWLIST,
     OVERWRITTEN_DATA_ALLOWLIST,
     apply_allowlist,
 )
@@ -16,7 +19,8 @@ def test_field_policy_version_present() -> None:
     # 3: T107/§V61 added day/month/webUrl/group to ANNOUNCEMENT_ALLOWLIST (real feed
     #    field-map: day+month->date, webUrl->url, group->category).
     # 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
-    assert FIELD_POLICY_VERSION == "4"
+    # 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists.
+    assert FIELD_POLICY_VERSION == "5"
 
 
 def test_allowlist_drops_unlisted_prose() -> None:
@@ -53,6 +57,57 @@ def test_overwritten_data_allowlist_drops_variant_prose() -> None:
     assert "prefabKey" in result.kept
     assert "attributes" in result.kept
     assert "motion" in result.kept
+
+
+def test_banner_allowlist_keeps_typed_schedule_drops_prose() -> None:
+    """§T111/§V62/§V18: a gacha_table gachaPoolClient entry carries typed schedule
+    facts alongside gacha prose (gachaPoolSummary/gachaPoolDetail); only the
+    structural keys survive the allowlist, so the banner archive is metadata-only."""
+    raw = {
+        "gachaPoolId": "LIMITED_1",
+        "gachaPoolName": "Limited Headhunting",
+        "openTime": 1700000000,
+        "endTime": 1701209600,
+        "gachaRuleType": "LIMITED",
+        "gachaPoolSummary": "prose that must never be imported",
+        "gachaPoolDetail": "prose that must never be imported",
+        "limitParam": {"limitedCharId": "char_002_amiya"},
+        "dynMeta": {"attainRare6CharList": ["char_002_amiya"]},
+    }
+    result = apply_allowlist(raw, BANNER_ALLOWLIST)
+    assert set(result.kept) <= BANNER_ALLOWLIST
+    assert result.kept["gachaPoolId"] == "LIMITED_1"
+    assert result.kept["gachaRuleType"] == "LIMITED"
+    # Prose + the prose-bearing nested parents are dropped: the typed featured-op ids
+    # under limitParam/dynMeta are sub-extracted with their own allowlists (§V31),
+    # never kept whole here (dynMeta also carries rate-up html/image, §V16/§V62).
+    assert "gachaPoolSummary" in result.dropped
+    assert "gachaPoolDetail" in result.dropped
+    assert "limitParam" in result.dropped
+    assert "dynMeta" in result.dropped
+
+
+def test_limit_param_allowlist_keeps_only_featured_char_id() -> None:
+    """§V62: a LIMITED banner's limitParam yields only the featured limited char id;
+    event/mission metadata is dropped (typed featured-op, not prose)."""
+    raw = {"limitedCharId": "char_1028_texas2", "freeCount": 0, "leastFragCount": 300}
+    result = apply_allowlist(raw, LIMIT_PARAM_ALLOWLIST)
+    assert set(result.kept) == {"limitedCharId"}
+    assert result.kept["limitedCharId"] == "char_1028_texas2"
+    assert "freeCount" in result.dropped
+
+
+def test_dyn_meta_allowlist_keeps_only_attain_list_drops_html() -> None:
+    """§V62/§V16: a CLASSIC-family banner's dynMeta yields only the typed
+    attainRare6CharList array; rate-up html/image prose never survives."""
+    raw = {
+        "attainRare6CharList": ["char_002_amiya", "char_003_kalts"],
+        "rateUpHtml": "<@ga.up>prose that must never be imported</>",
+    }
+    result = apply_allowlist(raw, DYN_META_ALLOWLIST)
+    assert set(result.kept) == {"attainRare6CharList"}
+    assert result.kept["attainRare6CharList"] == ["char_002_amiya", "char_003_kalts"]
+    assert "rateUpHtml" in result.dropped
 
 
 def test_allowlist_sanitizes_kept_strings() -> None:

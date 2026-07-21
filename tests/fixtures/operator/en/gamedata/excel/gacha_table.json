@@ -1,0 +1,35 @@
+{
+  "gachaPoolClient": [
+    {
+      "gachaPoolId": "LIMITED_TEST_1",
+      "gachaPoolName": "Limited Headhunting Test",
+      "openTime": 1700000000,
+      "endTime": 1701209600,
+      "gachaRuleType": "LIMITED",
+      "gachaPoolSummary": "prose summary that must never be imported",
+      "gachaPoolDetail": "prose detail that must never be imported",
+      "limitParam": {
+        "limitedCharId": "char_002_amiya",
+        "freeCount": 0
+      }
+    },
+    {
+      "gachaPoolId": "CLASSIC_TEST_1",
+      "gachaPoolName": "Classic Headhunting Test",
+      "openTime": 1702000000,
+      "endTime": 1703209600,
+      "gachaRuleType": "CLASSIC",
+      "dynMeta": {
+        "attainRare6CharList": ["char_002_amiya"],
+        "rateUpHtml": "<@ga.up>prose that must never be imported</>"
+      }
+    },
+    {
+      "gachaPoolId": "NORMAL_TEST_1",
+      "gachaPoolName": "Standard Headhunting Test",
+      "openTime": 1704000000,
+      "endTime": 1705209600,
+      "gachaRuleType": "NORMAL"
+    }
+  ]
+}
