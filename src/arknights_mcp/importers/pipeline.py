@@ -31,6 +31,7 @@ from pathlib import Path
 
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
+from arknights_mcp.importers.banners import import_banners
 from arknights_mcp.importers.enemies import ImporterError, import_enemies
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
 from arknights_mcp.importers.modules import import_modules
@@ -75,6 +76,7 @@ class SnapshotSummary:
     operators: int = 0
     skills: int = 0
     modules: int = 0
+    banners: int = 0
 
 
 @dataclass(frozen=True)
@@ -171,6 +173,11 @@ def _import_one(
     # a snapshot without uniequip_table imports zero (optional per snapshot, §V30
     # is combat-scoped).
     modules = import_modules(conn, job.adapter, record.snapshot_id)
+    # Banners soft-resolve featured char ids to an operator_pk, so they import after
+    # operators; a snapshot without gacha_table imports zero (optional per snapshot,
+    # B36/§V41). A non-empty gacha_table yielding zero banners fails closed (§V30,
+    # enforced inside import_banners), but an absent table is a legitimate empty build.
+    banners = import_banners(conn, job.adapter, record.snapshot_id)
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
@@ -188,6 +195,7 @@ def _import_one(
         operators=operators.operators_inserted,
         skills=operators.skills_inserted,
         modules=modules.modules_inserted,
+        banners=banners.banners_inserted,
     )
 
 

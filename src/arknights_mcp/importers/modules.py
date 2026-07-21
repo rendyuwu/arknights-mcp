@@ -38,6 +38,7 @@ from arknights_mcp.importers.field_policy import (
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import insert_record_provenance
+from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
@@ -281,16 +282,6 @@ def parse_modules(uniequip_raw: Any, battle_equip_raw: Any) -> list[ParsedModule
 # --- insertion ---------------------------------------------------------------
 
 
-def _operator_pk_map(conn: sqlite3.Connection, server: str) -> dict[str, int]:
-    """``{operator game_id: operator_pk}`` for ``server`` (module FK resolution)."""
-    return {
-        str(game_id): int(operator_pk)
-        for game_id, operator_pk in conn.execute(
-            "SELECT game_id, operator_pk FROM operators WHERE server = ?", (server,)
-        )
-    }
-
-
 def insert_modules(
     conn: sqlite3.Connection,
     parsed: list[ParsedModule],
@@ -306,11 +297,11 @@ def insert_modules(
     reference. A duplicate ``(server, game_id)`` collides on UNIQUE and raises a
     typed :class:`ImporterError` rather than tearing down the build (§V33).
     """
-    operator_pk_by_game_id = _operator_pk_map(conn, server)
+    operator_pk_map = operator_pk_by_game_id(conn, server)
     modules_inserted = 0
     levels_inserted = 0
     for module in parsed:
-        operator_pk = operator_pk_by_game_id.get(module.operator_game_id)
+        operator_pk = operator_pk_map.get(module.operator_game_id)
         if operator_pk is None:
             _LOG.warning(
                 "module %s references operator %r absent from operators; skipping",

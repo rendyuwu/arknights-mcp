@@ -93,6 +93,9 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     operator_pks = _select_ids(
         conn, "SELECT operator_pk FROM operators WHERE provenance_id IN (%s)", prov_ids
     )
+    banner_pks = _select_ids(
+        conn, "SELECT banner_pk FROM banners WHERE provenance_id IN (%s)", prov_ids
+    )
     skill_pks = _select_ids(
         conn, "SELECT skill_pk FROM skills WHERE provenance_id IN (%s)", prov_ids
     )
@@ -120,6 +123,15 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     _delete_in(conn, "stage_routes", "stage_pk", stage_pks)
     _delete_in(conn, "stage_waves", "stage_pk", stage_pks)
     _delete_in(conn, "stages", "stage_pk", stage_pks)
+
+    # banner domain (§V32/§V62): featured-op children -> banners, before the operator
+    # domain below. banner_featured_ops.operator_pk is a nullable FK into operators, so a
+    # non-purged banner whose featured op resolves to a purged operator makes the operator
+    # delete below raise (fail-closed, §V20) -- the same shared-entity guard as a stage
+    # variant's prefab base. banners are deleted by their own provenance (banner_pks), so
+    # a non-purged source's banners are untouched.
+    _delete_in(conn, "banner_featured_ops", "banner_pk", banner_pks)
+    _delete_in(conn, "banners", "banner_pk", banner_pks)
 
     # operator domain: children -> parents (each core row carries its own
     # provenance; sub-tables link through the parent, §12.3).

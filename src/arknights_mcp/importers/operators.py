@@ -172,6 +172,22 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
+    """``{operator game_id: operator_pk}`` for ``server`` (the single §V37 home).
+
+    Shared by the module importer (``modules.operator_pk`` FK resolution) and the banner
+    importer (featured-op soft-resolve, §V62/§T113): both need to map a source char id to
+    an internal ``operator_pk`` for the same server, so the lookup lives in exactly one
+    place rather than being copy-pasted per consumer.
+    """
+    return {
+        str(game_id): int(operator_pk)
+        for game_id, operator_pk in conn.execute(
+            "SELECT game_id, operator_pk FROM operators WHERE server = ?", (server,)
+        )
+    }
+
+
 # --- skills ------------------------------------------------------------------
 
 
