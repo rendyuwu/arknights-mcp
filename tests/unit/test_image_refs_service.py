@@ -9,8 +9,8 @@ One test per invariant the task cites (§V63/§V1/§V24/§V37/§C):
 * **§V1 / §V24 no network** -- the module imports no network library and derives URLs
   with a socket-open guard tripped, proving it never fetches/HEADs/validates a link.
 * **§V37 single home** -- every derived URL is built from the one ``_RAW_BASE`` constant.
-* **§V63 access-controlled gate (ADR 0009)** -- ``[image_refs].enabled`` is OFF by default
-  and carries NO deployment-posture term: it emits on any *startable* posture (loopback dev
+* **§V63 access-controlled gate (ADR 0009 / §T124)** -- ``[image_refs].enabled`` is ON by
+  default and carries NO deployment-posture term: it emits on any *startable* posture (loopback dev
   OR an authenticated non-loopback / behind-proxy remote), because §V9 already fails startup
   closed on any anonymous non-loopback surface. "Private" means access-controlled, not
   loopback-only (D4 refined).
@@ -177,13 +177,14 @@ _AUTH_OIDC = {
 }
 
 
-def test_image_refs_off_by_default() -> None:
-    # Default AppConfig and the shipped example both leave the surface OFF (§C/§V63).
-    assert AppConfig().image_refs.enabled is False
-    assert AppConfig().image_refs_enabled is False
+def test_image_refs_on_by_default() -> None:
+    # §T124 (founder 2026-07-22): the surface is ON by default -- both the default AppConfig
+    # and the shipped example config leave the config half of the gate enabled (§C/§V63).
+    assert AppConfig().image_refs.enabled is True
+    assert AppConfig().image_refs_enabled is True
     cfg = load_config(EXAMPLE_CONFIG)
-    assert cfg.image_refs.enabled is False
-    assert cfg.image_refs_enabled is False
+    assert cfg.image_refs.enabled is True
+    assert cfg.image_refs_enabled is True
 
 
 def test_gate_active_on_local_deployment() -> None:

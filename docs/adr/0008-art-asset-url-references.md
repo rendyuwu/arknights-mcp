@@ -1,6 +1,6 @@
 # ADR 0008: Art asset URL references — derive, link out, never bundle
 
-- **Status:** Accepted (amended by [ADR 0009](0009-image-refs-authenticated-emit.md) — image_refs may emit on an authenticated deployment, not loopback-only)
+- **Status:** Accepted (amended by [ADR 0009](0009-image-refs-authenticated-emit.md) — image_refs may emit on an authenticated deployment, not loopback-only; §T124 (founder 2026-07-22) flipped it ON by default)
 - **Date:** 2026-07-22
 - **Founder decision(s):** D5 (MVP domain scope — reverses "no redistributed map
   images" *for URL references only*; image bytes stay excluded). Touches D4
@@ -96,9 +96,13 @@ Guardrails:
   `operator_pk` resolved). No breaking change.
 - **No bulk surface (§V19).** Refs attach to a single already-fetched entity.
   No tool enumerates, lists, pages, or searches the art catalog.
-- **Off by default, private-only.** Disabled unless explicitly enabled in
-  config; cannot be turned on for any non-loopback/public deployment by a single
-  flag (inherits ADR 0004 / D4). Consistent with §C private+non-commercial.
+- **Access-controlled, private+non-commercial.** As of ADR 0009 the surface emits on
+  any startable (authenticated OIDC/bearer, or loopback dev) deployment, and as of §T124
+  (founder 2026-07-22) it is **ON by default** — all existing user features are
+  default-enabled. §V9 still fails startup closed on any anonymous non-loopback surface,
+  so no single flag can expose it to an anonymous public deployment (inherits D4).
+  Consistent with §C private+non-commercial. Kill switch (§V20): the `[image_refs].enabled`
+  flag or the `arknights_game_resource` source enable/disable.
 - **Region integrity (§V5).** The ref is emitted inside the entity's own region
   envelope; the game_id is already region-scoped, so en/cn never mix.
 - **Zero code intake.** We reference images by URL only and copy **none** of the

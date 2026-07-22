@@ -13,8 +13,9 @@ does) -- not a hand-passed ``image_refs_enabled=True``.
 Two knobs make the acceptance real rather than a re-run of the wiring unit tests:
 
 * it goes through ``build_tool_registry(... image_refs_enabled=refs_enabled(...))`` so the
-  gate is the production computation, and the DISABLED case uses the SHIPPED registry
-  (source ``enabled=false``) so the default posture is what actually ships; and
+  gate is the production computation, and the ENABLED case uses the SHIPPED registry
+  (source ``enabled=true`` as of §T124) so the default posture is what actually ships,
+  while the DISABLED case models the §V20 kill switch (``source disable``); and
 * it reaches past the served envelope into the built database to prove §V16/§V63
   store-nothing: no derived URL and no art byte is persisted -- the URL exists only at
   response-build time.
@@ -24,8 +25,9 @@ One test group per cited invariant:
 * **§V63** -- an enabled image-ref source makes ``get_operator`` carry the exact DERIVED
   portrait ``_1``/``_2`` + avatar base/``_2`` + skin ``_1b``/``_2b`` URLs and ``get_enemy``
   the enemy base URL, each stamped with the ``arknights_game_resource`` ``source_id``;
-  the DEFAULT (shipped, source-disabled) posture emits no ``image_refs`` at all; and the
-  ``#``/``+`` percent-encode holds through the real tool path on a skin-suffix id.
+  the DEFAULT (shipped, source-enabled §T124) posture emits refs, and the §V20 kill switch
+  (``source disable``) suppresses them; and the ``#``/``+`` percent-encode holds through the
+  real tool path on a skin-suffix id.
 * **§V1** -- the whole tool path opens no socket: with socket creation booby-trapped the
   enabled ``get_operator``/``get_enemy`` calls still emit refs, proving the server never
   fetches/HEADs/validates a derived link.
@@ -79,15 +81,18 @@ PINNED_IMPORTED_AT = "2026-07-18T00:00:00+00:00"
 
 
 def _registry(*, image_source_enabled: bool) -> SourceRegistry:
-    """The shipped machine registry, optionally with the image-ref source enabled.
+    """The shipped machine registry, with the image-ref source forced on/off.
 
     Loading the real registry (not a hand-built stub) means ``get_data_sources`` surfaces
-    the genuine §V27 attribution/license posture; flipping only ``enabled`` models the
-    ``arknights-mcp source enable`` kill switch (§V20) without touching any other field.
+    the genuine §V27 attribution/license posture. As of §T124 the shipped registry ships the
+    source ENABLED, so this helper forces ``enabled`` to the requested value in BOTH
+    directions -- ``image_source_enabled=False`` models the ``arknights-mcp source disable``
+    kill switch (§V20) -- without touching any other field.
     """
     reg = load_source_registry(REGISTRY)
-    if image_source_enabled:
-        reg.entries[SOURCE_ID] = reg.entries[SOURCE_ID].model_copy(update={"enabled": True})
+    reg.entries[SOURCE_ID] = reg.entries[SOURCE_ID].model_copy(
+        update={"enabled": image_source_enabled}
+    )
     return reg
 
 
@@ -96,8 +101,8 @@ def _gate(reg: SourceRegistry) -> bool:
 
     Mirrors :func:`arknights_mcp.app.build_application` exactly -- a local (private) config
     with ``[image_refs].enabled = true`` AND the registry source enabled. So the DISABLED
-    case below fails the gate for the real shipped reason (source ``enabled=false``), not a
-    config toggle.
+    case below fails the gate via the §V20 kill switch (source disabled), not a config
+    toggle.
     """
     cfg = AppConfig.model_validate({"image_refs": {"enabled": True}})
     return refs_enabled(config_enabled=cfg.image_refs_enabled, registry=reg)
@@ -209,20 +214,44 @@ def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> N
     ]
 
 
-def test_accept_disabled_by_default_emits_no_refs(conn: sqlite3.Connection) -> None:
-    # §V63/§C: the SHIPPED registry ships the source disabled, so the real combined gate
-    # is OFF even with the config flag on -> neither surface carries image_refs.
-    shipped = _registry(image_source_enabled=False)
-    assert _gate(shipped) is False
-    assert _gate(_registry(image_source_enabled=True)) is True
+def test_accept_shipped_default_emits_refs_and_source_disable_suppresses(
+    conn: sqlite3.Connection,
+) -> None:
+    # §T124/§V63: a fresh install emits refs with NO config edit -- the config half (default
+    # AppConfig) AND the shipped registry source both default ON.
+    default_cfg = AppConfig()
+    assert default_cfg.image_refs_enabled is True
+    assert (
+        refs_enabled(
+            config_enabled=default_cfg.image_refs_enabled,
+            registry=load_source_registry(REGISTRY),
+        )
+        is True
+    )
 
-    tools = _tools(conn, shipped)
-    op = (
-        tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]
-    )  # type: ignore[index]
-    assert "image_refs" not in op
-    enemy = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]["enemy"]  # type: ignore[index]
-    assert "image_refs" not in enemy
+    # §V20 kill switch: `source disable arknights_game_resource` flips the gate off.
+    shipped = _registry(image_source_enabled=True)
+    disabled = _registry(image_source_enabled=False)
+    assert _gate(shipped) is True
+    assert _gate(disabled) is False
+
+    def _op(tools: ToolRegistry) -> dict[str, object]:
+        env = tools.get("get_operator").handler(server="en", game_id=_AMIYA)
+        return env.to_dict()["data"]["operator"]  # type: ignore[index,return-value]
+
+    def _enemy(tools: ToolRegistry) -> dict[str, object]:
+        env = tools.get("get_enemy").handler(server="en", game_id=_SLIME)
+        return env.to_dict()["data"]["enemy"]  # type: ignore[index,return-value]
+
+    # Shipped default (source enabled) -> both surfaces carry image_refs.
+    on_tools = _tools(conn, shipped)
+    assert "image_refs" in _op(on_tools)
+    assert "image_refs" in _enemy(on_tools)
+
+    # Kill switch engaged (source disabled) -> neither surface carries image_refs.
+    off_tools = _tools(conn, disabled)
+    assert "image_refs" not in _op(off_tools)
+    assert "image_refs" not in _enemy(off_tools)
 
 
 def test_accept_percent_encode_on_hash_plus_skin_id(tmp_path: Path) -> None:
@@ -303,8 +332,8 @@ def test_accept_refs_scoped_to_region_never_mixed(conn: sqlite3.Connection) -> N
 def test_accept_get_data_sources_shows_image_source_posture(conn: sqlite3.Connection) -> None:
     # §V27: the image source's attribution + license/permission posture is reachable via
     # get_data_sources, WITHOUT leaking its internal policy_notes / secrets. Uses the
-    # shipped (disabled) registry -- the posture must be visible before the source is
-    # ever enabled.
+    # §V20 kill-switch (source-disabled) state -- the posture stays visible even when the
+    # source is disabled.
     tools = _tools(conn, _registry(image_source_enabled=False))
     sources = {
         s["source_id"]: s

@@ -167,14 +167,14 @@ def test_image_ref_source_registered_and_complete() -> None:
     assert public["attribution_text"]
 
 
-def test_image_ref_source_off_by_default_regions_and_posture() -> None:
-    # §V63: image URL REFERENCE source is OFF by default, region-scoped en/cn,
-    # owned by yuanyan3060, and records the AGPL-code / Yostar-copyright /
-    # removal-on-request permission posture. No snapshot commit (no import).
+def test_image_ref_source_on_by_default_regions_and_posture() -> None:
+    # §V63/§T124: image URL REFERENCE source is ON by default (founder 2026-07-22),
+    # region-scoped en/cn, owned by yuanyan3060, and records the AGPL-code /
+    # Yostar-copyright / removal-on-request permission posture. No snapshot commit (no import).
     reg = load_source_registry(REGISTRY)
     entry = reg.get("arknights_game_resource")
     assert entry is not None
-    assert entry.enabled is False  # OFF by default (private + noncommercial only)
+    assert entry.enabled is True  # ON by default (§T124); still private + noncommercial
     assert entry.regions == ["en", "cn"]  # region-scoped, en/cn never mixed
     assert entry.license_identifier == "AGPL-3.0"  # mirror CODE license
     # Permission posture: not granted, private/noncommercial, removal on request.

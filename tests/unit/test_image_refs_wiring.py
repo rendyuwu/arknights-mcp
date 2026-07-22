@@ -194,8 +194,8 @@ def test_refs_enabled_gate_needs_both_config_and_registry() -> None:
     assert refs_enabled(config_enabled=False, registry=enabled) is False
     assert refs_enabled(config_enabled=True, registry=disabled) is False
     assert refs_enabled(config_enabled=True, registry=absent) is False
-    # The shipped registry ships the source disabled -> gate off even with config on.
-    assert refs_enabled(config_enabled=True, registry=load_source_registry(REGISTRY)) is False
+    # §T124: the shipped registry now ships the source ENABLED -> gate on when config on.
+    assert refs_enabled(config_enabled=True, registry=load_source_registry(REGISTRY)) is True
 
 
 # --- §V21: additive, backward-compatible --------------------------------------

@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-22
+- **Amended:** §T124 (founder 2026-07-22) — the flag default was flipped OFF→ON so all
+  existing user features are default-enabled. See [Amendment](#amendment--t124-founder-2026-07-22-on-by-default)
+  below. Derive-not-store, never-fetch, §V9 startup fail-closed, and the §V20 kill
+  switches are unchanged.
 - **Amends:** ADR 0008 (art asset URL references). This refines, does not
   reverse, that decision: derive-not-store and never-fetch stay intact; only the
   *deployment posture* under which a ref may be emitted changes.
@@ -62,7 +66,7 @@ The registry `enabled` check for `arknights_game_resource` (the §V20 kill switc
 stays a separate, additional gate at the wiring layer, unchanged. So a ref is
 emitted iff:
 
-- `[image_refs].enabled` is set (OFF by default), **and**
+- `[image_refs].enabled` is set (ON by default as of §T124; see Amendment), **and**
 - the `arknights_game_resource` source is enabled in the machine registry.
 
 Why the posture term is safe to remove rather than flip to `OR`:
@@ -83,7 +87,9 @@ Why the posture term is safe to remove rather than flip to `OR`:
   HEAD/GET/existence-check, at import or query time.
 - **Registry kill switch (§V20).** `source disable arknights_game_resource` stops
   every ref immediately.
-- **OFF by default.** `[image_refs].enabled` defaults false.
+- **Two kill switches (§V20).** Both off switches remain: set `[image_refs].enabled`
+  false, or disable the `arknights_game_resource` source. (As of §T124 the flag *defaults*
+  ON — see the Amendment — but either switch still fully suppresses the surface.)
 - **Standing takedown posture (ADR 0005 / `TAKEDOWN_POLICY.md`).** On any request
   from Yostar/Hypergryph or the mirror owner, references are removed immediately.
 - **Region integrity (§V5), no bulk surface (§V19), zero code intake.**
@@ -109,3 +115,27 @@ Why the posture term is safe to remove rather than flip to `OR`:
 - **Flip the term to `requires_auth OR is_loopback`.** Equivalent to removal (a
   tautology) but hides that fact behind dead logic; removal is clearer and
   matches the real invariant.
+
+## Amendment — §T124 (founder 2026-07-22): ON by default
+
+The founder's follow-through on this decision: since every *startable* deployment is
+access-controlled (§V9), and this project's own deployment is the intended
+authenticated, private, non-commercial use case, the conservative OFF default is no
+longer earning its friction. Flip `[image_refs].enabled` from `false` to `true` so all
+existing user features are default-enabled — a fresh install carries `image_refs` on
+`get_operator`/`get_enemy` with no config edit. The `arknights_game_resource` source is
+likewise shipped `enabled=true` in the machine registry.
+
+Nothing about the *shape* of the gate changes, only its default:
+
+- **Emission gate unchanged.** A ref is still emitted iff `[image_refs].enabled` **and**
+  the `arknights_game_resource` source is registry-enabled. Both now simply default on.
+- **Kill switch (§V20) unchanged.** Set `[image_refs].enabled = false` **or**
+  `arknights-mcp source disable arknights_game_resource` and every ref stops immediately —
+  with nothing to purge (§V63 store-nothing).
+- **§V9 startup fail-closed unchanged.** There is still no startable open/anonymous public
+  surface; the default flip cannot expose refs on a deployment that cannot start.
+- **Derive-not-store (§V16) / never-fetch (§V1/§V24) unchanged.** No URL or byte is
+  persisted and the server never fetches a derived link.
+
+`kengxxiao_gamedata` stays CI-only and is **not** a runtime feature (§C).

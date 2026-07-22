@@ -130,15 +130,16 @@ log_tool_arguments = false
 log_tool_results = false
 operational_log_retention_days = 14
 
-# Image URL references (v0.3 M12, SPEC §V63 / ADR 0008+0009). OFF by default. When enabled,
-# get_operator/get_enemy responses gain an additive `image_refs` list of query-time
-# DERIVED links to the yuanyan3060/ArknightsGameResource mirror -- no bytes are ever
-# stored or fetched (§V1/§V16). Per ADR 0009 this flag carries NO deployment-posture term:
-# "private" means access-controlled, not loopback-only. §V9 already fails startup closed on
-# any anonymous non-loopback surface, so an AUTHENTICATED (OIDC/bearer) deployment may emit
-# references when this is true; a genuine loopback dev bind may too. There is no startable
-# open/anonymous public surface (§C/D4). The `arknights_game_resource` source must ALSO be
-# enabled in the machine registry (`arknights-mcp source enable arknights_game_resource`,
-# §V20 kill switch) before any reference is emitted.
+# Image URL references (v0.3 M12, SPEC §V63 / ADR 0008+0009). ON by default (§T124, founder
+# 2026-07-22: all existing user features default-enabled). get_operator/get_enemy responses
+# gain an additive `image_refs` list of query-time DERIVED links to the
+# yuanyan3060/ArknightsGameResource mirror -- no bytes are ever stored or fetched (§V1/§V16).
+# Per ADR 0009 this flag carries NO deployment-posture term: "private" means access-controlled,
+# not loopback-only. §V9 already fails startup closed on any anonymous non-loopback surface, so
+# an AUTHENTICATED (OIDC/bearer) deployment emits references when this is true; a genuine
+# loopback dev bind does too. There is no startable open/anonymous public surface (§C/D4). The
+# `arknights_game_resource` source must ALSO be enabled in the machine registry (§V20 kill
+# switch, shipped enabled) before any reference is emitted. Kill switch = set this false or
+# `arknights-mcp source disable arknights_game_resource`.
 [image_refs]
-enabled = false
+enabled = true

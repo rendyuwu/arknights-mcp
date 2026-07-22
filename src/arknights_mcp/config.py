@@ -226,18 +226,20 @@ class PrivacyConfig(_Model):
 
 
 class ImageRefsConfig(_Model):
-    """Query-time image URL-reference surface toggle (§T119/§V63/ADR 0008+0009).
+    """Query-time image URL-reference surface toggle (§T119/§T124/§V63/ADR 0008+0009).
 
-    OFF by default. This flag is the config half of the emission gate
+    ON by default (§T124, founder 2026-07-22: all existing user features default-enabled).
+    This flag is the config half of the emission gate
     (:attr:`AppConfig.image_refs_enabled`); the tool wiring additionally requires the
     ``arknights_game_resource`` source to be enabled in the machine registry (§V20
     kill switch) before any reference is emitted. As of ADR 0009 the gate carries NO
     deployment-posture term: "private" means access-controlled, not loopback-only --
     §V9 already fails startup closed on any anonymous non-loopback surface, so an
-    authenticated (OIDC/bearer) deployment may emit references when opted in (§C/D4).
+    authenticated (OIDC/bearer) deployment may emit references (§C/D4). Kill switch =
+    set this ``false`` or disable the ``arknights_game_resource`` source (§V20).
     """
 
-    enabled: bool = False
+    enabled: bool = True
 
 
 class AppConfig(_Model):
@@ -300,10 +302,11 @@ class AppConfig(_Model):
 
     @property
     def image_refs_enabled(self) -> bool:
-        """§V63 config gate for the image URL-reference surface (§T119; ADR 0008+0009).
+        """§V63 config gate for the image URL-reference surface (§T119/§T124; ADR 0008+0009).
 
-        OFF by default. As of ADR 0009 (D4 refined) the gate carries NO deployment-posture
-        term -- it is exactly ``[image_refs].enabled``. "Private" means access-controlled,
+        ON by default (§T124, founder 2026-07-22). As of ADR 0009 (D4 refined) the gate
+        carries NO deployment-posture term -- it is exactly ``[image_refs].enabled``.
+        "Private" means access-controlled,
         not loopback-only: §V9's :meth:`assert_remote_startup_safe` already fails startup
         closed on any anonymous non-loopback surface (``requires_auth`` without HTTPS +
         valid OIDC), so every *startable* deployment is either an authenticated (OIDC/bearer)
