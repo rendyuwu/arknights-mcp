@@ -36,6 +36,7 @@ tested; the stage service adapts its rows into these.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -50,10 +51,15 @@ MAX_MAP_CELLS = 4_000
 #: this bounds the marker overlay so it cannot balloon the document.
 MAX_MAP_ROUTES = 1_000
 
-#: §V22 byte budget for one rendered map image, measured on the UTF-8 document. Set
-#: below the 200 KB envelope cap so an over-budget image is dropped *here* (with a
-#: limitation, the rest of the response intact) rather than tripping the envelope
-#: cap and withholding the whole payload. Single §V37 home for the budget.
+#: §V22 byte budget for one rendered map image, measured on the image's *wire*
+#: size -- the JSON-escaped bytes it contributes to the envelope (see
+#: :func:`_wire_bytes`), the same ``ensure_ascii`` measure the envelope cap uses
+#: (``envelopes.serialized_size``). The SVG is emitted as a JSON string value, and
+#: its many attribute quotes each escape to ``\\"``, so its raw UTF-8 length
+#: understates its wire size by ~15-20%; budgeting on the wire size keeps the image
+#: truly below the 200 KB envelope cap. Set below that cap so an over-budget image is
+#: dropped *here* (with a limitation, the rest of the response intact) rather than
+#: tripping the envelope cap and withholding the whole payload. Single §V37 home.
 MAX_MAP_IMAGE_BYTES = 128_000
 
 #: SVG media type for the derived document (§T122). Inline ``image/svg+xml`` -- an
@@ -138,6 +144,20 @@ class RenderResult:
 
     image: RenderedMap | None = None
     limitation: str | None = None
+
+
+def _wire_bytes(svg: str) -> int:
+    """Wire byte size the SVG contributes to the envelope (matches the §V22 cap).
+
+    The SVG is serialized as a JSON string value in the response envelope, so its
+    on-the-wire size is the JSON-escaped, ``ensure_ascii`` byte length -- every
+    attribute quote becomes ``\\"`` (2 bytes), inflating the raw UTF-8 length by
+    ~15-20%. Measuring against this (rather than ``svg.encode("utf-8")``) is the
+    same measure ``envelopes.serialized_size`` applies to the whole envelope, so the
+    image budget stays a true fraction of the 200 KB cap. ``json.dumps`` wraps the
+    value in two extra quote bytes -- a negligible, fail-closed over-count.
+    """
+    return len(json.dumps(svg).encode("utf-8"))
 
 
 def _oversize_limitation() -> str:
@@ -312,7 +332,10 @@ def render_stage_map(
 
     # §V22 byte budget: an over-budget document is dropped here (with a caption) so
     # the rest of the response survives, rather than tripping the envelope cap.
-    if len(svg.encode("utf-8")) > MAX_MAP_IMAGE_BYTES:
+    # Measured on the JSON-escaped WIRE size (the bytes the SVG contributes to the
+    # envelope), not raw UTF-8 -- the envelope cap counts the same way, so the budget
+    # stays a true fraction of the 200 KB cap despite quote escaping.
+    if _wire_bytes(svg) > MAX_MAP_IMAGE_BYTES:
         return RenderResult(limitation=_oversize_limitation())
 
     return RenderResult(
