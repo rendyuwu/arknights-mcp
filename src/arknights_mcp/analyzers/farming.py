@@ -92,14 +92,18 @@ class RankingRow:
     """One ranked entity in a compacted farming observation (§V66.1/§T129).
 
     ``id`` is the entity's stable reference into the SIBLING facts list the tool
-    already emits -- a drop's ``item_game_id`` in the stage view, a stage's identifier
-    in the item comparison -- so a client joins on it to read the ``sanity_cost`` /
-    ``drop_rate`` / ``sample_size`` carried there; those numbers are NOT re-copied
-    here (§V66.1). ``sanity_per_item`` is the derived ranking figure (not present in
-    the sibling list). ``confidence`` and ``limitations`` are populated ONLY when this
-    row deviates from the observation-level baseline (:data:`_CONF_STABLE`) -- a thin
-    sample or an expired cache -- so a non-deviating row stays the minimal three fields
-    and a deviant one carries its own §V8/§V55 caveat.
+    already emits -- a drop's ``item_game_id`` in the stage view, a stage's
+    ``stage_game_id`` in the item comparison (§V68/B57: the UNAMBIGUOUS id, never the
+    ``stage_code`` alone, which the normal + tough variants share) -- so a client joins
+    on it to read the ``sanity_cost`` / ``drop_rate`` / ``sample_size`` carried there;
+    those numbers are NOT re-copied here (§V66.1). ``name`` is the display label shown
+    alongside the id: the item's display name in the stage view, the stage's
+    ``stage_code`` in the item comparison (§V68 "display stage_code alongside").
+    ``sanity_per_item`` is the derived ranking figure (not present in the sibling
+    list). ``confidence`` and ``limitations`` are populated ONLY when this row deviates
+    from the observation-level baseline (:data:`_CONF_STABLE`) -- a thin sample or an
+    expired cache -- so a non-deviating row stays the minimal fields and a deviant one
+    carries its own §V8/§V55 caveat.
     """
 
     id: str
@@ -450,7 +454,11 @@ def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
     sanity-per-item is computed via the shared :func:`_efficiency` core (§V37) and the
     ranking rows are ordered ASCENDING (lowest sanity per copy first) inside a SINGLE
     ranked observation (§T129) -- an ordering + evidence, never a "best farm"/mandatory
-    verdict (§V7). A stage with a missing ``sanity_cost`` or an absent/non-positive
+    verdict (§V7). Each ranking row is keyed by the stage's ``stage_game_id`` -- the
+    UNAMBIGUOUS evidence ref that joins to the sibling stages facts list -- with the
+    ``stage_code`` shown alongside as the display ``name`` (§V68/B57: the normal + tough
+    variants share a ``stage_code`` like "14-18", so the code alone is undecidable). A
+    stage with a missing ``sanity_cost`` or an absent/non-positive
     ``drop_rate`` is excluded with a §V26 warning (never a fabricated figure); the
     per-stage warnings are emitted in stage order so the output is deterministic
     (§V26). An expired stage's figure is downgraded to a per-row limitation (via
@@ -462,7 +470,12 @@ def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
     rows: list[tuple[float, str, str, RankingRow]] = []
 
     for drop in sorted(ctx.drops, key=lambda d: (d.stage_code or "", d.stage_game_id)):
-        stage_ref = drop.stage_code or drop.stage_game_id
+        # §V68/B57: identify a stage by its UNAMBIGUOUS stage_game_id -- a stage_code
+        # like "14-18" is shared by the normal + tough variants -- with the stage_code
+        # shown alongside for display, so a warning names one decidable stage.
+        stage_ref = (
+            f"{drop.stage_game_id} ({drop.stage_code})" if drop.stage_code else drop.stage_game_id
+        )
         if drop.sanity_cost is None or drop.sanity_cost <= 0:
             warnings.append(
                 f"{stage_ref}: stage sanity cost is missing or non-positive; "
@@ -474,9 +487,13 @@ def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
                 f"{stage_ref}: drop rate is missing or non-positive; sanity-per-item not computed"
             )
             continue
+        # §V68/B57: the ranking row's id (the observation evidence ref) is the
+        # stage_game_id -- an UNAMBIGUOUS, stable id that joins 1:1 to the sibling
+        # stages facts list (which keys on stage_game_id), never the stage_code alone
+        # (shared normal/tough). The stage_code rides as the display ``name`` alongside.
         key, row = _ranking_row(
-            entity_id=stage_ref,
-            name=None,
+            entity_id=drop.stage_game_id,
+            name=drop.stage_code,
             sanity_cost=drop.sanity_cost,
             drop_rate=drop.drop_rate,
             sample_size=drop.sample_size,

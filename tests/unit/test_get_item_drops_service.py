@@ -81,7 +81,12 @@ def test_ranked_ascending_by_sanity_per_item(tmp_path: Path) -> None:
     # §V66.1: ONE ranked observation; its ranking rows are ascending by sanity per item.
     ranking = _ranking(result)
     assert [row.sanity_per_item for row in ranking] == [12.0, 72.0, 120.0]
-    assert [row.id for row in ranking] == ["a-1", "4-4", "b-2"]
+    # §V68/B57: the row id is the unambiguous stage_game_id (joins to result.stages),
+    # with the stage_code shown alongside as name.
+    assert [row.name for row in ranking] == ["a-1", "4-4", "b-2"]
+    stage_ids = {s.stage_game_id for s in result.stages}
+    assert {row.id for row in ranking} <= stage_ids
+    assert all(row.id != row.name for row in ranking)
     # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
     obs = result.observation
     assert obs is not None
@@ -136,12 +141,14 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     # Only the en stage is ranked; the cn stage never leaks into the en comparison.
     assert en.status == "ok"
     assert {s.region for s in en.stages} == {"en"}
-    assert [row.id for row in _ranking(en)] == ["4-4"]
+    assert [row.name for row in _ranking(en)] == ["4-4"]
+    assert {row.id for row in _ranking(en)} <= {s.stage_game_id for s in en.stages}
     # The item resolves independently per region; the cn item ranks only cn stages.
     cn = get_item_drops(conn, server="cn", game_id="sugar", include_efficiency=True)
     assert cn.status == "ok"
     assert {s.region for s in cn.stages} == {"cn"}
-    assert [row.id for row in _ranking(cn)] == ["cn-1"]
+    assert [row.name for row in _ranking(cn)] == ["cn-1"]
+    assert {row.id for row in _ranking(cn)} <= {s.stage_game_id for s in cn.stages}
 
 
 # --- §V53/§V60: expired stage downgraded but KEPT in the ranking ---------------
@@ -164,9 +171,9 @@ def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
     expired_stage = next(s for s in result.stages if s.stage_code == "a-1")
     assert expired_stage.expired is True
     ranking = _ranking(result)
-    ids = [row.id for row in ranking]
-    assert "a-1" in ids
-    expired_row = next(row for row in ranking if row.id == "a-1")
+    names = [row.name for row in ranking]
+    assert "a-1" in names
+    expired_row = next(row for row in ranking if row.name == "a-1")
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
     assert any("expired" in lim for lim in expired_row.limitations)
 

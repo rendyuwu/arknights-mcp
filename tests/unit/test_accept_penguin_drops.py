@@ -317,10 +317,15 @@ def test_accept_item_ranked_ascending_over_two_stages(conn: sqlite3.Connection) 
     obs = result.observation
     assert obs is not None
     # Two en stages, ranked ascending: GS-1 (60 sanity/item) before GS-2 (100).
+    # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
     ids = [row.id for row in obs.ranking]
+    names = [row.name for row in obs.ranking]
     figures = [row.sanity_per_item for row in obs.ranking]
-    assert ids == ["GS-1", "GS-2"]
+    assert ids == ["gs_drones", "gs_arts"]
+    assert names == ["GS-1", "GS-2"]
     assert figures == [60.0, 100.0]
+    # §V68: each ranking ref joins to the sibling stages facts list (keyed on game_id).
+    assert {row.id for row in obs.ranking} <= {s.stage_game_id for s in result.stages}
 
     # §V6: the observation is fully attributed, from typed fields only.
     assert obs.rule_id == "farming.sanity_per_item"
@@ -346,7 +351,9 @@ def test_accept_item_comparison_is_region_scoped(conn: sqlite3.Connection) -> No
     en = get_item_drops(conn, server="en", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
     assert {s.region for s in en.stages} == {"en"}
     assert en.observation is not None
-    assert [row.id for row in en.observation.ranking] == ["GS-1", "GS-2"]
+    # §V68/B57: refs are the unambiguous stage_game_ids; the stage_code rides as name.
+    assert [row.id for row in en.observation.ranking] == ["gs_drones", "gs_arts"]
+    assert [row.name for row in en.observation.ranking] == ["GS-1", "GS-2"]
     assert all(s.snapshot_id.startswith("en:") for s in en.stages)
 
     cn = get_item_drops(conn, server="cn", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
@@ -354,7 +361,8 @@ def test_accept_item_comparison_is_region_scoped(conn: sqlite3.Connection) -> No
     assert cn.item is not None and cn.item.server == "cn"
     assert {s.region for s in cn.stages} == {"cn"}
     assert cn.observation is not None
-    assert [row.id for row in cn.observation.ranking] == ["CN-1"]
+    assert [row.id for row in cn.observation.ranking] == ["cs_1"]
+    assert [row.name for row in cn.observation.ranking] == ["CN-1"]
     # §V54: the cn ranking is backed by a cn-region penguin snapshot, never an en one.
     assert all(s.snapshot_id.startswith("cn:") for s in cn.stages)
 
@@ -373,7 +381,8 @@ def test_accept_item_expired_stage_downgraded_but_still_ranked(
     assert {s.stage_code for s in result.stages} == {"GS-1", "GS-2"}
     assert all(s.expired for s in result.stages)
     assert result.observation is not None
-    assert [row.id for row in result.observation.ranking] == ["GS-1", "GS-2"]
+    # §V68/B57: refs are the unambiguous stage_game_ids (not the shared stage_code).
+    assert [row.id for row in result.observation.ranking] == ["gs_drones", "gs_arts"]
     for row in result.observation.ranking:
         assert row.confidence is not None and row.confidence < 0.5
         assert any("expired" in lim.lower() for lim in row.limitations)

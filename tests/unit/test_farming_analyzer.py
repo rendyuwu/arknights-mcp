@@ -270,7 +270,9 @@ def test_item_comparison_ranked_ascending_by_sanity_per_item() -> None:
     )
     ids = [row.id for row in obs.ranking]
     figures = [row.sanity_per_item for row in obs.ranking]
-    assert ids == ["a-1", "4-4", "b-2"]
+    # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
+    assert ids == ["level_a-1", "level_4-4", "level_b-2"]
+    assert [row.name for row in obs.ranking] == ["a-1", "4-4", "b-2"]
     assert figures == [12.0, 72.0, 120.0]
     assert figures == sorted(figures)
 
@@ -290,7 +292,8 @@ def test_item_comparison_no_ranking_no_observation() -> None:
     # mandatory caveats do not appear (the service reports not_found upstream).
     analysis = analyze_item_farming(_item_ctx(_stage_drop("4-4", drop_rate=None)))
     assert analysis.observation is None
-    assert any("4-4: drop rate" in w for w in analysis.warnings)
+    # §V68: the warning names the unambiguous stage_game_id with the stage_code alongside.
+    assert any("level_4-4 (4-4): drop rate" in w for w in analysis.warnings)
 
 
 def test_item_comparison_expired_stage_kept_not_dropped() -> None:
@@ -305,12 +308,12 @@ def test_item_comparison_expired_stage_kept_not_dropped() -> None:
         )
     )
     rows = {row.id: row for row in obs.ranking}
-    assert set(rows) == {"4-4", "a-1"}  # the expired stage is still present
-    expired_row = rows["a-1"]
+    assert set(rows) == {"level_4-4", "level_a-1"}  # the expired stage is still present
+    expired_row = rows["level_a-1"]
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
     assert any("expired" in lim for lim in expired_row.limitations)
     # the fresh stage is non-deviating (inherits the baseline)
-    assert rows["4-4"].confidence is None and rows["4-4"].limitations == ()
+    assert rows["level_4-4"].confidence is None and rows["level_4-4"].limitations == ()
 
 
 def test_item_comparison_excludes_missing_inputs_with_warning() -> None:
@@ -324,20 +327,20 @@ def test_item_comparison_excludes_missing_inputs_with_warning() -> None:
         )
     )
     ids = [row.id for row in _item_obs(analysis).ranking]
-    assert ids == ["ok-1"]
-    assert any("no-sanity: stage sanity cost" in w for w in analysis.warnings)
-    assert any("no-rate: drop rate" in w for w in analysis.warnings)
+    assert ids == ["level_ok-1"]
+    assert any("level_no-sanity (no-sanity): stage sanity cost" in w for w in analysis.warnings)
+    assert any("level_no-rate (no-rate): drop rate" in w for w in analysis.warnings)
 
 
 def test_item_comparison_observation_carries_five_fields() -> None:
-    # §V6: the ranked observation is fully attributed; the row id = the STAGE ref.
+    # §V6: the ranked observation is fully attributed; the row id = the STAGE game_id.
     analysis = analyze_item_farming(_item_ctx(_stage_drop("4-4")))
     obs = _item_obs(analysis)
     assert obs.rule_id == RULE_ID
     assert obs.category == "farming"
     assert 0.0 <= obs.confidence <= 1.0
     assert obs.analyzer_version == ANALYZER_VERSION
-    assert [row.id for row in obs.ranking] == ["4-4"]
+    assert [row.id for row in obs.ranking] == ["level_4-4"]
     assert analysis.analyzer_version == ANALYZER_VERSION
 
 
@@ -359,7 +362,32 @@ def test_item_comparison_ties_broken_deterministically() -> None:
             )
         )
     )
-    assert [row.id for row in obs.ranking] == ["a-1", "m-5", "z-9"]
+    assert [row.id for row in obs.ranking] == ["level_a-1", "level_m-5", "level_z-9"]
+
+
+# --- §V68/B57: evidence ref is the unambiguous stage_game_id, code shown alongside ---
+
+
+def test_v68_item_ref_is_stage_game_id_not_shared_code() -> None:
+    # §V68/B57: two stages sharing stage_code "14-18" (a normal + tough pair) must get
+    # DISTINCT refs -- the unambiguous stage_game_id -- with the shared code shown
+    # alongside as ``name``, so the refs join 1:1 to the sibling stages facts list
+    # (which keys on stage_game_id) instead of colliding on one undecidable "14-18".
+    obs = _item_obs(
+        analyze_item_farming(
+            _item_ctx(
+                _stage_drop("14-18", stage_game_id="main_10-09", sanity_cost=18, drop_rate=0.25),
+                _stage_drop("14-18", stage_game_id="tough_10-09", sanity_cost=36, drop_rate=0.25),
+            )
+        )
+    )
+    refs = [row.id for row in obs.ranking]
+    # main_10-09 = 18/0.25 = 72, tough_10-09 = 36/0.25 = 144 -> ascending main then tough.
+    assert refs == ["main_10-09", "tough_10-09"]
+    assert len(set(refs)) == 2  # two DISTINCT refs, not one ambiguous "14-18"
+    # §V68: the shared stage_code rides alongside as the display name, never as the ref.
+    assert all(row.name == "14-18" for row in obs.ranking)
+    assert "14-18" not in refs
 
 
 # --- §V37: the stage view and the item comparison share ONE math + confidence core -

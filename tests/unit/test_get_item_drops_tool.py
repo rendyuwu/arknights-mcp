@@ -148,8 +148,13 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 3
     # §V60: ranked ascending by sanity per item -> stage a-1 (12) first, b-2 (120) last.
-    assert [row["id"] for row in ranking] == ["a-1", "4-4", "b-2"]
+    # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
+    assert [row["name"] for row in ranking] == ["a-1", "4-4", "b-2"]
     assert [row["sanity_per_item"] for row in ranking] == [12.0, 72.0, 120.0]
+    # §V68: each ranking ref is the stage_game_id, joinable to the sibling stages list.
+    stage_ids = {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
+    assert {row["id"] for row in ranking} <= stage_ids
+    assert all(row["id"] != row["name"] for row in ranking)
     # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
     blob = " ".join(ob["limitations"]).lower()
     assert "availability" in blob and "byproduct" in blob
@@ -166,6 +171,39 @@ def test_efficiency_omitted_without_the_flag(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar")
     assert "efficiency" not in env.to_dict()["data"]
     assert env.analyzer_version is None
+
+
+# --- §V68/B57: normal + tough share a stage_code -> DISTINCT joinable refs -----
+
+
+def test_v68_normal_and_tough_same_code_get_distinct_joinable_refs(tmp_path: Path) -> None:
+    # §V68/B57: two stages sharing stage_code "14-18" (a normal + tough pair) get
+    # DISTINCT evidence refs -- each the unambiguous stage_game_id -- with the shared
+    # code shown alongside as ``name``, so the refs join 1:1 to the sibling stages facts
+    # list (which keys on stage_game_id) instead of colliding on one undecidable "14-18".
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("14-18", stage_game_id="main_10-09", sanity_cost=18, drop_rate=0.25),
+            StageDropSeed("14-18", stage_game_id="tough_10-09", sanity_cost=36, drop_rate=0.25),
+        ],
+    )
+    env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
+    refs = [row["id"] for row in ranking]
+    # main_10-09 = 18/0.25 = 72, tough_10-09 = 36/0.25 = 144 -> ascending main then tough.
+    assert refs == ["main_10-09", "tough_10-09"]
+    assert len(set(refs)) == 2  # two DISTINCT refs, not one ambiguous "14-18"
+    # §V68: the shared stage_code rides alongside as the display name, never as the ref.
+    assert all(row["name"] == "14-18" for row in ranking)
+    assert "14-18" not in refs
+    # §V68: every ref joins 1:1 to the sibling stages facts list.
+    stage_ids = {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
+    assert set(refs) <= stage_ids
+    assert {"main_10-09", "tough_10-09"} <= stage_ids
 
 
 # --- §V5: region-scoped -- an en item never surfaces a cn stage ----------------
@@ -185,8 +223,9 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     # Only the en stage rides the comparison; the cn stage never leaks in.
     assert {s["region"] for s in data["stages"]} == {"en"}  # type: ignore[index]
-    refs = [row["id"] for row in data["efficiency"]["observation"]["ranking"]]  # type: ignore[index]
-    assert refs == ["4-4"]
+    ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
+    assert [row["name"] for row in ranking] == ["4-4"]
+    assert {row["id"] for row in ranking} <= {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
     # §V5: provenance is en-only.
     prov = env.to_dict()["provenance"]
     assert {p["server"] for p in prov} == {"en"}  # type: ignore[index]
@@ -212,10 +251,10 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert expired_stage["expired"] is True
     obs = data["efficiency"]["observation"]  # type: ignore[index]
     ranking = obs["ranking"]
-    ids = [row["id"] for row in ranking]
-    assert "a-1" in ids
+    names = [row["name"] for row in ranking]
+    assert "a-1" in names
     # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
-    expired_row = next(row for row in ranking if row["id"] == "a-1")
+    expired_row = next(row for row in ranking if row["name"] == "a-1")
     assert expired_row["confidence"] < 0.5
     assert any("expired" in lim.lower() for lim in expired_row["limitations"])
     # A staleness limitation names the refresh action; never presented as fresh.
@@ -298,7 +337,8 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
     # §V66.1: ONE observation; its ``ranking`` rows are this page of the global ranking.
     # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
-    assert [row["id"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
+    # §V68: the row id is the stage_game_id; assert order by the stage_code display name.
+    assert [row["name"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
     assert eff1["page"] == {"page": 1, "page_size": 2, "total": 5, "has_more": True}
     eff2 = handler(
         server="en",
@@ -307,7 +347,7 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
         efficiency_page={"page": 2, "page_size": 2},
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
     # Page 2 continues the SAME global ranking (not the two lowest of a fresh re-rank).
-    assert [row["id"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
+    assert [row["name"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
     assert eff2["page"]["has_more"] is True
     # §V60/§V66.1: the mandatory comparison caveats ride the observation on every page.
     assert "availability" in " ".join(eff2["observation"]["limitations"]).lower()

@@ -246,13 +246,15 @@ def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
 
     Carries the entity ``id`` (a reference into the sibling drops/stages facts list, so
     the shared ``sanity_cost`` / ``drop_rate`` / ``sample_size`` are not re-copied
-    here) + its display ``name`` + the derived ``sanity_per_item`` figure. ``name`` is
-    an optional display label (the item's display name in the stage view; the item
-    comparison carries none) -- §V67: when it is absent it is OMITTED, never emitted as
-    ``null``, so a client need not decide "no name vs unknown". ``confidence`` and
-    ``limitations`` are emitted ONLY when the row deviates from the observation-level
-    baseline (a thin sample / expired cache), so a non-deviating row stays a minimal
-    object and the deviant row stays visible.
+    here) + its display ``name`` + the derived ``sanity_per_item`` figure. ``id`` is
+    the unambiguous stable id that joins to the sibling facts (a drop's item game id in
+    the stage view, a stage's game id in the item comparison, §V68); ``name`` is the
+    display label shown alongside (the item's display name in the stage view, the
+    stage's ``stage_code`` in the item comparison) -- §V67: when it is absent it is
+    OMITTED, never emitted as ``null``, so a client need not decide "no name vs
+    unknown". ``confidence`` and ``limitations`` are emitted ONLY when the row deviates
+    from the observation-level baseline (a thin sample / expired cache), so a
+    non-deviating row stays a minimal object and the deviant row stays visible.
     """
     out: dict[str, object] = {
         "id": row.id,

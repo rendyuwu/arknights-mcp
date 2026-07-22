@@ -110,6 +110,10 @@ class StageDropSeed:
     expires_at: str = FUTURE_EXPIRY
     times: int | None = 5000
     region: str = "en"
+    #: The stage's game_id (§V68: the unambiguous id a drop ranking joins on). Defaults
+    #: to a synthetic per-seed id; set it explicitly to give two seeds the SAME
+    #: ``stage_code`` (e.g. a normal + tough pair sharing "14-18") but DISTINCT game_ids.
+    stage_game_id: str | None = None
 
 
 def seed_item_across_stages(
@@ -157,8 +161,10 @@ def seed_item_across_stages(
                     "provenance_id) VALUES (?, ?, ?, '3', 'MATERIAL', ?)",
                     (seed.region, item_game_id, item_display_name, prov),
                 ).lastrowid
-            # A synthetic stage keyed by (region, game_id); game_id kept unique per seed.
-            stage_game_id = f"synthetic_{seed.region}_{i}"
+            # A synthetic stage keyed by (region, game_id); game_id kept unique per seed
+            # unless the seed pins one explicitly (§V68: two seeds may share a
+            # stage_code but MUST differ on game_id).
+            stage_game_id = seed.stage_game_id or f"synthetic_{seed.region}_{i}"
             stage_prov = conn.execute(
                 "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
                 "record_hash, transform_version, field_policy_version) VALUES "
