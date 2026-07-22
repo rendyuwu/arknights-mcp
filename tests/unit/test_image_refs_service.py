@@ -270,12 +270,14 @@ def test_gate_off_when_flag_false_even_authenticated() -> None:
     assert cfg.image_refs_enabled is False
 
 
-def test_active_config_authenticated_emits_when_flag_flipped() -> None:
-    # The shipped active config is behind_proxy=true + Auth0 OIDC (authenticated) AND
-    # enabled=false → suppressed by the FLAG alone now (not the posture). Flipping only
-    # [image_refs].enabled=true would emit -- the ADR 0009 accept case on the real config.
+def test_active_config_authenticated_emits_by_default() -> None:
+    # The shipped active config is behind_proxy=true + Auth0 OIDC (authenticated). §T124
+    # (founder 2026-07-22) flipped image_refs ON by default and config.toml sets no
+    # [image_refs] override, so the shipped config emits references on this authenticated
+    # deployment with no further opt-in -- the ADR 0009 accept case on the real config.
+    # Setting [image_refs].enabled=false is the §V20 kill switch.
     cfg = load_config(ACTIVE_CONFIG)
     assert cfg.mcp.remote.requires_auth is True  # behind_proxy Cloudflare-tunnel posture
-    assert cfg.image_refs_enabled is False  # shipped off by the flag
-    enabled = cfg.model_copy(update={"image_refs": ImageRefsConfig(enabled=True)})
-    assert enabled.image_refs_enabled is True  # authenticated deployment emits when opted in
+    assert cfg.image_refs_enabled is True  # shipped ON by default (§T124)
+    disabled = cfg.model_copy(update={"image_refs": ImageRefsConfig(enabled=False)})
+    assert disabled.image_refs_enabled is False  # §V20 kill switch: flag off suppresses
