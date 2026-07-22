@@ -213,6 +213,27 @@ def _tags(tag_json: str | None) -> tuple[str, ...]:
     return tuple(t for t in decoded if isinstance(t, str))
 
 
+def shape_blackboard(value: object) -> object:
+    """Drop always-null ``valueStr`` keys from a decoded blackboard structure (§T138/§V67/B63).
+
+    A blackboard entry's ``valueStr`` is an optional string param that is ``null`` for
+    virtually every numeric parameter (~60 per full operator); §V67 omits an always-null
+    optional key rather than emit ``null`` so the client is not forced to decide "none vs
+    unknown". Recurses through the decoded dict/list structure so a ``blackboard`` nested
+    inside a trait/talent-change bundle is cleaned too; a *non-null* ``valueStr`` (a real
+    string param) is kept, and every other key/shape is preserved exactly -- dropping an
+    absent-optional key is additive/backward-compatible (§V21). The single §V37 home shared
+    by the operator + module-compare read services.
+    """
+    if isinstance(value, dict):
+        return {
+            k: shape_blackboard(v) for k, v in value.items() if not (k == "valueStr" and v is None)
+        }
+    if isinstance(value, list):
+        return [shape_blackboard(item) for item in value]
+    return value
+
+
 def _summary(operator: OperatorRow, counts: OperatorSectionCounts) -> OperatorSummary:
     return OperatorSummary(
         rarity=operator.rarity,
@@ -265,7 +286,7 @@ def _skill_level_facts(row: SkillLevelRow) -> SkillLevelFacts:
         initial_sp=row.initial_sp,
         duration=row.duration,
         range_id=row.range_id,
-        blackboard=json_load(row.blackboard_json),
+        blackboard=shape_blackboard(json_load(row.blackboard_json)),
         description=row.gameplay_description,
     )
 
@@ -284,7 +305,7 @@ def _talent_variant_facts(row: TalentLevelRow) -> TalentVariantFacts:
         unlock_phase=row.unlock_phase,
         unlock_level=row.unlock_level,
         potential_rank=row.potential_rank,
-        blackboard=json_load(row.blackboard_json),
+        blackboard=shape_blackboard(json_load(row.blackboard_json)),
         description=row.gameplay_description,
     )
 
@@ -382,9 +403,9 @@ def _modules_facts(
             levels=tuple(
                 ModuleLevelFacts(
                     level=lv.level,
-                    stat_bonus=json_load(lv.stat_bonus_json),
-                    trait_changes=json_load(lv.trait_changes_json),
-                    talent_changes=json_load(lv.talent_changes_json),
+                    stat_bonus=shape_blackboard(json_load(lv.stat_bonus_json)),
+                    trait_changes=shape_blackboard(json_load(lv.trait_changes_json)),
+                    talent_changes=shape_blackboard(json_load(lv.talent_changes_json)),
                     cost=pair_cost_item_names(cost, item_names),
                 )
                 for lv, cost in levels

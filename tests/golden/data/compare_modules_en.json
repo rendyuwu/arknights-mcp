@@ -25,8 +25,7 @@
           "stat_bonus": [
             {
               "key": "atk",
-              "value": 34,
-              "valueStr": null
+              "value": 34
             }
           ],
           "talent_changes": null,

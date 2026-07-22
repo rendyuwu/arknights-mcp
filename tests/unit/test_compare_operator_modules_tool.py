@@ -110,7 +110,8 @@ def test_facts_only_compares_all_three_levels(conn: sqlite3.Connection) -> None:
     levels = {lv["level"]: lv for lv in module["levels"]}
     assert all(levels[n]["present"] for n in (1, 2, 3))
     # The atk progression + the level-3 max_hp bonus survive as typed structural JSON.
-    assert levels[1]["stat_bonus"] == [{"key": "atk", "value": 34, "valueStr": None}]
+    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    assert levels[1]["stat_bonus"] == [{"key": "atk", "value": 34}]
     assert {"key": "max_hp", "value": 150} in levels[3]["stat_bonus"]
     assert levels[1]["cost"] == [{"id": "mat_1", "count": 8, "type": "MATERIAL"}]
 

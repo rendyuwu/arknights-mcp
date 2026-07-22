@@ -128,9 +128,8 @@ def test_include_flags_add_bounded_sections(conn: sqlite3.Connection) -> None:
     assert {s["game_id"] for s in op["skills"]} == {"skchr_amiya_1", "skchr_amiya_2"}
     # Skill levels + their decoded blackboard ride along (structural JSON vetted §V18).
     lv = op["skills"][0]["levels"][0]
-    assert lv["level"] == 1 and lv["blackboard"] == [
-        {"key": "charge", "value": 1.0, "valueStr": None}
-    ]
+    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    assert lv["level"] == 1 and lv["blackboard"] == [{"key": "charge", "value": 1.0}]
     assert op["talents"][0]["display_name"] == "Nervous Impulse"
     mod = op["modules"][0]
     assert mod["module_type"] == "CX-1"
@@ -215,7 +214,8 @@ def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) ->
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     skills = {s["game_id"]: s for s in op["skills"]}
     lv = skills["skchr_amiya_2"]["levels"][0]
-    assert lv["blackboard"] == [{"key": "atk", "value": 1.5, "valueStr": None}]
+    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    assert lv["blackboard"] == [{"key": "atk", "value": 1.5}]
     assert "{atk:0%}" in lv["description"]  # template references the blackboard key
     tvar = op["talents"][0]["variants"][0]
     assert "{atk_scale:0%}" in tvar["description"] and tvar["blackboard"]

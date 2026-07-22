@@ -41,6 +41,7 @@ from arknights_mcp.services.operators import (
     OperatorProvenance,
     cost_item_ids,
     pair_cost_item_names,
+    shape_blackboard,
 )
 from arknights_mcp.util.coerce import json_load
 
@@ -239,9 +240,12 @@ def compare_operator_modules(
                 ModuleLevelComparison(
                     level=level,
                     present=True,
-                    stat_bonus=stat_bonus,
-                    trait_changes=trait_changes,
-                    talent_changes=talent_changes,
+                    # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at
+                    # emit (the analyzer inputs below read key/value/talentIndex, so they
+                    # are unaffected by the shaping).
+                    stat_bonus=shape_blackboard(stat_bonus),
+                    trait_changes=shape_blackboard(trait_changes),
+                    talent_changes=shape_blackboard(talent_changes),
                     # §T132/§V69: each {id,count,type} cost entry paired with its item
                     # display_name (additive, §V21); an un-named id is left as-is.
                     cost=pair_cost_item_names(cost_by_key[(module.module_pk, level)], item_names),

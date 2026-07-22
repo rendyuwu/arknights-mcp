@@ -33,8 +33,7 @@
             "blackboard": [
               {
                 "key": "atk",
-                "value": 1.8,
-                "valueStr": null
+                "value": 1.8
               }
             ],
             "description": "对目标造成相当于攻击力{atk:0%}的物理伤害。",
@@ -76,8 +75,7 @@
             "blackboard": [
               {
                 "key": "atk",
-                "value": 0.1,
-                "valueStr": null
+                "value": 0.1
               }
             ],
             "description": "攻击力提升{atk:0%}。",
