@@ -24,6 +24,7 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_LIMITATION,
     LIST_FIELD_CONVENTION,
     ConnectionProvider,
     absent_field_limitation,
@@ -147,6 +148,13 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     prov = result.enemy.provenance
+    # §V67/§V26 (B58): name any expected field the source omitted. §V72/§V26 (§T135, B61):
+    # when the image_refs list is emitted (the combined §T120 gate), the standing
+    # derived-unverified limitation rides along too -- the sprite URL is derived + never
+    # validated by the server (§V63), so a dead link is never presented as a fact.
+    limitations = _enemy_absent_field_limitations(result.enemy)
+    if image_refs_enabled:
+        limitations = (*limitations, IMAGE_REFS_LIMITATION)
     return ok(
         {"enemy": _enemy_to_dict(result.enemy, image_refs_enabled=image_refs_enabled)},
         provenance=[
@@ -156,7 +164,7 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
                 imported_at=prov.imported_at,
             )
         ],
-        limitations=_enemy_absent_field_limitations(result.enemy),
+        limitations=limitations,
     )
 
 

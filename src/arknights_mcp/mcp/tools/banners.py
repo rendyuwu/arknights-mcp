@@ -31,6 +31,7 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_LIMITATION,
     ConnectionProvider,
     page_to_dict,
     run_guarded,
@@ -43,7 +44,7 @@ from arknights_mcp.services.banners import (
     FeaturedOpFacts,
     get_banners,
 )
-from arknights_mcp.services.image_refs import image_ref_to_dict, operator_portrait_refs
+from arknights_mcp.services.image_refs import image_ref_to_dict, operator_banner_refs
 
 _TOOL_NAME = "get_banners"
 _TOOL_TITLE = "Get banners"
@@ -58,8 +59,8 @@ _TOOL_DESCRIPTION = (
     "pity, or spark. Optional since/until bounds window the list by ISO open-time "
     "(inclusive). Results are newest-first and paged (bounded page/page_size). When the "
     "image-reference source is enabled, a featured operator that resolved to a present "
-    "operator also carries an image_refs list with its derived portrait URLs. en/cn are "
-    "never mixed."
+    "operator also carries an image_refs list with its derived portrait and avatar URLs. "
+    "en/cn are never mixed."
 )
 
 
@@ -68,10 +69,12 @@ def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> di
 
     When ``image_refs_enabled`` (the combined §T120 config + registry gate) AND the
     featured op soft-resolved to a present operator (§V62), an additive ``image_refs``
-    list with its DERIVED portrait URLs rides along -- the resolved ``char_id`` IS that
-    operator's ``game_id`` (§V63). An unresolved featured op carries no ref (its raw char
-    id may not name a present operator), and when the gate is off the field is absent
-    entirely (backward-compatible default, §V21).
+    list with its DERIVED portrait + avatar URLs rides along -- the resolved ``char_id``
+    IS that operator's ``game_id`` (§V63). The avatar rides ALONGSIDE the portrait (§V72):
+    the mirror's portrait tree lags newer operators, so a portrait-only ref may be dead
+    while the avatar returns 200 one category over. An unresolved featured op carries no
+    ref (its raw char id may not name a present operator), and when the gate is off the
+    field is absent entirely (backward-compatible default, §V21).
     """
     data: dict[str, object] = {
         "char_id": op.char_id,
@@ -81,7 +84,8 @@ def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> di
     if image_refs_enabled and op.resolved:
         # §V63: DERIVED from the resolved featured char id (== the operator's game_id);
         # §V5: rides this banner's OWN region envelope; §V19: a bounded per-op attach.
-        data["image_refs"] = [image_ref_to_dict(r) for r in operator_portrait_refs(op.char_id)]
+        # §V72: portrait + avatar so a lagging portrait tree never leaves a dead-only ref.
+        data["image_refs"] = [image_ref_to_dict(r) for r in operator_banner_refs(op.char_id)]
     return data
 
 
@@ -118,13 +122,22 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
         ],
         "page": page_to_dict(result.page),
     }
+    # §V72/§V26 (§T135, B61): the standing derived-unverified limitation rides the envelope
+    # ONLY when the page actually emits an image_refs list -- i.e. the gate is on AND at
+    # least one featured op on this page resolved (an unresolved op / standard banner
+    # carries no ref). So the caveat appears exactly when there is a link to caveat, never
+    # on a page that emitted none.
+    emits_refs = image_refs_enabled and any(
+        op.resolved for b in result.banners for op in b.featured_ops
+    )
+    limitations = (*result.limitations, IMAGE_REFS_LIMITATION) if emits_refs else result.limitations
     return ok(
         data,
         provenance=tuple(
             Provenance(server=result.server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
             for p in result.provenance
         ),
-        limitations=result.limitations,
+        limitations=limitations,
     )
 
 

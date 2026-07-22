@@ -51,7 +51,8 @@ if TYPE_CHECKING:
 SOURCE_ID = "arknights_game_resource"
 
 #: The first-cut image categories (§V63). ``portrait``/``avatar``/``skin`` attach to an
-#: operator, ``enemy`` to an enemy; a resolved banner featured-op carries ``portrait``.
+#: operator, ``enemy`` to an enemy; a resolved banner featured-op carries ``portrait`` +
+#: ``avatar`` (§V72: portrait alone lags newer ops, so the avatar rides alongside).
 #: Single §T120 home for the category label stamped on each emitted ref.
 CATEGORY_PORTRAIT = "portrait"
 CATEGORY_AVATAR = "avatar"
@@ -177,14 +178,19 @@ def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
     return tuple(refs)
 
 
-def operator_portrait_refs(game_id: str) -> tuple[ImageRef, ...]:
-    """Derive an operator's portrait refs only (E0/E2) from its ``game_id`` (§T120/§V63).
+def operator_banner_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive a banner featured-op's portrait + avatar refs from its ``game_id`` (§T135/§V72/§V63).
 
-    The banner featured-op portrait attached when the featured char id soft-resolved to a
-    present operator (§V62): the resolved char id IS that operator's ``game_id``. Pure
-    derivation -- no network (§V1/§V24).
+    Attached when a banner's featured char id soft-resolved to a present operator (§V62):
+    the resolved char id IS that operator's ``game_id``. Carries BOTH the portrait (E0/E2)
+    AND the avatar (base/E2) categories, not portrait alone (§V72/B61): the mirror's
+    portrait tree lags newer operators, so a portrait-only ref can be 100% dead while the
+    avatar returns 200 one category over -- emitting the avatar alongside keeps a working
+    reference. Pure derivation -- no network (§V1/§V24).
     """
-    return tuple(_refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id)))
+    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id))
+    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id))
+    return tuple(refs)
 
 
 def enemy_image_refs(game_id: str) -> tuple[ImageRef, ...]:

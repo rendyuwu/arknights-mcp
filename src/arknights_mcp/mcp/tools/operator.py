@@ -32,6 +32,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_KEY_GLOSSARY,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
+    IMAGE_REFS_LIMITATION,
     ConnectionProvider,
     has_unnamed_cost_item,
     run_guarded,
@@ -242,6 +243,12 @@ def _shape(
     # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.
     if has_unnamed_cost_item(lv.cost for m in operator.modules for lv in m.levels):
         limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
+    # §V72/§V26 (§T135, B61): when the image_refs list is emitted (the combined §T120
+    # gate), the standing derived-unverified limitation rides along -- the URLs are
+    # derived + never validated by the server (§V63), so a dead link is never presented
+    # as a verified fact. Absent when the gate is off (no refs -> no caveat).
+    if image_refs_enabled:
+        limitations = (*limitations, IMAGE_REFS_LIMITATION)
     return ok(
         {
             "operator": _operator_to_dict(

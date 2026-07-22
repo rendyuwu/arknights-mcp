@@ -30,6 +30,7 @@ from arknights_mcp.services.image_refs import (
     SOURCE_ID,
     enemy_image_url,
     operator_avatar_urls,
+    operator_banner_refs,
     operator_portrait_urls,
     operator_skin_urls,
 )
@@ -75,6 +76,21 @@ def test_operator_skin_urls_derive_e0_and_e2() -> None:
 
 def test_enemy_image_url_derives_base() -> None:
     assert enemy_image_url(ENEMY_ID) == f"{BASE}/enemy/{ENEMY_ID}.png"
+
+
+def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
+    # §V72 (§T135, B61): a banner featured-op ref carries portrait (E0/E2) + avatar
+    # (base/E2), each stamped with the source_id -- the avatar rides ALONGSIDE the
+    # portrait so the mirror's lagging portrait tree never leaves a portrait-only
+    # (possibly 100%-dead) ref while a working avatar exists one category over.
+    refs = operator_banner_refs(OPERATOR_ID)
+    assert [(r.category, r.url) for r in refs] == [
+        ("portrait", f"{BASE}/portrait/{OPERATOR_ID}_1.png"),
+        ("portrait", f"{BASE}/portrait/{OPERATOR_ID}_2.png"),
+        ("avatar", f"{BASE}/avatar/{OPERATOR_ID}.png"),
+        ("avatar", f"{BASE}/avatar/{OPERATOR_ID}_2.png"),
+    ]
+    assert all(r.source_id == SOURCE_ID for r in refs)
 
 
 # --- §V63: unconditional percent-encode -------------------------------------------
@@ -144,6 +160,9 @@ def test_derivation_opens_no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     assert operator_avatar_urls(OPERATOR_ID)[0].startswith(BASE)
     assert operator_skin_urls(OPERATOR_ID)[0].startswith(BASE)
     assert enemy_image_url(ENEMY_ID).startswith(BASE)
+    # §T135: the new banner-ref builder (portrait+avatar) is pure string derivation too --
+    # §V63 never-fetch is UNCHANGED, so it derives with the socket booby-trap tripped.
+    assert operator_banner_refs(OPERATOR_ID)[0].url.startswith(BASE)
 
 
 # --- §V37: single home ------------------------------------------------------------

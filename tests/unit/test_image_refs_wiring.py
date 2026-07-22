@@ -32,6 +32,7 @@ from arknights_mcp.db.migrations import build_database
 from arknights_mcp.importers.banners import ParsedBanner, insert_banners
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools._shared import IMAGE_REFS_LIMITATION
 from arknights_mcp.mcp.tools.banners import build_get_banners_spec
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.operator import build_get_operator_spec
@@ -73,8 +74,13 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
     return open_read_only(path)
 
 
-def _seed_banner_db(tmp_path: Path) -> Path:
-    """A candidate with an en LIMITED banner whose featured op resolves to Amiya."""
+def _seed_banner_db(tmp_path: Path, *, with_operator: bool = True) -> Path:
+    """A candidate with an en LIMITED banner whose featured op resolves to Amiya.
+
+    ``with_operator=False`` omits the operator row, so BOTH featured char ids stay
+    unresolved -- the page then emits no ``image_refs`` list at all (the §V72 "no ref ->
+    no caveat" case).
+    """
     path = tmp_path / "banners.sqlite"
     db = build_database(path)
     try:
@@ -98,11 +104,12 @@ def _seed_banner_db(tmp_path: Path) -> Path:
             "('snap-en', 'gamedata/excel/character_table.json', ?, 'rh', 'test', 'test')",
             (_AMIYA,),
         ).lastrowid
-        db.execute(
-            "INSERT INTO operators (server, game_id, display_name, provenance_id) "
-            "VALUES ('en', ?, 'Amiya', ?)",
-            (_AMIYA, prov),
-        )
+        if with_operator:
+            db.execute(
+                "INSERT INTO operators (server, game_id, display_name, provenance_id) "
+                "VALUES ('en', ?, 'Amiya', ?)",
+                (_AMIYA, prov),
+            )
         insert_banners(
             db,
             [
@@ -161,15 +168,21 @@ def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> Non
     ]
 
 
-def test_banner_resolved_featured_op_carries_portrait_when_enabled(tmp_path: Path) -> None:
+def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
+    tmp_path: Path,
+) -> None:
     conn = open_read_only(_seed_banner_db(tmp_path))
     handler = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler
     ops = handler(server="en").to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
     resolved = {o["char_id"]: o for o in ops}
-    # §V63/§V62: the resolved featured op (char_id == operator game_id) carries portraits.
+    # §V72/§V63/§V62: the resolved featured op (char_id == operator game_id) carries BOTH
+    # portrait (E0/E2) AND avatar (base/E2) -- the avatar rides ALONGSIDE the portrait so
+    # the mirror's lagging portrait tree never leaves a portrait-only (possibly dead) ref.
     assert resolved[_AMIYA]["image_refs"] == [
         {"category": "portrait", "url": f"{BASE}/portrait/{_AMIYA}_1.png", "source_id": SOURCE_ID},
         {"category": "portrait", "url": f"{BASE}/portrait/{_AMIYA}_2.png", "source_id": SOURCE_ID},
+        {"category": "avatar", "url": f"{BASE}/avatar/{_AMIYA}.png", "source_id": SOURCE_ID},
+        {"category": "avatar", "url": f"{BASE}/avatar/{_AMIYA}_2.png", "source_id": SOURCE_ID},
     ]
     # An UNRESOLVED featured op carries no ref (its raw char id may not name an operator).
     assert "image_refs" not in resolved["char_999_ghost"]
@@ -196,6 +209,74 @@ def test_refs_enabled_gate_needs_both_config_and_registry() -> None:
     assert refs_enabled(config_enabled=True, registry=absent) is False
     # §T124: the shipped registry now ships the source ENABLED -> gate on when config on.
     assert refs_enabled(config_enabled=True, registry=load_source_registry(REGISTRY)) is True
+
+
+# --- §V72/§V26: the standing derived-unverified limitation rides every emit -----------
+
+
+def test_image_refs_limitation_rides_every_emitting_surface(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    # §V72/§V26 (§T135, B61): every response that emits an image_refs list carries the
+    # standing derived-unverified caveat -- get_operator, get_enemy, AND a get_banners
+    # page with a resolved featured op. Disclosure keeps a derived link from being
+    # presented as a verified fact.
+    op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_AMIYA
+    )
+    assert "image_refs" in op_env.to_dict()["data"]["operator"]  # type: ignore[index]
+    assert IMAGE_REFS_LIMITATION in op_env.limitations
+
+    enemy_env = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_SLIME
+    )
+    assert "image_refs" in enemy_env.to_dict()["data"]["enemy"]  # type: ignore[index]
+    assert IMAGE_REFS_LIMITATION in enemy_env.limitations
+
+    banner_conn = open_read_only(_seed_banner_db(tmp_path))
+    banner_env = build_get_banners_spec(lambda: banner_conn, image_refs_enabled=True).handler(
+        server="en"
+    )
+    assert IMAGE_REFS_LIMITATION in banner_env.limitations
+
+
+def test_no_image_refs_limitation_when_gate_off(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    # §V72: no ref emitted -> no caveat. With the gate OFF no surface emits image_refs, so
+    # the standing limitation never appears (it rides exactly when a link is present).
+    op_env = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
+    assert IMAGE_REFS_LIMITATION not in op_env.limitations
+    enemy_env = build_get_enemy_spec(lambda: conn).handler(server="en", game_id=_SLIME)
+    assert IMAGE_REFS_LIMITATION not in enemy_env.limitations
+    banner_conn = open_read_only(_seed_banner_db(tmp_path))
+    banner_env = build_get_banners_spec(lambda: banner_conn).handler(server="en")
+    assert IMAGE_REFS_LIMITATION not in banner_env.limitations
+
+
+def test_no_image_refs_limitation_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
+    # §V72: even with the gate ON, a page whose featured ops all stay unresolved emits no
+    # image_refs list, so the derived-unverified caveat does NOT ride -- the caveat tracks
+    # an actual link, never appears on a page that emitted none.
+    conn = open_read_only(_seed_banner_db(tmp_path, with_operator=False))
+    env = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler(server="en")
+    ops = env.to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
+    assert all("image_refs" not in o for o in ops)
+    assert IMAGE_REFS_LIMITATION not in env.limitations
+
+
+def test_banner_avatar_survives_absent_portrait(tmp_path: Path) -> None:
+    # §V72 accept (B61): the mirror's portrait tree lags newer ops, so a resolved featured
+    # op must carry a WORKING avatar ref alongside the portrait -- even if the mirror lacks
+    # the portrait, the banner still carries a usable avatar reference, and the standing
+    # limitation names the avatar as the best-coverage fallback. The server never fetches
+    # to check (§V63), so honesty is the disclosure, not a live probe.
+    conn = open_read_only(_seed_banner_db(tmp_path))
+    env = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler(server="en")
+    ops = env.to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
+    resolved = {o["char_id"]: o for o in ops}
+    categories = {r["category"] for r in resolved[_AMIYA]["image_refs"]}
+    assert "avatar" in categories  # a working avatar ref rides alongside the portrait
+    assert IMAGE_REFS_LIMITATION in env.limitations
+    assert "avatar" in IMAGE_REFS_LIMITATION and "fallback" in IMAGE_REFS_LIMITATION
 
 
 # --- §V21: additive, backward-compatible --------------------------------------

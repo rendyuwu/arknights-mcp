@@ -95,6 +95,24 @@ COST_ITEM_NAME_LIMITATION = (
 )
 
 
+#: §V72/§V26 (§T135, B61): the standing limitation attached to EVERY response that emits
+#: an ``image_refs`` list -- ``get_operator`` / ``get_enemy`` / ``get_banners``. Each URL
+#: is DERIVED at response-build time from a stored game id and is never fetched or
+#: validated by the server (§V63 never-fetch), so a link can be dead when the upstream
+#: mirror lacks that asset -- the disclosure keeps a derived link from being presented as
+#: a verified fact (§V26 "uncertain -> say so", the exact fabrication B61 flagged). The
+#: mirror's portrait tree lags newer operators, so the avatar category has the broadest
+#: coverage and is the most reliable fallback when a portrait/skin URL 404s. Shared: one
+#: wording, one home (§V37). Client-facing text, so no internal cites/jargon (§V71) -- the
+#: cites live in this comment, never the emitted string.
+IMAGE_REFS_LIMITATION = (
+    "Image URLs are derived from a stored game id and are never fetched or validated by "
+    "the server, so a URL may return a 404 if the upstream mirror does not have that "
+    "asset. When more than one image category is available, the avatar category has the "
+    "broadest coverage on the mirror and is the most reliable fallback."
+)
+
+
 def has_unnamed_cost_item(cost_lists: Iterable[object]) -> bool:
     """True when any emitted upgrade-cost entry carries an item id but no display name (§V69).
 
