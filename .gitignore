@@ -50,3 +50,7 @@ config.toml
 .vscode/
 *.swp
 .DS_Store
+
+# --- Local agent tooling (not distributed) ---
+.kiro/
+skills-lock.json
