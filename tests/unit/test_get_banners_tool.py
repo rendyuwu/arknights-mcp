@@ -310,6 +310,20 @@ def test_since_and_until_window(conn: sqlite3.Connection) -> None:
     assert [b["game_id"] for b in banners] == ["CLASSIC_1"]
 
 
+def test_date_only_until_is_inclusive_of_that_day(conn: sqlite3.Connection) -> None:
+    # A bare-date until (the model's advertised YYYY-MM-DD shape) must INCLUDE a banner
+    # opening on that date even though open_time is a full timestamp -- a plain
+    # lexicographic "open_time <= until" would drop LIMITED_1 (opens 2026-07-20T00:00:00)
+    # because the timestamp sorts after its own date prefix. Inclusive-until means the
+    # whole day is kept.
+    banners = _handler(conn)(server="en", until="2026-07-20").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in banners] == ["LIMITED_1", "CLASSIC_1", "NORMAL_1"]
+
+    # A bare-date until strictly before the newest banner still excludes it.
+    older = _handler(conn)(server="en", until="2026-07-19").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in older] == ["CLASSIC_1", "NORMAL_1"]
+
+
 # --- §V19/§V22 bounded pagination ---------------------------------------------
 
 

@@ -139,8 +139,8 @@ def parse_banners(gacha_raw: Any) -> list[ParsedBanner]:
     """Transform a raw ``gacha_table`` into typed, allowlisted banners (§V18/§V62).
 
     Reads the ``gachaPoolClient`` list; only the §V62 metadata allowlist survives, so
-    gacha prose/summary/detail/html/image is dropped (§V16). A pool entry missing a
-    ``gachaPoolId`` is skipped so no row is fabricated without its stable id
+    gacha prose/summary/detail/html/image is dropped (§V16). A pool entry with a missing
+    OR blank ``gachaPoolId`` is skipped so no row is fabricated without its stable id
     (fail-closed). ``openTime``/``endTime`` unix epochs are normalized to ISO, and the
     typed featured ops are extracted per rule type.
     """
@@ -157,7 +157,10 @@ def parse_banners(gacha_raw: Any) -> list[ParsedBanner]:
             continue
         kept = apply_allowlist(entry, BANNER_ALLOWLIST).kept
         game_id = as_str(kept.get("gachaPoolId"))
-        if game_id is None:
+        if not game_id:
+            # A missing OR blank gachaPoolId is skipped so no row is fabricated without a
+            # stable id (an empty id would also collide on UNIQUE(server, game_id) or
+            # stamp a keyless provenance record). Fail-closed, never a fabricated row.
             continue
         rule_type = as_str(kept.get("gachaRuleType"))
         featured_ids, featured_kept = _featured_char_ids(rule_type, entry)

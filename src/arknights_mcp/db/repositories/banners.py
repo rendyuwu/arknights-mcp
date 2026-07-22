@@ -68,17 +68,28 @@ class BannerRow:
 
 
 # Every banner for a region, LEFT-joined to its typed featured ops (+ the resolved
-# operator name) and its own provenance chain (§V5/§V17). The since/until window is
-# applied at the SQL layer via the "(? IS NULL OR b.open_time >= ?)" idiom: a NULL bound
-# leaves that side open; a set bound narrows by the stored ISO open_time string
-# (lexicographic compare is date-order-correct for ISO-8601). A banner with a NULL
-# open_time is excluded once EITHER bound is set (it cannot be placed in the window), but
-# kept when the window is fully open. The LEFT JOIN to banner_featured_ops keeps a
-# standard banner (no featured op) in the result with NULL op columns; the further LEFT
-# JOIN to operators resolves the featured op's display name when it is present. Ordered
-# by open_time DESC (newest first), then game_id, then char_id so every banner's leaves
-# are contiguous + the payload is deterministic (§V26); NULL open_time sorts last under
-# DESC.
+# operator name) and its own provenance chain (§V5/§V17). Gated on b.server (== b.region,
+# kept in step at import) so the (server, open_time) index actually serves the read --
+# the UNIQUE(server, game_id) + idx_banners_server_open both key on server, so the
+# per-region schedule read scopes on the same column rather than on the redundant region
+# tag (which no index covers). The since/until window is applied at the SQL layer via the
+# "(? IS NULL OR b.open_time >= ?)" idiom: a NULL bound leaves that side open; a set bound
+# narrows by the stored ISO open_time string (lexicographic compare is date-order-correct
+# for ISO-8601). open_time is a FULL ISO timestamp ("YYYY-MM-DDThh:mm:ss+00:00"), but a
+# bound may be a bare date ("YYYY-MM-DD") or a lower-precision datetime, so a plain
+# "open_time <= until" would drop EVERY banner opening on the until date (the timestamp
+# sorts AFTER its own date prefix). The upper bound is therefore compared against
+# "until || '~'": '~' (0x7e) sorts after every char an ISO-8601 timestamp can carry
+# ('T','+','Z',':','-','.',digits), so a same-day/second banner is included (inclusive
+# until) while a strictly-later one is still excluded. The lower bound needs no such
+# sentinel -- ">=" already includes every timestamp whose date/prefix matches the bound.
+# A banner with a NULL open_time is excluded once EITHER bound is set (it cannot be placed
+# in the window), but kept when the window is fully open. The LEFT JOIN to
+# banner_featured_ops keeps a standard banner (no featured op) in the result with NULL op
+# columns; the further LEFT JOIN to operators resolves the featured op's display name when
+# it is present. Ordered by open_time DESC (newest first), then game_id, then char_id so
+# every banner's leaves are contiguous + the payload is deterministic (§V26); NULL
+# open_time sorts last under DESC.
 _BANNERS_SQL = (
     "SELECT b.banner_pk, b.game_id, b.display_name, b.open_time, b.end_time, "
     "b.rule_type, b.region, p.snapshot_id, ss.imported_at, "
@@ -88,9 +99,9 @@ _BANNERS_SQL = (
     "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
     "LEFT JOIN banner_featured_ops f ON f.banner_pk = b.banner_pk "
     "LEFT JOIN operators o ON o.operator_pk = f.operator_pk "
-    "WHERE b.region = ? "
+    "WHERE b.server = ? "
     "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time >= ?)) "
-    "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time <= ?)) "
+    "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time <= (? || '~'))) "
     "ORDER BY b.open_time DESC, b.game_id, f.char_id"
 )
 

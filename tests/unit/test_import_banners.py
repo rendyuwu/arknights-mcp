@@ -127,6 +127,14 @@ def test_entry_missing_pool_id_is_skipped() -> None:
     assert parse_banners(_gacha(no_id, _NORMAL)) == parse_banners(_gacha(_NORMAL))
 
 
+def test_entry_with_blank_pool_id_is_skipped() -> None:
+    # A blank (empty-string) gachaPoolId is treated like a missing one: skipped, never a
+    # fabricated row with an empty game_id (which would also collide on UNIQUE / stamp a
+    # keyless provenance record).
+    blank_id = {"gachaPoolId": "", "gachaPoolName": "Blank", "gachaRuleType": "NORMAL"}
+    assert parse_banners(_gacha(blank_id, _NORMAL)) == parse_banners(_gacha(_NORMAL))
+
+
 def test_invalid_epoch_yields_none_not_fabricated() -> None:
     # §V26: a non-int / out-of-range epoch yields None, never a fabricated timestamp.
     pool = {**_NORMAL, "openTime": "not-an-epoch", "endTime": None}
