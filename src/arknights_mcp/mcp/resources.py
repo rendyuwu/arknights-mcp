@@ -331,18 +331,22 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
     return handler
 
 
-def _make_banners_handler(get_conn: ConnectionProvider) -> ResourceHandler:
+def _make_banners_handler(
+    get_conn: ConnectionProvider, *, image_refs_enabled: bool
+) -> ResourceHandler:
     """Region-scoped ``arknights://banners/{server}`` over the ``get_banners`` tool (§V14).
 
     Dispatches the exact ``get_banners`` tool handler with the URI region (and the
     bounded defaults for the since/until window + page), so the resource adds no domain
     logic (§V37) and returns the same typed envelope the tool returns -- newest-first,
     region-attributed, metadata-only (§V62), with the §V62/§V26 caveats in
-    ``limitations``. A bad region short-circuits to ``unsupported_server`` (§V5); a
-    region with no banners is a legitimate empty ``ok`` list (gacha_table is tolerant-
-    absent, §V41/B36). The DB-unavailable / internal guard is the tool's shared one.
+    ``limitations``. ``image_refs_enabled`` is threaded so the resource surfaces the same
+    additive featured-op portrait refs as the tool when the source is enabled (§V14/§V63).
+    A bad region short-circuits to ``unsupported_server`` (§V5); a region with no banners
+    is a legitimate empty ``ok`` list (gacha_table is tolerant-absent, §V41/B36). The
+    DB-unavailable / internal guard is the tool's shared one.
     """
-    tool_handler = build_get_banners_spec(get_conn).handler
+    tool_handler = build_get_banners_spec(get_conn, image_refs_enabled=image_refs_enabled).handler
 
     def handler(params: Mapping[str, str]) -> ResponseEnvelope:
         guard = _unsupported_region(params)
@@ -405,16 +409,20 @@ def build_default_resources(
     *,
     registry: SourceRegistry,
     mode: str,
+    image_refs_enabled: bool = False,
 ) -> ResourceRegistry:
     """Build the shared ``arknights://`` resource registry (§T37; §V14).
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build; ``registry`` is the live source posture for ``arknights://sources``. Every
-    registered resource is read-only (§V2) and reuses the tools/services (§V14/§V37).
-    The operator resource is added with ``get_operator`` (§T44); it is absent here
-    because the operator service is a stub.
+    build; ``registry`` is the live source posture for ``arknights://sources``.
+    ``image_refs_enabled`` is the combined §T120 emission gate threaded to the entity
+    resources so they surface the same additive ``image_refs`` as their tools when the
+    source is enabled (§V14/§V63); it defaults ``False``. Every registered resource is
+    read-only (§V2) and reuses the tools/services (§V14/§V37). The operator resource is
+    added with ``get_operator`` (§T44); it is absent here because the operator service is
+    a stub.
     """
-    enemy_handler = build_get_enemy_spec(get_conn).handler
+    enemy_handler = build_get_enemy_spec(get_conn, image_refs_enabled=image_refs_enabled).handler
     stage_handler = build_get_stage_spec(get_conn).handler
 
     resources = ResourceRegistry()
@@ -451,7 +459,7 @@ def build_default_resources(
             title="Arknights banners",
             description=_BANNERS_DESCRIPTION,
             uri_template=_BANNERS_TEMPLATE,
-            handler=_make_banners_handler(get_conn),
+            handler=_make_banners_handler(get_conn, image_refs_enabled=image_refs_enabled),
         )
     )
     resources.register(

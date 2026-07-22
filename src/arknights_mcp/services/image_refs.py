@@ -36,10 +36,24 @@ encoder, applied the same way to every derived URL.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from arknights_mcp.sources.registry import SourceRegistry
+
 #: The registry ``source_id`` (§V27) for these references. Single home (§V37) for the
 #: id the §T120 tool wiring stamps onto each emitted ``{category, url, source_id}`` entry
 #: and checks for ``enabled`` before emitting.
 SOURCE_ID = "arknights_game_resource"
+
+#: The first-cut image categories (§V63). ``portrait``/``avatar``/``skin`` attach to an
+#: operator, ``enemy`` to an enemy; a resolved banner featured-op carries ``portrait``.
+#: Single §T120 home for the category label stamped on each emitted ref.
+CATEGORY_PORTRAIT = "portrait"
+CATEGORY_AVATAR = "avatar"
+CATEGORY_SKIN = "skin"
+CATEGORY_ENEMY = "enemy"
 
 #: Raw-content base for the mirror, pinned to ``main`` (§V63/ADR 0008). The folder and
 #: ``<file>.png`` are appended by :func:`_png_url`. This literal has exactly ONE home in
@@ -114,3 +128,77 @@ def enemy_image_url(game_id: str) -> str:
     first cut. Pure derivation -- no network (§V1/§V24).
     """
     return _png_url("enemy", game_id)
+
+
+@dataclass(frozen=True)
+class ImageRef:
+    """One derived image reference for the wire (§T120/§V63).
+
+    A ``{category, url, source_id}`` triple: ``url`` is a query-time DERIVED link (never
+    stored, never fetched -- §V63); ``category`` is one of the :data:`CATEGORY_*` labels;
+    ``source_id`` is the §V27 registry attribution the wiring stamps on every ref.
+    """
+
+    category: str
+    url: str
+    source_id: str = SOURCE_ID
+
+
+def _refs(category: str, urls: tuple[str, ...]) -> list[ImageRef]:
+    """Stamp ``category`` + :data:`SOURCE_ID` onto each derived URL (§T120/§V37)."""
+    return [ImageRef(category=category, url=url) for url in urls]
+
+
+def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive an operator's portrait + avatar + skin refs from its ``game_id`` (§T120/§V63).
+
+    A small, fixed set (portrait ``_1``/``_2``, avatar base/``_2``, skin ``_1b``/``_2b``)
+    that attaches to the single already-fetched operator entity -- never a catalog list or
+    enumeration (§V19). Pure derivation; whether it is *emitted* is decided by the wiring
+    gate (:func:`refs_enabled`). No network (§V1/§V24).
+    """
+    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id))
+    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id))
+    refs += _refs(CATEGORY_SKIN, operator_skin_urls(game_id))
+    return tuple(refs)
+
+
+def operator_portrait_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive an operator's portrait refs only (E0/E2) from its ``game_id`` (§T120/§V63).
+
+    The banner featured-op portrait attached when the featured char id soft-resolved to a
+    present operator (§V62): the resolved char id IS that operator's ``game_id``. Pure
+    derivation -- no network (§V1/§V24).
+    """
+    return tuple(_refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id)))
+
+
+def enemy_image_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive an enemy's image ref (base sprite) from its ``game_id`` (§T120/§V63).
+
+    A single ref attached to the one already-fetched enemy entity (§V19 -- no catalog).
+    Pure derivation -- no network (§V1/§V24).
+    """
+    return (ImageRef(category=CATEGORY_ENEMY, url=enemy_image_url(game_id)),)
+
+
+def refs_enabled(*, config_enabled: bool, registry: SourceRegistry) -> bool:
+    """The combined §T120 emission gate -- single §V37 home (§V63/§C/§V27).
+
+    An ``image_refs`` list is emitted ONLY when BOTH gates pass:
+
+    * ``config_enabled`` -- the private-only config posture
+      (:attr:`~arknights_mcp.config.AppConfig.image_refs_enabled`): OFF by default and
+      suppressed on any public-facing (non-loopback / behind-proxy) deployment so a single
+      flag can never expose the surface publicly (§C/D4);
+    * the ``arknights_game_resource`` source is ``enabled`` in the machine registry (§V27)
+      -- the takedown kill switch (§V20): flipping it off stops every ref with nothing to
+      purge (§V63 store-nothing).
+
+    Deriving a URL is side-effect-free, so the derive functions are always safe to call;
+    this gate alone decides whether the wiring attaches the result.
+    """
+    if not config_enabled:
+        return False
+    entry = registry.get(SOURCE_ID)
+    return entry is not None and entry.enabled

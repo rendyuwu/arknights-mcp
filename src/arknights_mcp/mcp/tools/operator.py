@@ -31,6 +31,7 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
+from arknights_mcp.services.image_refs import ImageRef, operator_image_refs
 from arknights_mcp.services.operators import (
     OperatorDetailResult,
     OperatorFacts,
@@ -50,7 +51,9 @@ _TOOL_DESCRIPTION = (
     "is compact identity + a summary (rarity, profession, subclass, position, tags, "
     "and how many phases/skills/talents/modules exist) + provenance; set "
     "include_phases / include_skills / include_talents / include_modules to add each "
-    "(bounded) heavy section. en/cn are never mixed."
+    "(bounded) heavy section. When the image-reference source is enabled, an additional "
+    "image_refs list of derived portrait/avatar/skin art URLs is included. en/cn are "
+    "never mixed."
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -154,12 +157,26 @@ def _module_to_dict(module: OperatorModuleFacts) -> dict[str, object]:
     }
 
 
-def _operator_to_dict(operator: OperatorFacts, *, include_provenance: bool) -> dict[str, object]:
+def _image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
+    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
+
+    The URL is a query-time DERIVED link (never stored, never fetched); ``source_id`` is
+    the §V27 registry attribution.
+    """
+    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
+
+
+def _operator_to_dict(
+    operator: OperatorFacts, *, include_provenance: bool, image_refs_enabled: bool
+) -> dict[str, object]:
     """The typed operator facts + opted-in sections (no prose; §V16/§V18).
 
     Sections are present only when the service loaded them (their include flag was
     set); ``include_provenance`` toggles an *extra* in-``data`` provenance echo -- the
-    envelope always carries the §V5 region provenance regardless.
+    envelope always carries the §V5 region provenance regardless. When
+    ``image_refs_enabled`` (the combined §T120 config + registry gate), an additive
+    ``image_refs`` list of DERIVED portrait/avatar/skin URLs rides along (§V21/§V63);
+    when the gate is off the field is absent entirely (backward-compatible default).
     """
     data: dict[str, object] = {
         "server": operator.server,
@@ -181,17 +198,31 @@ def _operator_to_dict(operator: OperatorFacts, *, include_provenance: bool) -> d
             "snapshot_id": operator.provenance.snapshot_id,
             "imported_at": operator.provenance.imported_at,
         }
+    if image_refs_enabled:
+        # §V63: DERIVED from the operator's already-stored game_id -- no byte, no url
+        # stored, no fetch. §V5: rides this operator's OWN region envelope (game_id is
+        # region-scoped) so en/cn never mix. §V19: a bounded per-entity attach, never a
+        # catalog list/page/search.
+        data["image_refs"] = [_image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
     return data
 
 
-def _shape(result: OperatorDetailResult, *, include_provenance: bool) -> ResponseEnvelope:
+def _shape(
+    result: OperatorDetailResult, *, include_provenance: bool, image_refs_enabled: bool
+) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 envelope (§V5 region + provenance)."""
     if result.status == "not_found" or result.operator is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     prov = result.operator.provenance
     return ok(
-        {"operator": _operator_to_dict(result.operator, include_provenance=include_provenance)},
+        {
+            "operator": _operator_to_dict(
+                result.operator,
+                include_provenance=include_provenance,
+                image_refs_enabled=image_refs_enabled,
+            )
+        },
         provenance=[
             Provenance(
                 server=result.operator.server,
@@ -202,13 +233,19 @@ def _shape(result: OperatorDetailResult, *, include_provenance: bool) -> Respons
     )
 
 
-def build_get_operator_spec(get_conn: ConnectionProvider) -> ToolSpec:
+def build_get_operator_spec(
+    get_conn: ConnectionProvider, *, image_refs_enabled: bool = False
+) -> ToolSpec:
     """Build the ``get_operator`` :class:`ToolSpec` (§T44; §V14).
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build. The returned spec is read-only (§V2) for the single shared registry both
-    transports dispatch from (§V14); its ``input_schema`` is the bounded model's
-    JSON Schema, so the §V5 required ``server`` + §V18 ``game_id`` cap + the §V22
+    build. ``image_refs_enabled`` is the combined §T120 emission gate (config
+    private-only posture AND the ``arknights_game_resource`` source enabled, computed
+    once at wiring time via :func:`~arknights_mcp.services.image_refs.refs_enabled`); it
+    defaults ``False`` so the additive ``image_refs`` field is absent unless the source
+    is enabled (§V21/§V63). The returned spec is read-only (§V2) for the single shared
+    registry both transports dispatch from (§V14); its ``input_schema`` is the bounded
+    model's JSON Schema, so the §V5 required ``server`` + §V18 ``game_id`` cap + the §V22
     include-flag defaults land on the wire exactly as validated.
     """
 
@@ -229,7 +266,11 @@ def build_get_operator_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 include_talents=parsed.include_talents,
                 include_modules=parsed.include_modules,
             ),
-            lambda result: _shape(result, include_provenance=parsed.include_provenance),
+            lambda result: _shape(
+                result,
+                include_provenance=parsed.include_provenance,
+                image_refs_enabled=image_refs_enabled,
+            ),
         )
 
     return ToolSpec(

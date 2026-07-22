@@ -43,6 +43,7 @@ from arknights_mcp.services.banners import (
     FeaturedOpFacts,
     get_banners,
 )
+from arknights_mcp.services.image_refs import ImageRef, operator_portrait_refs
 
 _TOOL_NAME = "get_banners"
 _TOOL_TITLE = "Get banners"
@@ -55,20 +56,44 @@ _TOOL_DESCRIPTION = (
     "that is reported as a limitation, never fabricated. This is a historical schedule "
     "FACT, not gacha PLANNING (no pull-probability, pity, or spark). Optional since/until "
     "bounds window the list by ISO open-time (inclusive); results are newest-first and "
-    "paged (bounded page/page_size). en/cn are never mixed."
+    "paged (bounded page/page_size). When the image-reference source is enabled, a "
+    "featured operator that resolved to a present operator additionally carries an "
+    "image_refs list with its derived portrait URLs. en/cn are never mixed."
 )
 
 
-def _featured_op_to_dict(op: FeaturedOpFacts) -> dict[str, object]:
-    """One typed featured operator for the wire (§V62; no internal pk leak)."""
-    return {
+def _image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
+    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
+
+    The URL is a query-time DERIVED link (never stored, never fetched); ``source_id`` is
+    the §V27 registry attribution.
+    """
+    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
+
+
+def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> dict[str, object]:
+    """One typed featured operator for the wire (§V62; no internal pk leak).
+
+    When ``image_refs_enabled`` (the combined §T120 config + registry gate) AND the
+    featured op soft-resolved to a present operator (§V62), an additive ``image_refs``
+    list with its DERIVED portrait URLs rides along -- the resolved ``char_id`` IS that
+    operator's ``game_id`` (§V63). An unresolved featured op carries no ref (its raw char
+    id may not name a present operator), and when the gate is off the field is absent
+    entirely (backward-compatible default, §V21).
+    """
+    data: dict[str, object] = {
         "char_id": op.char_id,
         "resolved": op.resolved,
         "operator_name": op.operator_name,
     }
+    if image_refs_enabled and op.resolved:
+        # §V63: DERIVED from the resolved featured char id (== the operator's game_id);
+        # §V5: rides this banner's OWN region envelope; §V19: a bounded per-op attach.
+        data["image_refs"] = [_image_ref_to_dict(r) for r in operator_portrait_refs(op.char_id)]
+    return data
 
 
-def _banner_to_dict(banner: BannerFacts) -> dict[str, object]:
+def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[str, object]:
     """One banner's metadata fields for the wire (metadata-only, §V62/§V16)."""
     return {
         "game_id": banner.game_id,
@@ -77,11 +102,14 @@ def _banner_to_dict(banner: BannerFacts) -> dict[str, object]:
         "end_time": banner.end_time,
         "rule_type": banner.rule_type,
         "region": banner.region,
-        "featured_ops": [_featured_op_to_dict(op) for op in banner.featured_ops],
+        "featured_ops": [
+            _featured_op_to_dict(op, image_refs_enabled=image_refs_enabled)
+            for op in banner.featured_ops
+        ],
     }
 
 
-def _shape(result: BannersResult) -> ResponseEnvelope:
+def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 ``ok`` envelope (§V5 region + provenance).
 
     A region with no banners is a legitimate empty list (gacha_table is fetched
@@ -93,7 +121,9 @@ def _shape(result: BannersResult) -> ResponseEnvelope:
     never drops one). The §V62/§V26 caveats ride the envelope ``limitations``.
     """
     data: dict[str, object] = {
-        "banners": [_banner_to_dict(b) for b in result.banners],
+        "banners": [
+            _banner_to_dict(b, image_refs_enabled=image_refs_enabled) for b in result.banners
+        ],
         "page": page_to_dict(result.page),
     }
     return ok(
@@ -106,14 +136,20 @@ def _shape(result: BannersResult) -> ResponseEnvelope:
     )
 
 
-def build_get_banners_spec(get_conn: ConnectionProvider) -> ToolSpec:
+def build_get_banners_spec(
+    get_conn: ConnectionProvider, *, image_refs_enabled: bool = False
+) -> ToolSpec:
     """Build the ``get_banners`` :class:`ToolSpec` (§T114; §V14).
 
     ``get_conn`` returns the process-wide read-only connection to the promoted build.
-    The returned spec is read-only (§V2) for the single shared registry both transports
-    dispatch from (§V14); its ``input_schema`` is the bounded model's JSON Schema, so
-    the §V5 required ``server`` + the optional since/until window + the bounded ``page``
-    land on the wire exactly as validated.
+    ``image_refs_enabled`` is the combined §T120 emission gate (config private-only
+    posture AND the ``arknights_game_resource`` source enabled, computed once at wiring
+    time via :func:`~arknights_mcp.services.image_refs.refs_enabled`); it defaults
+    ``False`` so a resolved featured op carries the additive ``image_refs`` portrait list
+    only when the source is enabled (§V21/§V63). The returned spec is read-only (§V2) for
+    the single shared registry both transports dispatch from (§V14); its ``input_schema``
+    is the bounded model's JSON Schema, so the §V5 required ``server`` + the optional
+    since/until window + the bounded ``page`` land on the wire exactly as validated.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
@@ -132,7 +168,7 @@ def build_get_banners_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 page=parsed.page.page,
                 page_size=parsed.page.page_size,
             ),
-            _shape,
+            lambda result: _shape(result, image_refs_enabled=image_refs_enabled),
         )
 
     return ToolSpec(

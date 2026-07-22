@@ -23,6 +23,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.db.promotion import resolve_active_database
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.services.image_refs import refs_enabled
 from arknights_mcp.sources.registry import load_source_registry
 
 
@@ -94,9 +95,17 @@ def build_application(config: AppConfig) -> ApplicationCore:
         config.database.current_manifest,
     )
     source_registry = load_source_registry(config.source_registry.machine_registry)
+    # §T120/§V63: the additive image_refs surface is emitted only when BOTH the
+    # private-only config posture (config.image_refs_enabled) AND the
+    # arknights_game_resource source are enabled. Compute the combined gate once here
+    # (single §V37 home in services.image_refs) and thread it into the shared registry.
+    image_refs_enabled = refs_enabled(
+        config_enabled=config.image_refs_enabled, registry=source_registry
+    )
     registry = build_tool_registry(
         provider,
         registry=source_registry,
         mode=config.deployment_mode,
+        image_refs_enabled=image_refs_enabled,
     )
     return ApplicationCore(config=config, registry=registry, provider=provider)
