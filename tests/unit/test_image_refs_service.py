@@ -9,9 +9,11 @@ One test per invariant the task cites (§V63/§V1/§V24/§V37/§C):
 * **§V1 / §V24 no network** -- the module imports no network library and derives URLs
   with a socket-open guard tripped, proving it never fetches/HEADs/validates a link.
 * **§V37 single home** -- every derived URL is built from the one ``_RAW_BASE`` constant.
-* **§C private-only gate** -- ``[image_refs].enabled`` is OFF by default and stays
-  suppressed on a public-facing (non-loopback / behind-proxy) deployment, so a single
-  flag can never expose art references publicly (D4).
+* **§V63 access-controlled gate (ADR 0009)** -- ``[image_refs].enabled`` is OFF by default
+  and carries NO deployment-posture term: it emits on any *startable* posture (loopback dev
+  OR an authenticated non-loopback / behind-proxy remote), because §V9 already fails startup
+  closed on any anonymous non-loopback surface. "Private" means access-controlled, not
+  loopback-only (D4 refined).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from arknights_mcp.config import AppConfig, load_config
+from arknights_mcp.config import AppConfig, ImageRefsConfig, load_config
 from arknights_mcp.services import image_refs
 from arknights_mcp.services.image_refs import (
     SOURCE_ID,
@@ -161,7 +163,18 @@ def test_all_urls_derive_from_single_base_constant() -> None:
         assert url.startswith(image_refs._RAW_BASE + "/")
 
 
-# --- §C: private-only config gate --------------------------------------------------
+# --- §V63: access-controlled config gate (ADR 0009) -------------------------------
+
+#: A valid, non-placeholder OIDC block so an auth-requiring (``requires_auth``) remote is
+#: startup-safe (§V9): behind_proxy / non-loopback binds below pair it with an https
+#: ``public_base_url`` so ``assert_remote_startup_safe`` does not raise.
+_AUTH_OIDC = {
+    "mode": "oidc",
+    "issuer": "https://issuer.example.com/",
+    "audience": "https://mcp.example.com/mcp",
+    "jwks_url": "https://issuer.example.com/.well-known/jwks.json",
+    "required_scopes": ["arknights:read"],
+}
 
 
 def test_image_refs_off_by_default() -> None:
@@ -192,9 +205,9 @@ def test_gate_active_on_loopback_dev_remote() -> None:
     assert cfg.image_refs_enabled is True
 
 
-def test_gate_suppressed_on_nonloopback_remote() -> None:
-    # §C/D4: a non-loopback (public) bind is public-facing → the single flag cannot
-    # expose references, even when enabled.
+def test_gate_emits_on_authenticated_nonloopback() -> None:
+    # §V63/ADR 0009: a non-loopback bind under valid OIDC is an AUTHENTICATED, startable
+    # surface -- the gate no longer carries a posture term, so the flag takes effect.
     cfg = AppConfig.model_validate(
         {
             "image_refs": {"enabled": True},
@@ -205,14 +218,17 @@ def test_gate_suppressed_on_nonloopback_remote() -> None:
                     "public_base_url": "https://mcp.example.com",
                 }
             },
+            "auth": _AUTH_OIDC,
         }
     )
     assert cfg.mcp.remote.requires_auth is True
-    assert cfg.image_refs_enabled is False
+    cfg.assert_remote_startup_safe()  # §V9: startable (HTTPS + valid OIDC), does not raise
+    assert cfg.image_refs_enabled is True
 
 
-def test_gate_suppressed_behind_proxy() -> None:
-    # §V40/§C: a loopback bind declared behind_proxy serves the public internet → gate off.
+def test_gate_emits_behind_proxy_authenticated() -> None:
+    # §V63/ADR 0009: the shipped Cloudflare-tunnel posture (loopback bind, behind_proxy,
+    # Auth0 OIDC) is authenticated ∴ access-controlled ∴ the flag emits when enabled.
     cfg = AppConfig.model_validate(
         {
             "image_refs": {"enabled": True},
@@ -224,14 +240,41 @@ def test_gate_suppressed_behind_proxy() -> None:
                     "public_base_url": "https://mcp.example.com",
                 }
             },
+            "auth": _AUTH_OIDC,
+        }
+    )
+    assert cfg.mcp.remote.requires_auth is True
+    cfg.assert_remote_startup_safe()  # §V9: startable, does not raise
+    assert cfg.image_refs_enabled is True
+
+
+def test_gate_off_when_flag_false_even_authenticated() -> None:
+    # §V63: the flag alone is the config gate now -- enabled=false suppresses regardless of
+    # an authenticated behind_proxy posture (accept: [image_refs].enabled=false → absent).
+    cfg = AppConfig.model_validate(
+        {
+            "image_refs": {"enabled": False},
+            "mcp": {
+                "remote": {
+                    "enabled": True,
+                    "bind_host": "127.0.0.1",
+                    "behind_proxy": True,
+                    "public_base_url": "https://mcp.example.com",
+                }
+            },
+            "auth": _AUTH_OIDC,
         }
     )
     assert cfg.mcp.remote.requires_auth is True
     assert cfg.image_refs_enabled is False
 
 
-def test_active_config_never_exposes_refs() -> None:
-    # The shipped active config is behind_proxy=true (public-facing) AND enabled=false,
-    # so the surface is doubly suppressed -- a regression guard on the real deployment.
+def test_active_config_authenticated_emits_when_flag_flipped() -> None:
+    # The shipped active config is behind_proxy=true + Auth0 OIDC (authenticated) AND
+    # enabled=false → suppressed by the FLAG alone now (not the posture). Flipping only
+    # [image_refs].enabled=true would emit -- the ADR 0009 accept case on the real config.
     cfg = load_config(ACTIVE_CONFIG)
-    assert cfg.image_refs_enabled is False
+    assert cfg.mcp.remote.requires_auth is True  # behind_proxy Cloudflare-tunnel posture
+    assert cfg.image_refs_enabled is False  # shipped off by the flag
+    enabled = cfg.model_copy(update={"image_refs": ImageRefsConfig(enabled=True)})
+    assert enabled.image_refs_enabled is True  # authenticated deployment emits when opted in

@@ -15,11 +15,14 @@ Two invariants hold **by construction** here:
   never turns one into an error or a fallback download.
 
 The emission gate lives in configuration, not here: :func:`arknights_mcp` config's
-``AppConfig.image_refs_enabled`` is OFF by default and private-only (§C/D4), and the
+``AppConfig.image_refs_enabled`` is OFF by default. As of ADR 0009 the gate carries no
+deployment-posture term -- "private" means access-controlled, not loopback-only, since
+§V9 already fails startup closed on any anonymous non-loopback surface, so an
+authenticated (OIDC/bearer) deployment may emit references when opted in (§C/D4). The
 tool wiring (§T120) additionally requires the ``arknights_game_resource`` source to be
-enabled in the registry before attaching any of these URLs. Deriving a URL is free of
-side effects, so these functions are always safe to call; whether the result is
-*emitted* is decided upstream.
+enabled in the registry (§V20 kill switch) before attaching any of these URLs. Deriving
+a URL is free of side effects, so these functions are always safe to call; whether the
+result is *emitted* is decided upstream.
 
 Shape verified against the live repo tree (branch ``main``, 2026-07-22; §V63/ADR 0008):
 
@@ -198,10 +201,11 @@ def refs_enabled(*, config_enabled: bool, registry: SourceRegistry) -> bool:
 
     An ``image_refs`` list is emitted ONLY when BOTH gates pass:
 
-    * ``config_enabled`` -- the private-only config posture
-      (:attr:`~arknights_mcp.config.AppConfig.image_refs_enabled`): OFF by default and
-      suppressed on any public-facing (non-loopback / behind-proxy) deployment so a single
-      flag can never expose the surface publicly (§C/D4);
+    * ``config_enabled`` -- the config posture
+      (:attr:`~arknights_mcp.config.AppConfig.image_refs_enabled`): OFF by default. Per
+      ADR 0009 this is exactly ``[image_refs].enabled`` -- access-controlled, not
+      loopback-only, since §V9 already fails startup closed on any anonymous non-loopback
+      surface, so an authenticated deployment may emit when opted in (§C/D4);
     * the ``arknights_game_resource`` source is ``enabled`` in the machine registry (§V27)
       -- the takedown kill switch (§V20): flipping it off stops every ref with nothing to
       purge (§V63 store-nothing).

@@ -226,12 +226,15 @@ class PrivacyConfig(_Model):
 
 
 class ImageRefsConfig(_Model):
-    """Query-time image URL-reference surface toggle (§T119/§V63/ADR 0008).
+    """Query-time image URL-reference surface toggle (§T119/§V63/ADR 0008+0009).
 
-    OFF by default. This flag alone is NOT sufficient to emit references on a public/
-    non-loopback deployment -- the effective gate is :attr:`AppConfig.image_refs_enabled`,
-    which additionally requires a private (non-public-facing) posture so a single flag can
-    never expose the art-reference surface publicly (§C/D4).
+    OFF by default. This flag is the config half of the emission gate
+    (:attr:`AppConfig.image_refs_enabled`); the tool wiring additionally requires the
+    ``arknights_game_resource`` source to be enabled in the machine registry (§V20
+    kill switch) before any reference is emitted. As of ADR 0009 the gate carries NO
+    deployment-posture term: "private" means access-controlled, not loopback-only --
+    §V9 already fails startup closed on any anonymous non-loopback surface, so an
+    authenticated (OIDC/bearer) deployment may emit references when opted in (§C/D4).
     """
 
     enabled: bool = False
@@ -297,23 +300,25 @@ class AppConfig(_Model):
 
     @property
     def image_refs_enabled(self) -> bool:
-        """§V63/D4 private-only gate for the image URL-reference surface (§T119).
+        """§V63 config gate for the image URL-reference surface (§T119; ADR 0008+0009).
 
-        OFF by default. Even when ``[image_refs].enabled`` is set, the surface stays
-        suppressed for a public-facing deployment -- one that
-        :attr:`McpRemoteConfig.requires_auth` (a non-loopback bind, or a loopback bind
-        declared ``behind_proxy``) -- so a single config flag can never expose art
-        references on a public/non-loopback deployment (D4 / §C private+noncommercial;
-        ⊥ single public-mode flag). A genuine local/loopback dev deployment is the only
-        posture where the flag takes effect.
+        OFF by default. As of ADR 0009 (D4 refined) the gate carries NO deployment-posture
+        term -- it is exactly ``[image_refs].enabled``. "Private" means access-controlled,
+        not loopback-only: §V9's :meth:`assert_remote_startup_safe` already fails startup
+        closed on any anonymous non-loopback surface (``requires_auth`` without HTTPS +
+        valid OIDC), so every *startable* deployment is either an authenticated (OIDC/bearer)
+        remote or a genuine loopback dev bind on the owner's own machine. Both are
+        access-controlled in the sense D4 cares about, so the old ``and not requires_auth``
+        term was merely "loopback-only" -- stricter than the private+noncommercial intent --
+        and is dropped. There is no startable open/anonymous public surface to protect
+        against (§C; ⊥ single *public-mode* flag -- this is a private-emit toggle gated by
+        §V9, not a public-hosting switch).
 
-        Single home (§V37) for the gate consumed by both transports' tool wiring (§T120):
-        it reuses the existing ``requires_auth`` public-posture derivation rather than
-        re-deriving loopback/proxy logic. The registry ``enabled`` check for the
-        ``arknights_game_resource`` source is an additional, separate gate applied at the
-        wiring layer.
+        Single home (§V37) for the gate consumed by both transports' tool wiring (§T120).
+        The registry ``enabled`` check for the ``arknights_game_resource`` source is an
+        additional, separate gate (§V20 kill switch) applied at the wiring layer.
         """
-        return self.image_refs.enabled and not self.mcp.remote.requires_auth
+        return self.image_refs.enabled
 
 
 def load_config(
