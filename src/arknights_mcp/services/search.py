@@ -49,6 +49,12 @@ class SearchHit:
 
     Full facts + provenance are fetched by the entity tools (``get_enemy`` /
     ``get_stage`` / ``get_operator``); a hit is a region-scoped locator.
+
+    ``difficulty`` is the §V70 stage variant tag: a stage hit carries the same
+    ``difficulty`` value ``get_stage`` returns, so two stages sharing a
+    ``display_name`` + ``stage_code`` (a normal stage and its challenge variant)
+    stay distinguishable in one result set without the game-data ``game_id``
+    suffix (B59). ``None`` for a non-stage hit or a stage with no difficulty.
     """
 
     entity_type: str
@@ -56,6 +62,7 @@ class SearchHit:
     game_id: str
     display_name: str | None
     stage_code: str | None
+    difficulty: str | None
 
 
 @dataclass(frozen=True)
@@ -138,6 +145,7 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
             game_id=row.game_id,
             display_name=row.name,
             stage_code=row.stage_code,
+            difficulty=row.difficulty,
         )
         for row in rows
     )

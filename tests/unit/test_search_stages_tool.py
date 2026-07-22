@@ -68,11 +68,19 @@ def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
 
 
 def test_results_are_region_tagged_stage_locators(conn: sqlite3.Connection) -> None:
-    # §V5 region travels per row; every hit is typed as a stage locator.
+    # §V5 region travels per row; every hit is typed as a stage locator, and each
+    # carries the §V70 difficulty variant tag (may be null when source omits it).
     for row in _handler(conn)(query="Combustion").to_dict()["data"]["results"]:  # type: ignore[index]
         assert row["server"] == "en"
         assert row["entity_type"] == "stage"
-        assert set(row) == {"entity_type", "server", "game_id", "display_name", "stage_code"}
+        assert set(row) == {
+            "entity_type",
+            "server",
+            "game_id",
+            "display_name",
+            "stage_code",
+            "difficulty",
+        }
 
 
 def test_matches_by_name_and_game_id(conn: sqlite3.Connection) -> None:
@@ -115,12 +123,17 @@ def _seed_provenance(conn: sqlite3.Connection) -> int:
 
 
 def _insert_stage(
-    conn: sqlite3.Connection, game_id: str, stage_code: str, name: str, prov: int
+    conn: sqlite3.Connection,
+    game_id: str,
+    stage_code: str,
+    name: str,
+    prov: int,
+    difficulty: str | None = None,
 ) -> None:
     conn.execute(
-        "INSERT INTO stages (server, game_id, stage_code, display_name, provenance_id) "
-        "VALUES (?,?,?,?,?)",
-        ("en", game_id, stage_code, name, prov),
+        "INSERT INTO stages (server, game_id, stage_code, display_name, difficulty, "
+        "provenance_id) VALUES (?,?,?,?,?,?)",
+        ("en", game_id, stage_code, name, difficulty, prov),
     )
 
 
@@ -157,6 +170,56 @@ def test_exact_code_match_is_case_insensitive(tmp_path: Path) -> None:
     with open_read_only(path) as conn:
         rows = _handler(conn)(query="gt-1").to_dict()["data"]["results"]
     assert rows[0]["stage_code"] == "GT-1"  # type: ignore[index]
+
+
+# --- §V70/B59: variant stages distinguishable by the difficulty locator tag ----
+
+
+def test_v70_variant_stages_distinguishable_by_difficulty(tmp_path: Path) -> None:
+    # §V70/B59: a normal stage and its challenge variant share display_name +
+    # stage_code and differ only by the game-data "#f#" game_id suffix. The
+    # locator carries a `difficulty` variant tag (the same value get_stage
+    # returns), so a client can tell the two apart in one result set without
+    # parsing that jargon suffix -- no two indistinguishable locators.
+    path = tmp_path / "variants.sqlite"
+    writer = build_database(path)
+    prov = _seed_provenance(writer)
+    _insert_stage(writer, "main_04-04", "4-4", "Combustion", prov, difficulty="NORMAL")
+    _insert_stage(writer, "main_04-04#f#", "4-4", "Combustion", prov, difficulty="FOUR_STAR")
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        rows = _handler(conn)(query="4-4").to_dict()["data"]["results"]  # type: ignore[index]
+
+    by_game_id = {row["game_id"]: row for row in rows}
+    # both variants surface, and they collide on display_name + stage_code (B59) ...
+    assert set(by_game_id) == {"main_04-04", "main_04-04#f#"}
+    assert {r["display_name"] for r in rows} == {"Combustion"}
+    assert {r["stage_code"] for r in rows} == {"4-4"}
+    # ... but the difficulty variant tag makes them distinguishable, carrying the
+    # raw stage difficulty (the get_stage.difficulty domain).
+    assert by_game_id["main_04-04"]["difficulty"] == "NORMAL"
+    assert by_game_id["main_04-04#f#"]["difficulty"] == "FOUR_STAR"
+    # §V70: no two locators in one result set are indistinguishable -- some field
+    # beyond the raw game_id separates the pair.
+    assert by_game_id["main_04-04"]["difficulty"] != by_game_id["main_04-04#f#"]["difficulty"]
+
+
+def test_stage_without_difficulty_carries_null_tag(tmp_path: Path) -> None:
+    # §V21 additive: a stage with no difficulty in source keeps the key present
+    # with a null value (the outer join never drops the row).
+    path = tmp_path / "nodiff.sqlite"
+    writer = build_database(path)
+    prov = _seed_provenance(writer)
+    _insert_stage(writer, "main_04-04", "4-4", "Combustion", prov)  # difficulty omitted
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        rows = _handler(conn)(query="4-4").to_dict()["data"]["results"]  # type: ignore[index]
+    assert rows[0]["difficulty"] is None
+    assert "difficulty" in rows[0]
 
 
 # --- §V23 typed envelope: not_found -------------------------------------------

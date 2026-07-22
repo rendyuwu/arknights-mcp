@@ -50,7 +50,9 @@ _ENTITIES_TOOL_TITLE = "Search entities"
 _ENTITIES_TOOL_DESCRIPTION = (
     "Search indexed Arknights operators, enemies, and stages by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
-    "get_operator / get_enemy / get_stage for full facts. An optional locale "
+    "get_operator / get_enemy / get_stage for full facts. A stage locator carries "
+    "its difficulty tag, so a normal stage and its challenge or tough variant that "
+    "share a code and name stay distinguishable. An optional locale "
     "(en/zh/ja/ko) filters to entities carrying a name/alias in that locale -- a "
     "name-tag filter only, it never changes an entity's own en/cn region facts. "
     "Results are bounded (default 10, max 50) and en/cn are never mixed."
@@ -60,7 +62,9 @@ _STAGES_TOOL_TITLE = "Search stages"
 _STAGES_TOOL_DESCRIPTION = (
     "Search indexed Arknights stages by stage code (e.g. 4-4), name, or game id. "
     "An exact stage-code match is ranked first. Returns ranked, region-tagged "
-    "locators; use get_stage for full facts + map/spawns. Results are bounded "
+    "locators; use get_stage for full facts + map/spawns. Each locator carries the "
+    "stage's difficulty tag, so a normal stage and its challenge or tough variant "
+    "that share a code and name stay distinguishable. Results are bounded "
     "(default 10, max 50) and en/cn are never mixed."
 )
 
@@ -85,13 +89,21 @@ _DATA_STALE_ACTION = "run `arknights-mcp sync --server <region>` or `arknights-m
 
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
-    """One hit as a region-tagged locator (§V5: region travels on every row)."""
+    """One hit as a region-tagged locator (§V5: region travels on every row).
+
+    ``difficulty`` is the §V70 stage variant tag: two stages that share a
+    ``display_name`` + ``stage_code`` (a normal stage and its challenge/tough
+    variant) carry distinct difficulty values, so a client can tell them apart in
+    one result set without parsing the game-data ``game_id`` suffix (B59). It is
+    ``null`` for a non-stage locator or a stage with no difficulty in source.
+    """
     return {
         "entity_type": hit.entity_type,
         "server": hit.server,
         "game_id": hit.game_id,
         "display_name": hit.display_name,
         "stage_code": hit.stage_code,
+        "difficulty": hit.difficulty,
     }
 
 

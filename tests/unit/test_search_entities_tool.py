@@ -67,10 +67,18 @@ def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
 
 
 def test_results_carry_region_and_type(conn: sqlite3.Connection) -> None:
-    # §V5 region travels per row; the locator carries its typed identity.
+    # §V5 region travels per row; the locator carries its typed identity. The
+    # §V70 difficulty variant tag is always keyed (null for a non-stage hit).
     for row in _handler(conn)(query="slug").to_dict()["data"]["results"]:  # type: ignore[index]
         assert row["server"] == "en"
-        assert set(row) == {"entity_type", "server", "game_id", "display_name", "stage_code"}
+        assert set(row) == {
+            "entity_type",
+            "server",
+            "game_id",
+            "display_name",
+            "stage_code",
+            "difficulty",
+        }
 
 
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:

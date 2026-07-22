@@ -20,7 +20,16 @@ from arknights_mcp.db.repositories.base import Repository
 
 @dataclass(frozen=True)
 class SearchHitRow:
-    """One FTS hit: its typed identity + region (§V5) and display fields."""
+    """One FTS hit: its typed identity + region (§V5) and display fields.
+
+    ``difficulty`` is the stage variant tag (§V70): a stage carries its
+    ``stages.difficulty`` value (the same value ``get_stage`` returns), so two
+    stages that share a ``display_name`` + ``stage_code`` (a normal stage and its
+    challenge variant) are distinguishable in one result set without parsing the
+    game-data ``game_id`` suffix (B59). It is ``None`` for a non-stage hit
+    (operators/enemies have no difficulty) and for a stage with no difficulty in
+    source.
+    """
 
     entity_type: str
     server: str
@@ -28,11 +37,24 @@ class SearchHitRow:
     game_id: str
     name: str | None
     stage_code: str | None
+    difficulty: str | None
 
 
 # The ``(? IS NULL OR col = ?)`` pairs make server / entity_type optional filters
 # while keeping every value bound (no interpolation, §V2). ``ORDER BY rank`` is
 # FTS5's bm25 ordering: best match first.
+#
+# The ``LEFT JOIN stages`` surfaces the §V70 stage variant tag: a stage hit
+# carries its ``stages.difficulty`` (``entity_pk`` == ``stage_pk`` for a stage
+# document, §T31), so a client can tell a normal stage from its challenge variant
+# when both share a display_name + stage_code (B59). The join is guarded by
+# ``entity_type = 'stage'`` in the ON clause -- ``stage_pk`` is a separate PK space
+# from ``operator_pk`` / ``enemy_pk``, so without the guard an operator/enemy whose
+# pk collided with a stage_pk would spuriously borrow a difficulty; with it, every
+# non-stage hit gets a ``NULL`` difficulty via the outer join. It is a pure
+# additive read (§V21) -- no migration, no FTS schema change; the ambiguous columns
+# (server / game_id / stage_code) are qualified to ``entity_fts`` so the join adds
+# no interpolation and every value stays bound (§V2).
 #
 # The locale filter (§V57) is the trailing ``(? IS NULL OR EXISTS ...)`` clause: when
 # a locale is bound, a hit survives only if its entity carries an alias tagged with
@@ -44,16 +66,21 @@ class SearchHitRow:
 # locale short-circuits the whole clause, so the unfiltered path is byte-unchanged
 # (§V21 additive).
 _SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code "
+    "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
+    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty "
     "FROM entity_fts "
+    "LEFT JOIN stages s "
+    "ON entity_fts.entity_type = 'stage' "
+    "AND s.stage_pk = entity_fts.entity_pk "
+    "AND s.server = entity_fts.server "
     "WHERE entity_fts MATCH ? "
-    "AND (? IS NULL OR server = ?) "
-    "AND (? IS NULL OR entity_type = ?) "
+    "AND (? IS NULL OR entity_fts.server = ?) "
+    "AND (? IS NULL OR entity_fts.entity_type = ?) "
     "AND (? IS NULL OR ("
-    "  (entity_type = 'operator' AND EXISTS ("
+    "  (entity_fts.entity_type = 'operator' AND EXISTS ("
     "    SELECT 1 FROM operator_aliases oa "
     "    WHERE oa.operator_pk = entity_fts.entity_pk AND oa.locale = ?)) "
-    "  OR (entity_type = 'enemy' AND EXISTS ("
+    "  OR (entity_fts.entity_type = 'enemy' AND EXISTS ("
     "    SELECT 1 FROM enemy_aliases ea "
     "    WHERE ea.enemy_pk = entity_fts.entity_pk AND ea.locale = ?)) "
     ")) "
@@ -65,20 +92,26 @@ _SEARCH_SQL = (
 # equals the raw query (case-insensitive) is pulled to the top ahead of bm25
 # ``rank`` -- an exact code match ("4-4") beats a fuzzier name/game-id hit. The
 # exact-code candidate is bound (§V2), never interpolated, and ``rank`` breaks
-# ties within each group.
+# ties within each group. The ``LEFT JOIN stages`` surfaces the §V70 difficulty
+# variant tag on every stage hit (see ``_SEARCH_SQL``); the WHERE already scopes to
+# ``entity_type = 'stage'`` so the join always resolves to the hit's own stage row.
 _STAGE_SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code "
+    "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
+    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty "
     "FROM entity_fts "
+    "LEFT JOIN stages s "
+    "ON s.stage_pk = entity_fts.entity_pk "
+    "AND s.server = entity_fts.server "
     "WHERE entity_fts MATCH ? "
-    "AND entity_type = 'stage' "
-    "AND (? IS NULL OR server = ?) "
-    "ORDER BY (CASE WHEN stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), rank "
+    "AND entity_fts.entity_type = 'stage' "
+    "AND (? IS NULL OR entity_fts.server = ?) "
+    "ORDER BY (CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), rank "
     "LIMIT ?"
 )
 
 
 def _to_hit(row: Any) -> SearchHitRow:
-    entity_type, server, entity_pk, game_id, name, stage_code = row
+    entity_type, server, entity_pk, game_id, name, stage_code, difficulty = row
     return SearchHitRow(
         entity_type=entity_type,
         server=server,
@@ -86,6 +119,7 @@ def _to_hit(row: Any) -> SearchHitRow:
         game_id=game_id,
         name=name,
         stage_code=stage_code,
+        difficulty=difficulty,
     )
 
 
