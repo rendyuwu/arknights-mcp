@@ -21,6 +21,8 @@ import contextlib
 import http.client
 import json
 import threading
+import time
+import zlib
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit
@@ -90,6 +92,61 @@ class Fetcher(Protocol):
 #: HTTP status codes that carry a ``Location`` the fetcher follows (capped).
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
 
+#: ``Content-Encoding`` values the fetcher can decompress (§V64). Anything else
+#: (``br``, ``deflate``, …) is rejected rather than silently mis-decoded -- we only
+#: advertise ``gzip`` in the request, so a compliant peer never returns another.
+_GZIP_ENCODINGS: frozenset[str] = frozenset({"gzip", "x-gzip"})
+
+#: Transport faults worth a bounded retry on a *fresh* connection (§V64/B55): a
+#: read/connect stall (``socket.timeout`` is ``TimeoutError`` on 3.10+), a peer that
+#: reset/aborted/refused the connection, or an HTTP framing error from a body the peer
+#: dropped mid-response. A genuine hard fault -- TLS verification, DNS ``gaierror`` --
+#: is a plain :class:`OSError` outside this set and fails closed with no retry, since
+#: retrying it only stalls the run without any chance of success.
+_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    TimeoutError,
+    ConnectionError,
+    http.client.HTTPException,
+)
+
+
+def _backoff_delay(attempt: int, base: float) -> float:
+    """Exponential backoff for a 1-based retry ``attempt``: ``base * 2**(attempt-1)`` (§V64).
+
+    Deterministic (no jitter) so the delay is unit-testable and the retry budget stays
+    small and predictable: attempt 1 → ``base``, attempt 2 → ``2*base``, and so on.
+    """
+    return base * 2.0 ** (attempt - 1)
+
+
+def _gunzip_capped(compressed: bytes, *, max_bytes: int, url: str) -> bytes:
+    """Inflate a complete gzip body, capping the DECOMPRESSED size (§V64 zip-bomb guard).
+
+    ``compressed`` is the full gzip stream (the caller has already bounded the
+    *compressed* read to the per-file cap, so a body already over-cap compressed is
+    rejected before reaching here). Decompression is bounded to ``max_bytes + 1`` output
+    bytes: a stream that would inflate past the cap leaves compressed data in
+    ``unconsumed_tail`` (or overshoots the one-byte margin), and is refused -- a small
+    stream cannot inflate hugely past the §V1 per-file cap. A malformed stream raises a
+    typed error, never a raw ``zlib`` traceback.
+    """
+    dec = zlib.decompressobj(16 + zlib.MAX_WBITS)  # 16 → expect a gzip (not raw zlib) header
+    try:
+        out = dec.decompress(compressed, max_bytes + 1)
+        if dec.unconsumed_tail:
+            # More decompressed output remains than the cap+1 margin allows.
+            raise SourceAdapterError(
+                f"decompressed download exceeds per-file cap ({max_bytes} bytes): {url!r}"
+            )
+        out += dec.flush()
+    except zlib.error as exc:
+        raise SourceAdapterError(f"invalid gzip body from {url!r}: {exc}") from exc
+    if len(out) > max_bytes:
+        raise SourceAdapterError(
+            f"decompressed download exceeds per-file cap ({max_bytes} bytes): {url!r}"
+        )
+    return out
+
 
 def _validate_redirect_target(
     newurl: str, *, origin_host: str | None, allow_cross_domain: bool
@@ -122,6 +179,13 @@ class HttpsFetcher:
     ``http.client`` connection is not thread-safe, so a connection is never shared
     across workers. Every §V1 gate (HTTPS-only, per-file byte cap, same-domain +
     depth-capped redirects) is applied per file regardless of the worker.
+
+    Resilience (§V64/B55): a transient transport fault (:data:`_TRANSIENT_ERRORS` --
+    read/connect timeout, connection reset, dropped-body framing error) is retried up
+    to ``max_retries`` times with exponential backoff instead of aborting the whole
+    ``sync``, so one stalled fetch among thousands does not kill the run; a genuine hard
+    fault (TLS/DNS) still fails closed with no retry. Bodies are requested ``gzip`` and
+    the per-file cap counts the *decompressed* size (zip-bomb guarded).
     """
 
     def __init__(
@@ -130,10 +194,16 @@ class HttpsFetcher:
         max_redirects: int = DEFAULT_LIMITS.max_redirects,
         timeout: float = 30.0,
         allow_cross_domain: bool = False,
+        max_retries: int = 2,
+        backoff_base: float = 0.5,
     ):
         self._max_redirects = max_redirects
         self._timeout = timeout
         self._allow_cross_domain = allow_cross_domain
+        # Bounded transient-retry budget (§V64): a fresh-connection timeout/reset is
+        # retried this many times with _backoff_delay before it becomes a hard failure.
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base
         self._local = threading.local()
         # Every connection ever opened, tracked so ``close`` can release sockets that
         # were opened on worker threads which have since exited: their thread-local
@@ -191,6 +261,7 @@ class HttpsFetcher:
         origin_host = urlsplit(url).hostname
         current = url
         redirects = 0
+        retries = 0
         while True:
             split = urlsplit(current)
             host = split.hostname or ""
@@ -203,7 +274,7 @@ class HttpsFetcher:
                 conn.request(
                     "GET",
                     path,
-                    headers={"Connection": "keep-alive", "Accept-Encoding": "identity"},
+                    headers={"Connection": "keep-alive", "Accept-Encoding": "gzip"},
                 )
                 response = conn.getresponse()
                 status = response.status
@@ -231,11 +302,22 @@ class HttpsFetcher:
                 if status != 200:
                     response.read()
                     raise SourceAdapterError(f"HTTP error {status} fetching {url!r}")
-                # Read one byte past the cap so an over-cap body is detectable.
+                # Read one byte past the cap so an over-cap body is detectable. The body
+                # may arrive gzip-compressed (§V64): the cap counts the DECOMPRESSED
+                # bytes -- the JSON we parse -- so a small stream that inflates hugely is
+                # refused (zip-bomb guard). The compressed read is itself cap-bounded, so
+                # a body already over-cap compressed is rejected before any inflate.
+                encoding = (response.getheader("Content-Encoding") or "").strip().lower()
                 data = response.read(max_bytes + 1)
                 if len(data) > max_bytes:
                     raise SourceAdapterError(
                         f"download exceeds per-file cap ({max_bytes} bytes): {url!r}"
+                    )
+                if encoding in _GZIP_ENCODINGS:
+                    return _gunzip_capped(data, max_bytes=max_bytes, url=url)
+                if encoding and encoding != "identity":
+                    raise SourceAdapterError(
+                        f"unsupported Content-Encoding {encoding!r} from {url!r}"
                     )
                 return data
             except SourceNotFoundError:
@@ -247,14 +329,29 @@ class HttpsFetcher:
             except SourceAdapterError:
                 self._drop(host, port)
                 raise
-            except (http.client.HTTPException, OSError) as exc:
+            except _TRANSIENT_ERRORS as exc:
+                # A transient transport fault (timeout, reset, dropped-body framing).
                 self._drop(host, port)
                 if not fresh:
                     # A reused keep-alive socket the peer dropped while idle: the
-                    # request never reached a live server, so reconnect and retry
-                    # once. The next _connection is fresh, so a genuine transport
-                    # fault raises on the retry instead of looping.
+                    # request never reached a live server, so reconnect for free (the
+                    # next _connection is fresh) WITHOUT spending the retry budget.
                     continue
+                if retries < self._max_retries:
+                    # A genuine stall/reset on a live connection -- one blip among the
+                    # thousands of files a full sync fetches. Back off and retry rather
+                    # than aborting the whole run (B55); the run only fails once the
+                    # bounded budget is exhausted.
+                    retries += 1
+                    time.sleep(_backoff_delay(retries, self._backoff_base))
+                    continue
+                raise SourceAdapterError(
+                    f"network error fetching {url!r} after {self._max_retries} retries: {exc}"
+                ) from exc
+            except OSError as exc:
+                # A non-transient transport fault (TLS verification, DNS resolution):
+                # retrying cannot help, so fail closed immediately.
+                self._drop(host, port)
                 raise SourceAdapterError(f"network error fetching {url!r}: {exc}") from exc
 
 
@@ -279,6 +376,9 @@ def fetch_json(
     # in-flight set, itself bounded by the worker count, §V42).
     budget.check()
     data = fetcher.fetch(url, max_bytes=limits.max_file_bytes)
+    # ``data`` is the DECOMPRESSED body (§V64): charging its length is conservative --
+    # it is >= the gzip bytes actually transferred, so the run-level download cap trips
+    # no later than the real network volume would (fail-safe direction).
     budget.charge(len(data))
     try:
         parsed = json.loads(data.decode("utf-8"))
