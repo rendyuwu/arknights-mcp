@@ -225,6 +225,18 @@ class PrivacyConfig(_Model):
     operational_log_retention_days: int = 14
 
 
+class ImageRefsConfig(_Model):
+    """Query-time image URL-reference surface toggle (§T119/§V63/ADR 0008).
+
+    OFF by default. This flag alone is NOT sufficient to emit references on a public/
+    non-loopback deployment -- the effective gate is :attr:`AppConfig.image_refs_enabled`,
+    which additionally requires a private (non-public-facing) posture so a single flag can
+    never expose the art-reference surface publicly (§C/D4).
+    """
+
+    enabled: bool = False
+
+
 class AppConfig(_Model):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
@@ -234,6 +246,7 @@ class AppConfig(_Model):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    image_refs: ImageRefsConfig = Field(default_factory=ImageRefsConfig)
 
     def _remote_safety_problems(self) -> list[str]:
         """Collect §V9 posture problems for an auth-requiring remote deployment.
@@ -281,6 +294,26 @@ class AppConfig(_Model):
         transport is enabled, else ``local``.
         """
         return "remote" if self.mcp.remote.enabled else "local"
+
+    @property
+    def image_refs_enabled(self) -> bool:
+        """§V63/D4 private-only gate for the image URL-reference surface (§T119).
+
+        OFF by default. Even when ``[image_refs].enabled`` is set, the surface stays
+        suppressed for a public-facing deployment -- one that
+        :attr:`McpRemoteConfig.requires_auth` (a non-loopback bind, or a loopback bind
+        declared ``behind_proxy``) -- so a single config flag can never expose art
+        references on a public/non-loopback deployment (D4 / §C private+noncommercial;
+        ⊥ single public-mode flag). A genuine local/loopback dev deployment is the only
+        posture where the flag takes effect.
+
+        Single home (§V37) for the gate consumed by both transports' tool wiring (§T120):
+        it reuses the existing ``requires_auth`` public-posture derivation rather than
+        re-deriving loopback/proxy logic. The registry ``enabled`` check for the
+        ``arknights_game_resource`` source is an additional, separate gate applied at the
+        wiring layer.
+        """
+        return self.image_refs.enabled and not self.mcp.remote.requires_auth
 
 
 def load_config(
