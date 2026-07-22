@@ -14,3 +14,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0005](0005-source-registry-and-takedown.md) | Source registry, attribution, takedown/purge | D13, D14 | §V20, §V27, §V28 |
 | [0006](0006-oauth-oidc-remote-auth.md) | OAuth/OIDC private remote; fail closed | D15, D12, D13 | §V9, §V10, §V11, §V12 |
 | [0007](0007-banner-archive-carve.md) | Banner archive carve — historical FACT in, planning out | D5 | §V62, §V16, §V5 |
+| [0008](0008-art-asset-url-references.md) | Art asset URL references — derive, link out, never bundle | D5 | §V63, §V16, §V1, §V27 |
