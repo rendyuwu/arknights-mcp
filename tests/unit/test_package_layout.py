@@ -62,7 +62,7 @@ EXPECTED_MODULE_FILES = [
 
 
 def test_package_version() -> None:
-    assert arknights_mcp.__version__ == "0.1.0"
+    assert arknights_mcp.__version__ == "0.2.0"
 
 
 def test_cli_entry_point_target_is_callable() -> None:

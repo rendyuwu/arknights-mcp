@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arknights-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Read-only Arknights Intelligence MCP server: one shared core, local stdio + private OAuth/OIDC Streamable HTTP, over versioned SQLite snapshots."
 requires-python = ">=3.12,<3.13"
 # Runtime dependencies are declared and locked in task T3 (V25: mcp>=1.28.1,<2).
