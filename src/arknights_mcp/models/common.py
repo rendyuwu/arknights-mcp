@@ -27,7 +27,7 @@ so a region is always attributed and the two are never silently mixed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -124,10 +124,38 @@ def validate_iso_bound(value: str | None) -> str | None:
     try:
         datetime.fromisoformat(value)
     except ValueError as exc:
+        # Client-facing message (it surfaces in the §V71 (c) invalid_input envelope),
+        # so no internal cite: keep the behavioral sentence, drop the §V tag.
         raise ValueError(
-            f"since/until must be an ISO date (YYYY-MM-DD) or ISO datetime (§V19); got {value!r}"
+            f"must be an ISO date (YYYY-MM-DD) or ISO datetime; got {value!r}"
         ) from exc
     return value
+
+
+def _strip_schema_descriptions(node: Any) -> Any:
+    """Recursively drop every ``description`` key from a generated JSON Schema.
+
+    §V71 (b): a model's class docstring is published verbatim as the schema's
+    ``description`` by :meth:`~pydantic.BaseModel.model_json_schema`, and those
+    docstrings carry internal spec cites (``§V…`` / ``B…`` / ``§T…``) + jargon
+    ("degenerate", "asymmetric-broken") written for maintainers. Those must not reach
+    an MCP client. Rather than rewrite every docstring (and lose the cites the code
+    should keep), the single §V37 home strips the auto-generated ``description`` from
+    the *published* schema here: the behavioral guidance for the client lives in the
+    tool-level ``description`` (kept, cite-free), while the structural contract
+    (types, ``maximum``/``minimum``/``maxLength``, ``required``,
+    ``additionalProperties: false``) is preserved intact. The cites stay in the code
+    docstrings, never on the wire.
+    """
+    if isinstance(node, dict):
+        return {
+            key: _strip_schema_descriptions(value)
+            for key, value in node.items()
+            if key != "description"
+        }
+    if isinstance(node, list):
+        return [_strip_schema_descriptions(item) for item in node]
+    return node
 
 
 def tool_input_schema(model: type[BaseModel]) -> dict[str, Any]:
@@ -137,5 +165,10 @@ def tool_input_schema(model: type[BaseModel]) -> dict[str, Any]:
     field constraints (``maximum``/``minimum``/``maxLength``) and
     ``additionalProperties: false`` (from ``extra="forbid"``) -- so the bounds a
     client sees on the wire are exactly the ones the model enforces (§V18/§V19/§V22).
+
+    The auto-generated ``description`` (the model/field docstring) is stripped
+    (:func:`_strip_schema_descriptions`, §V71 (b)): docstrings carry internal spec
+    cites/jargon that must not reach a client, and the client-facing behavioral text
+    lives in the tool-level ``description`` instead.
     """
-    return model.model_json_schema()
+    return cast("dict[str, Any]", _strip_schema_descriptions(model.model_json_schema()))

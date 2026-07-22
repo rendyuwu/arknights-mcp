@@ -18,7 +18,8 @@ Three invariants live here:
 * **§V23** -- every result carries a typed status from :data:`STATUS_VALUES`; an
   unknown status is rejected. Error envelopes never leak a stack trace or local
   path -- :func:`internal_error` emits a fixed, safe message and keeps any
-  internal detail out of the response.
+  internal detail out of the response, and :func:`invalid_input` wraps a malformed
+  request in the same typed envelope (never raw framework error text; §V71).
 
 Envelopes are plain frozen dataclasses (matching the service layer) with a
 ``to_dict`` that yields JSON-serializable primitives only.
@@ -30,6 +31,8 @@ import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, get_args
+
+from pydantic import ValidationError
 
 #: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
@@ -49,6 +52,7 @@ ToolStatus = Literal[
     "partial",
     "not_found",
     "ambiguous",
+    "invalid_input",
     "unsupported_server",
     "data_stale",
     "database_unavailable",
@@ -66,6 +70,7 @@ _ERROR_STATUSES: frozenset[str] = frozenset(
     {
         "not_found",
         "ambiguous",
+        "invalid_input",
         "unsupported_server",
         "data_stale",
         "database_unavailable",
@@ -77,6 +82,11 @@ _ERROR_STATUSES: frozenset[str] = frozenset(
 
 #: Fixed, path/trace-free message for an internal failure (§V23).
 _INTERNAL_ERROR_MESSAGE = "an internal error occurred while handling the request"
+
+#: §V71 (a): the next step for a malformed request names no admin CLI -- the client
+#: owns its own parameters, so it fixes them and retries. Client-facing text, so no
+#: internal cites/jargon (§V71 (b)); the cites live in this comment, never the string.
+_INVALID_INPUT_ACTION = "check the request parameters against the tool's input schema and retry"
 
 
 class EnvelopeError(ValueError):
@@ -260,3 +270,33 @@ def internal_error() -> ResponseEnvelope:
     those belong in the (redacted) server log, never the client-facing envelope.
     """
     return error("internal_error", _INTERNAL_ERROR_MESSAGE)
+
+
+def invalid_input(exc: ValidationError) -> ResponseEnvelope:
+    """Wrap a Pydantic :class:`ValidationError` in a typed ``invalid_input`` envelope.
+
+    A malformed tool call (unknown parameter, missing/blank required field,
+    out-of-range bound, bad region, non-ISO date bound) is a client mistake, so it
+    is delivered as a normal typed result rather than a leaked framework error
+    (§V23/§V71 (c); B60). The message is rebuilt from each error's ``loc`` (which
+    parameter) + ``msg`` (why) so the client learns what to fix, but the raw Pydantic
+    framing ("N validation errors for ModelName") and the ``errors.pydantic.dev``
+    documentation URL are dropped -- the ``url`` / ``input`` / ``ctx`` fields Pydantic
+    attaches are never read. A leading ``"Value error, "`` prefix (how Pydantic wraps a
+    custom validator's :class:`ValueError`) is stripped so the validator's own wording
+    is what surfaces.
+    """
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(segment) for segment in err.get("loc", ())) or "input"
+        msg = str(err.get("msg", "invalid value"))
+        # Pydantic prefixes a custom-validator ValueError with "Value error, "; drop it
+        # so the validator's own message (already client-clean) reads directly.
+        msg = msg.removeprefix("Value error, ")
+        parts.append(f"{loc}: {msg}")
+    detail = "; ".join(parts) if parts else "one or more parameters are invalid"
+    return error(
+        "invalid_input",
+        f"invalid request parameters: {detail}",
+        suggested_action=_INVALID_INPUT_ACTION,
+    )

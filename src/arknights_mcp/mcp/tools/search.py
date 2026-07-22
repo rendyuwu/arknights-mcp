@@ -85,7 +85,9 @@ _STAGES_NOT_FOUND_ACTION = "broaden the query, drop the server filter, or check 
 _UNSUPPORTED_SERVER_MESSAGE = "the requested region is not supported"
 _UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
 _DATA_STALE_MESSAGE = "no active snapshot for the requested region in the active build"
-_DATA_STALE_ACTION = "run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+_DATA_STALE_ACTION = (
+    "ask the server admin to run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+)
 
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:

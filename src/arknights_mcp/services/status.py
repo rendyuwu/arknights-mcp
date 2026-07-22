@@ -21,6 +21,15 @@ from arknights_mcp.db.repositories.metadata import MetadataRepository, SnapshotR
 
 DataStatusCode = Literal["ok", "data_stale"]
 
+#: §V71 (a): the next step for an empty/unpromoted build is an admin CLI command the
+#: MCP client cannot run itself (§V28 admin ops are CLI-only), so it is phrased as an
+#: "ask the server admin" instruction rather than a bare command the client would try
+#: to invoke. Client-facing text, so no internal cites (§V71 (b)) -- the cites live in
+#: this comment, never the emitted string.
+_NO_SNAPSHOTS_ACTION = (
+    "ask the server admin to run `arknights-mcp sync --server all` or `arknights-mcp import`"
+)
+
 
 @dataclass(frozen=True)
 class SnapshotStatus:
@@ -131,7 +140,7 @@ def get_data_status(
     if not snapshots:
         status = "data_stale"
         warnings.append("no imported snapshots in the active database")
-        suggested_action = "run `arknights-mcp sync --server all` or `arknights-mcp import`"
+        suggested_action = _NO_SNAPSHOTS_ACTION
     elif not supported:
         warnings.append("no domain rows present; the active build imported no entities")
 

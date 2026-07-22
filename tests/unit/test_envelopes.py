@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from arknights_mcp.mcp.envelopes import (
     MAX_RESPONSE_BYTES,
@@ -16,6 +17,7 @@ from arknights_mcp.mcp.envelopes import (
     build_envelope,
     error,
     internal_error,
+    invalid_input,
     ok,
     serialized_size,
 )
@@ -77,12 +79,15 @@ def test_oversized_response_fails_closed_to_partial() -> None:
 # --- §V23: typed status vocabulary + safe error bodies ---
 
 
-def test_status_vocabulary_is_exactly_the_ten_specified() -> None:
+def test_status_vocabulary_is_exactly_the_specified_set() -> None:
+    # §V23: the typed status vocabulary is exactly these eleven -- ``invalid_input``
+    # was added (§V71 (c)/B60) so a malformed request rides the same envelope.
     expected = {
         "ok",
         "partial",
         "not_found",
         "ambiguous",
+        "invalid_input",
         "unsupported_server",
         "data_stale",
         "database_unavailable",
@@ -119,3 +124,40 @@ def test_internal_error_leaks_no_trace_or_path() -> None:
     # No local path, module traceback, or exception-repr markers reach the client.
     for marker in ("Traceback", "/home/", "/src/", ".py", "Error(", "line "):
         assert marker not in serialized
+
+
+# --- §V23/§V71 (c) / B60: invalid_input wraps a pydantic error, framing-free -----
+
+
+class _Sample(BaseModel):
+    server: str
+    limit: int
+
+
+def test_invalid_input_wraps_validation_error_as_typed_envelope() -> None:
+    # §V23: a malformed request is a typed ``invalid_input`` result, an error status.
+    try:
+        _Sample.model_validate({"limit": 5})  # missing required ``server``
+    except ValidationError as exc:
+        env = invalid_input(exc)
+    assert env.status == "invalid_input"
+    assert "invalid_input" in STATUS_VALUES
+    payload = env.to_dict()
+    # The offending field is named (loc) with a reason (msg); a next step is suggested.
+    assert "server" in payload["data"]["message"]
+    assert payload["data"]["suggested_action"]
+
+
+def test_invalid_input_message_drops_pydantic_framing_and_url() -> None:
+    # §V71 (c)/B60: never the raw pydantic framing ("N validation errors for Model")
+    # or the errors.pydantic.dev documentation URL.
+    try:
+        _Sample.model_validate({"server": "en", "limit": "not-an-int"})
+    except ValidationError as exc:
+        env = invalid_input(exc)
+    serialized = json.dumps(env.to_dict())
+    assert "errors.pydantic.dev" not in serialized
+    assert "validation error" not in serialized.lower()
+    assert "https://" not in serialized
+    # §V71 (b): no internal spec cites in the client-facing text either.
+    assert "§V" not in serialized and "§T" not in serialized

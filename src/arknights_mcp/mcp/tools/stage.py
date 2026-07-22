@@ -64,15 +64,16 @@ _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
     "game_id. The default response is compact facts + provenance; set include_map "
     "/ include_routes / include_spawns to add the (paged) tile grid, enemy routes, "
-    "or spawn timeline. Set include_map_image for a rendered SVG map drawn from the "
+    "or spawn timeline. Spawn timeline values (spawn_time and interval) are in "
+    "seconds. Set include_map_image for a rendered SVG map drawn from the "
     "stage's own grid data (a derived image, not game artwork); a very large map is "
     "omitted with a note. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no stage matched the given region and selector"
 _NOT_FOUND_ACTION = (
-    "verify the server and stage_code/game_id, or run `arknights-mcp status` "
-    "to check the active build"
+    "verify the server and stage_code/game_id (use search_stages to find the stage), "
+    "or ask the server admin to run `arknights-mcp status` to check the active build"
 )
 
 
@@ -267,8 +268,9 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "rule_id, typed evidence, a confidence score, and limitations -- facts and "
     "observations only, never a mandatory or best-in-slot recommendation. depth "
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
-    "roster + analyzer warnings), detailed (+ full per-enemy stat/timing context). "
-    "en/cn are never mixed."
+    "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
+    "context, with attack_interval and spawn times in seconds). en/cn are never "
+    "mixed."
 )
 
 

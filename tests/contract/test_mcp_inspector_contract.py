@@ -55,6 +55,7 @@ from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.search import build_search_entities_spec
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
+from arknights_mcp.transports._server import dispatch_tool_call
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
@@ -284,6 +285,36 @@ def test_invalid_input_is_rejected(
 ) -> None:
     with pytest.raises(ValidationError):
         _call(registry, name, **params)
+
+
+# --- §V71 (c)/B60: the shared dispatch home wraps a malformed call as invalid_input ---
+
+
+def test_dispatch_wraps_malformed_call_as_invalid_input(registry: ToolRegistry) -> None:
+    # A transport dispatches through the single shared home (§V14/§V37); a
+    # ValidationError there is delivered as a typed ``invalid_input`` envelope (§V23),
+    # never a leaked pydantic error, so the client reads a status from the vocabulary.
+    env = dispatch_tool_call(
+        registry, "get_stage", {"server": "en", "stage_code": "4-4", "bogus": 1}
+    )
+    assert env.status == "invalid_input"
+    body = env.to_dict()["data"]
+    assert isinstance(body, dict)
+    # The offending parameter is named + a client-actionable next step is suggested.
+    assert "bogus" in str(body["message"])
+    assert body["suggested_action"]
+    # §V71 (b/c): no raw pydantic framing / URL / internal cite reaches the client.
+    serialized = str(env.to_dict())
+    assert "errors.pydantic.dev" not in serialized
+    assert "validation error" not in serialized.lower()
+    assert "§V" not in serialized
+
+
+def test_dispatch_unknown_tool_is_typed_not_found(registry: ToolRegistry) -> None:
+    # §V23: an unknown tool name is a typed ``not_found`` result at the shared dispatch
+    # home, not a bare protocol KeyError.
+    env = dispatch_tool_call(registry, "no_such_tool", {})
+    assert env.status == "not_found"
 
 
 # --- §V14: the assembled registry adds no divergent logic ---------------------

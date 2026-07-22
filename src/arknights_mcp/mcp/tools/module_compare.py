@@ -62,8 +62,8 @@ _TOOL_DESCRIPTION = (
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
 _NOT_FOUND_ACTION = (
-    "verify the server and game_id (use search_entities to find it), or run "
-    "`arknights-mcp status` to check the active build"
+    "verify the server and game_id (use search_entities to find it), or ask the server "
+    "admin to run `arknights-mcp status` to check the active build"
 )
 
 

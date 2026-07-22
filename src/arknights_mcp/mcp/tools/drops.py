@@ -65,21 +65,23 @@ from arknights_mcp.services.drops import (
 _TOOL_NAME = "get_stage_drops"
 _TOOL_TITLE = "Get stage drops"
 _TOOL_DESCRIPTION = (
-    "Fetch one Arknights stage's item drop rates by region + stage_code (e.g. 4-4) "
-    "or game_id, sourced from the Penguin Statistics cache: each drop carries its "
-    "quantity/sample size and drop rate. The penguin provenance (snapshot + fetched/"
-    "expires time) shared by every drop is hoisted to a single drop_provenance block; "
-    "a drop only repeats a provenance field when it differs, and carries expired:true "
-    "only when it is past its cache expiry. Set include_efficiency to add deterministic "
-    "farming observations (sanity spent per item) -- facts and observations only, never "
-    "a best-farm or mandatory verdict. A drop past its expiry is returned but flagged "
-    "data_stale; re-sync the penguin source to refresh. en/cn are never mixed."
+    "Fetch one Arknights stage's item drop rates by region + stage_code (e.g. 4-4) or "
+    "game_id, sourced from the Penguin Statistics cache. Each drop carries its "
+    "quantity/sample size and drop rate. The penguin provenance (snapshot and "
+    "fetched/expires time) shared by every drop is hoisted to a single drop_provenance "
+    "block. A drop repeats a provenance field only when it differs. A drop carries "
+    "expired:true only when it is past its cache expiry. Set include_efficiency to add "
+    "deterministic farming observations (sanity spent per item). Those are facts and "
+    "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
+    "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
+    "the cache. en/cn are never mixed."
 )
 
 _NOT_FOUND_MESSAGE = "no drop data matched the given region and stage"
 _NOT_FOUND_ACTION = (
-    "verify the server and stage_code/game_id, or run "
-    "`arknights-mcp sync --server all` to fetch the penguin drop cache"
+    "verify the server and stage_code/game_id (use search_stages to find the stage), or "
+    "ask the server admin to run `arknights-mcp sync --server all` to fetch the penguin "
+    "drop cache"
 )
 _STALE_LIMITATION = (
     "one or more drop rates are past their cache expiry; the figures are stale, not "
@@ -226,23 +228,24 @@ def build_get_stage_drops_spec(get_conn: ConnectionProvider) -> ToolSpec:
 _ITEM_TOOL_NAME = "get_item_drops"
 _ITEM_TOOL_TITLE = "Get item drops"
 _ITEM_TOOL_DESCRIPTION = (
-    "Compare where one Arknights item drops by region + item game_id, sourced from "
-    "the Penguin Statistics cache: the item's drop across every stage that yields it, "
-    "each stage carrying its sanity cost and drop rate/sample size. The penguin "
-    "provenance (snapshot + fetched/expires + import time) shared by every stage is "
-    "hoisted to a single drop_provenance block; a stage only repeats a provenance "
-    "field when it differs, and carries expired:true only when past its cache expiry. "
-    "Set include_efficiency to add deterministic farming observations RANKED ascending "
-    "by sanity spent per item -- an ordering and evidence, never a best-farm or "
-    "mandatory verdict; stage availability, first-clear bonuses, and byproducts/"
-    "synthesis are not modeled. A stage drop past its expiry is returned but flagged "
-    "data_stale (downgraded, not dropped from the ranking); re-sync the penguin source "
-    "to refresh. An item's comparison never mixes en/cn stages."
+    "Compare where one Arknights item drops by region + item game_id, sourced from the "
+    "Penguin Statistics cache. It lists the item's drop across every stage that yields "
+    "it. Each stage carries its sanity cost and drop rate/sample size. The penguin "
+    "provenance (snapshot, fetched/expires time, and import time) shared by every stage "
+    "is hoisted to a single drop_provenance block. A stage repeats a provenance field "
+    "only when it differs. A stage carries expired:true only when past its cache expiry. "
+    "Set include_efficiency to add deterministic farming observations, ranked ascending "
+    "by sanity spent per item. That ranking is an ordering and evidence, never a "
+    "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
+    "byproducts/synthesis are not modeled. A stage drop past its expiry is still "
+    "returned, flagged data_stale. It is downgraded in the ranking, not dropped. A "
+    "re-sync of the penguin source refreshes the cache. An item's comparison never "
+    "mixes en/cn stages."
 )
 
 _ITEM_NOT_FOUND_MESSAGE = "no drop data matched the given region and item"
 _ITEM_NOT_FOUND_ACTION = (
-    "verify the server and item game_id, or run "
+    "verify the server and item game_id, or ask the server admin to run "
     "`arknights-mcp sync --server all` to fetch the penguin drop cache"
 )
 

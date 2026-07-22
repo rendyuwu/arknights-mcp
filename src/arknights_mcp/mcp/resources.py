@@ -89,13 +89,16 @@ _UNSUPPORTED_SERVER_MESSAGE = "the requested region is not supported"
 _UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
 _NOT_FOUND_MESSAGE = "no entity matched the requested resource uri"
 _NOT_FOUND_ACTION = (
-    "verify the region + id, or run `arknights-mcp status` to check the active build"
+    "verify the region + id, or ask the server admin to run `arknights-mcp status` "
+    "to check the active build"
 )
 
 #: Region-scoped staleness copy (§V5): a region with no active snapshot is stale
 #: for that region even when another region keeps the build globally non-empty.
 _NO_REGION_DATA_MESSAGE = "no active snapshot for the requested region in the active build"
-_NO_REGION_DATA_ACTION = "run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+_NO_REGION_DATA_ACTION = (
+    "ask the server admin to run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
+)
 
 #: A resource handler: URI-captured params -> a typed envelope (the resource body).
 ResourceHandler = Callable[[Mapping[str, str]], ResponseEnvelope]

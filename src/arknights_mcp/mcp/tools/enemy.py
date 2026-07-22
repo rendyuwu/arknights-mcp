@@ -44,16 +44,16 @@ _TOOL_TITLE = "Get enemy"
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights enemy's facts by region + game_id: class, boss/elite "
     "flags, attack/motion type, and the per-level stat block (hp, atk, def, res, "
-    "attack interval/range, move speed, weight, life-point reduction) with "
-    "immunities and abilities. When the image-reference source is enabled, an "
-    "additional image_refs list with the derived enemy sprite URL is included. "
-    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "attack interval in seconds, attack range, move speed, weight, life-point "
+    "reduction) with immunities and abilities. When the image-reference source is "
+    "enabled, an additional image_refs list with the derived enemy sprite URL is "
+    "included. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no enemy matched the given region and game_id"
 _NOT_FOUND_ACTION = (
-    "verify the server and game_id (use search_entities to find it), or run "
-    "`arknights-mcp status` to check the active build"
+    "verify the server and game_id (use search_entities to find it), or ask the server "
+    "admin to run `arknights-mcp status` to check the active build"
 )
 
 

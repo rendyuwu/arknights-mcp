@@ -33,7 +33,9 @@ ConnectionProvider = Callable[[], sqlite3.Connection]
 #: Fixed, safe copy for the DB-unavailable envelope (§V23 -- no query echo, no
 #: stack trace, no local path). Shared: one failure mode, one home (§V37).
 DB_UNAVAILABLE_MESSAGE = "the active database is unavailable"
-DB_UNAVAILABLE_ACTION = "run `arknights-mcp status` to check the active build"
+DB_UNAVAILABLE_ACTION = (
+    "ask the server admin to run `arknights-mcp status` to check the active build"
+)
 
 #: §V65 grounding, path (b): the standing limitation attached to every tool response
 #: that emits blackboard effect data -- ``get_operator`` skills/talents/modules and
