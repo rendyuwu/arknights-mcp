@@ -198,6 +198,20 @@ _ROUTES_SQL = (
     "ORDER BY route_index LIMIT ? OFFSET ?"
 )
 
+# --- render-own map image (§T122): the full grid is read (bounded by an explicit
+# LIMIT the caller derives from the render cap) so the derived SVG covers the whole
+# stage; the image is a coarse derived view, not a per-tile record dump (§V22).
+_ALL_TILES_SQL = (
+    "SELECT x, y, tile_key, height_type, buildable_type, passable "
+    "FROM stage_tiles WHERE stage_pk = ? "
+    "ORDER BY y, x LIMIT ?"
+)
+_ALL_ROUTES_SQL = (
+    "SELECT route_index, start_position_json, end_position_json, checkpoints_json "
+    "FROM stage_routes WHERE stage_pk = ? "
+    "ORDER BY route_index LIMIT ?"
+)
+
 # Mirror the JOINs of ``_SPAWNS_SQL`` exactly (incl. the enemies inner join) so
 # the count matches the number of rows the page query can return: a spawn whose
 # enemy row is absent is dropped by both, keeping ``total``/``has_more`` honest.
@@ -421,3 +435,18 @@ class StageRepository(Repository):
     def spawns(self, stage_pk: int, limit: int, offset: int) -> list[StageSpawnRow]:
         """One bounded page of spawns, ordered ``(wave, spawn_time, enemy, spawn_pk)``."""
         return [_to_stage_spawn_row(r) for r in self._all(_SPAWNS_SQL, (stage_pk, limit, offset))]
+
+    # --- render-own map image (§T122): full-grid reads, each bounded by ``limit``.
+
+    def all_tiles(self, stage_pk: int, limit: int) -> list[StageTileRow]:
+        """Every tile of the stage grid (up to ``limit``), ordered ``(y, x)``.
+
+        Bounded by an explicit ``limit`` the caller derives from the render cell
+        cap so an oversized tile table is never read whole (§V22); the rows feed
+        the derived map render, not a per-tile record response.
+        """
+        return [_to_stage_tile_row(r) for r in self._all(_ALL_TILES_SQL, (stage_pk, limit))]
+
+    def all_routes(self, stage_pk: int, limit: int) -> list[StageRouteRow]:
+        """Every route of the stage (up to ``limit``), ordered by ``route_index``."""
+        return [_to_stage_route_row(r) for r in self._all(_ALL_ROUTES_SQL, (stage_pk, limit))]

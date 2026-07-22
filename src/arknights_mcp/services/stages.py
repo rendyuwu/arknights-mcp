@@ -33,8 +33,16 @@ from arknights_mcp.analyzers import (
 from arknights_mcp.analyzers import (
     analyze_stage as run_threat_analysis,
 )
-from arknights_mcp.db.repositories.stages import StageRepository, StageRow
+from arknights_mcp.db.repositories.stages import StageMapRow, StageRepository, StageRow
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX
+from arknights_mcp.services.stage_map_render import (
+    MAX_MAP_CELLS,
+    MAX_MAP_ROUTES,
+    MapCell,
+    MapRoute,
+    RenderedMap,
+    render_stage_map,
+)
 from arknights_mcp.util.coerce import json_load
 
 #: Typed outcome of a stage lookup. The full §V23 status vocabulary is wired
@@ -383,8 +391,11 @@ class StageDetailResult:
 
     Carries region + provenance on ``stage`` (§V5). The heavy sections are
     populated only when their include flag is set; each populated section pairs
-    its rows with a bounded :class:`SectionPage` (§V19/§V22). ``status ==
-    "not_found"`` implies every section is empty/``None``.
+    its rows with a bounded :class:`SectionPage` (§V19/§V22). ``map_image`` is the
+    render-own SVG of the stage grid (§T122), populated only when
+    ``include_map_image`` is set and the board renders within the §V22 budget;
+    ``limitations`` carries any §V22 caption (e.g. an over-budget map image was
+    omitted). ``status == "not_found"`` implies every section is empty/``None``.
     """
 
     status: StageAnalysisStatus
@@ -397,6 +408,8 @@ class StageDetailResult:
     routes_page: SectionPage | None
     spawns: tuple[SpawnFacts, ...]
     spawns_page: SectionPage | None
+    map_image: RenderedMap | None = None
+    limitations: tuple[str, ...] = ()
 
 
 def _validate_page(page: int, page_size: int) -> tuple[int, int]:
@@ -440,6 +453,77 @@ def _not_found_detail(server: str) -> StageDetailResult:
     )
 
 
+def _point_xy(decoded: object | None) -> tuple[int, int] | None:
+    """Normalise a stored ``{"col", "row"}`` position to an ``(x, y)`` grid point.
+
+    The route position fragments are stored as ``{col, row}`` (§T20); the render
+    keys on ``(x, y) == (col, row)``. Returns ``None`` for any other shape (a NULL
+    column, an empty set serialized as ``{}``, or a non-integer coordinate) so a
+    malformed position is skipped, not fabricated (§V26)."""
+    if isinstance(decoded, dict):
+        col = decoded.get("col")
+        row = decoded.get("row")
+        # bool is an int subclass; exclude it -- a coordinate is a plain int.
+        if (
+            isinstance(col, int)
+            and not isinstance(col, bool)
+            and isinstance(row, int)
+            and not isinstance(row, bool)
+        ):
+            return (col, row)
+    return None
+
+
+def _checkpoint_points(decoded: object | None) -> tuple[tuple[int, int], ...]:
+    """Normalise a stored ``checkpoints`` array to ordered ``(x, y)`` grid points."""
+    if not isinstance(decoded, list):
+        return ()
+    points: list[tuple[int, int]] = []
+    for item in decoded:
+        point = _point_xy(item)
+        if point is not None:
+            points.append(point)
+    return tuple(points)
+
+
+def _build_map_image(
+    repo: StageRepository, stage_pk: int, raw_map: StageMapRow | None
+) -> tuple[RenderedMap | None, str | None]:
+    """Render the stage grid into a bounded SVG (§T122; §V16/§V22).
+
+    Reads the full grid (each read bounded by the render cap so an oversized table
+    is never loaded whole, §V22), adapts the repository rows into the render's
+    plain value objects, and returns ``(image, limitation)``: an in-budget board
+    yields the image; an over-budget one yields no image + a §V22 caption. The
+    image is a DERIVED render from typed grid data -- no third-party art byte and
+    no imported source string reaches it (§V16/§V18)."""
+    cells = [
+        MapCell(
+            x=t.x,
+            y=t.y,
+            height_type=t.height_type,
+            buildable_type=t.buildable_type,
+            passable=t.passable,
+        )
+        for t in repo.all_tiles(stage_pk, MAX_MAP_CELLS + 1)
+    ]
+    routes = [
+        MapRoute(
+            start=_point_xy(json_load(r.start_position_json)),
+            end=_point_xy(json_load(r.end_position_json)),
+            checkpoints=_checkpoint_points(json_load(r.checkpoints_json)),
+        )
+        for r in repo.all_routes(stage_pk, MAX_MAP_ROUTES)
+    ]
+    result = render_stage_map(
+        width=raw_map.width if raw_map else None,
+        height=raw_map.height if raw_map else None,
+        cells=cells,
+        routes=routes,
+    )
+    return result.image, result.limitation
+
+
 def get_stage(
     conn: sqlite3.Connection,
     *,
@@ -449,6 +533,7 @@ def get_stage(
     include_map: bool = False,
     include_routes: bool = False,
     include_spawns: bool = False,
+    include_map_image: bool = False,
     map_page: int = 1,
     map_page_size: int = PAGE_SIZE_DEFAULT,
     routes_page: int = 1,
@@ -463,8 +548,12 @@ def get_stage(
     pages through its **own** cursor (``map_page``/``routes_page``/``spawns_page``),
     so a client can request several sections at once and still page a large one
     without shifting the others off, and no included payload ever yields an
-    unbounded slice (§V19). Every cursor is validated against the §V19 window here
-    too, mirroring the model gate. Both transports call this function (§V14).
+    unbounded slice (§V19). ``include_map_image`` (off by default, §V22) adds a
+    render-own SVG of the stage grid (§T122) -- a DERIVED image drawn from the
+    stored typed grid data, never third-party art (§V16) and never the §V63 URL
+    reference; an over-budget board is omitted with a §V22 limitation. Every cursor
+    is validated against the §V19 window here too, mirroring the model gate. Both
+    transports call this function (§V14).
     """
     mp, msize = _validate_page(map_page, map_page_size)
     rp, rsize = _validate_page(routes_page, routes_page_size)
@@ -476,11 +565,16 @@ def get_stage(
 
     stage_pk = stage.stage_pk
 
+    # The map header is read once and shared by the paged tile section and the
+    # render-own image (§V37), so a request for both does not query it twice.
+    raw_map: StageMapRow | None = None
+    if include_map or include_map_image:
+        raw_map = repo.stage_map(stage_pk)
+
     stage_map: StageMapFacts | None = None
     tiles: tuple[TileFacts, ...] = ()
     tiles_page_info: SectionPage | None = None
     if include_map:
-        raw_map = repo.stage_map(stage_pk)
         total_tiles = repo.tile_count(stage_pk)
         # Only surface a map section when there is one; an all-null header with no
         # tiles is indistinguishable from "map absent", so omit it instead (the
@@ -542,6 +636,13 @@ def get_stage(
         )
         spawns_page_info = _section_page(sp, ssize, repo.spawn_count(stage_pk))
 
+    map_image: RenderedMap | None = None
+    limitations: list[str] = []
+    if include_map_image:
+        map_image, image_limitation = _build_map_image(repo, stage_pk, raw_map)
+        if image_limitation is not None:
+            limitations.append(image_limitation)
+
     return StageDetailResult(
         status="ok",
         server=stage.server,
@@ -553,4 +654,6 @@ def get_stage(
         routes_page=routes_page_info,
         spawns=spawns,
         spawns_page=spawns_page_info,
+        map_image=map_image,
+        limitations=tuple(limitations),
     )

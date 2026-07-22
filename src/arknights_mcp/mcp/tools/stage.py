@@ -42,6 +42,7 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
+from arknights_mcp.services.stage_map_render import RenderedMap
 from arknights_mcp.services.stages import (
     EnemyOccurrenceFacts,
     RouteFacts,
@@ -61,7 +62,9 @@ _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
     "game_id. The default response is compact facts + provenance; set include_map "
     "/ include_routes / include_spawns to add the (paged) tile grid, enemy routes, "
-    "or spawn timeline. en/cn are never mixed."
+    "or spawn timeline. Set include_map_image for a rendered SVG map drawn from the "
+    "stage's own grid data (a derived image, not game artwork); a very large map is "
+    "omitted with a note. en/cn are never mixed."
 )
 
 _NOT_FOUND_MESSAGE = "no stage matched the given region and selector"
@@ -133,6 +136,23 @@ def _spawn_to_dict(spawn: SpawnFacts) -> dict[str, object]:
     }
 
 
+def _map_image_to_dict(image: RenderedMap) -> dict[str, object]:
+    """The render-own map image for the wire (§T122).
+
+    ``content`` is the inline SVG document (an image content payload, not a URL
+    reference -- §V63 is a different path); ``media_type`` is ``image/svg+xml``.
+    The document is a DERIVED render from the stage's own typed grid data -- it
+    embeds no third-party art byte (§V16)."""
+    return {
+        "format": "svg",
+        "media_type": image.media_type,
+        "content": image.svg,
+        "pixel_width": image.pixel_width,
+        "pixel_height": image.pixel_height,
+        "tile_count": image.tile_count,
+    }
+
+
 def _shape(result: StageDetailResult) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 envelope (§V5 region + provenance)."""
     if result.status == "not_found" or result.stage is None:
@@ -149,6 +169,8 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
     if result.spawns_page is not None:
         data["spawns"] = [_spawn_to_dict(s) for s in result.spawns]
         data["spawns_page"] = page_to_dict(result.spawns_page)
+    if result.map_image is not None:
+        data["map_image"] = _map_image_to_dict(result.map_image)
 
     prov = result.stage.provenance
     return ok(
@@ -160,6 +182,7 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
                 imported_at=prov.imported_at,
             )
         ],
+        limitations=result.limitations,
     )
 
 
@@ -189,6 +212,7 @@ def build_get_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 include_map=parsed.include_map,
                 include_routes=parsed.include_routes,
                 include_spawns=parsed.include_spawns,
+                include_map_image=parsed.include_map_image,
                 map_page=parsed.map_page.page,
                 map_page_size=parsed.map_page.page_size,
                 routes_page=parsed.routes_page.page,

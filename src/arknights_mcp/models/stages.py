@@ -69,11 +69,17 @@ class GetStageInput(_StageSelector):
     whole stage in one call yet page a large section (e.g. the spawn timeline)
     without shifting the others off (§V19). Every page is bounded, so no opted-in
     payload ever returns an unbounded slice.
+
+    ``include_map_image`` (default ``False``, §V22) adds a render-own SVG of the
+    stage grid (§T122) -- a DERIVED image drawn from the stored typed grid data,
+    never third-party art (§V16) and never the §V63 URL reference. An over-budget
+    board is omitted with a §V22 limitation rather than an oversized payload.
     """
 
     include_map: bool = False
     include_routes: bool = False
     include_spawns: bool = False
+    include_map_image: bool = False
     map_page: PageParams = Field(default_factory=PageParams)
     routes_page: PageParams = Field(default_factory=PageParams)
     spawns_page: PageParams = Field(default_factory=PageParams)
