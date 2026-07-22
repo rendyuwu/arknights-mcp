@@ -2,9 +2,11 @@
 
 Covers ``get_operator`` (§T44) and ``compare_operator_modules`` (§T45). Heavy
 operator sections (phases, skills, talents, modules) are opt-in include flags that
-default ``False`` so the default response stays small (§V22); ``provenance`` and a
-lightweight ``summary`` default on so a fact always carries its region attribution
-(§V5). Module comparison is bounded to the three real module levels (§V19).
+default ``False`` so the default response stays small (§V22); a lightweight
+``summary`` defaults on. Region attribution rides the envelope unconditionally
+(§V5); the in-``data`` provenance echo is opt-in (``include_provenance`` defaults
+``False``) so the default response carries the snapshot exactly once (§V66/B64).
+Module comparison is bounded to the three real module levels (§V19).
 """
 
 from __future__ import annotations
@@ -27,8 +29,10 @@ class GetOperatorInput(StrictModel):
 
     ``server`` + ``game_id`` address one operator, region-attributed (§V5). The
     heavy sections (``include_phases``/``skills``/``talents``/``modules``) default
-    ``False`` (§V22); ``include_summary`` and ``include_provenance`` default ``True``
-    so a fact always carries a small summary + its region provenance (§V5).
+    ``False`` (§V22); ``include_summary`` defaults ``True`` so a fact always carries
+    a small summary. Region provenance rides the envelope unconditionally (§V5);
+    ``include_provenance`` toggles an in-``data`` echo and defaults ``False`` so the
+    default response carries the snapshot exactly once (§V66/B64).
     """
 
     server: Region
@@ -38,7 +42,7 @@ class GetOperatorInput(StrictModel):
     include_skills: bool = False
     include_talents: bool = False
     include_modules: bool = False
-    include_provenance: bool = True
+    include_provenance: bool = False
 
 
 class CompareOperatorModulesInput(StrictModel):

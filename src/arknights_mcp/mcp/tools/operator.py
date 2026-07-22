@@ -12,13 +12,15 @@ Three invariants are load-bearing here:
 * **§V5** -- ``server`` is required, so every ``ok`` result is region-attributed +
   carries provenance (snapshot_id + imported_at) on the envelope; an ``en`` operator
   is never surfaced under a ``cn`` query (the service resolves by the unique
-  ``(server, game_id)`` key), so en/cn are never silently mixed. The envelope-level
-  provenance is unconditional -- ``include_provenance`` only toggles an *extra*
-  in-``data`` echo, it can never turn §V5 off.
+  ``(server, game_id)`` key), so en/cn are never silently mixed. The envelope is the
+  SOLE default provenance carrier (§V66/B64): the envelope-level provenance is
+  unconditional -- ``include_provenance`` only toggles an *extra* in-``data`` echo and
+  defaults off, so the default response carries the snapshot exactly once and the flag
+  can never turn §V5 off.
 * **§V22** -- the default response is compact facts + a lightweight summary +
-  provenance. The heavy ``phases``/``skills``/``talents``/``modules`` sections are
-  opt-in include flags (default off); the envelope's size cap fails closed on any
-  oversized payload.
+  provenance (once, on the envelope). The heavy
+  ``phases``/``skills``/``talents``/``modules`` sections are opt-in include flags
+  (default off); the envelope's size cap fails closed on any oversized payload.
 * **§V23** -- every result is a typed-status envelope (``ok``/``not_found``); a
   database failure or any unexpected error fails closed to a fixed, path/trace-free
   envelope via the shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.

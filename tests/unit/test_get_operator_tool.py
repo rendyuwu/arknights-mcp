@@ -102,8 +102,10 @@ def test_default_returns_summary_not_heavy_sections(conn: sqlite3.Connection) ->
     op = data["operator"]
     assert op["game_id"] == _AMIYA  # type: ignore[index]
     assert op["display_name"] == "Amiya"  # type: ignore[index]
-    # §V22: heavy sections are opt-in -- absent by default.
-    assert set(op) == {"server", "game_id", "display_name", "summary", "provenance"}  # type: ignore[arg-type]
+    # §V22: heavy sections are opt-in -- absent by default. §V66/B64: the in-data
+    # provenance echo is opt-in too (default off), so a default response carries no
+    # data.operator.provenance -- the snapshot rides the envelope once.
+    assert set(op) == {"server", "game_id", "display_name", "summary"}  # type: ignore[arg-type]
     summary = op["summary"]  # type: ignore[index]
     assert summary["rarity"] == 5
     assert summary["profession"] == "CASTER"
@@ -306,7 +308,24 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
     assert prov[0]["imported_at"]
 
 
-def test_include_provenance_only_toggles_the_in_data_echo(conn: sqlite3.Connection) -> None:
+def test_default_response_carries_provenance_exactly_once(conn: sqlite3.Connection) -> None:
+    # §V66/B64: the envelope is the SOLE default provenance carrier -- the in-data echo
+    # is opt-in (default off), so a default response carries the snapshot exactly once
+    # (on the envelope) rather than duplicating it inside data.operator.
+    out = _handler(conn)(server="en", game_id=_AMIYA).to_dict()
+    assert len(out["provenance"]) == 1  # type: ignore[arg-type]
+    assert "provenance" not in out["data"]["operator"]  # type: ignore[index]
+
+
+def test_include_provenance_true_adds_the_in_data_echo(conn: sqlite3.Connection) -> None:
+    # §V21: the echo stays available as an opt-in extra; when requested it mirrors the
+    # envelope snapshot inside data.operator (the flag is now fully effective, B64).
+    out = _handler(conn)(server="en", game_id=_AMIYA, include_provenance=True).to_dict()
+    op = out["data"]["operator"]  # type: ignore[index]
+    assert op["provenance"]["snapshot_id"] == out["provenance"][0]["snapshot_id"]  # type: ignore[index]
+
+
+def test_include_provenance_false_keeps_envelope_provenance(conn: sqlite3.Connection) -> None:
     # §V5 is unconditional: the envelope keeps its provenance even when the in-data
     # echo is turned off; the flag only drops the redundant data.operator.provenance.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_provenance=False)
