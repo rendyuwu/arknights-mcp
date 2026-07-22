@@ -18,6 +18,7 @@ Every MCP tool title, description, and published input schema -- plus the
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -179,3 +180,115 @@ def test_list_descriptions_are_short_sentences(name: str) -> None:
     assert len(sentences) >= 4, name  # genuinely split, not one run-on
     longest = max(len(s) for s in sentences)
     assert longest <= 240, (name, longest)
+
+
+# --- (b) T137/B62: RUNTIME-emitted client strings carry no cites/jargon either --
+
+# T134 pinned the PUBLISHED surface (titles/descriptions/schemas). B62 showed a
+# RUNTIME-emitted constant -- the banner limitation -- still shipped "(§V62)"/"(§V18)"
+# to the client, because the published-surface scan never looked at the emitted
+# limitation/observation/suggested_action strings. These tests extend the §V71 (b) pin
+# to those runtime strings across the layers that build them.
+
+#: The layers that assemble runtime-emitted client-facing text (limitations,
+#: observations, suggested_actions, messages, captions, glossaries).
+_EMITTING_LAYERS = (
+    REPO_ROOT / "src" / "arknights_mcp" / "services",
+    REPO_ROOT / "src" / "arknights_mcp" / "analyzers",
+    REPO_ROOT / "src" / "arknights_mcp" / "mcp" / "tools",
+    REPO_ROOT / "src" / "arknights_mcp" / "mcp" / "envelopes.py",
+)
+
+#: A module-level constant whose name carries one of these tokens holds client-facing
+#: emitted text, so its string value(s) must be free of internal cites/jargon (§V71 (b)).
+#: Keyed on the NAME so the scan auto-extends to a future emitted constant and cannot
+#: silently pass by scanning nothing (the B62 weak-test lesson -- a floor guards it too).
+#: The service-layer page/limit ``ValueError`` args (which do carry "§V19") are inline in
+#: functions, not module-level constants, and are swallowed by ``run_guarded`` into a
+#: fixed ``internal_error`` before any client sees them, so they are correctly excluded.
+_EMITTED_NAME_TOKENS = (
+    "LIMITATION",
+    "ACTION",
+    "MESSAGE",
+    "SUMMARY",
+    "TITLE",
+    "CAPTION",
+    "GLOSSARY",
+    "NOTE",
+    "HINT",
+)
+
+
+def _py_files(paths):  # type: ignore[no-untyped-def]
+    for p in paths:
+        if p.is_file():
+            yield p
+        else:
+            yield from p.rglob("*.py")
+
+
+def _string_values(node):  # type: ignore[no-untyped-def]
+    """The str value(s) of a constant RHS: a bare str, or a tuple/list of str literals."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return [
+            elt.value
+            for elt in node.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        ]
+    return []
+
+
+def _emitted_constants() -> list[tuple[str, str]]:
+    """Every ``(label, value)`` for a module-level emitted-text constant in the layers."""
+    found: list[tuple[str, str]] = []
+    for f in _py_files(_EMITTING_LAYERS):
+        tree = ast.parse(f.read_text(), filename=str(f))
+        for node in tree.body:  # module level only -- not strings inside functions
+            if isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                value = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names = [node.target.id]
+                value = node.value
+            else:
+                continue
+            if value is None:
+                continue
+            for name in names:
+                if not any(tok in name.upper() for tok in _EMITTED_NAME_TOKENS):
+                    continue
+                for s in _string_values(value):
+                    found.append((f"{f.name}:{node.lineno}:{name}", s))
+    return found
+
+
+def test_runtime_emitted_constants_carry_no_cites_or_jargon() -> None:
+    # §V71 (b)/B62: extend the T134 published-surface pin to RUNTIME-emitted client
+    # constants (limitations, suggested_actions, messages, ...), where the banner
+    # limitation cite leak lived. Cites stay in code comments, never in the string.
+    constants = _emitted_constants()
+    # Floor so the scan cannot pass by matching nothing (the B62 weak-test lesson).
+    assert len(constants) >= 15, f"emitted-constant scan matched too few ({len(constants)})"
+    offenders: list[tuple[str, str]] = []
+    for label, text in constants:
+        for marker in _CITE_JARGON:
+            if marker in text:
+                offenders.append((label, marker))
+        if _BUG_CITE.search(text):
+            offenders.append((label, "bug-cite"))
+    assert offenders == [], f"internal cites/jargon in runtime-emitted constants: {offenders}"
+
+
+def test_builder_emitted_limitations_carry_no_cites() -> None:
+    # Some client-facing limitations are built by a function, not a module constant, so
+    # the convention scan above cannot see them; pin the known builders directly (§V71).
+    from arknights_mcp.mcp.tools._shared import absent_field_limitation
+    from arknights_mcp.services.stage_map_render import _oversize_limitation
+
+    emitted = [_oversize_limitation(), *absent_field_limitation(("attack_type", "immunities"))]
+    for text in emitted:
+        for marker in _CITE_JARGON:
+            assert marker not in text, (text, marker)
+        assert not _BUG_CITE.search(text), text

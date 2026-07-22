@@ -50,16 +50,16 @@ BannersStatus = Literal["ok"]
 #: data (its rate-up is prose only, §V18-forbidden), so none is emitted -- surfaced as
 #: a caveat, never a fabricated rate-up.
 STANDARD_BANNER_LIMITATION = (
-    "standard-banner rate-up not in typed gamedata (§V62): one or more listed banners "
+    "standard-banner rate-up not in typed gamedata: one or more listed banners "
     "carry no typed featured operator; their rate-up lives only in gacha prose, which "
-    "is excluded by the field policy (§V18) and never fabricated"
+    "is excluded by the field policy and never fabricated"
 )
 
 #: §V62 limitation: a featured char id that did not soft-resolve to an operator present
 #: in this snapshot is surfaced as the raw char id (operators are optional-zero, B36).
 UNRESOLVED_FEATURED_OP_LIMITATION = (
     "one or more featured operators could not be resolved to an operator present in this "
-    "snapshot (§V62); the raw char id is surfaced and resolved is false"
+    "snapshot; the raw char id is surfaced and resolved is false"
 )
 
 
