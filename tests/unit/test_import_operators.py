@@ -32,9 +32,14 @@ from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
 #: §T127/§V65/ADR 0010: skill + talent effect-description TEMPLATES (mechanic text
 #: referencing the blackboard keys) ARE imported into gameplay_description; the
-#: operator-level lore ``description`` above stays excluded (§V16 ceiling).
+#: operator-level lore ``description`` above stays excluded (§V16 ceiling). The raw
+#: source carries in-game rich-text tags; T136/§V18 strips them at import so only the
+#: ``{blackboard-key}`` grounding placeholders remain -- the ``*_GROUNDED`` form is
+#: what lands in the column.
 SKILL_TEMPLATE = "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage to enemies in range."
+SKILL_TEMPLATE_GROUNDED = "Deals {atk:0%} of ATK as Arts damage to enemies in range."
 TALENT_TEMPLATE = "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking."
+TALENT_TEMPLATE_GROUNDED = "Increases ATK by {atk_scale:0%} when attacking."
 
 CHARACTER = {
     "char_002_amiya": {
@@ -319,26 +324,27 @@ def test_lore_excluded_but_effect_template_imported(tmp_path: Path) -> None:
             "SELECT gameplay_description FROM skill_levels WHERE gameplay_description IS NOT NULL"
         )
     ]
-    assert skill_descs and all(d == SKILL_TEMPLATE for d in skill_descs)
+    assert skill_descs and all(d == SKILL_TEMPLATE_GROUNDED for d in skill_descs)
     talent_descs = [
         r[0]
         for r in conn.execute(
             "SELECT gameplay_description FROM talent_levels WHERE gameplay_description IS NOT NULL"
         )
     ]
-    assert talent_descs and all(d == TALENT_TEMPLATE for d in talent_descs)
+    assert talent_descs and all(d == TALENT_TEMPLATE_GROUNDED for d in talent_descs)
 
 
 def test_parse_carries_effect_template_alongside_blackboard() -> None:
     # §T127/§V65 (a): parsing keeps the effect TEMPLATE next to the blackboard on the
-    # typed parsed shapes (unit-testable without a DB).
+    # typed parsed shapes (unit-testable without a DB). T136/§V18: the rich-text tags
+    # are stripped at parse, leaving the {blackboard-key} placeholders.
     amiya = parse_operators(CHARACTER)[0]
     variant = amiya.talents[0].variants[0]
-    assert variant.description == TALENT_TEMPLATE
+    assert variant.description == TALENT_TEMPLATE_GROUNDED
     assert variant.blackboard  # emitted together
     skills = {s.game_id: s for s in parse_skills(SKILLS)}
     lvl = skills["skchr_amiya_2"].levels[0]
-    assert lvl.description == SKILL_TEMPLATE and lvl.blackboard
+    assert lvl.description == SKILL_TEMPLATE_GROUNDED and lvl.blackboard
 
 
 def test_tag_json_is_sanitized(tmp_path: Path) -> None:

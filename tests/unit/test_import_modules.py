@@ -33,9 +33,14 @@ from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 PROSE = "A module lore blurb that must never be imported into the database."
 #: §T127/§V65/ADR 0010: module trait/talent-change effect TEMPLATES (mechanic text
 #: referencing the change's blackboard keys) ARE imported into the change bundles;
-#: the module-level lore ``uniEquipDesc`` above stays excluded (§V16 ceiling).
+#: the module-level lore ``uniEquipDesc`` above stays excluded (§V16 ceiling). The raw
+#: source carries in-game rich-text tags; T136/§V18 strips them at import so only the
+#: ``{blackboard-key}`` placeholders remain -- the ``*_GROUNDED`` form is what lands in
+#: the change bundle.
 TRAIT_TEMPLATE = "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking."
+TRAIT_TEMPLATE_GROUNDED = "Increases ATK to {atk_scale:0%} when attacking."
 TALENT_TEMPLATE = "Adds a <@ba.vup>{prob:0%}</> chance to recover extra SP on attack."
+TALENT_TEMPLATE_GROUNDED = "Adds a {prob:0%} chance to recover extra SP on attack."
 
 CHARACTER = {
     "char_002_amiya": {
@@ -323,8 +328,8 @@ def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Pat
         "(SELECT talent_changes_json FROM module_levels ml JOIN modules m "
         " ON m.module_pk = ml.module_pk WHERE ml.level = 2)"
     ).fetchone()
-    assert _json.loads(trait_json)[0]["description"] == TRAIT_TEMPLATE
-    assert _json.loads(talent_json)[0]["description"] == TALENT_TEMPLATE
+    assert _json.loads(trait_json)[0]["description"] == TRAIT_TEMPLATE_GROUNDED
+    assert _json.loads(talent_json)[0]["description"] == TALENT_TEMPLATE_GROUNDED
 
 
 def test_parse_carries_change_template_alongside_blackboard() -> None:
@@ -333,10 +338,10 @@ def test_parse_carries_change_template_alongside_blackboard() -> None:
     # so `additionalDescription`/`upgradeDescription` win when present.
     mod = {m.game_id: m for m in parse_modules(UNIEQUIP, BATTLE)}["uniequip_002_amiya"]
     trait = mod.levels[0].trait_changes
-    assert trait is not None and trait[0]["description"] == TRAIT_TEMPLATE
+    assert trait is not None and trait[0]["description"] == TRAIT_TEMPLATE_GROUNDED
     assert trait[0]["blackboard"][0]["key"] == "atk_scale"  # emitted together
     talent = mod.levels[1].talent_changes
-    assert talent is not None and talent[0]["description"] == TALENT_TEMPLATE
+    assert talent is not None and talent[0]["description"] == TALENT_TEMPLATE_GROUNDED
     assert talent[0]["blackboard"][0]["key"] == "prob"
 
 

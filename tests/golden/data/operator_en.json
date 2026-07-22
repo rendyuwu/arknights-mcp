@@ -32,7 +32,7 @@
                     "value": 1.1
                   }
                 ],
-                "description": "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking.",
+                "description": "Increases ATK to {atk_scale:0%} when attacking.",
                 "requiredPotentialRank": 0,
                 "unlockCondition": {
                   "level": 1,
@@ -64,7 +64,7 @@
                     "value": 0.3
                   }
                 ],
-                "description": "Adds a <@ba.vup>{prob:0%}</> chance to recover extra SP on attack.",
+                "description": "Adds a {prob:0%} chance to recover extra SP on attack.",
                 "requiredPotentialRank": 0,
                 "talentIndex": 0,
                 "unlockCondition": {
@@ -150,7 +150,7 @@
                 "valueStr": null
               }
             ],
-            "description": "Stores <@ba.vup>{charge}</> Arts Charge over time; the next attack releases all stored charges.",
+            "description": "Stores {charge} Arts Charge over time; the next attack releases all stored charges.",
             "duration": 0.0,
             "initial_sp": 0,
             "level": 1,
@@ -186,7 +186,7 @@
                 "valueStr": null
               }
             ],
-            "description": "The next attack deals <@ba.vup>{atk:0%}</> of ATK as Arts damage to all enemies in range.",
+            "description": "The next attack deals {atk:0%} of ATK as Arts damage to all enemies in range.",
             "duration": 20.0,
             "initial_sp": 0,
             "level": 1,
@@ -229,7 +229,7 @@
                 "valueStr": null
               }
             ],
-            "description": "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking.",
+            "description": "Increases ATK by {atk_scale:0%} when attacking.",
             "potential_rank": 0,
             "unlock_level": 1,
             "unlock_phase": 0,
@@ -243,7 +243,7 @@
                 "valueStr": null
               }
             ],
-            "description": "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking.",
+            "description": "Increases ATK by {atk_scale:0%} when attacking.",
             "potential_rank": 3,
             "unlock_level": 1,
             "unlock_phase": 2,

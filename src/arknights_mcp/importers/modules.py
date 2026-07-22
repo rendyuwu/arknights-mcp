@@ -46,6 +46,7 @@ from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
+from arknights_mcp.util.text import strip_richtext_tags
 
 _LOG = logging.getLogger(__name__)
 
@@ -143,13 +144,16 @@ def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | Non
     template is mechanic text that references the sibling ``blackboard`` keys, so it is
     imported + emitted alongside the blackboard for grounding (§V65 path (a), ADR 0010).
     Read from the raw candidate (not the allowlist), so it is sanitized + control-
-    stripped + length-capped here as untrusted data (§V18). A blank-after-sanitize or
-    absent value yields ``None`` -- never an empty template.
+    stripped + length-capped, then its in-game rich-text tags are stripped so only the
+    ``{blackboard-key}`` grounding placeholders remain -- untrusted data, targeted strip
+    (§V18/§V65 (a)). A blank-after-sanitize/strip or absent value yields ``None`` --
+    never an empty template.
     """
     for key in keys:
         text = as_str(source.get(key), sanitize=True)
-        if text:
-            return text
+        cleaned = strip_richtext_tags(text) if text else None
+        if cleaned:
+            return cleaned
     return None
 
 

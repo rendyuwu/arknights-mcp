@@ -45,6 +45,7 @@ from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
+from arknights_mcp.util.text import strip_richtext_tags
 
 _LOG = logging.getLogger(__name__)
 
@@ -183,6 +184,21 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _template_text(value: Any) -> str | None:
+    """Effect-description TEMPLATE as clean grounding text (§V18/§V65 (a)).
+
+    Read from an already-allowlisted ``kept`` dict, so ``apply_allowlist`` has
+    control-stripped + length-capped it; here strip the in-game rich-text tags
+    (``<@ba.vup>{atk_scale:0%}</>`` -> ``{atk_scale:0%}``) so only the
+    ``{blackboard-key}`` grounding placeholders remain. A blank-after-strip or
+    non-string value yields ``None`` -- never an empty template.
+    """
+    text = as_str(value)
+    if text is None:
+        return None
+    return strip_richtext_tags(text) or None
+
+
 def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
     """``{operator game_id: operator_pk}`` for ``server`` (the single §V37 home).
 
@@ -231,8 +247,10 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                     range_id=as_str(kept.get("rangeId")),
                     blackboard=blackboard,
                     # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
-                    # by apply_allowlist above; carried alongside the blackboard.
-                    description=as_str(kept.get("description")),
+                    # by apply_allowlist above; here strip its rich-text tags so only
+                    # the {blackboard-key} placeholders remain (§V18), carried alongside
+                    # the blackboard.
+                    description=_template_text(kept.get("description")),
                 )
             )
         first = kept_levels[0] if kept_levels else {}
@@ -393,8 +411,10 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
                     potential_rank=as_int(kept.get("requiredPotentialRank")),
                     blackboard=blackboard,
                     # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
-                    # by apply_allowlist above; carried alongside the blackboard.
-                    description=as_str(kept.get("description")),
+                    # by apply_allowlist above; here strip its rich-text tags so only
+                    # the {blackboard-key} placeholders remain (§V18), carried alongside
+                    # the blackboard.
+                    description=_template_text(kept.get("description")),
                 )
             )
         talents.append(ParsedTalent(talent_index=ti, display_name=display_name, variants=variants))
