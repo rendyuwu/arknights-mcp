@@ -132,8 +132,19 @@ def validate_iso_bound(value: str | None) -> str | None:
     return value
 
 
+#: JSON Schema keys whose *value* is a map of caller-chosen names -> subschema
+#: (property names, ``$defs`` names, ...), NOT a map of schema keywords. A name here
+#: may legitimately be ``"description"`` (a model field literally named ``description``)
+#: and must survive on the wire, even though its subschema is still descended into. Used
+#: by :func:`_strip_schema_descriptions` to key the strip off schema *position* rather
+#: than the literal key string.
+_SCHEMA_NAME_MAP_KEYS = frozenset(
+    {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"}
+)
+
+
 def _strip_schema_descriptions(node: Any) -> Any:
-    """Recursively drop every ``description`` key from a generated JSON Schema.
+    """Recursively drop the schema-level ``description`` keyword from a generated schema.
 
     §V71 (b): a model's class docstring is published verbatim as the schema's
     ``description`` by :meth:`~pydantic.BaseModel.model_json_schema`, and those
@@ -146,13 +157,33 @@ def _strip_schema_descriptions(node: Any) -> Any:
     (types, ``maximum``/``minimum``/``maxLength``, ``required``,
     ``additionalProperties: false``) is preserved intact. The cites stay in the code
     docstrings, never on the wire.
+
+    The strip keys off schema *position*, not the literal string: ``description`` is
+    dropped only where it is a schema *keyword*. Inside a name-map (``properties`` /
+    ``$defs`` / ..., see :data:`_SCHEMA_NAME_MAP_KEYS`) the keys are caller-chosen names,
+    so a model field literally named ``description`` survives on the wire (its subschema
+    is still descended into) -- preserving the wire↔model parity §V18/§V19 promise that
+    the bounds a client sees are exactly the ones the model enforces.
     """
     if isinstance(node, dict):
-        return {
-            key: _strip_schema_descriptions(value)
-            for key, value in node.items()
-            if key != "description"
-        }
+        out: dict[str, Any] = {}
+        for key, value in node.items():
+            if key == "description":
+                # A schema-level ``description`` keyword (the auto-published docstring
+                # or a Field ``description``): drop it. A property/def literally named
+                # "description" is NOT here -- it is a key inside a name-map, handled
+                # in the branch below, so it is preserved.
+                continue
+            if key in _SCHEMA_NAME_MAP_KEYS and isinstance(value, dict):
+                # The value maps caller-chosen names -> subschema: keep every name
+                # verbatim (a name may be "description"), but descend into each
+                # subschema so a nested keyword ``description`` is still stripped.
+                out[key] = {
+                    name: _strip_schema_descriptions(subschema) for name, subschema in value.items()
+                }
+            else:
+                out[key] = _strip_schema_descriptions(value)
+        return out
     if isinstance(node, list):
         return [_strip_schema_descriptions(item) for item in node]
     return node

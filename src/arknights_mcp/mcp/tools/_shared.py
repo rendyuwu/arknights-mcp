@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation, RankingRow
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
+from arknights_mcp.services.operators import cost_item_id
 from arknights_mcp.services.stages import SectionPage
 
 #: Supplies the process-wide read-only connection to the promoted build. The
@@ -119,15 +120,23 @@ def has_unnamed_cost_item(cost_lists: Iterable[object]) -> bool:
     The service pairs each ``{id, count, type}`` upgrade-cost entry with its item's
     display name when the name is present in this build (§T132); an entry left with an
     ``id`` and no ``display_name`` had no imported name, so the tool records the standing
-    :data:`COST_ITEM_NAME_LIMITATION` rather than fabricating one (§V26). A cost value
-    that is not a list (the source carried none) contributes nothing. The single §V37
-    home for the detection shared by ``get_operator`` + ``compare_operator_modules``.
+    :data:`COST_ITEM_NAME_LIMITATION` rather than fabricating one (§V26). An entry is
+    "un-named" only when it is a candidate for pairing in the first place: nameability is
+    decided by the shared :func:`~arknights_mcp.services.operators.cost_item_id` predicate
+    (§V37), so the detector and the pairer never disagree -- an entry whose id is not a
+    non-empty string is not pairable and is therefore never flagged as un-named. A cost
+    value that is not a list (the source carried none) contributes nothing. The single
+    §V37 home for the detection shared by ``get_operator`` + ``compare_operator_modules``.
     """
     for cost in cost_lists:
         if not isinstance(cost, list):
             continue
         for entry in cost:
-            if isinstance(entry, dict) and entry.get("id") and "display_name" not in entry:
+            if (
+                isinstance(entry, dict)
+                and cost_item_id(entry) is not None
+                and "display_name" not in entry
+            ):
                 return True
     return False
 

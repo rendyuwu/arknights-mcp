@@ -8,7 +8,7 @@ Primary invariant §V22 (heavy sections opt-in, pagination bounded); touches §V
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from arknights_mcp.models import (
     PAGE_SIZE_MAX,
@@ -23,6 +23,7 @@ from arknights_mcp.models import (
     SearchStagesInput,
     tool_input_schema,
 )
+from arknights_mcp.models.common import StrictModel
 
 # --- §V19/§V22: search limit bounded (default 10, max 50, rejected out of range) ---
 
@@ -192,3 +193,26 @@ def test_input_schema_declares_page_size_bound() -> None:
 def test_input_schema_declares_query_length_cap() -> None:
     schema = tool_input_schema(SearchEntitiesInput)
     assert schema["properties"]["query"]["maxLength"] == 200
+
+
+def test_input_schema_strips_description_keyword_but_keeps_a_field_named_description() -> None:
+    # §V71 (b): the strip drops the auto-published schema *description* keyword (a class
+    # docstring / Field description carries internal cites), but it must key off schema
+    # *position*, not the literal string -- a model field literally named "description" is
+    # a property NAME, not a keyword, so it has to survive on the wire. Otherwise the
+    # published inputSchema would omit a parameter the model still enforces
+    # (extra="forbid"), breaking the wire<->model parity §V18/§V19 promise.
+    class _Model(StrictModel):
+        """Docstring with an internal §V71 cite that must never reach the wire."""
+
+        description: str = Field(max_length=10, description="internal cite; must be stripped")
+
+    schema = tool_input_schema(_Model)
+    # the class-docstring schema-level description keyword is gone ...
+    assert "description" not in schema
+    # ... but the property literally named "description" survives with its bound + required
+    # entry (a client can still discover the parameter the model enforces) ...
+    assert schema["properties"]["description"]["maxLength"] == 10
+    assert "description" in schema["required"]
+    # ... while that property's OWN Field-description keyword is still stripped (position).
+    assert "description" not in schema["properties"]["description"]

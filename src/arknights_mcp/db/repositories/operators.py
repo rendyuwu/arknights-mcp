@@ -210,10 +210,14 @@ _MODULE_LEVELS_SQL = (
     "FROM module_levels WHERE module_pk = ? ORDER BY level"
 )
 
-# One item's display name for the module/skill upgrade-cost name pairing (§T132/§V69).
-# A fixed constant with both values bound (§V2: no dynamic SQL, no interpolation); the
-# service loops it over the small set of upgrade-cost item ids (a module's few levels).
-_ITEM_NAME_BY_GAME_ID_SQL = "SELECT display_name FROM items WHERE server = ? AND game_id = ?"
+# Batched item display-name lookup for the module/skill upgrade-cost name pairing
+# (§T132/§V69). The fixed statement prefix is a module-level constant; the caller appends
+# only a ``(?, …)`` placeholder group sized to the id count (§V2: the composed part is
+# structural -- ``?`` placeholders, never a value -- so nothing is interpolated into the
+# query and injection stays impossible). Both the server and every id are bound.
+_ITEM_NAMES_BY_GAME_IDS_SQL_PREFIX = (
+    "SELECT game_id, display_name FROM items WHERE server = ? AND game_id IN "
+)
 
 
 def _to_operator_row(row: Any) -> OperatorRow:
@@ -367,16 +371,23 @@ class OperatorRepository(Repository):
         Resolves the item ids carried by a module/skill upgrade cost (``{id, count,
         type}``) to their region-locale display names (§V59) so the service can pair a
         name onto each cost entry. Region-scoped -- an ``en`` operator's cost items
-        resolve only against ``en`` items, so en/cn are never mixed (§V5). One fixed
-        parameterized lookup per id (§V2: no dynamic SQL); the id set is small (a
-        module's few levels) so the round-trips are negligible. Only an item present in
-        this build **with a non-null display name** is included: an id absent from the
-        returned map had no imported name, so the caller emits the id as-is plus a
-        limitation and never fabricates a name (§V26/§V69).
+        resolve only against ``en`` items, so en/cn are never mixed (§V5). A single
+        batched lookup: one ``WHERE game_id IN (?, …)`` with every value bound through a
+        ``?`` placeholder (§V2 -- only the placeholder *count* is composed from
+        ``len(ids)``; no id is ever interpolated into the SQL, so injection stays
+        impossible), collapsing the former per-id round-trips into one query. Only an item
+        present in this build **with a non-null display name** is included: an id absent
+        from the returned map had no imported name, so the caller emits the id as-is plus a
+        limitation and never fabricates a name (§V26/§V69). An empty id set short-circuits
+        to an empty map (no query).
         """
-        out: dict[str, str] = {}
-        for game_id in {g for g in game_ids if g}:
-            row = self._one(_ITEM_NAME_BY_GAME_ID_SQL, (server, game_id))
-            if row is not None and row[0] is not None:
-                out[game_id] = row[0]
-        return out
+        ids = sorted({g for g in game_ids if g})
+        if not ids:
+            return {}
+        placeholders = ", ".join("?" * len(ids))
+        sql = f"{_ITEM_NAMES_BY_GAME_IDS_SQL_PREFIX}({placeholders})"
+        return {
+            game_id: display_name
+            for game_id, display_name in self._all(sql, (server, *ids))
+            if display_name is not None
+        }

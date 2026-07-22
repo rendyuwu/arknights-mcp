@@ -119,8 +119,10 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
     limitations: tuple[str, ...] = (BLACKBOARD_LIMITATION,) if result.modules else ()
     # §V69/§V26 (§T132): a module upgrade-cost item whose display name is absent from the
     # build is emitted as a bare id, so add the standing cost-name limitation instead of
-    # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.
-    if has_unnamed_cost_item(lv.cost for m in result.modules for lv in m.levels if lv.present):
+    # leaving a bare id (never fabricate a name). Additive to the blackboard caveat. An
+    # absent level carries cost=None, which has_unnamed_cost_item already skips (non-list),
+    # so no present-filter is needed here -- one shape with the get_operator call site.
+    if has_unnamed_cost_item(lv.cost for m in result.modules for lv in m.levels):
         limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
     prov = result.provenance
     return ok(

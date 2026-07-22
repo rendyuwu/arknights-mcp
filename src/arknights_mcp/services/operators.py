@@ -289,23 +289,41 @@ def _talent_variant_facts(row: TalentLevelRow) -> TalentVariantFacts:
     )
 
 
+def cost_item_id(entry: object) -> str | None:
+    """The nameable item id of one decoded upgrade-cost entry, else ``None`` (§T132/§V69).
+
+    The single §V37 home for the id-*eligibility* predicate: an entry is nameable iff it
+    is a ``{id, count, type}`` dict whose ``id`` is a non-empty **string** (game-data cost
+    ids are strings). Every consumer -- the id collector (:func:`cost_item_ids`), the name
+    pairer (:func:`pair_cost_item_names`), and the un-named detector
+    (:func:`~arknights_mcp.mcp.tools._shared.has_unnamed_cost_item`) -- routes through this
+    one predicate so all three agree on exactly which entries are candidates for a display
+    name; a non-string / empty / missing id is uniformly *not* nameable (never looked up,
+    never paired, and so never flagged as un-named).
+    """
+    if isinstance(entry, dict):
+        item_id = entry.get("id")
+        if isinstance(item_id, str) and item_id:
+            return item_id
+    return None
+
+
 def cost_item_ids(cost: object) -> set[str]:
     """The item game_ids referenced by a decoded upgrade-cost list (§T132/§V69).
 
     ``cost`` is the decoded module/skill upgrade cost -- a list of ``{id, count, type}``
     dicts, or ``None``/another shape when the source carried none. Returns the set of
-    non-empty string ``id`` values (deduped); a non-list ``cost`` yields an empty set.
-    The single §V37 home for the id-extraction shared by the operator + module-compare
-    services.
+    nameable string ``id`` values (deduped, via :func:`cost_item_id`); a non-list ``cost``
+    yields an empty set. The single §V37 home for the id-extraction shared by the operator
+    + module-compare services.
     """
     if not isinstance(cost, list):
         return set()
     ids: set[str] = set()
     for entry in cost:
-        if isinstance(entry, dict):
-            item_id = entry.get("id")
-            if isinstance(item_id, str) and item_id:
-                ids.add(item_id)
+        item_id = cost_item_id(entry)
+        if item_id is not None:
+            ids.add(item_id)
     return ids
 
 
@@ -325,12 +343,13 @@ def pair_cost_item_names(cost: object, item_names: Mapping[str, str]) -> object:
         return cost
     paired: list[object] = []
     for entry in cost:
-        if isinstance(entry, dict):
-            item_id = entry.get("id")
-            if isinstance(item_id, str) and item_id in item_names:
-                # Additive (§V21): keep the original keys, append the resolved name.
-                paired.append({**entry, "display_name": item_names[item_id]})
-                continue
+        item_id = cost_item_id(entry)
+        if isinstance(entry, dict) and item_id is not None and item_id in item_names:
+            # Additive (§V21): keep the original keys, append the resolved name. The
+            # ``isinstance`` narrows for the spread; ``cost_item_id`` is the shared
+            # nameability predicate (§V37) so this pairs exactly what the detector flags.
+            paired.append({**entry, "display_name": item_names[item_id]})
+            continue
         paired.append(entry)
     return paired
 
