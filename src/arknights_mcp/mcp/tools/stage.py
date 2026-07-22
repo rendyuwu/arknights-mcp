@@ -174,6 +174,9 @@ def _map_image_to_dict(image: RenderedMap) -> dict[str, object]:
         "pixel_width": image.pixel_width,
         "pixel_height": image.pixel_height,
         "tile_count": image.tile_count,
+        # §T140 (B65): a colour legend so a client can decode the opaque tile fills and
+        # route markers the derived SVG carries -- the render shipped none before.
+        "legend": [dict(entry) for entry in image.legend],
     }
 
 

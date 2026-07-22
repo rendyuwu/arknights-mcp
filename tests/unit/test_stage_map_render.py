@@ -120,10 +120,88 @@ def test_render_draws_checkpoint_polyline() -> None:
         width=3,
         height=1,
         cells=[],
-        routes=[MapRoute(start=(0, 0), end=(2, 0), checkpoints=((0, 0), (1, 0), (2, 0)))],
+        routes=[MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (2, 0)))],
     )
     assert res.image is not None
     assert 'class="route-path"' in res.image.svg
+
+
+# --- B65: WAIT placeholder skipped + duplicate route geometry collapsed --------
+
+
+def test_render_skips_placeholder_checkpoint_in_polyline() -> None:
+    # B65/§V74(b): a WAIT checkpoint carries a non-spatial (0, 0) placeholder. Left in
+    # the polyline it zig-zags out to the board corner and back (the exact 4-4 route-9
+    # corruption `points="44,188 20,212 188,164 20,212"`). The cleaned polyline must
+    # follow the two real waypoints only, never the (0, 0) corner centre.
+    res = render_stage_map(
+        width=8,
+        height=9,
+        cells=[],
+        routes=[MapRoute(start=(1, 1), end=(7, 2), checkpoints=((1, 1), (0, 0), (7, 2), (0, 0)))],
+    )
+    assert res.image is not None
+    svg = res.image.svg
+    # (0, 0) centre on a height-9 board is "20,212" -- it must not appear as a path point.
+    assert "20,212" not in svg
+    # the two genuine waypoints (1,1)->(7,2) survive as the polyline.
+    assert 'points="44,188 188,164"' in svg
+
+
+def test_render_drops_polyline_when_only_placeholders_remain() -> None:
+    # A route whose every checkpoint is the (0, 0) placeholder has no real path -> no
+    # polyline (the >=2 guard runs on the cleaned points), only start/end markers.
+    res = render_stage_map(
+        width=3,
+        height=3,
+        cells=[],
+        routes=[MapRoute(start=(0, 0), end=(2, 2), checkpoints=((0, 0), (0, 0)))],
+    )
+    assert res.image is not None
+    assert 'class="route-path"' not in res.image.svg
+
+
+def test_render_dedups_identical_route_geometry() -> None:
+    # B65/§V74(a): a stage stores many route records sharing identical geometry (4-4:
+    # 26 records, ~4 distinct). Drawing every record over-plots the overlay with
+    # coincident markers (52 circles for ~4 routes). Identical geometry collapses to one.
+    identical = [MapRoute(start=(0, 0), end=(2, 2)) for _ in range(5)]
+    other = MapRoute(start=(0, 2), end=(2, 0))
+    res = render_stage_map(width=3, height=3, cells=[], routes=[*identical, other])
+    assert res.image is not None
+    svg = res.image.svg
+    # 5 identical + 1 distinct -> 2 start markers + 2 end markers, not 6 each.
+    assert svg.count('class="route-start"') == 2
+    assert svg.count('class="route-end"') == 2
+
+
+def test_render_dedup_ignores_placeholder_only_differences() -> None:
+    # Two records differing only in a WAIT placeholder collapse to one distinct
+    # geometry once the placeholder is cleaned (they render the same real path).
+    a = MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (2, 0)))
+    b = MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (0, 0), (2, 0)))
+    res = render_stage_map(width=3, height=1, cells=[], routes=[a, b])
+    assert res.image is not None
+    assert res.image.svg.count('class="route-path"') == 1
+
+
+# --- B65: colour legend carried alongside the image ---------------------------
+
+
+def test_render_carries_colour_legend() -> None:
+    # B65: the render shipped no colour legend anywhere in the response, so a client
+    # could not decode the opaque hex fills. Every rendered image carries the legend.
+    res = render_stage_map(width=2, height=2, cells=[MapCell(0, 0, "LOWLAND", "NONE", True)])
+    assert res.image is not None
+    legend = res.image.legend
+    assert legend  # non-empty
+    # every fill/marker colour the SVG actually emits is decodable via the legend.
+    colours = {entry["color"] for entry in legend}
+    for used in ("#546e7a", "#a5d6a7", "#90caf9", "#cfd8dc", "#2e7d32", "#c62828", "#ef6c00"):
+        assert used in colours
+    # meanings are plain client-facing text -- no spec cites / internal jargon (§V71).
+    for entry in legend:
+        assert "§" not in entry["meaning"]
 
 
 # --- pure renderer: §V22 bounded, fail closed ---------------------------------

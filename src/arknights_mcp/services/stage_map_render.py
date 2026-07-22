@@ -83,6 +83,28 @@ _MARK_START = "#2e7d32"  # route entry (enemy spawn)
 _MARK_END = "#c62828"  # route exit (objective)
 _MARK_PATH = "#ef6c00"  # checkpoint polyline
 
+#: A WAIT checkpoint carries a non-spatial ``(0, 0)`` placeholder rather than a real
+#: grid point (B65/§V74(b)). Drawing it as a path point makes the route polyline
+#: zig-zag through the board corner, so it is dropped from the checkpoint path.
+_PLACEHOLDER_POINT = (0, 0)
+
+#: §T140 (B65) client-facing legend for the derived map's fixed colour palette, so a
+#: client can decode the opaque hex fills/markers a rendered image carries (the render
+#: previously shipped no colour legend anywhere in the response). Keyed to the same
+#: authored literals :func:`_tile_fill` / :func:`_draw_routes` emit -- the single §V37
+#: home for the colour meanings. Attached to every rendered image (surfaced on the wire
+#: as ``map_image.legend``). Meanings are plain client-facing text -- no spec cites or
+#: internal jargon (§V71).
+MAP_LEGEND: tuple[dict[str, str], ...] = (
+    {"color": _FILL_WALL, "meaning": "impassable -- void or blocked tile, not deployable"},
+    {"color": _FILL_MELEE, "meaning": "buildable ground -- deploy melee (blocking) operators here"},
+    {"color": _FILL_RANGED, "meaning": "buildable highland -- deploy ranged operators here"},
+    {"color": _FILL_ROAD, "meaning": "walkable path -- enemies travel here, not buildable"},
+    {"color": _MARK_START, "meaning": "route start -- where enemies spawn"},
+    {"color": _MARK_END, "meaning": "route end -- the objective enemies march toward"},
+    {"color": _MARK_PATH, "meaning": "enemy route path"},
+)
+
 
 @dataclass(frozen=True)
 class MapCell:
@@ -121,7 +143,9 @@ class RenderedMap:
     ``svg`` is the self-contained document (an inline image content payload, not a
     URL reference -- §V63 is a different path); ``media_type`` is
     :data:`SVG_MEDIA_TYPE`. ``pixel_width``/``pixel_height`` are the document
-    viewport; ``tile_count`` is how many stored tiles were drawn.
+    viewport; ``tile_count`` is how many stored tiles were drawn. ``legend`` maps the
+    image's fixed colours to plain client-facing meanings (:data:`MAP_LEGEND`) so a
+    client can decode the opaque fills the SVG carries (B65).
     """
 
     media_type: str
@@ -129,6 +153,7 @@ class RenderedMap:
     pixel_width: int
     pixel_height: int
     tile_count: int
+    legend: tuple[dict[str, str], ...] = MAP_LEGEND
 
 
 @dataclass(frozen=True)
@@ -263,11 +288,56 @@ def _draw_tiles(cells: Sequence[MapCell], eff_h: int) -> list[str]:
     return parts
 
 
+def _clean_checkpoints(
+    checkpoints: tuple[tuple[int, int], ...],
+) -> tuple[tuple[int, int], ...]:
+    """Drop non-spatial WAIT placeholders from a checkpoint path (B65).
+
+    A WAIT checkpoint carries a :data:`_PLACEHOLDER_POINT` ``(0, 0)`` rather than a
+    real grid point; left in the polyline it makes the route zig-zag out to the board
+    corner and back (a corrupt path). Removing it leaves the route's genuine spatial
+    waypoints only, so the drawn polyline follows the real path.
+    """
+    return tuple(point for point in checkpoints if point != _PLACEHOLDER_POINT)
+
+
+def _distinct_route_geometries(routes: Sequence[MapRoute]) -> list[MapRoute]:
+    """Collapse routes to DISTINCT, placeholder-cleaned geometry (B65).
+
+    A stage stores many route records that share identical start/end/checkpoint
+    geometry (4-4: 26 records, ~4 distinct); drawing every record over-plots the
+    overlay with dozens of coincident markers (52 start/end circles for ~4 real
+    routes). Each record's checkpoints are placeholder-cleaned first
+    (:func:`_clean_checkpoints`), then records with identical
+    ``(start, end, checkpoints)`` collapse to one. First-occurrence order is kept so
+    the render stays deterministic (§C).
+    """
+    seen: set[tuple[object, object, tuple[tuple[int, int], ...]]] = set()
+    distinct: list[MapRoute] = []
+    for route in routes:
+        cleaned = MapRoute(
+            start=route.start,
+            end=route.end,
+            checkpoints=_clean_checkpoints(route.checkpoints),
+        )
+        key = (cleaned.start, cleaned.end, cleaned.checkpoints)
+        if key in seen:
+            continue
+        seen.add(key)
+        distinct.append(cleaned)
+    return distinct
+
+
 def _draw_routes(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
-    """Route start/end markers + a checkpoint polyline for each route."""
+    """Start/end markers + a checkpoint polyline per DISTINCT route geometry.
+
+    Routes are collapsed to distinct, placeholder-cleaned geometry first (B65) so a
+    stage's many duplicate route records neither over-plot the overlay nor zig-zag the
+    polyline through the board corner.
+    """
     parts: list[str] = []
     radius = max(_CELL_PX // 3, 2)
-    for route in routes:
+    for route in _distinct_route_geometries(routes):
         if len(route.checkpoints) >= 2:
             points = " ".join(
                 f"{cx},{cy}" for cx, cy in (_cell_center(x, y, eff_h) for x, y in route.checkpoints)
