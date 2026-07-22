@@ -18,7 +18,7 @@ the owning tool module and is passed in as ``shape``.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation, RankingRow
 from arknights_mcp.db.connection import DatabaseUnavailable
@@ -76,6 +76,40 @@ BLACKBOARD_KEY_GLOSSARY = (
     "range_extend = added range; charge = charge or stack state; "
     "hp_ratio = HP as a fraction; value = generic magnitude."
 )
+
+
+#: §V69/§V26 (§T132): the standing limitation attached to any operator/module response
+#: whose emitted upgrade cost carries an item id that has no paired display name in this
+#: build. Each ``{id, count, type}`` upgrade-cost entry is paired with its item's
+#: display name when that name is present (from the item data source); when it is not,
+#: the id is emitted exactly as stored and is never given a fabricated name -- this
+#: limitation tells the client so, instead of leaving a bare id that invites a guessed
+#: name or a second lookup. Shared: one wording, one home (§V37). Client-facing text, so
+#: no internal cites/jargon (§V71) -- the cites live in this comment, never the string.
+COST_ITEM_NAME_LIMITATION = (
+    "Some upgrade-cost items show only their item id because that item's display name "
+    "is not present in this build. The id is shown exactly as stored and is never given "
+    "a fabricated name."
+)
+
+
+def has_unnamed_cost_item(cost_lists: Iterable[object]) -> bool:
+    """True when any emitted upgrade-cost entry carries an item id but no display name (§V69).
+
+    The service pairs each ``{id, count, type}`` upgrade-cost entry with its item's
+    display name when the name is present in this build (§T132); an entry left with an
+    ``id`` and no ``display_name`` had no imported name, so the tool records the standing
+    :data:`COST_ITEM_NAME_LIMITATION` rather than fabricating one (§V26). A cost value
+    that is not a list (the source carried none) contributes nothing. The single §V37
+    home for the detection shared by ``get_operator`` + ``compare_operator_modules``.
+    """
+    for cost in cost_lists:
+        if not isinstance(cost, list):
+            continue
+        for entry in cost:
+            if isinstance(entry, dict) and entry.get("id") and "display_name" not in entry:
+                return True
+    return False
 
 
 def run_guarded[Result](

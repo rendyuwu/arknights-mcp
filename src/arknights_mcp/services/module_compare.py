@@ -37,7 +37,11 @@ from arknights_mcp.analyzers import (
     analyze_modules,
 )
 from arknights_mcp.db.repositories.operators import OperatorRepository
-from arknights_mcp.services.operators import OperatorProvenance
+from arknights_mcp.services.operators import (
+    OperatorProvenance,
+    cost_item_ids,
+    pair_cost_item_names,
+)
 from arknights_mcp.util.coerce import json_load
 
 #: Facts-only vs facts + deterministic module observations (mirrors the model).
@@ -182,10 +186,27 @@ def compare_operator_modules(
     if operator is None:
         return _not_found(server, game_id, requested, mode)
 
+    # Materialize each module's level rows once, and pre-decode + collect the
+    # upgrade-cost item ids across the requested levels so a single region-scoped
+    # lookup resolves every cost name (§T132/§V69; en/cn never mixed, §V5).
+    module_rows = [
+        (module, {row.level: row for row in repo.module_levels(module.module_pk)})
+        for module in repo.modules(operator.operator_pk)
+    ]
+    cost_by_key: dict[tuple[int, int], object] = {}
+    cost_ids: set[str] = set()
+    for module, rows in module_rows:
+        for level in requested:
+            row = rows.get(level)
+            if row is not None:
+                cost = json_load(row.cost_json)
+                cost_by_key[(module.module_pk, level)] = cost
+                cost_ids |= cost_item_ids(cost)
+    item_names = repo.item_display_names(server, cost_ids)
+
     comparisons: list[ModuleComparison] = []
     analyzer_modules: list[ModuleInput] = []
-    for module in repo.modules(operator.operator_pk):
-        rows = {row.level: row for row in repo.module_levels(module.module_pk)}
+    for module, rows in module_rows:
         comp_levels: list[ModuleLevelComparison] = []
         analyzer_levels: list[ModuleLevelInput] = []
         for level in requested:
@@ -221,7 +242,9 @@ def compare_operator_modules(
                     stat_bonus=stat_bonus,
                     trait_changes=trait_changes,
                     talent_changes=talent_changes,
-                    cost=json_load(row.cost_json),
+                    # §T132/§V69: each {id,count,type} cost entry paired with its item
+                    # display_name (additive, §V21); an un-named id is left as-is.
+                    cost=pair_cost_item_names(cost_by_key[(module.module_pk, level)], item_names),
                 )
             )
             analyzer_levels.append(

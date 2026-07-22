@@ -30,7 +30,9 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_KEY_GLOSSARY,
     BLACKBOARD_LIMITATION,
+    COST_ITEM_NAME_LIMITATION,
     ConnectionProvider,
+    has_unnamed_cost_item,
     observation_to_dict,
     run_guarded,
 )
@@ -115,6 +117,11 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
     # still rides every comparison that emits a module (blackboard keys stay raw). An
     # operator with no modules emits no blackboard, so it carries no such caveat.
     limitations: tuple[str, ...] = (BLACKBOARD_LIMITATION,) if result.modules else ()
+    # §V69/§V26 (§T132): a module upgrade-cost item whose display name is absent from the
+    # build is emitted as a bare id, so add the standing cost-name limitation instead of
+    # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.
+    if has_unnamed_cost_item(lv.cost for m in result.modules for lv in m.levels if lv.present):
+        limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
     prov = result.provenance
     return ok(
         data,

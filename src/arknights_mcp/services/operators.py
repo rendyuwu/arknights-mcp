@@ -20,6 +20,7 @@ transports share this exact function (§V14). No transport-specific logic lives 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -288,24 +289,89 @@ def _talent_variant_facts(row: TalentLevelRow) -> TalentVariantFacts:
     )
 
 
-def _module_facts(repo: OperatorRepository, row: ModuleRow) -> OperatorModuleFacts:
-    return OperatorModuleFacts(
-        game_id=row.game_id,
-        module_type=row.module_type,
-        display_name=row.display_name,
-        unlock_phase=row.unlock_phase,
-        unlock_level=row.unlock_level,
-        levels=tuple(_module_level_facts(lv) for lv in repo.module_levels(row.module_pk)),
-    )
+def cost_item_ids(cost: object) -> set[str]:
+    """The item game_ids referenced by a decoded upgrade-cost list (§T132/§V69).
+
+    ``cost`` is the decoded module/skill upgrade cost -- a list of ``{id, count, type}``
+    dicts, or ``None``/another shape when the source carried none. Returns the set of
+    non-empty string ``id`` values (deduped); a non-list ``cost`` yields an empty set.
+    The single §V37 home for the id-extraction shared by the operator + module-compare
+    services.
+    """
+    if not isinstance(cost, list):
+        return set()
+    ids: set[str] = set()
+    for entry in cost:
+        if isinstance(entry, dict):
+            item_id = entry.get("id")
+            if isinstance(item_id, str) and item_id:
+                ids.add(item_id)
+    return ids
 
 
-def _module_level_facts(row: ModuleLevelRow) -> ModuleLevelFacts:
-    return ModuleLevelFacts(
-        level=row.level,
-        stat_bonus=json_load(row.stat_bonus_json),
-        trait_changes=json_load(row.trait_changes_json),
-        talent_changes=json_load(row.talent_changes_json),
-        cost=json_load(row.cost_json),
+def pair_cost_item_names(cost: object, item_names: Mapping[str, str]) -> object:
+    """Additively pair each upgrade-cost entry with its item display name (§T132/§V69).
+
+    For each cost entry whose ``id`` resolves in ``item_names`` (items present in this
+    build), a ``display_name`` is added while every original key is preserved -- an
+    additive, backward-compatible enrichment (§V21). An entry whose id has no imported
+    name is left exactly as stored (id + count + type): the id is never given a
+    fabricated name (§V26/§V69); the tool detects the un-named entry and records a
+    standing limitation. A non-list ``cost`` (source carried none) is returned
+    unchanged. The single §V37 home for the pairing shared by the operator +
+    module-compare services.
+    """
+    if not isinstance(cost, list):
+        return cost
+    paired: list[object] = []
+    for entry in cost:
+        if isinstance(entry, dict):
+            item_id = entry.get("id")
+            if isinstance(item_id, str) and item_id in item_names:
+                # Additive (§V21): keep the original keys, append the resolved name.
+                paired.append({**entry, "display_name": item_names[item_id]})
+                continue
+        paired.append(entry)
+    return paired
+
+
+def _modules_facts(
+    repo: OperatorRepository, server: str, operator_pk: int
+) -> tuple[OperatorModuleFacts, ...]:
+    """Every module's facts, each upgrade-cost item paired with its display name (§T132/§V69).
+
+    Decodes each module's levels once, collects the upgrade-cost item ids across every
+    module for a single region-scoped name lookup (§V5), then pairs a ``display_name``
+    onto every resolved cost entry (additive, §V21). An id with no imported name is left
+    as-is -- never fabricated (§V26/§V69).
+    """
+    decoded: list[tuple[ModuleRow, list[tuple[ModuleLevelRow, object]]]] = []
+    ids: set[str] = set()
+    for module in repo.modules(operator_pk):
+        levels = [(lv, json_load(lv.cost_json)) for lv in repo.module_levels(module.module_pk)]
+        for _lv, cost in levels:
+            ids |= cost_item_ids(cost)
+        decoded.append((module, levels))
+    item_names = repo.item_display_names(server, ids)
+    return tuple(
+        OperatorModuleFacts(
+            game_id=module.game_id,
+            module_type=module.module_type,
+            display_name=module.display_name,
+            unlock_phase=module.unlock_phase,
+            unlock_level=module.unlock_level,
+            levels=tuple(
+                ModuleLevelFacts(
+                    level=lv.level,
+                    stat_bonus=json_load(lv.stat_bonus_json),
+                    trait_changes=json_load(lv.trait_changes_json),
+                    talent_changes=json_load(lv.talent_changes_json),
+                    cost=pair_cost_item_names(cost, item_names),
+                )
+                for lv, cost in levels
+            ),
+        )
+        for module, levels in decoded
     )
 
 
@@ -350,11 +416,7 @@ def get_operator(
         if include_talents
         else ()
     )
-    modules = (
-        tuple(_module_facts(repo, m) for m in repo.modules(operator.operator_pk))
-        if include_modules
-        else ()
-    )
+    modules = _modules_facts(repo, operator.server, operator.operator_pk) if include_modules else ()
     facts = OperatorFacts(
         server=operator.server,
         game_id=operator.game_id,

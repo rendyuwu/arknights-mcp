@@ -22,12 +22,17 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from tests.support.items import seed_items
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools._shared import BLACKBOARD_KEY_GLOSSARY, BLACKBOARD_LIMITATION
+from arknights_mcp.mcp.tools._shared import (
+    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_LIMITATION,
+    COST_ITEM_NAME_LIMITATION,
+)
 from arknights_mcp.mcp.tools.operator import (
     _phase_to_dict,
     _skill_level_to_dict,
@@ -59,6 +64,25 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
         [ServerImport("en", adapter, "local_snapshot")],
         registry=load_source_registry(REGISTRY),
     )
+    return open_read_only(path)
+
+
+#: Amiya's CX-1 module upgrade-cost item ids (per level) + a display name for each, so a
+#: seeded build can resolve them (§T132/§V69). The operator fixture itself ships no items.
+_MODULE_COST_NAMES = {"mat_1": "Orirock Cube", "mat_2": "Sugar", "mat_3": "Polyester Pack"}
+
+
+@pytest.fixture
+def conn_named_costs(tmp_path: Path) -> sqlite3.Connection:
+    """Fixture build with the module upgrade-cost item names seeded (§T132/§V69)."""
+    path = tmp_path / "cand.sqlite"
+    adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
+    build_candidate(
+        path,
+        [ServerImport("en", adapter, "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+    )
+    seed_items(path, _MODULE_COST_NAMES, region="en")
     return open_read_only(path)
 
 
@@ -215,6 +239,58 @@ def test_client_facing_blackboard_text_has_no_internal_cites() -> None:
     for text in (BLACKBOARD_LIMITATION, BLACKBOARD_KEY_GLOSSARY):
         assert "§V" not in text and "§T" not in text
         assert "degenerate" not in text and "asymmetric-broken" not in text
+
+
+# --- §T132/§V69 module upgrade-cost item name pairing -------------------------
+
+
+def test_module_cost_items_paired_with_display_name(conn_named_costs: sqlite3.Connection) -> None:
+    # §V69: each {id,count,type} upgrade-cost entry gains its item display_name when the
+    # name is present in this build (additive, §V21).
+    env = _handler(conn_named_costs)(server="en", game_id=_AMIYA, include_modules=True)
+    assert env.status == "ok"
+    module = env.to_dict()["data"]["operator"]["modules"][0]  # type: ignore[index]
+    cost_by_level = {lv["level"]: lv["cost"] for lv in module["levels"]}
+    assert cost_by_level[1] == [
+        {"id": "mat_1", "count": 8, "type": "MATERIAL", "display_name": "Orirock Cube"}
+    ]
+    assert cost_by_level[2][0]["display_name"] == "Sugar"
+    assert cost_by_level[3][0]["display_name"] == "Polyester Pack"
+    # §V69: every cost item resolved, so no cost-name limitation rides the response.
+    assert COST_ITEM_NAME_LIMITATION not in env.limitations
+
+
+def test_module_cost_absent_name_keeps_id_and_emits_limitation(conn: sqlite3.Connection) -> None:
+    # §V69/§V26: the fixture ships no items, so the cost item ids have no imported name ->
+    # the id is emitted exactly as stored (never a fabricated name) + the standing
+    # cost-name limitation rides the response.
+    env = _handler(conn)(server="en", game_id=_AMIYA, include_modules=True)
+    module = env.to_dict()["data"]["operator"]["modules"][0]  # type: ignore[index]
+    for lv in module["levels"]:
+        for entry in lv["cost"]:
+            assert entry["id"]  # the bare id is preserved
+            assert "display_name" not in entry  # never fabricated (§V26)
+    assert COST_ITEM_NAME_LIMITATION in env.limitations
+
+
+def test_cost_name_pairing_is_additive(conn_named_costs: sqlite3.Connection) -> None:
+    # §V21: pairing preserves the original id/count/type keys (adds display_name only).
+    env = _handler(conn_named_costs)(server="en", game_id=_AMIYA, include_modules=True)
+    entry = env.to_dict()["data"]["operator"]["modules"][0]["levels"][0]["cost"][0]  # type: ignore[index]
+    assert {"id", "count", "type"} <= set(entry)
+    assert entry["id"] == "mat_1" and entry["count"] == 8 and entry["type"] == "MATERIAL"
+
+
+def test_no_cost_name_limitation_without_modules(conn: sqlite3.Connection) -> None:
+    # §V69: a response that does not include the modules section emits no cost at all, so
+    # it carries no cost-name caveat.
+    env = _handler(conn)(server="en", game_id=_AMIYA, include_skills=True)
+    assert COST_ITEM_NAME_LIMITATION not in env.limitations
+
+
+def test_cost_name_limitation_has_no_internal_cites() -> None:
+    # §V71 (b): the client-facing limitation carries no internal spec cites or jargon.
+    assert "§V" not in COST_ITEM_NAME_LIMITATION and "§T" not in COST_ITEM_NAME_LIMITATION
 
 
 # --- §V5 region + provenance --------------------------------------------------

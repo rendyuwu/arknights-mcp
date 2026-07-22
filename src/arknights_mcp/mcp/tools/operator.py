@@ -31,7 +31,9 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_KEY_GLOSSARY,
     BLACKBOARD_LIMITATION,
+    COST_ITEM_NAME_LIMITATION,
     ConnectionProvider,
+    has_unnamed_cost_item,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -235,6 +237,11 @@ def _shape(
     limitations: tuple[str, ...] = ()
     if operator.skills or operator.talents or operator.modules:
         limitations = (BLACKBOARD_LIMITATION,)
+    # §V69/§V26 (§T132): a module upgrade-cost item whose display name is absent from the
+    # build is emitted as a bare id, so add the standing cost-name limitation instead of
+    # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.
+    if has_unnamed_cost_item(lv.cost for m in operator.modules for lv in m.levels):
+        limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
     return ok(
         {
             "operator": _operator_to_dict(

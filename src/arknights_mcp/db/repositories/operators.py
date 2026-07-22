@@ -16,6 +16,7 @@ method accepts caller SQL and nothing is interpolated into a query string.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -209,6 +210,11 @@ _MODULE_LEVELS_SQL = (
     "FROM module_levels WHERE module_pk = ? ORDER BY level"
 )
 
+# One item's display name for the module/skill upgrade-cost name pairing (§T132/§V69).
+# A fixed constant with both values bound (§V2: no dynamic SQL, no interpolation); the
+# service loops it over the small set of upgrade-cost item ids (a module's few levels).
+_ITEM_NAME_BY_GAME_ID_SQL = "SELECT display_name FROM items WHERE server = ? AND game_id = ?"
+
 
 def _to_operator_row(row: Any) -> OperatorRow:
     (
@@ -354,3 +360,23 @@ class OperatorRepository(Repository):
             )
             for r in self._all(_MODULE_LEVELS_SQL, (module_pk,))
         ]
+
+    def item_display_names(self, server: str, game_ids: Collection[str]) -> dict[str, str]:
+        """Map each upgrade-cost item ``game_id`` to its display name for this build (§T132/§V69).
+
+        Resolves the item ids carried by a module/skill upgrade cost (``{id, count,
+        type}``) to their region-locale display names (§V59) so the service can pair a
+        name onto each cost entry. Region-scoped -- an ``en`` operator's cost items
+        resolve only against ``en`` items, so en/cn are never mixed (§V5). One fixed
+        parameterized lookup per id (§V2: no dynamic SQL); the id set is small (a
+        module's few levels) so the round-trips are negligible. Only an item present in
+        this build **with a non-null display name** is included: an id absent from the
+        returned map had no imported name, so the caller emits the id as-is plus a
+        limitation and never fabricates a name (§V26/§V69).
+        """
+        out: dict[str, str] = {}
+        for game_id in {g for g in game_ids if g}:
+            row = self._one(_ITEM_NAME_BY_GAME_ID_SQL, (server, game_id))
+            if row is not None and row[0] is not None:
+                out[game_id] = row[0]
+        return out
