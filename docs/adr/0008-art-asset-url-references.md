@@ -1,6 +1,6 @@
 # ADR 0008: Art asset URL references — derive, link out, never bundle
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR 0009](0009-image-refs-authenticated-emit.md) — image_refs may emit on an authenticated deployment, not loopback-only)
 - **Date:** 2026-07-22
 - **Founder decision(s):** D5 (MVP domain scope — reverses "no redistributed map
   images" *for URL references only*; image bytes stay excluded). Touches D4
