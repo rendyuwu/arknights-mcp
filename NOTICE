@@ -41,7 +41,7 @@ approved snapshots via the `arknights-mcp import` / `arknights-mcp sync`
 commands.
 
 ------------------------------------------------------------------------------
-Third-party data source attributions (V27, V53; DATA_SOURCES.md)
+Third-party data source attributions (V27, V53, V63; DATA_SOURCES.md)
 ------------------------------------------------------------------------------
 
 Data imported at CLI time from third-party sources remains governed by those
@@ -54,6 +54,19 @@ registry (config/data_sources.toml) and DATA_SOURCES.md. In particular:
     (CC BY-NC 4.0). They are used NON-COMMERCIALLY, with attribution, and are
     never redistributed as a bundled cache. See:
     https://creativecommons.org/licenses/by-nc/4.0/
+
+  yuanyan3060 / ArknightsGameResource
+    (https://github.com/yuanyan3060/ArknightsGameResource)
+    Optional, off-by-default image URL REFERENCES are DERIVED at query time
+    from a game_id already stored from the primary snapshot. No image bytes are
+    ever imported, stored, or redistributed, and the server never fetches the
+    linked resource -- references are reference-link only, never bytes (V16,
+    V63). The mirror's AGPL-3.0 license covers its CODE only, which this project
+    does not copy (no copyleft reaches the Apache-2.0 tree); the referenced
+    Arknights art assets are © Hypergryph / Yostar, used for learning and
+    exchange only and removed on request. References are emitted only by a
+    private, non-commercial instance with the source explicitly enabled. See
+    DATA_SOURCES.md and docs/adr/0008-art-asset-url-references.md.
 
 Attribution for these sources is surfaced at runtime by the `get_data_sources`
 MCP tool and the `arknights://sources` resource.

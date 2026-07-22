@@ -185,3 +185,26 @@ contact_url = "https://github.com/ArknightsAssets/ArknightsGamedata/issues"
 policy_notes = "v0.2 M10 extra-locale NAME aliases (§V57): imports ONLY the per-locale canonical NAME (jp/kr) as a locale-tagged search alias on the existing en/cn entity; never a machine-translated description or prose (D6/§V18). jp/kr are NAME locales, NOT new fact regions -- an alias match still returns the entity's OWN en/cn region facts. Adapter is CLI-only network fetch (never query-time, §V1). Enabled 2026-07-21 (importer + FTS rebuild + search locale param landed T99/T100/T101; sync ride-along wired T109). Rides along with sync only when the source id is in [sync].enabled_sources AND a [sync.arknights_extra_locale_names].base_url is configured per locale (there is NO shipped default URL)."
 enabled = true
 last_reviewed_at = "2026-07-21"
+
+[arknights_game_resource]
+display_name = "yuanyan3060 / ArknightsGameResource"
+owner_name = "yuanyan3060"
+canonical_url = "https://github.com/yuanyan3060/ArknightsGameResource"
+source_type = "image_asset_url_reference"
+regions = ["en", "cn"]
+purpose = "Query-time DERIVED image URL references (operator portrait/avatar/skin, enemy sprite) built from an already-stored game_id; no bytes are ever stored, imported, or fetched (v0.3 M12, ADR 0008 / SPEC §V63)."
+fields_consumed = [
+    "none -- no import; image URLs are derived at query time from a game_id already stored from the primary snapshot",
+]
+adapter_version = "0.0"
+transform_version = "0"
+license_identifier = "AGPL-3.0"
+license_status = "agpl_3_0_code_only_assets_yostar_copyright_learning_only_removal_on_request"
+permission_status = "not_granted_private_noncommercial_removal_on_request"
+private_hosting_status = "private_noncommercial_only_never_public"
+redistribution_status = "reference_link_only_never_bytes"
+attribution_text = "Image URL references courtesy of the yuanyan3060/ArknightsGameResource mirror (repository code AGPL-3.0). Referenced Arknights art assets (c) Hypergryph / Yostar, for learning and exchange only, removed on request."
+contact_url = "https://github.com/yuanyan3060/ArknightsGameResource/issues"
+policy_notes = "v0.3 M12 image URL REFERENCE source (ADR 0008 / §V63): the server DERIVES raw.githubusercontent.com URLs at response-build time from a game_id already stored from the primary snapshot -- it stores NO bytes and NO url (§V16 airtight) and performs NO fetch/HEAD/GET/validation at import or query time (§V1/§V24). Nothing is imported so there is NO snapshot commit for this entry. AGPL-3.0 covers the mirror's CODE only; the referenced art assets are self-declared Yostar/Hypergryph copyright, learning-only, removed on request (D13: no permission assumed). Redistribution is reference-link only, never bytes. OFF by default; private + noncommercial only, never public (D4/§C) -- cannot be enabled for any public deployment by a single flag. Takedown = flip enabled=false; there is nothing to purge (§V28/§V20)."
+enabled = false
+last_reviewed_at = "2026-07-22"

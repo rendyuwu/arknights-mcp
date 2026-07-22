@@ -18,7 +18,7 @@ an attribution offer, nor a takedown offer is treated as permission to reuse.
 No raw snapshots or prebuilt databases are distributed. Every source has a
 removal mechanism.
 
-_Last reviewed: 2026-07-21._
+_Last reviewed: 2026-07-22._
 
 ---
 
@@ -116,6 +116,22 @@ _Last reviewed: 2026-07-21._
 - **Enabled:** yes — enabled 2026-07-21 (importer + FTS rebuild + `search_entities` `locale` param landed T99/T100/T101; `sync` ride-along wired T109). The ride-along fetches a locale only when the source id is in `[sync].enabled_sources` **and** a `[sync.arknights_extra_locale_names].base_url` is configured for that locale (there is NO shipped default URL, so an unconfigured install fetches nothing).
 - **Current snapshot commit / retrieved at:** n/a.
 - **Last reviewed:** 2026-07-21.
+
+## `arknights_game_resource` — image URL references (v0.3 M12), **disabled by default**
+
+- **Owner / maintainer:** yuanyan3060 (community mirror `ArknightsGameResource`).
+- **Canonical URL:** https://github.com/yuanyan3060/ArknightsGameResource
+- **Source type / regions:** image-asset URL reference (query-time DERIVED links, no import); regions `en`, `cn`. The `game_id` used to build a link is already region-scoped, so en/cn are never mixed (§V5).
+- **Fields / domains consumed:** none — nothing is imported. Image URLs are DERIVED at response-build time from a `game_id` already stored from the primary snapshot (operator portrait/avatar/skin from `operators.game_id`, enemy sprite from `enemies.game_id`). The database holds no bytes and no URL; the server performs no fetch/HEAD/GET/validation at import or query time (§V1/§V24/§V63). See [ADR 0008](docs/adr/0008-art-asset-url-references.md).
+- **Adapter / transform versions:** n/a (no adapter, no importer, no transform — pure query-time derivation).
+- **License / permission status:** the mirror's **AGPL-3.0 license covers its code only**; the referenced art assets are self-declared Yostar/Hypergryph copyright, "for learning and exchange only, content subject to removal upon request." No permission is assumed (D13). Referenced under a private, non-commercial posture with immediate takedown.
+- **Private-hosting status:** private, non-commercial only — **never public** (D4/§C). Cannot be enabled for any non-loopback/public deployment by a single flag.
+- **Redistribution status:** reference-link only — **never bytes**. No artwork, image bytes, or repository code enters any release artifact or the database (§V16 airtight; zero AGPL code intake keeps the copyleft out of the Apache-2.0 tree).
+- **Required attribution:** "Image URL references courtesy of the yuanyan3060/ArknightsGameResource mirror (repository code AGPL-3.0). Referenced Arknights art assets © Hypergryph / Yostar, for learning and exchange only, removed on request."
+- **Contact / issue URL:** https://github.com/yuanyan3060/ArknightsGameResource/issues
+- **Enabled:** no — OFF by default. When enabled, `get_operator`/`get_enemy` carry an additive optional `image_refs` list; disabling stops emitting references (kill switch, §V28/§V20). Takedown is a config flip with nothing to purge.
+- **Current snapshot commit / retrieved at:** n/a — nothing is imported, so there is no snapshot commit for this source.
+- **Last reviewed:** 2026-07-22 (M12, ADR 0008 — founder-approved private + non-commercial URL references only; image bytes remain excluded).
 
 ## `local_snapshot` — user-supplied snapshot adapter, **enabled (adapter)**
 

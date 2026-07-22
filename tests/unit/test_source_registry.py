@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 EXAMPLE_REGISTRY = REPO_ROOT / "config" / "data_sources.example.toml"
 DATA_SOURCES_MD = REPO_ROOT / "DATA_SOURCES.md"
+NOTICE = REPO_ROOT / "NOTICE"
 
 EXPECTED_SOURCE_IDS = {
     "arknights_assets_gamedata",
@@ -32,6 +33,7 @@ EXPECTED_SOURCE_IDS = {
     "arknights_global_official_news",
     "arknights_cn_official_news",
     "arknights_extra_locale_names",
+    "arknights_game_resource",
 }
 
 
@@ -140,3 +142,63 @@ def test_disabled_source_exempt_from_completeness() -> None:
         }
     )
     reg.assert_complete()  # must not raise
+
+
+# --- T118: image-ref source `arknights_game_resource` (§V27/§V63/§V16) ---------
+
+
+def test_image_ref_source_registered_and_complete() -> None:
+    # §V27: the new source is present and, though disabled-by-default, still
+    # populates every §V27 mandatory field (the task requires completeness; a
+    # snapshot commit is N/A because nothing is imported). The runtime registry
+    # still loads (validate=True) since a disabled source is exempt from the
+    # enabled-only completeness gate.
+    reg = load_source_registry(REGISTRY)
+    entry = reg.get("arknights_game_resource")
+    assert entry is not None
+    assert entry.missing_mandatory_fields() == []
+    assert entry.owner_name == "yuanyan3060"
+    assert entry.canonical_url == "https://github.com/yuanyan3060/ArknightsGameResource"
+    assert entry.last_reviewed_at == "2026-07-22"
+    # §V27: the public projection carries no internal-only field (e.g. policy_notes,
+    # which may hold takedown correspondence) and no secret/local-path/OAuth key.
+    public = entry.public_view()
+    assert "policy_notes" not in public
+    assert public["attribution_text"]
+
+
+def test_image_ref_source_off_by_default_regions_and_posture() -> None:
+    # §V63: image URL REFERENCE source is OFF by default, region-scoped en/cn,
+    # owned by yuanyan3060, and records the AGPL-code / Yostar-copyright /
+    # removal-on-request permission posture. No snapshot commit (no import).
+    reg = load_source_registry(REGISTRY)
+    entry = reg.get("arknights_game_resource")
+    assert entry is not None
+    assert entry.enabled is False  # OFF by default (private + noncommercial only)
+    assert entry.regions == ["en", "cn"]  # region-scoped, en/cn never mixed
+    assert entry.license_identifier == "AGPL-3.0"  # mirror CODE license
+    # Permission posture: not granted, private/noncommercial, removal on request.
+    assert "removal_on_request" in entry.permission_status
+    assert "noncommercial" in entry.private_hosting_status
+    assert "never_public" in entry.private_hosting_status
+    # No adapter/transform/snapshot: pure query-time derivation, nothing imported.
+    assert entry.fields_consumed  # documented as "none -- no import ..."
+    assert "no import" in entry.fields_consumed[0]
+
+
+def test_image_ref_source_reference_link_only_never_bytes() -> None:
+    # §V16: redistribution posture is reference-link only, NEVER bytes; the human
+    # mirror (DATA_SOURCES.md) and NOTICE both record the no-bytes attribution so
+    # a release artifact carries the reference-only posture, not artwork.
+    reg = load_source_registry(REGISTRY)
+    entry = reg.get("arknights_game_resource")
+    assert entry is not None
+    assert entry.redistribution_status == "reference_link_only_never_bytes"
+
+    md = DATA_SOURCES_MD.read_text(encoding="utf-8")
+    assert "arknights_game_resource" in md
+    assert "never bytes" in md  # reference-link only, no image bytes
+
+    notice = NOTICE.read_text(encoding="utf-8")
+    assert "ArknightsGameResource" in notice
+    assert "reference-link only, never bytes" in notice
