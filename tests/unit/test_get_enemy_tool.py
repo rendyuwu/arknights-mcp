@@ -24,6 +24,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.enemies import get_enemy
@@ -89,6 +90,39 @@ def test_aerial_enemy_abilities_decoded(conn: sqlite3.Connection) -> None:
     lvl = enemy["levels"][0]  # type: ignore[index]
     assert lvl["res"] == 10
     assert lvl["abilities"] == ["aerial"]
+
+
+# --- §V67/§V26 (B58) null discipline: [] vs absent + absent-field limitation ---
+
+
+def test_absent_list_fields_are_omitted_not_null(conn: sqlite3.Connection) -> None:
+    # §V67: the 4-4 slug confirms no abilities ([]), but the source carries no
+    # immunities/targeting at all -> those keys are OMITTED, never emitted as null, so a
+    # client can tell "confirmed none" ([]) apart from "not in source" (absent, B58).
+    env = _handler(conn)(server="en", game_id="enemy_1007_slime")
+    lvl = env.to_dict()["data"]["enemy"]["levels"][0]  # type: ignore[index]
+    assert lvl["abilities"] == []  # confirmed none, present
+    assert "immunities" not in lvl  # not in source -> omitted
+    assert "targeting" not in lvl  # not in source -> omitted
+
+
+def test_absent_expected_fields_named_in_limitation(conn: sqlite3.Connection) -> None:
+    # §V67/§V26 (B58): the slug's source omits immunities + targeting, so a standing
+    # limitation names them ("not present in source"); attack_type IS present
+    # ("physical" in the handbook) so it is NOT named.
+    env = _handler(conn)(server="en", game_id="enemy_1007_slime")
+    assert env.status == "ok"
+    blob = " ".join(env.limitations).lower()
+    assert "immunities" in blob and "targeting" in blob
+    assert "not present" in blob
+    assert "attack_type" not in blob  # present -> not flagged
+    # §V71: the client-facing limitation carries no internal spec cite/jargon.
+    assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
+
+
+def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:
+    # §V67: the []-vs-absent convention is stated in the tool description.
+    assert LIST_FIELD_CONVENTION in build_get_enemy_spec(lambda: conn).description
 
 
 # --- §V5 region + provenance --------------------------------------------------

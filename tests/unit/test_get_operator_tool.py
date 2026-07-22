@@ -17,6 +17,7 @@ assert:
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,9 +28,17 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import BLACKBOARD_KEY_GLOSSARY, BLACKBOARD_LIMITATION
-from arknights_mcp.mcp.tools.operator import build_get_operator_spec
+from arknights_mcp.mcp.tools.operator import (
+    _phase_to_dict,
+    _skill_level_to_dict,
+    build_get_operator_spec,
+)
 from arknights_mcp.models.common import MAX_ID_LEN
-from arknights_mcp.services.operators import get_operator
+from arknights_mcp.services.operators import (
+    OperatorPhaseFacts,
+    SkillLevelFacts,
+    get_operator,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -108,6 +117,43 @@ def test_summary_can_be_dropped(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id=_AMIYA, include_summary=False)
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     assert "summary" not in op
+
+
+# --- §V67 null discipline: omit the always-optional range_id scalar -----------
+
+
+def test_phase_range_id_omitted_when_absent() -> None:
+    # §V67: ``range_id`` is an always-optional scalar -- omitted when the source carried
+    # none, emitted when present (never an ambiguous null).
+    phase = OperatorPhaseFacts(
+        phase=0,
+        max_level=50,
+        max_hp=1000,
+        atk=100,
+        def_=50,
+        res=0,
+        redeploy_time=70,
+        cost=10,
+        block_count=1,
+        attack_interval=1.0,
+        range_id=None,
+    )
+    assert "range_id" not in _phase_to_dict(phase)
+    assert _phase_to_dict(replace(phase, range_id="1-1"))["range_id"] == "1-1"
+
+
+def test_skill_level_range_id_omitted_when_absent() -> None:
+    level = SkillLevelFacts(
+        level=1,
+        sp_cost=10,
+        initial_sp=0,
+        duration=5.0,
+        range_id=None,
+        blackboard=None,
+        description=None,
+    )
+    assert "range_id" not in _skill_level_to_dict(level)
+    assert _skill_level_to_dict(replace(level, range_id="x-1"))["range_id"] == "x-1"
 
 
 # --- §V65/T126: blackboard grounding FLOOR ------------------------------------

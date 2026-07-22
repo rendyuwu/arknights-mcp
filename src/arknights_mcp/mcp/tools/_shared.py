@@ -18,7 +18,7 @@ the owning tool module and is passed in as ``shape``.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 
 from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation, RankingRow
 from arknights_mcp.db.connection import DatabaseUnavailable
@@ -146,6 +146,70 @@ def page_to_dict(page: SectionPage) -> dict[str, object]:
         "total": page.total,
         "has_more": page.has_more,
     }
+
+
+#: §V67/B58 convention sentence folded into the description of every tool that emits
+#: list-typed fields with the confirmed-none/absent distinction (``get_enemy`` /
+#: ``get_stage``). ``[]`` = the source confirms none; an omitted key = the source
+#: carried no such data; a value is never ``null``, so a client need not decide
+#: "none vs unknown". Shared: one wording, one home (§V37). Client-facing text, so no
+#: internal cites/jargon (§V71) -- the cites live in this comment, never the emitted
+#: string.
+LIST_FIELD_CONVENTION = (
+    "Field conventions: a list field is [] when the source confirms none, and is "
+    "omitted entirely when the source carries no such data (never null). A field the "
+    "response would normally include but the source omits is named in limitations."
+)
+
+
+def hoist_drop_provenance(
+    prov_rows: Sequence[Mapping[str, object]],
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Hoist the shared drop-provenance block; return ``(shared, per_row_deviations)``.
+
+    §V66.2 payload dedup: when every drop row repeats an identical provenance block
+    (``snapshot_id`` / ``fetched_at`` / ``expires_at`` [/ ``imported_at``]), hoist it
+    once to a shared block and leave each row carrying only the fields where it
+    deviates (a different snapshot), so a deviant row stays *visible* instead of buried
+    among identical repeats. The shared block is the most common provenance row (ties
+    broken by first appearance), so it is deterministic + reproducible even when a
+    minority of rows deviate; a row whose provenance matches the shared block yields an
+    empty deviation dict. An empty input yields an empty shared block + no rows. The
+    single §V37 home for the hoist shared by ``get_stage_drops`` + ``get_item_drops``.
+    """
+    if not prov_rows:
+        return {}, []
+    # Tally identical provenance rows; keep first-seen order for a deterministic tie
+    # break (every value here is a provenance string, so the row is hashable/sortable).
+    counts: dict[tuple[tuple[str, object], ...], int] = {}
+    order: list[tuple[tuple[str, object], ...]] = []
+    for row in prov_rows:
+        key = tuple(sorted(row.items(), key=lambda kv: kv[0]))
+        if key not in counts:
+            order.append(key)
+            counts[key] = 0
+        counts[key] += 1
+    shared_key = max(order, key=lambda k: counts[k])
+    shared = dict(shared_key)
+    deviations = [{k: v for k, v in row.items() if v != shared.get(k)} for row in prov_rows]
+    return shared, deviations
+
+
+def absent_field_limitation(absent: Sequence[str]) -> tuple[str, ...]:
+    """§V67/§V26 (B58): one standing limitation naming the expected fields the source
+    omitted for this entity, so a client can tell "the source carried no such data"
+    apart from a confirmed-empty value -- the executable form of "absent field -> say
+    so". Returns an empty tuple when nothing expected is absent (no limitation
+    emitted). Shared §V37 home for ``get_enemy`` + ``get_stage``. Client-facing text,
+    so no internal cites/jargon (§V71)."""
+    if not absent:
+        return ()
+    return (
+        "These expected fields are not present in this entity's source data: "
+        + ", ".join(absent)
+        + ". An absent field means the source carried no such data, not that the value "
+        "is confirmed empty.",
+    )
 
 
 def evidence_to_dict(item: EvidenceItem) -> dict[str, object]:

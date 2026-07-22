@@ -95,8 +95,17 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"stage", "drops"}  # no efficiency block without the flag
+    # §V66.2: the penguin provenance shared by every drop is hoisted to one block; no
+    # per-drop provenance repetition, no efficiency block without the flag.
+    assert set(data) == {"stage", "drop_provenance", "drops"}
     assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
+    # §V54/§V66.2: the shared penguin provenance chain (snapshot + stamps) rides once.
+    prov = data["drop_provenance"]
+    assert prov == {  # type: ignore[comparison-overlap]
+        "snapshot_id": "pg:en",
+        "fetched_at": "2026-07-19T00:00:00+00:00",
+        "expires_at": FUTURE_EXPIRY,
+    }
     drops = data["drops"]
     assert isinstance(drops, list) and len(drops) == 1
     drop = drops[0]
@@ -104,10 +113,11 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert drop["region"] == "en"
     assert drop["drop_rate"] == 0.25
     assert drop["times"] == 5000
-    # §V54: the drop carries its OWN penguin provenance chain (snapshot + stamps).
-    assert drop["snapshot_id"] == "pg:en"
-    assert drop["fetched_at"] and drop["expires_at"]
-    assert drop["expired"] is False
+    # §V66.2: the shared provenance is NOT repeated on the row; §V67: a fresh drop
+    # omits ``expired`` (its absence = not expired), so the deviant row stays visible.
+    for hoisted in ("snapshot_id", "fetched_at", "expires_at"):
+        assert hoisted not in drop
+    assert "expired" not in drop
 
 
 def test_ok_carries_region_and_provenance(fresh_conn: sqlite3.Connection) -> None:
@@ -143,6 +153,9 @@ def test_expired_drop_is_data_stale_but_still_returned(stale_conn: sqlite3.Conne
     assert env.status == "data_stale"
     # The drop is flagged, not withheld (§V53): the data payload still carries it.
     data = env.to_dict()["data"]
+    # §V66.2: the (past) expiry rides the hoisted shared block; §V67: the expired drop
+    # carries ``expired:true`` so it stays visible, never presented as fresh.
+    assert data["drop_provenance"]["expires_at"] == PAST_EXPIRY  # type: ignore[index]
     assert data["drops"][0]["expired"] is True  # type: ignore[index]
     # A staleness limitation names the refresh action; never presented as fresh.
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)

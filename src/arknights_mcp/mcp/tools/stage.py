@@ -35,7 +35,9 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    LIST_FIELD_CONVENTION,
     ConnectionProvider,
+    absent_field_limitation,
     observation_to_dict,
     page_to_dict,
     run_guarded,
@@ -64,7 +66,7 @@ _TOOL_DESCRIPTION = (
     "/ include_routes / include_spawns to add the (paged) tile grid, enemy routes, "
     "or spawn timeline. Set include_map_image for a rendered SVG map drawn from the "
     "stage's own grid data (a derived image, not game artwork); a very large map is "
-    "omitted with a note. en/cn are never mixed."
+    "omitted with a note. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no stage matched the given region and selector"
@@ -122,7 +124,7 @@ def _route_to_dict(route: RouteFacts) -> dict[str, object]:
 
 
 def _spawn_to_dict(spawn: SpawnFacts) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "wave_index": spawn.wave_index,
         "enemy_game_id": spawn.enemy_game_id,
         "enemy_level_variant": spawn.enemy_level_variant,
@@ -131,9 +133,30 @@ def _spawn_to_dict(spawn: SpawnFacts) -> dict[str, object]:
         "spawn_time": spawn.spawn_time,
         "count": spawn.count,
         "interval": spawn.interval,
-        "spawn_group": spawn.spawn_group,
         "hidden": spawn.hidden,
     }
+    # §V67: ``spawn_group`` is an always-optional scalar -- omit the key when the
+    # source carried none rather than emit an ambiguous null (additive-safe, §V21).
+    if spawn.spawn_group is not None:
+        out["spawn_group"] = spawn.spawn_group
+    return out
+
+
+#: §V67/B58 expected stage scalars a client reasonably looks for; when the source omits
+#: one, it is named in a "not present in source" limitation (§V26).
+def _stage_absent_field_limitations(stage: StageFacts) -> tuple[str, ...]:
+    """§V67/§V26 (B58): name the expected stage scalars absent from the source.
+
+    ``recommended_level`` / ``max_life_points`` are surfaced as a "not present in
+    source" limitation when the source omitted them, so an absent value is called out
+    rather than left as an ambiguous null. Returns the single standing limitation
+    naming them (empty when both are present)."""
+    absent: list[str] = []
+    if stage.recommended_level is None:
+        absent.append("recommended_level")
+    if stage.max_life_points is None:
+        absent.append("max_life_points")
+    return absent_field_limitation(absent)
 
 
 def _map_image_to_dict(image: RenderedMap) -> dict[str, object]:
@@ -182,7 +205,9 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
                 imported_at=prov.imported_at,
             )
         ],
-        limitations=result.limitations,
+        # §V67/§V26 (B58): the §V22 map caption (if any) plus a "not present in source"
+        # limitation naming any expected stage scalar the source omitted.
+        limitations=(*result.limitations, *_stage_absent_field_limitations(result.stage)),
     )
 
 

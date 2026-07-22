@@ -80,21 +80,30 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V19: the stages section always rides its bounded page descriptor; no efficiency
-    # block without the flag.
-    assert set(data) == {"item", "stages", "stages_page"}
+    # §V19 + §V66.2: the stages section + its bounded page + the hoisted shared
+    # drop_provenance block; no efficiency block without the flag.
+    assert set(data) == {"item", "drop_provenance", "stages", "stages_page"}
     assert data["item"]["game_id"] == "sugar"  # type: ignore[index]
+    # §V54/§V66.2: the penguin provenance shared by both stages is hoisted once.
+    prov = data["drop_provenance"]
+    assert prov == {  # type: ignore[comparison-overlap]
+        "snapshot_id": "pg:en",
+        "fetched_at": "2026-07-19T00:00:00+00:00",
+        "expires_at": FUTURE_EXPIRY,
+        "imported_at": "2026-07-19T00:00:00+00:00",
+    }
     stages = data["stages"]
     assert isinstance(stages, list) and len(stages) == 2
     # §V22/§V19: a two-stage item fits page 1 with no further page.
     assert data["stages_page"] == {"page": 1, "page_size": 50, "total": 2, "has_more": False}  # type: ignore[index]
     for stage in stages:
         assert stage["region"] == "en"
-        # §V54: each stage carries its OWN penguin provenance chain.
-        assert stage["snapshot_id"] == "pg:en"
-        assert stage["fetched_at"] and stage["expires_at"] and stage["imported_at"]
         assert stage["sanity_cost"] is not None
-        assert stage["expired"] is False
+        # §V66.2: the shared provenance is NOT repeated per stage; §V67: a fresh stage
+        # omits ``expired``.
+        for hoisted in ("snapshot_id", "fetched_at", "expires_at", "imported_at"):
+            assert hoisted not in stage
+        assert "expired" not in stage
 
 
 def test_ok_carries_region_and_provenance(tmp_path: Path) -> None:
@@ -213,6 +222,37 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
 
 
+# --- §V66.2: provenance hoist -- shared block + only the deviant row carries its own -
+
+
+def test_provenance_hoist_surfaces_only_the_deviant_stage(tmp_path: Path) -> None:
+    # §V66.2: the penguin provenance shared by the stages is hoisted to one block; a
+    # stage repeats a field ONLY where it deviates (here a different expiry), and a
+    # fresh stage omits ``expired`` -- so the stale/deviant stage stays visible.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("4-4", expires_at=FUTURE_EXPIRY),
+            StageDropSeed("a-1", expires_at=PAST_EXPIRY),
+        ],
+    )
+    env = _handler(open_read_only(path))(server="en", game_id="sugar")
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    # The shared block is the common (first-seen fresh) provenance.
+    assert data["drop_provenance"]["expires_at"] == FUTURE_EXPIRY  # type: ignore[index]
+    stages = {s["stage_code"]: s for s in data["stages"]}  # type: ignore[index]
+    fresh, stale = stages["4-4"], stages["a-1"]
+    # The fresh stage matches the shared block: no per-row provenance, no expired flag.
+    for hoisted in ("snapshot_id", "fetched_at", "expires_at", "imported_at"):
+        assert hoisted not in fresh
+    assert "expired" not in fresh
+    # The stale stage deviates: it carries its OWN (past) expiry + expired:true.
+    assert stale["expires_at"] == PAST_EXPIRY
+    assert stale["expired"] is True
+
+
 # --- §V22/§V19: both growable lists are paged (B21) ---------------------------
 
 
@@ -292,7 +332,8 @@ def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     # The returned page holds only the fresh stage; the expired one is off-page...
     assert [s["stage_code"] for s in data["stages"]] == ["a-1"]  # type: ignore[index]
-    assert data["stages"][0]["expired"] is False  # type: ignore[index]
+    # §V67: the fresh page-1 stage omits ``expired`` (absence = not expired).
+    assert "expired" not in data["stages"][0]  # type: ignore[operator]
     assert data["stages_page"]["has_more"] is True  # type: ignore[index]
     # ...yet the staleness posture holds (never presented as fresh).
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)

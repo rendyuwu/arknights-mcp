@@ -23,7 +23,12 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    LIST_FIELD_CONVENTION,
+    ConnectionProvider,
+    absent_field_limitation,
+    run_guarded,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.enemies import GetEnemyInput
 from arknights_mcp.services.enemies import (
@@ -42,7 +47,7 @@ _TOOL_DESCRIPTION = (
     "attack interval/range, move speed, weight, life-point reduction) with "
     "immunities and abilities. When the image-reference source is enabled, an "
     "additional image_refs list with the derived enemy sprite URL is included. "
-    "en/cn are never mixed."
+    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no enemy matched the given region and game_id"
@@ -53,8 +58,14 @@ _NOT_FOUND_ACTION = (
 
 
 def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
-    """One level variant's typed stat block (structural JSON already vetted; §V18)."""
-    return {
+    """One level variant's typed stat block (structural JSON already vetted; §V18).
+
+    §V67 list discipline: ``targeting`` / ``immunities`` / ``abilities`` are emitted as
+    ``[]`` when the source confirms none and OMITTED when the source carried no such
+    data (decoded ``None``) -- never ``null``, so a client need not decide "none vs
+    unknown" (B58). The absence of an expected one is named in the response limitations.
+    """
+    out: dict[str, object] = {
         "level_variant": level.level_variant,
         "hp": level.hp,
         "atk": level.atk,
@@ -66,10 +77,37 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
         "weight": level.weight,
         "life_point_reduction": level.life_point_reduction,
         "block_behavior": level.block_behavior,
-        "targeting": level.targeting,
-        "immunities": level.immunities,
-        "abilities": level.abilities,
     }
+    for key, value in (
+        ("targeting", level.targeting),
+        ("immunities", level.immunities),
+        ("abilities", level.abilities),
+    ):
+        if value is not None:
+            out[key] = value
+    return out
+
+
+#: §V67/B58 expected enemy fields a client reasonably looks for; when the source omits
+#: one, it is named in a "not present in source" limitation rather than emitted as null.
+def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
+    """§V67/§V26 (B58): name the expected enemy fields absent from the source.
+
+    ``attack_type`` is absent when the enemy-level scalar is ``None``; a per-level list
+    field (immunities/abilities/targeting) is absent when NO level variant carries a
+    value (every variant decoded ``None``) -- a variant with ``[]`` is present-but-empty
+    (confirmed none), not absent. Returns the single standing limitation naming them
+    (empty when nothing expected is absent)."""
+    absent: list[str] = []
+    if enemy.attack_type is None:
+        absent.append("attack_type")
+    if all(lv.immunities is None for lv in enemy.levels):
+        absent.append("immunities")
+    if all(lv.abilities is None for lv in enemy.levels):
+        absent.append("abilities")
+    if all(lv.targeting is None for lv in enemy.levels):
+        absent.append("targeting")
+    return absent_field_limitation(absent)
 
 
 def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, object]:
@@ -99,7 +137,12 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
 
 
 def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEnvelope:
-    """Map the domain result to a typed §V23 envelope (§V5 region + provenance)."""
+    """Map the domain result to a typed §V23 envelope (§V5 region + provenance).
+
+    §V67/§V26 (B58): a standing limitation names any expected field (attack_type,
+    immunities, abilities, targeting) the source omitted, so an absent field is called
+    out rather than left as an ambiguous null.
+    """
     if result.status == "not_found" or result.enemy is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
@@ -113,6 +156,7 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
                 imported_at=prov.imported_at,
             )
         ],
+        limitations=_enemy_absent_field_limitations(result.enemy),
     )
 
 

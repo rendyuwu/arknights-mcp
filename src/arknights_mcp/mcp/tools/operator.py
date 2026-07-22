@@ -88,7 +88,7 @@ def _summary_to_dict(summary: OperatorSummary) -> dict[str, object]:
 
 
 def _phase_to_dict(phase: OperatorPhaseFacts) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "phase": phase.phase,
         "max_level": phase.max_level,
         "max_hp": phase.max_hp,
@@ -99,22 +99,29 @@ def _phase_to_dict(phase: OperatorPhaseFacts) -> dict[str, object]:
         "cost": phase.cost,
         "block_count": phase.block_count,
         "attack_interval": phase.attack_interval,
-        "range_id": phase.range_id,
     }
+    # §V67: ``range_id`` is an always-optional scalar -- omit the key when the source
+    # carried none rather than emit an ambiguous null (additive-safe, §V21).
+    if phase.range_id is not None:
+        out["range_id"] = phase.range_id
+    return out
 
 
 def _skill_level_to_dict(level: SkillLevelFacts) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "level": level.level,
         "sp_cost": level.sp_cost,
         "initial_sp": level.initial_sp,
         "duration": level.duration,
-        "range_id": level.range_id,
         "blackboard": level.blackboard,
         # §V65 (a)/ADR 0010: the in-game effect TEMPLATE emitted alongside the
         # blackboard so its keys are grounded (additive/optional, §V21).
         "description": level.description,
     }
+    # §V67: omit the always-optional ``range_id`` scalar when the source carried none.
+    if level.range_id is not None:
+        out["range_id"] = level.range_id
+    return out
 
 
 def _skill_to_dict(skill: OperatorSkillFacts) -> dict[str, object]:

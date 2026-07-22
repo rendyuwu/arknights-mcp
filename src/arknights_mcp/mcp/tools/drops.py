@@ -45,6 +45,7 @@ from arknights_mcp.mcp.envelopes import (
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     ConnectionProvider,
+    hoist_drop_provenance,
     page_to_dict,
     ranked_observation_to_dict,
     run_guarded,
@@ -66,10 +67,12 @@ _TOOL_TITLE = "Get stage drops"
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's item drop rates by region + stage_code (e.g. 4-4) "
     "or game_id, sourced from the Penguin Statistics cache: each drop carries its "
-    "quantity/sample size, drop rate, and penguin provenance (snapshot + fetched/"
-    "expires time). Set include_efficiency to add deterministic farming "
-    "observations (sanity spent per item) -- facts and observations only, never a "
-    "best-farm or mandatory verdict. A drop past its expiry is returned but flagged "
+    "quantity/sample size and drop rate. The penguin provenance (snapshot + fetched/"
+    "expires time) shared by every drop is hoisted to a single drop_provenance block; "
+    "a drop only repeats a provenance field when it differs, and carries expired:true "
+    "only when it is past its cache expiry. Set include_efficiency to add deterministic "
+    "farming observations (sanity spent per item) -- facts and observations only, never "
+    "a best-farm or mandatory verdict. A drop past its expiry is returned but flagged "
     "data_stale; re-sync the penguin source to refresh. en/cn are never mixed."
 )
 
@@ -84,8 +87,13 @@ _STALE_LIMITATION = (
 )
 
 
-def _drop_to_dict(drop: DropFacts) -> dict[str, object]:
-    """One item's typed drop fact + its penguin provenance stamps (§V53/§V54)."""
+def _drop_identity(drop: DropFacts) -> dict[str, object]:
+    """One item's typed drop identity + rate, WITHOUT the penguin provenance stamps.
+
+    §V66.2: the ``snapshot_id`` / ``fetched_at`` / ``expires_at`` shared by every drop
+    are hoisted to a single ``drop_provenance`` block by :func:`_shape`; a row repeats
+    one only when it deviates, and carries ``expired`` only when it is past expiry.
+    """
     return {
         "item_game_id": drop.item_game_id,
         "item_display_name": drop.item_display_name,
@@ -95,10 +103,15 @@ def _drop_to_dict(drop: DropFacts) -> dict[str, object]:
         "quantity": drop.quantity,
         "times": drop.times,
         "drop_rate": drop.drop_rate,
+    }
+
+
+def _drop_provenance_row(drop: DropFacts) -> dict[str, object]:
+    """The penguin provenance stamps of one drop (the §V66.2 hoist input)."""
+    return {
         "snapshot_id": drop.snapshot_id,
         "fetched_at": drop.fetched_at,
         "expires_at": drop.expires_at,
-        "expired": drop.expired,
     }
 
 
@@ -109,11 +122,26 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     not withheld, §V53); ``not_found`` (absent stage or no drop cache) fails to a
     §V24 error envelope with a suggested admin action. The efficiency observations
     ride only when ``include_efficiency`` produced them, each keeping its five §V6
-    fields (§V55). Provenance is the stage's region attribution (§V5); the per-drop
-    penguin snapshot/expiry stamps travel in the drop rows themselves (§V54).
+    fields (§V55). Envelope provenance is the stage's game-data region attribution
+    (§V5), distinct from the penguin drop chain (§V54).
+
+    §V66.2 provenance hoist: every drop shares one penguin snapshot, so the
+    ``snapshot_id`` / ``fetched_at`` / ``expires_at`` block is emitted once as
+    ``drop_provenance`` and a drop repeats a field only where it deviates; a drop
+    carries ``expired:true`` only when past its expiry (a fresh drop omits it), so the
+    stale drop stays visible instead of buried in identical repeats.
     """
     if result.status == "not_found" or result.stage is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
+
+    shared_prov, deviations = hoist_drop_provenance([_drop_provenance_row(d) for d in result.drops])
+    drops: list[dict[str, object]] = []
+    for drop, deviation in zip(result.drops, deviations, strict=True):
+        row = _drop_identity(drop)
+        row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
+        if drop.expired:
+            row["expired"] = True  # §V67: emitted only when true (default = fresh)
+        drops.append(row)
 
     data: dict[str, object] = {
         "stage": {
@@ -123,7 +151,8 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
             "display_name": result.stage.display_name,
             "sanity_cost": result.stage.sanity_cost,
         },
-        "drops": [_drop_to_dict(d) for d in result.drops],
+        "drop_provenance": shared_prov,
+        "drops": drops,
     }
     if result.analyzer_version is not None:
         # include_efficiency was requested: surface the §V66.1 single ranked
@@ -199,14 +228,16 @@ _ITEM_TOOL_TITLE = "Get item drops"
 _ITEM_TOOL_DESCRIPTION = (
     "Compare where one Arknights item drops by region + item game_id, sourced from "
     "the Penguin Statistics cache: the item's drop across every stage that yields it, "
-    "each stage carrying its sanity cost, drop rate/sample size, and penguin "
-    "provenance (snapshot + fetched/expires time). Set include_efficiency to add "
-    "deterministic farming observations RANKED ascending by sanity spent per item -- "
-    "an ordering and evidence, never a best-farm or mandatory verdict; stage "
-    "availability, first-clear bonuses, and byproducts/synthesis are not modeled. A "
-    "stage drop past its expiry is returned but flagged data_stale (downgraded, not "
-    "dropped from the ranking); re-sync the penguin source to refresh. An item's "
-    "comparison never mixes en/cn stages."
+    "each stage carrying its sanity cost and drop rate/sample size. The penguin "
+    "provenance (snapshot + fetched/expires + import time) shared by every stage is "
+    "hoisted to a single drop_provenance block; a stage only repeats a provenance "
+    "field when it differs, and carries expired:true only when past its cache expiry. "
+    "Set include_efficiency to add deterministic farming observations RANKED ascending "
+    "by sanity spent per item -- an ordering and evidence, never a best-farm or "
+    "mandatory verdict; stage availability, first-clear bonuses, and byproducts/"
+    "synthesis are not modeled. A stage drop past its expiry is returned but flagged "
+    "data_stale (downgraded, not dropped from the ranking); re-sync the penguin source "
+    "to refresh. An item's comparison never mixes en/cn stages."
 )
 
 _ITEM_NOT_FOUND_MESSAGE = "no drop data matched the given region and item"
@@ -216,8 +247,13 @@ _ITEM_NOT_FOUND_ACTION = (
 )
 
 
-def _item_stage_drop_to_dict(stage: ItemStageDropFacts) -> dict[str, object]:
-    """One stage's drop of the item + its penguin provenance stamps (§V54/§V60)."""
+def _item_stage_drop_identity(stage: ItemStageDropFacts) -> dict[str, object]:
+    """One stage's drop of the item, WITHOUT the penguin provenance stamps (§V66.2).
+
+    The ``snapshot_id`` / ``fetched_at`` / ``expires_at`` / ``imported_at`` shared by
+    every stage are hoisted to a single ``drop_provenance`` block by :func:`_shape_item`;
+    a row repeats one only when it deviates, and carries ``expired`` only when past expiry.
+    """
     return {
         "stage_game_id": stage.stage_game_id,
         "stage_code": stage.stage_code,
@@ -226,11 +262,16 @@ def _item_stage_drop_to_dict(stage: ItemStageDropFacts) -> dict[str, object]:
         "quantity": stage.quantity,
         "times": stage.times,
         "drop_rate": stage.drop_rate,
+    }
+
+
+def _item_stage_provenance_row(stage: ItemStageDropFacts) -> dict[str, object]:
+    """The penguin provenance stamps of one stage drop (the §V66.2 hoist input)."""
+    return {
         "snapshot_id": stage.snapshot_id,
         "fetched_at": stage.fetched_at,
         "expires_at": stage.expires_at,
         "imported_at": stage.imported_at,
-        "expired": stage.expired,
     }
 
 
@@ -242,19 +283,33 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     (absent item or no drop cache in any stage) fails to a §V24 error envelope with a
     suggested admin action. The ranked efficiency observations ride only when
     ``include_efficiency`` produced them, each keeping its five §V6 fields (§V55),
-    alongside the mandatory §V60 comparison caveats. Provenance is the item's own
-    region attribution (§V5), derived over the FULL comparison in the service (never
-    the current page, B21); each stage's penguin snapshot/expiry stamps travel in the
-    stage rows themselves (§V54).
+    alongside the mandatory §V60 comparison caveats. Envelope provenance is the item's
+    own region attribution (§V5), derived over the FULL comparison in the service
+    (never the current page, B21).
+
+    §V66.2 provenance hoist: the penguin snapshot/fetch/expiry/import stamps shared by
+    the stages on this page are emitted once as ``drop_provenance``; a stage repeats a
+    field only where it deviates (a different snapshot) and carries ``expired:true``
+    only when past its expiry (a fresh stage omits it), so a deviant/stale stage stays
+    visible. The hoist is over the emitted page; the ranking + stale verdict +
+    provenance were fixed over the full set upstream (B21), so a page never shifts them.
 
     Both growable lists are paged (§V22/§V19, B21): ``stages`` and ``observations``
-    each carry their page and a ``*_page`` descriptor (``has_more``) so a client pages
-    deterministically instead of pulling an unbounded slice; the ranking + stale
-    verdict + provenance were fixed over the full set upstream, so a page never shifts
-    them.
+    each carry their page and a ``*_page`` descriptor (``has_more``).
     """
     if result.status == "not_found" or result.item is None:
         return error("not_found", _ITEM_NOT_FOUND_MESSAGE, suggested_action=_ITEM_NOT_FOUND_ACTION)
+
+    shared_prov, deviations = hoist_drop_provenance(
+        [_item_stage_provenance_row(s) for s in result.stages]
+    )
+    stages: list[dict[str, object]] = []
+    for stage, deviation in zip(result.stages, deviations, strict=True):
+        row = _item_stage_drop_identity(stage)
+        row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
+        if stage.expired:
+            row["expired"] = True  # §V67: emitted only when true (default = fresh)
+        stages.append(row)
 
     data: dict[str, object] = {
         "item": {
@@ -264,7 +319,8 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
             "rarity": result.item.rarity,
             "item_type": result.item.item_type,
         },
-        "stages": [_item_stage_drop_to_dict(s) for s in result.stages],
+        "drop_provenance": shared_prov,
+        "stages": stages,
     }
     if result.stages_page is not None:
         data["stages_page"] = page_to_dict(result.stages_page)
@@ -289,8 +345,7 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     # penguin-sourced, so the envelope provenance is the distinct penguin snapshots
     # that backed the FULL comparison (§V5/§V54, derived in the service so a later page
     # never drops one); the comparison is region-scoped (§V5), so every provenance row
-    # shares the item's region. The per-stage penguin snapshot/expiry stamps still
-    # travel in the stage rows themselves (§V54).
+    # shares the item's region.
     return build_envelope(
         "data_stale" if result.stale else "ok",
         data=data,

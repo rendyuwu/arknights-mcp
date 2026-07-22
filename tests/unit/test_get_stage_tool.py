@@ -17,6 +17,7 @@ the pinned 4-4 fixture. They assert:
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -26,9 +27,20 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools.stage import build_get_stage_spec
+from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
+from arknights_mcp.mcp.tools.stage import (
+    _spawn_to_dict,
+    _stage_absent_field_limitations,
+    build_get_stage_spec,
+)
 from arknights_mcp.models.common import PAGE_SIZE_MAX
-from arknights_mcp.services.stages import _as_checkpoint_list, get_stage
+from arknights_mcp.services.stages import (
+    SpawnFacts,
+    StageFacts,
+    StageProvenance,
+    _as_checkpoint_list,
+    get_stage,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -168,6 +180,116 @@ def test_sections_page_independently(conn: sqlite3.Connection) -> None:
         "enemy_1105_drone",
     }
     assert data["spawns_page"]["page"] == 1  # type: ignore[index]
+
+
+# --- §V67/§V26 (B58) null discipline: omit always-null scalars + absent limitation --
+
+
+def _spawn(**overrides: object) -> SpawnFacts:
+    base: dict[str, object] = {
+        "wave_index": 0,
+        "enemy_game_id": "enemy_1007_slime",
+        "enemy_level_variant": 0,
+        "route_index": 0,
+        "spawn_time": 1.0,
+        "count": 1,
+        "interval": 0.0,
+        "spawn_group": None,
+        "hidden": False,
+        "variant_id": None,
+    }
+    base.update(overrides)
+    return SpawnFacts(**base)  # type: ignore[arg-type]
+
+
+def test_spawn_group_omitted_when_absent() -> None:
+    # §V67: ``spawn_group`` is an always-optional scalar -- omitted when the source
+    # carried none, emitted when present (never an ambiguous null).
+    assert "spawn_group" not in _spawn_to_dict(_spawn(spawn_group=None))
+    assert _spawn_to_dict(_spawn(spawn_group="g0"))["spawn_group"] == "g0"
+
+
+def test_spawn_group_present_on_fixture_spawns(conn: sqlite3.Connection) -> None:
+    # The 4-4 spawns DO carry a spawn group -> the key is present (positive case).
+    data = _handler(conn)(server="en", stage_code="4-4", include_spawns=True).to_dict()["data"]
+    groups = {s["spawn_group"] for s in data["spawns"]}  # type: ignore[index]
+    assert groups == {"g0", "g1"}
+
+
+def test_stage_absent_field_limitation_helper() -> None:
+    # §V67/§V26 (B58): the helper names an absent expected scalar and emits nothing when
+    # both are present.
+    prov = StageProvenance(snapshot_id="en:x", imported_at="t")
+    bare = StageFacts(
+        server="en",
+        game_id="bare",
+        stage_code="B-1",
+        display_name="Bare",
+        zone_game_id=None,
+        stage_type=None,
+        difficulty=None,
+        sanity_cost=10,
+        recommended_level=None,
+        max_life_points=None,
+        provenance=prov,
+    )
+    lim = _stage_absent_field_limitations(bare)
+    assert len(lim) == 1
+    assert "recommended_level" in lim[0] and "max_life_points" in lim[0]
+    present = replace(bare, recommended_level=45, max_life_points=3)
+    assert _stage_absent_field_limitations(present) == ()
+
+
+def test_4_4_stage_has_no_absent_field_limitation(conn: sqlite3.Connection) -> None:
+    # 4-4 carries recommendedLevel (45) + maxLifePoints (3), so no "not present" caveat.
+    env = _handler(conn)(server="en", stage_code="4-4")
+    assert not any("not present" in lim.lower() for lim in env.limitations)
+
+
+def test_bare_stage_names_absent_scalars_on_the_wire(tmp_path: Path) -> None:
+    # §V67/§V26 (B58): a stage whose source omits recommended_level + max_life_points
+    # surfaces a standing "not present in source" limitation naming them (end to end).
+    path = tmp_path / "cand.sqlite"
+    adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
+    build_candidate(
+        path,
+        [ServerImport("en", adapter, "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+    )
+    rw = sqlite3.connect(str(path))
+    try:
+        snap = rw.execute(
+            "SELECT snapshot_id FROM source_snapshots WHERE server = 'en' LIMIT 1"
+        ).fetchone()[0]
+        prov = rw.execute(
+            "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
+            "record_hash, transform_version, field_policy_version) VALUES "
+            "(?, 'stage_table', 'bare', 'rh', '1', '1')",
+            (snap,),
+        ).lastrowid
+        rw.execute(
+            "INSERT INTO stages (server, game_id, stage_code, display_name, sanity_cost, "
+            "provenance_id) VALUES ('en', 'bare_stage', 'B-1', 'Bare', 10, ?)",
+            (prov,),
+        )
+        rw.commit()
+    finally:
+        rw.close()
+
+    env = build_get_stage_spec(lambda: open_read_only(path)).handler(
+        server="en", game_id="bare_stage"
+    )
+    assert env.status == "ok"
+    blob = " ".join(env.limitations).lower()
+    assert "recommended_level" in blob and "max_life_points" in blob
+    assert "not present" in blob
+    # §V71: no internal cite/jargon in the client-facing limitation.
+    assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
+
+
+def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:
+    # §V67: the []-vs-absent convention is stated in the tool description.
+    assert LIST_FIELD_CONVENTION in build_get_stage_spec(lambda: conn).description
 
 
 # --- §V19 bounded pagination --------------------------------------------------
