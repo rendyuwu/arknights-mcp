@@ -31,7 +31,7 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
-from arknights_mcp.services.image_refs import ImageRef, operator_image_refs
+from arknights_mcp.services.image_refs import image_ref_to_dict, operator_image_refs
 from arknights_mcp.services.operators import (
     OperatorDetailResult,
     OperatorFacts,
@@ -157,15 +157,6 @@ def _module_to_dict(module: OperatorModuleFacts) -> dict[str, object]:
     }
 
 
-def _image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
-    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
-
-    The URL is a query-time DERIVED link (never stored, never fetched); ``source_id`` is
-    the §V27 registry attribution.
-    """
-    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
-
-
 def _operator_to_dict(
     operator: OperatorFacts, *, include_provenance: bool, image_refs_enabled: bool
 ) -> dict[str, object]:
@@ -203,7 +194,7 @@ def _operator_to_dict(
         # stored, no fetch. §V5: rides this operator's OWN region envelope (game_id is
         # region-scoped) so en/cn never mix. §V19: a bounded per-entity attach, never a
         # catalog list/page/search.
-        data["image_refs"] = [_image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
+        data["image_refs"] = [image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
     return data
 
 

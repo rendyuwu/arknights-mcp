@@ -475,12 +475,19 @@ def _point_xy(decoded: object | None) -> tuple[int, int] | None:
 
 
 def _checkpoint_points(decoded: object | None) -> tuple[tuple[int, int], ...]:
-    """Normalise a stored ``checkpoints`` array to ordered ``(x, y)`` grid points."""
+    """Normalise a stored ``checkpoints`` array to ordered ``(x, y)`` grid points.
+
+    Unlike the flat ``startPosition``/``endPosition`` fragments, each stored
+    checkpoint is a ``{type, position: {col, row}, ...}`` object (§T20), so the
+    ``{col, row}`` coordinate is read from its nested ``position`` -- a checkpoint
+    that is already a bare ``{col, row}`` is accepted as a fallback. A malformed or
+    positionless checkpoint is skipped, not fabricated (§V26)."""
     if not isinstance(decoded, list):
         return ()
     points: list[tuple[int, int]] = []
     for item in decoded:
-        point = _point_xy(item)
+        position = item["position"] if isinstance(item, dict) and "position" in item else item
+        point = _point_xy(position)
         if point is not None:
             points.append(point)
     return tuple(points)

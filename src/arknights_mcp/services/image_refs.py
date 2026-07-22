@@ -144,6 +144,17 @@ class ImageRef:
     source_id: str = SOURCE_ID
 
 
+def image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
+    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
+
+    The single §V37 home for the ``{category, url, source_id}`` wire shape shared by
+    every image-ref-bearing tool (get_operator/get_enemy/get_banners). The URL is a
+    query-time DERIVED link (never stored, never fetched); ``source_id`` is the §V27
+    registry attribution.
+    """
+    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
+
+
 def _refs(category: str, urls: tuple[str, ...]) -> list[ImageRef]:
     """Stamp ``category`` + :data:`SOURCE_ID` onto each derived URL (§T120/§V37)."""
     return [ImageRef(category=category, url=url) for url in urls]

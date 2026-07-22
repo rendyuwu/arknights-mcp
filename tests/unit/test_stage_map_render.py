@@ -31,7 +31,7 @@ from arknights_mcp.services.stage_map_render import (
     MapRoute,
     render_stage_map,
 )
-from arknights_mcp.services.stages import get_stage
+from arknights_mcp.services.stages import _checkpoint_points, _point_xy, get_stage
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -163,6 +163,32 @@ def test_no_grid_data_renders_nothing_and_does_not_caption() -> None:
     res = render_stage_map(width=None, height=None, cells=[], routes=[])
     assert res.image is None
     assert res.limitation is None
+
+
+# --- stored-shape adapters: start/end flat, checkpoints nested -----------------
+
+
+def test_checkpoint_points_reads_the_nested_position_fragment() -> None:
+    # §T20: a stored checkpoint is a {type, position: {col, row}, ...} object, unlike
+    # the flat startPosition/endPosition -- the coordinate lives under `position`, so
+    # reading a top-level col/row would silently drop every checkpoint (no polyline).
+    decoded = [
+        {"type": "MOVE", "time": 0.0, "position": {"col": 1, "row": 2}},
+        {"type": "MOVE", "position": {"col": 3, "row": 4}},
+    ]
+    assert _checkpoint_points(decoded) == ((1, 2), (3, 4))
+
+
+def test_checkpoint_points_accepts_a_bare_position_fallback() -> None:
+    # A checkpoint already reduced to a bare {col, row} still resolves.
+    assert _checkpoint_points([{"col": 5, "row": 6}]) == ((5, 6),)
+
+
+def test_checkpoint_points_skips_a_positionless_checkpoint() -> None:
+    # A malformed/positionless checkpoint is skipped, not fabricated (§V26).
+    assert _checkpoint_points([{"type": "MOVE"}, {"position": {}}]) == ()
+    # start/end fragments remain flat {col, row}.
+    assert _point_xy({"col": 0, "row": 0}) == (0, 0)
 
 
 # --- get_stage tool wiring (4-4 fixture) --------------------------------------

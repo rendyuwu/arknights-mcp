@@ -43,7 +43,7 @@ from arknights_mcp.services.banners import (
     FeaturedOpFacts,
     get_banners,
 )
-from arknights_mcp.services.image_refs import ImageRef, operator_portrait_refs
+from arknights_mcp.services.image_refs import image_ref_to_dict, operator_portrait_refs
 
 _TOOL_NAME = "get_banners"
 _TOOL_TITLE = "Get banners"
@@ -60,15 +60,6 @@ _TOOL_DESCRIPTION = (
     "featured operator that resolved to a present operator additionally carries an "
     "image_refs list with its derived portrait URLs. en/cn are never mixed."
 )
-
-
-def _image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
-    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
-
-    The URL is a query-time DERIVED link (never stored, never fetched); ``source_id`` is
-    the §V27 registry attribution.
-    """
-    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
 
 
 def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> dict[str, object]:
@@ -89,7 +80,7 @@ def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> di
     if image_refs_enabled and op.resolved:
         # §V63: DERIVED from the resolved featured char id (== the operator's game_id);
         # §V5: rides this banner's OWN region envelope; §V19: a bounded per-op attach.
-        data["image_refs"] = [_image_ref_to_dict(r) for r in operator_portrait_refs(op.char_id)]
+        data["image_refs"] = [image_ref_to_dict(r) for r in operator_portrait_refs(op.char_id)]
     return data
 
 

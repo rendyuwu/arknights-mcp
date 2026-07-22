@@ -32,7 +32,7 @@ from arknights_mcp.services.enemies import (
     EnemyLevelFacts,
     get_enemy,
 )
-from arknights_mcp.services.image_refs import ImageRef, enemy_image_refs
+from arknights_mcp.services.image_refs import enemy_image_refs, image_ref_to_dict
 
 _TOOL_NAME = "get_enemy"
 _TOOL_TITLE = "Get enemy"
@@ -72,15 +72,6 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
     }
 
 
-def _image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
-    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
-
-    The URL is a query-time DERIVED link (never stored, never fetched); ``source_id`` is
-    the §V27 registry attribution.
-    """
-    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
-
-
 def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, object]:
     """The typed enemy facts + ordered level variants (no prose; §V16/§V18).
 
@@ -103,7 +94,7 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
         # §V63: DERIVED from the enemy's already-stored game_id -- no byte, no url stored,
         # no fetch. §V5: rides this enemy's OWN region envelope (game_id is region-scoped)
         # so en/cn never mix. §V19: a bounded single-entity attach, never a catalog.
-        data["image_refs"] = [_image_ref_to_dict(r) for r in enemy_image_refs(enemy.game_id)]
+        data["image_refs"] = [image_ref_to_dict(r) for r in enemy_image_refs(enemy.game_id)]
     return data
 
 
