@@ -28,7 +28,12 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_LIMITATION,
+    ConnectionProvider,
+    run_guarded,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
 from arknights_mcp.services.image_refs import image_ref_to_dict, operator_image_refs
@@ -53,7 +58,10 @@ _TOOL_DESCRIPTION = (
     "include_phases / include_skills / include_talents / include_modules to add each "
     "(bounded) heavy section. When the image-reference source is enabled, an additional "
     "image_refs list of derived portrait/avatar/skin art URLs is included. en/cn are "
-    "never mixed."
+    "never mixed. Skill, talent, and module effects include the in-game effect "
+    "description template (when present in the source) alongside raw blackboard "
+    "key-value data; read the template to interpret the values, and do not infer "
+    "mechanics from a key name alone. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -103,6 +111,9 @@ def _skill_level_to_dict(level: SkillLevelFacts) -> dict[str, object]:
         "duration": level.duration,
         "range_id": level.range_id,
         "blackboard": level.blackboard,
+        # §V65 (a)/ADR 0010: the in-game effect TEMPLATE emitted alongside the
+        # blackboard so its keys are grounded (additive/optional, §V21).
+        "description": level.description,
     }
 
 
@@ -131,6 +142,8 @@ def _talent_to_dict(talent: OperatorTalentFacts) -> dict[str, object]:
                 "unlock_level": v.unlock_level,
                 "potential_rank": v.potential_rank,
                 "blackboard": v.blackboard,
+                # §V65 (a)/ADR 0010: effect TEMPLATE alongside the blackboard (§V21).
+                "description": v.description,
             }
             for v in talent.variants
         ],
@@ -205,22 +218,32 @@ def _shape(
     if result.status == "not_found" or result.operator is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
-    prov = result.operator.provenance
+    operator = result.operator
+    prov = operator.provenance
+    # §V65: the skills/talents/modules sections now emit the in-game effect
+    # description template alongside the blackboard (path (a)/ADR 0010), but a
+    # template may be absent for some effects, so the standing grounding limitation
+    # (path (b)) still rides every response that carries one of them (blackboard keys
+    # stay raw). A summary-only response emits no blackboard, so it carries no caveat.
+    limitations: tuple[str, ...] = ()
+    if operator.skills or operator.talents or operator.modules:
+        limitations = (BLACKBOARD_LIMITATION,)
     return ok(
         {
             "operator": _operator_to_dict(
-                result.operator,
+                operator,
                 include_provenance=include_provenance,
                 image_refs_enabled=image_refs_enabled,
             )
         },
         provenance=[
             Provenance(
-                server=result.operator.server,
+                server=operator.server,
                 snapshot_id=prov.snapshot_id,
                 imported_at=prov.imported_at,
             )
         ],
+        limitations=limitations,
     )
 
 

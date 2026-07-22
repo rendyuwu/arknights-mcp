@@ -20,7 +20,7 @@
     ],
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "cn:1f896d54ca0d"
+      "snapshot_id": "cn:1995ec828713"
     },
     "server": "cn",
     "skills": [
@@ -37,6 +37,7 @@
                 "valueStr": null
               }
             ],
+            "description": "对目标造成相当于攻击力<@ba.vup>{atk:0%}</>的物理伤害。",
             "duration": 15.0,
             "initial_sp": 10,
             "level": 1,
@@ -79,6 +80,7 @@
                 "valueStr": null
               }
             ],
+            "description": "攻击力提升<@ba.vup>{atk:0%}</>。",
             "potential_rank": 0,
             "unlock_level": 1,
             "unlock_phase": 0,

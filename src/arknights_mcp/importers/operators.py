@@ -7,9 +7,12 @@ top-level id-keyed dicts, no wrapper) into the normalized operator domain:
 
 Applies the explicit field allowlist and string sanitization (§V18/§V31) and
 attaches per-record provenance (§V17) to each core row (operators + skills);
-sub-tables link through their parent. Prose fields (operator/skill/talent
-``description``, ``itemUsage``, …) are never allowlisted, and the
-``gameplay_description`` columns are left ``NULL`` by default (§V16). Pure parsing
+sub-tables link through their parent. The skill-level + talent-candidate effect
+description TEMPLATE (mechanic text that references the blackboard keys) is
+imported into the ``gameplay_description`` columns and emitted alongside the
+blackboard for grounding (§V65 path (a), ADR 0010). Lore/story prose -- the
+operator's own ``description``, ``itemUsage``, ``itemDesc`` -- is never allowlisted
+and is excluded (§V16 ceiling holds; ADR 0010). Pure parsing
 (:func:`parse_operators` / :func:`parse_skills`) is separated from insertion so it
 is unit-testable without a database.
 
@@ -61,6 +64,10 @@ class ParsedSkillLevel:
     duration: float | None
     range_id: str | None
     blackboard: Any
+    #: In-game skill effect description TEMPLATE (mechanic text referencing the
+    #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
+    #: at parse time (§V18); ``None`` when the source level carries no description.
+    description: str | None
 
 
 @dataclass(frozen=True)
@@ -104,6 +111,10 @@ class ParsedTalentVariant:
     unlock_level: int | None
     potential_rank: int | None
     blackboard: Any
+    #: In-game talent effect description TEMPLATE (mechanic text referencing the
+    #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
+    #: at parse time (§V18); ``None`` when the candidate carries no description.
+    description: str | None
 
 
 @dataclass(frozen=True)
@@ -219,6 +230,9 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                     duration=as_float(kept.get("duration")),
                     range_id=as_str(kept.get("rangeId")),
                     blackboard=blackboard,
+                    # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
+                    # by apply_allowlist above; carried alongside the blackboard.
+                    description=as_str(kept.get("description")),
                 )
             )
         first = kept_levels[0] if kept_levels else {}
@@ -287,7 +301,7 @@ def insert_skills(
                         level.duration,
                         level.range_id,
                         json_or_none(level.blackboard),
-                        None,  # prose excluded by default (§V16)
+                        level.description,  # effect template (§V65 (a)/ADR 0010)
                     ),
                 )
         skill_pk_by_game_id[skill.game_id] = skill_pk
@@ -378,6 +392,9 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
                     unlock_level=as_int(cond.get("level")),
                     potential_rank=as_int(kept.get("requiredPotentialRank")),
                     blackboard=blackboard,
+                    # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
+                    # by apply_allowlist above; carried alongside the blackboard.
+                    description=as_str(kept.get("description")),
                 )
             )
         talents.append(ParsedTalent(talent_index=ti, display_name=display_name, variants=variants))
@@ -599,7 +616,7 @@ def _insert_talents(conn: sqlite3.Connection, operator_pk: int, talents: list[Pa
                     variant.potential_rank,
                     None,  # condition captured by the typed phase/level/rank columns
                     json_or_none(variant.blackboard),
-                    None,  # prose excluded by default (§V16)
+                    variant.description,  # effect template (§V65 (a)/ADR 0010)
                 ),
             )
     return len(talents)

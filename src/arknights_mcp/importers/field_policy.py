@@ -21,7 +21,13 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #: 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
 #: 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists (banner
 #:    archive: typed schedule facts + typed featured-op ids only, no gacha prose).
-FIELD_POLICY_VERSION = "5"
+#: 6: T127/§V65 added ``description`` to SKILL_LEVEL_ALLOWLIST + TALENT_CANDIDATE_ALLOWLIST
+#:    (effect-description TEMPLATE import, ADR 0010 ceiling check: mechanic text that
+#:    references the blackboard keys is imported + emitted alongside the blackboard;
+#:    operator/module lore, story, voice, and wiki/community prose stay excluded, §V16).
+#:    Module trait/talent-change templates ride the field-by-field module parser
+#:    (modules.py ``_trait_change``/``_talent_change``), not a new frozenset here.
+FIELD_POLICY_VERSION = "6"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -150,10 +156,23 @@ PHASE_ATTR_ALLOWLIST: frozenset[str] = frozenset(
 #: nested ``{phase, level}`` dict kept structurally (both numeric/enum).
 SKILL_LINK_ALLOWLIST: frozenset[str] = frozenset({"skillId", "unlockCond"})
 
-#: One ``skill_table`` level entry. ``description`` (prose) is excluded (§V16);
-#: ``spData`` is a nested numeric block (SP_DATA_ALLOWLIST).
+#: One ``skill_table`` level entry. ``description`` is the in-game skill effect
+#: TEMPLATE -- mechanic text that references the sibling ``blackboard`` keys (e.g.
+#: ``stuns for {stun} seconds``); it is imported + emitted alongside the blackboard so
+#: the values are grounded (§V65 path (a), ADR 0010). It is NOT lore/story/wiki prose
+#: (that stays excluded, §V16); it is sanitized + control-stripped + length-capped as
+#: untrusted data (§V18). ``spData`` is a nested numeric block (SP_DATA_ALLOWLIST).
 SKILL_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
-    {"name", "rangeId", "skillType", "durationType", "duration", "spData", "blackboard"}
+    {
+        "name",
+        "rangeId",
+        "skillType",
+        "durationType",
+        "duration",
+        "spData",
+        "blackboard",
+        "description",
+    }
 )
 
 #: The ``spData`` sub-block of a skill level (all numeric/enum).
@@ -161,11 +180,14 @@ SP_DATA_ALLOWLIST: frozenset[str] = frozenset(
     {"spType", "spCost", "initSp", "maxChargeTime", "increment"}
 )
 
-#: One talent ``candidates[]`` variant. ``description``/``upgradeDescription`` are
-#: prose and excluded (§V16); the ``name`` is a short gameplay label (kept, like a
-#: skill/operator display name). ``blackboard`` holds numeric params.
+#: One talent ``candidates[]`` variant. ``description`` is the in-game talent effect
+#: TEMPLATE -- mechanic text referencing the sibling ``blackboard`` keys -- imported +
+#: emitted alongside the blackboard for grounding (§V65 path (a), ADR 0010); it is NOT
+#: lore/story prose (that stays excluded, §V16) and is sanitized + capped (§V18). The
+#: ``name`` is a short gameplay label (kept, like a skill/operator display name).
+#: ``blackboard`` holds numeric params.
 TALENT_CANDIDATE_ALLOWLIST: frozenset[str] = frozenset(
-    {"name", "unlockCondition", "requiredPotentialRank", "prefabKey", "blackboard"}
+    {"name", "unlockCondition", "requiredPotentialRank", "prefabKey", "blackboard", "description"}
 )
 
 #: One ``blackboard`` parameter entry shared by skills + talents + modules (§V31:

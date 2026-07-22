@@ -26,6 +26,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import BLACKBOARD_KEY_GLOSSARY, BLACKBOARD_LIMITATION
 from arknights_mcp.mcp.tools.operator import build_get_operator_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.operators import get_operator
@@ -107,6 +108,67 @@ def test_summary_can_be_dropped(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id=_AMIYA, include_summary=False)
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     assert "summary" not in op
+
+
+# --- §V65/T126: blackboard grounding FLOOR ------------------------------------
+
+
+def test_blackboard_sections_carry_grounding_limitation(conn: sqlite3.Connection) -> None:
+    # §V65 (b): skills/talents/modules emit raw blackboard key-value data with no
+    # effect text, so any response that carries one of them attaches the standing
+    # grounding limitation (client must not infer mechanics from key names).
+    for flag in ("include_skills", "include_talents", "include_modules"):
+        env = _handler(conn)(server="en", game_id=_AMIYA, **{flag: True})
+        assert env.status == "ok"
+        assert BLACKBOARD_LIMITATION in env.limitations, flag
+        # §V26: the caveat is the executable "absent field -> say so" form.
+        assert "do not infer" in BLACKBOARD_LIMITATION.lower()
+
+
+def test_summary_only_response_has_no_blackboard_limitation(conn: sqlite3.Connection) -> None:
+    # §V65: a summary-only response emits no blackboard, so it carries no such caveat.
+    env = _handler(conn)(server="en", game_id=_AMIYA)
+    assert BLACKBOARD_LIMITATION not in env.limitations
+
+
+def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) -> None:
+    # §T127/§V65 (a)/ADR 0010: skill + talent + module effects emit the in-game effect
+    # description template alongside the raw blackboard (additive/optional, §V21) so a
+    # client can ground the key meanings instead of guessing.
+    env = _handler(conn)(
+        server="en",
+        game_id=_AMIYA,
+        include_skills=True,
+        include_talents=True,
+        include_modules=True,
+    )
+    op = env.to_dict()["data"]["operator"]  # type: ignore[index]
+    skills = {s["game_id"]: s for s in op["skills"]}
+    lv = skills["skchr_amiya_2"]["levels"][0]
+    assert lv["blackboard"] == [{"key": "atk", "value": 1.5, "valueStr": None}]
+    assert "{atk:0%}" in lv["description"]  # template references the blackboard key
+    tvar = op["talents"][0]["variants"][0]
+    assert "{atk_scale:0%}" in tvar["description"] and tvar["blackboard"]
+    # The module trait change carries its template alongside its blackboard (level 1).
+    trait = op["modules"][0]["levels"][0]["trait_changes"]
+    assert trait and "{atk_scale:0%}" in trait[0]["description"]
+
+
+def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> None:
+    # §V65 (c): a common-key glossary rides the tool description so a client has a
+    # grounded reference for the emitted keys instead of guessing.
+    desc = build_get_operator_spec(lambda: conn).description
+    assert BLACKBOARD_KEY_GLOSSARY in desc
+    for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
+        assert key in desc, key
+
+
+def test_client_facing_blackboard_text_has_no_internal_cites() -> None:
+    # §V71 (b): published client-facing text carries no internal spec cites or jargon;
+    # the behavioral sentence stays, the cites live only in code/docs.
+    for text in (BLACKBOARD_LIMITATION, BLACKBOARD_KEY_GLOSSARY):
+        assert "§V" not in text and "§T" not in text
+        assert "degenerate" not in text and "asymmetric-broken" not in text
 
 
 # --- §V5 region + provenance --------------------------------------------------

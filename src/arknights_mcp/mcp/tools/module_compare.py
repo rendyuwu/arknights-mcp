@@ -28,6 +28,8 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_LIMITATION,
     ConnectionProvider,
     observation_to_dict,
     run_guarded,
@@ -50,7 +52,10 @@ _TOOL_DESCRIPTION = (
     "side by side; a level a module does not define is marked present=false. mode "
     "facts_only returns the comparison; with_observations adds deterministic, "
     "evidence-backed observations (never a mandatory or best-in-slot verdict). "
-    "en/cn are never mixed."
+    "en/cn are never mixed. Each stat/trait/talent change includes the in-game "
+    "effect description template (when present in the source) alongside raw blackboard "
+    "key-value data; read the template to interpret the values, and do not infer "
+    "mechanics from a key name alone. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -104,6 +109,12 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
         data["observations"] = [observation_to_dict(o) for o in result.observations]
         data["warnings"] = list(result.warnings)
 
+    # §V65: the per-level stat/trait/talent changes now carry the in-game effect
+    # description template alongside the blackboard (path (a)/ADR 0010), but a template
+    # may be absent for some changes, so the standing grounding limitation (path (b))
+    # still rides every comparison that emits a module (blackboard keys stay raw). An
+    # operator with no modules emits no blackboard, so it carries no such caveat.
+    limitations: tuple[str, ...] = (BLACKBOARD_LIMITATION,) if result.modules else ()
     prov = result.provenance
     return ok(
         data,
@@ -114,6 +125,7 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
                 imported_at=prov.imported_at,
             )
         ],
+        limitations=limitations,
         analyzer_version=result.analyzer_version,
     )
 

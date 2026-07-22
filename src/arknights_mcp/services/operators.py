@@ -90,7 +90,12 @@ class OperatorPhaseFacts:
 
 @dataclass(frozen=True)
 class SkillLevelFacts:
-    """One mastery level of a skill; ``blackboard`` decoded from vetted JSON (§V18)."""
+    """One mastery level of a skill; ``blackboard`` decoded from vetted JSON (§V18).
+
+    ``description`` is the imported in-game effect TEMPLATE (mechanic text referencing
+    the blackboard keys; §V65 (a)/ADR 0010), emitted alongside the blackboard for
+    grounding; ``None`` when the source level carries none.
+    """
 
     level: int
     sp_cost: int | None
@@ -98,6 +103,7 @@ class SkillLevelFacts:
     duration: float | None
     range_id: str | None
     blackboard: object | None
+    description: str | None
 
 
 @dataclass(frozen=True)
@@ -117,13 +123,19 @@ class OperatorSkillFacts:
 
 @dataclass(frozen=True)
 class TalentVariantFacts:
-    """One talent variant (potential/phase gated); ``blackboard`` decoded (§V18)."""
+    """One talent variant (potential/phase gated); ``blackboard`` decoded (§V18).
+
+    ``description`` is the imported in-game effect TEMPLATE (mechanic text referencing
+    the blackboard keys; §V65 (a)/ADR 0010), emitted alongside the blackboard for
+    grounding; ``None`` when the candidate carries none.
+    """
 
     variant_index: int
     unlock_phase: int | None
     unlock_level: int | None
     potential_rank: int | None
     blackboard: object | None
+    description: str | None
 
 
 @dataclass(frozen=True)
@@ -253,6 +265,7 @@ def _skill_level_facts(row: SkillLevelRow) -> SkillLevelFacts:
         duration=row.duration,
         range_id=row.range_id,
         blackboard=json_load(row.blackboard_json),
+        description=row.gameplay_description,
     )
 
 
@@ -271,6 +284,7 @@ def _talent_variant_facts(row: TalentLevelRow) -> TalentVariantFacts:
         unlock_level=row.unlock_level,
         potential_rank=row.potential_rank,
         blackboard=json_load(row.blackboard_json),
+        description=row.gameplay_description,
     )
 
 

@@ -29,6 +29,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import BLACKBOARD_KEY_GLOSSARY, BLACKBOARD_LIMITATION
 from arknights_mcp.mcp.tools.module_compare import build_compare_operator_modules_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.module_compare import compare_operator_modules
@@ -124,6 +125,49 @@ def test_observations_are_conservative(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id=_AMIYA, mode="with_observations")
     blob = str(env.to_dict()["data"]["observations"]).lower()  # type: ignore[index]
     assert not any(word in blob for word in _PRESCRIPTIVE)
+
+
+# --- §V65/T126: blackboard grounding FLOOR ------------------------------------
+
+
+def test_module_changes_carry_grounding_limitation(conn: sqlite3.Connection) -> None:
+    # §V65 (b): the per-level stat/trait/talent changes are raw blackboard key-value
+    # data with no effect text, so every comparison that emits a module attaches the
+    # standing grounding limitation -- in BOTH modes (facts_only also emits the raw
+    # blackboard).
+    for mode in ("facts_only", "with_observations"):
+        env = _handler(conn)(server="en", game_id=_AMIYA, mode=mode)
+        assert env.status == "ok"
+        assert _cx1(env.to_dict()["data"])  # the fixture module is emitted
+        assert BLACKBOARD_LIMITATION in env.limitations, mode
+
+
+def test_effect_template_rides_trait_and_talent_changes(conn: sqlite3.Connection) -> None:
+    # §T127/§V65 (a)/ADR 0010: each per-level trait/talent change emits its in-game
+    # effect description template alongside the raw blackboard (additive, §V21).
+    env = _handler(conn)(server="en", game_id=_AMIYA)
+    module = _cx1(env.to_dict()["data"])
+    levels = {lv["level"]: lv for lv in module["levels"]}
+    trait = levels[1]["trait_changes"]
+    assert trait and "{atk_scale:0%}" in trait[0]["description"]
+    talent = levels[2]["talent_changes"]
+    assert talent and "{prob:0%}" in talent[0]["description"]
+
+
+def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> None:
+    # §V65 (c): a common-key glossary rides the tool description so a client has a
+    # grounded reference for the emitted keys instead of guessing.
+    desc = build_compare_operator_modules_spec(lambda: conn).description
+    assert BLACKBOARD_KEY_GLOSSARY in desc
+    for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
+        assert key in desc, key
+
+
+def test_client_facing_blackboard_text_has_no_internal_cites() -> None:
+    # §V71 (b): published client-facing text carries no internal spec cites or jargon.
+    for text in (BLACKBOARD_LIMITATION, BLACKBOARD_KEY_GLOSSARY):
+        assert "§V" not in text and "§T" not in text
+        assert "degenerate" not in text and "asymmetric-broken" not in text
 
 
 # --- §V5 region + provenance --------------------------------------------------

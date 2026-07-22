@@ -38,6 +38,7 @@
                   "value": 1.1
                 }
               ],
+              "description": "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking.",
               "requiredPotentialRank": 0,
               "unlockCondition": {
                 "level": 1,
@@ -70,6 +71,7 @@
                   "value": 0.3
                 }
               ],
+              "description": "Adds a <@ba.vup>{prob:0%}</> chance to recover extra SP on attack.",
               "requiredPotentialRank": 0,
               "talentIndex": 0,
               "unlockCondition": {
@@ -186,7 +188,7 @@
   "operator_display_name": "Amiya",
   "provenance": {
     "imported_at": "2026-07-18T00:00:00+00:00",
-    "snapshot_id": "en:b1c2e3dbb093"
+    "snapshot_id": "en:c92f9f47b6b2"
   },
   "server": "en",
   "status": "ok",

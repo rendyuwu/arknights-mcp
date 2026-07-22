@@ -10,8 +10,8 @@
             "overrideTraitDataBundle": {
               "candidates": [
                 {
-                  "additionalDescription": "prose that must never be imported",
-                  "overrideDescripton": "prose that must never be imported",
+                  "additionalDescription": "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking.",
+                  "overrideDescripton": "Deals Arts damage; increases ATK to {atk_scale:0%}.",
                   "unlockCondition": {"phase": "PHASE_2", "level": 1},
                   "requiredPotentialRank": 0,
                   "blackboard": [{"key": "atk_scale", "value": 1.1}]
@@ -32,8 +32,8 @@
             "addOrOverrideTalentDataBundle": {
               "candidates": [
                 {
-                  "upgradeDescription": "prose that must never be imported",
-                  "description": "prose that must never be imported",
+                  "upgradeDescription": "Adds a <@ba.vup>{prob:0%}</> chance to recover extra SP on attack.",
+                  "description": "When attacking, has a {prob:0%} chance to recover extra SP.",
                   "name": "Nervous Impulse",
                   "talentIndex": 0,
                   "unlockCondition": {"phase": "PHASE_2", "level": 1},

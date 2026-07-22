@@ -9,6 +9,8 @@ from arknights_mcp.importers.field_policy import (
     FIELD_POLICY_VERSION,
     LIMIT_PARAM_ALLOWLIST,
     OVERWRITTEN_DATA_ALLOWLIST,
+    SKILL_LEVEL_ALLOWLIST,
+    TALENT_CANDIDATE_ALLOWLIST,
     apply_allowlist,
 )
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text, strip_control_chars
@@ -20,7 +22,41 @@ def test_field_policy_version_present() -> None:
     #    field-map: day+month->date, webUrl->url, group->category).
     # 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
     # 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists.
-    assert FIELD_POLICY_VERSION == "5"
+    # 6: T127/§V65 added `description` (effect TEMPLATE) to SKILL_LEVEL_ALLOWLIST +
+    #    TALENT_CANDIDATE_ALLOWLIST (ADR 0010 ceiling: mechanic text in, lore out).
+    assert FIELD_POLICY_VERSION == "6"
+
+
+def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:
+    """§T127/§V65/ADR 0010: the skill-level `description` is the in-game effect
+    TEMPLATE (mechanic text referencing the blackboard keys) -> allowlisted; it is
+    sanitized as untrusted data (§V18)."""
+    assert "description" in SKILL_LEVEL_ALLOWLIST
+    raw = {
+        "name": "Chain Cast",
+        "description": "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage.\x00",
+        "blackboard": [{"key": "atk", "value": 1.5}],
+        "internalFlag": "dropped",
+    }
+    result = apply_allowlist(raw, SKILL_LEVEL_ALLOWLIST)
+    assert result.kept["description"] == "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage."
+    assert "\x00" not in result.kept["description"]  # §V18 control char stripped
+    assert "internalFlag" in result.dropped
+
+
+def test_talent_candidate_allowlist_keeps_effect_template() -> None:
+    """§T127/§V65/ADR 0010: the talent-candidate `description` is the in-game effect
+    TEMPLATE -> allowlisted alongside its blackboard; other prose stays dropped."""
+    assert "description" in TALENT_CANDIDATE_ALLOWLIST
+    raw = {
+        "name": "Nervous Impulse",
+        "description": "Increases ATK by {atk_scale:0%}.",
+        "blackboard": [{"key": "atk_scale", "value": 1.1}],
+        "upgradeDescription": "a separate blurb, not allowlisted",
+    }
+    result = apply_allowlist(raw, TALENT_CANDIDATE_ALLOWLIST)
+    assert result.kept["description"] == "Increases ATK by {atk_scale:0%}."
+    assert "upgradeDescription" in result.dropped
 
 
 def test_allowlist_drops_unlisted_prose() -> None:

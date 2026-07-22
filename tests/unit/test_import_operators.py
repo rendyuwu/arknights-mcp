@@ -2,8 +2,10 @@
 
 Parses the real id-keyed ``character_table`` / ``skill_table`` shapes into the
 operator domain with the field allowlist + sanitization (§V18/§V31), per-record
-provenance (§V17), and fail-closed constraint handling (§V33). Prose fields
-(``description``) are excluded and ``gameplay_description`` stays ``NULL`` (§V16).
+provenance (§V17), and fail-closed constraint handling (§V33). The skill-level +
+talent-candidate effect-description TEMPLATE (mechanic text referencing the
+blackboard keys) is imported into ``gameplay_description`` (§V65 (a)/ADR 0010);
+operator-level lore ``description`` stays excluded (§V16 ceiling).
 """
 
 from __future__ import annotations
@@ -28,6 +30,11 @@ from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
+#: §T127/§V65/ADR 0010: skill + talent effect-description TEMPLATES (mechanic text
+#: referencing the blackboard keys) ARE imported into gameplay_description; the
+#: operator-level lore ``description`` above stays excluded (§V16 ceiling).
+SKILL_TEMPLATE = "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage to enemies in range."
+TALENT_TEMPLATE = "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking."
 
 CHARACTER = {
     "char_002_amiya": {
@@ -80,14 +87,14 @@ CHARACTER = {
                         "unlockCondition": {"phase": "PHASE_0", "level": 1},
                         "requiredPotentialRank": 0,
                         "name": "Nervous Impulse",
-                        "description": DESCRIPTION_PROSE,
+                        "description": TALENT_TEMPLATE,
                         "blackboard": [{"key": "atk_scale", "value": 1.1, "valueStr": None}],
                     },
                     {
                         "unlockCondition": {"phase": "PHASE_2", "level": 1},
                         "requiredPotentialRank": 3,
                         "name": "Nervous Impulse",
-                        "description": DESCRIPTION_PROSE,
+                        "description": TALENT_TEMPLATE,
                         "blackboard": [{"key": "atk_scale", "value": 1.2, "valueStr": None}],
                     },
                 ]
@@ -116,7 +123,7 @@ SKILLS = {
                 "name": "Arts Charge",
                 "skillType": "PASSIVE",
                 "durationType": "NONE",
-                "description": DESCRIPTION_PROSE,
+                "description": SKILL_TEMPLATE,
                 "duration": 0.0,
                 "rangeId": None,
                 "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 0, "initSp": 0},
@@ -126,7 +133,7 @@ SKILLS = {
                 "name": "Arts Charge",
                 "skillType": "PASSIVE",
                 "durationType": "NONE",
-                "description": DESCRIPTION_PROSE,
+                "description": SKILL_TEMPLATE,
                 "duration": 0.0,
                 "rangeId": None,
                 "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 0, "initSp": 0},
@@ -141,7 +148,7 @@ SKILLS = {
                 "name": "Chain Cast",
                 "skillType": "MANUAL",
                 "durationType": "NONE",
-                "description": DESCRIPTION_PROSE,
+                "description": SKILL_TEMPLATE,
                 "duration": 20.0,
                 "rangeId": "x-1",
                 "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 30, "initSp": 0},
@@ -280,7 +287,11 @@ def test_provenance_attached_to_operators_and_skills(tmp_path: Path) -> None:
     assert conn.execute("SELECT provenance_id FROM skills").fetchone()[0] is not None
 
 
-def test_no_prose_and_gameplay_description_null(tmp_path: Path) -> None:
+def test_lore_excluded_but_effect_template_imported(tmp_path: Path) -> None:
+    # §T127/§V65/§V16 (ADR 0010): the operator-level lore `description` stays excluded,
+    # but the skill-level + talent-candidate effect-description TEMPLATE (mechanic text
+    # referencing the blackboard keys) IS imported into gameplay_description alongside
+    # the blackboard for grounding.
     root = _adapter(tmp_path)
     conn = build_database(tmp_path / "cand.sqlite")
     _seed_snapshot(conn)
@@ -299,20 +310,35 @@ def test_no_prose_and_gameplay_description_null(tmp_path: Path) -> None:
         )
         for row in conn.execute(f"SELECT * FROM {table}")
     )
-    assert DESCRIPTION_PROSE not in dump  # §V16/§V18 prose excluded
-    # gameplay_description columns default to NULL (§V16).
-    assert (
-        conn.execute(
-            "SELECT COUNT(*) FROM skill_levels WHERE gameplay_description IS NOT NULL"
-        ).fetchone()[0]
-        == 0
-    )
-    assert (
-        conn.execute(
-            "SELECT COUNT(*) FROM talent_levels WHERE gameplay_description IS NOT NULL"
-        ).fetchone()[0]
-        == 0
-    )
+    # §V16: operator-level lore is never imported.
+    assert DESCRIPTION_PROSE not in dump
+    # §V65 (a): the effect templates ARE populated on the level rows.
+    skill_descs = [
+        r[0]
+        for r in conn.execute(
+            "SELECT gameplay_description FROM skill_levels WHERE gameplay_description IS NOT NULL"
+        )
+    ]
+    assert skill_descs and all(d == SKILL_TEMPLATE for d in skill_descs)
+    talent_descs = [
+        r[0]
+        for r in conn.execute(
+            "SELECT gameplay_description FROM talent_levels WHERE gameplay_description IS NOT NULL"
+        )
+    ]
+    assert talent_descs and all(d == TALENT_TEMPLATE for d in talent_descs)
+
+
+def test_parse_carries_effect_template_alongside_blackboard() -> None:
+    # §T127/§V65 (a): parsing keeps the effect TEMPLATE next to the blackboard on the
+    # typed parsed shapes (unit-testable without a DB).
+    amiya = parse_operators(CHARACTER)[0]
+    variant = amiya.talents[0].variants[0]
+    assert variant.description == TALENT_TEMPLATE
+    assert variant.blackboard  # emitted together
+    skills = {s.game_id: s for s in parse_skills(SKILLS)}
+    lvl = skills["skchr_amiya_2"].levels[0]
+    assert lvl.description == SKILL_TEMPLATE and lvl.blackboard
 
 
 def test_tag_json_is_sanitized(tmp_path: Path) -> None:

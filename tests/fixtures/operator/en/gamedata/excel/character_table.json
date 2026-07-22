@@ -61,14 +61,14 @@
             "unlockCondition": {"phase": "PHASE_0", "level": 1},
             "requiredPotentialRank": 0,
             "name": "Nervous Impulse",
-            "description": "A long lore blurb that must never be imported.",
+            "description": "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking.",
             "blackboard": [{"key": "atk_scale", "value": 1.1, "valueStr": null}]
           },
           {
             "unlockCondition": {"phase": "PHASE_2", "level": 1},
             "requiredPotentialRank": 3,
             "name": "Nervous Impulse",
-            "description": "A long lore blurb that must never be imported.",
+            "description": "Increases ATK by <@ba.vup>{atk_scale:0%}</> when attacking.",
             "blackboard": [{"key": "atk_scale", "value": 1.2, "valueStr": null}]
           }
         ]

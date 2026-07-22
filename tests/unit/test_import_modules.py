@@ -3,8 +3,10 @@
 Parses the real ``uniequip_table`` (``equipDict`` + ``charEquip``) and
 ``battle_equip_table`` shapes into the module domain with the field allowlist +
 sanitization (§V18/§V31), per-record provenance (§V17), and fail-closed constraint
-handling (§V33). Prose (``uniEquipDesc``, trait/talent bundle descriptions) is
-excluded and ``gameplay_description`` stays ``NULL`` (§V16). The ``INITIAL`` default
+handling (§V33). The trait/talent-change effect-description TEMPLATE (mechanic text
+referencing the change's blackboard keys) is imported into the change bundles (§V65
+(a)/ADR 0010); module-level lore (``uniEquipDesc``) stays excluded and
+``module_levels.gameplay_description`` stays ``NULL`` (§V16). The ``INITIAL`` default
 slot is skipped; a module whose ``charId`` is absent from the roster is skipped.
 """
 
@@ -29,6 +31,11 @@ from arknights_mcp.importers.operators import import_operators
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 PROSE = "A module lore blurb that must never be imported into the database."
+#: §T127/§V65/ADR 0010: module trait/talent-change effect TEMPLATES (mechanic text
+#: referencing the change's blackboard keys) ARE imported into the change bundles;
+#: the module-level lore ``uniEquipDesc`` above stays excluded (§V16 ceiling).
+TRAIT_TEMPLATE = "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking."
+TALENT_TEMPLATE = "Adds a <@ba.vup>{prob:0%}</> chance to recover extra SP on attack."
 
 CHARACTER = {
     "char_002_amiya": {
@@ -97,8 +104,8 @@ BATTLE = {
                         "overrideTraitDataBundle": {
                             "candidates": [
                                 {
-                                    "additionalDescription": PROSE,
-                                    "overrideDescripton": PROSE,
+                                    "additionalDescription": TRAIT_TEMPLATE,
+                                    "overrideDescripton": "ATK becomes {atk_scale:0%}.",
                                     "unlockCondition": {"phase": "PHASE_2", "level": 1},
                                     "requiredPotentialRank": 0,
                                     "blackboard": [{"key": "atk_scale", "value": 1.1}],
@@ -119,8 +126,8 @@ BATTLE = {
                         "addOrOverrideTalentDataBundle": {
                             "candidates": [
                                 {
-                                    "upgradeDescription": PROSE,
-                                    "description": PROSE,
+                                    "upgradeDescription": TALENT_TEMPLATE,
+                                    "description": "Recovers extra SP ({prob:0%} chance).",
                                     "name": "Nervous Impulse",
                                     "talentIndex": 0,
                                     "unlockCondition": {"phase": "PHASE_2", "level": 1},
@@ -284,7 +291,11 @@ def test_provenance_attached_to_modules(tmp_path: Path) -> None:
     assert conn.execute("SELECT provenance_id FROM modules").fetchone()[0] is not None
 
 
-def test_no_prose_and_gameplay_description_null(tmp_path: Path) -> None:
+def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Path) -> None:
+    # §T127/§V65/§V16 (ADR 0010): the module-level lore `uniEquipDesc` stays excluded
+    # and `module_levels.gameplay_description` stays NULL, but the trait/talent-change
+    # effect TEMPLATE rides the trait_changes_json/talent_changes_json bundle alongside
+    # its blackboard for grounding.
     root = _adapter(tmp_path)
     conn = build_database(tmp_path / "cand.sqlite")
     _seed_snapshot(conn)
@@ -294,13 +305,39 @@ def test_no_prose_and_gameplay_description_null(tmp_path: Path) -> None:
         for table in ("modules", "module_levels", "record_provenance")
         for row in conn.execute(f"SELECT * FROM {table}")
     )
-    assert PROSE not in dump  # §V16/§V18 prose excluded
+    assert PROSE not in dump  # §V16 module lore excluded
+    # §V16: the module templates live per-candidate in the change bundles, not the
+    # gameplay_description column, which stays NULL for modules.
     assert (
         conn.execute(
             "SELECT COUNT(*) FROM module_levels WHERE gameplay_description IS NOT NULL"
         ).fetchone()[0]
         == 0
     )
+    # §V65 (a): the trait template lands in trait_changes_json (level 1), the talent
+    # template in talent_changes_json (level 2).
+    trait_json, talent_json = conn.execute(
+        "SELECT "
+        "(SELECT trait_changes_json FROM module_levels ml JOIN modules m "
+        " ON m.module_pk = ml.module_pk WHERE ml.level = 1), "
+        "(SELECT talent_changes_json FROM module_levels ml JOIN modules m "
+        " ON m.module_pk = ml.module_pk WHERE ml.level = 2)"
+    ).fetchone()
+    assert _json.loads(trait_json)[0]["description"] == TRAIT_TEMPLATE
+    assert _json.loads(talent_json)[0]["description"] == TALENT_TEMPLATE
+
+
+def test_parse_carries_change_template_alongside_blackboard() -> None:
+    # §T127/§V65 (a): the parsed trait/talent change keeps its effect TEMPLATE next to
+    # the blackboard (unit-testable without a DB); `overrideDescripton` is the fallback,
+    # so `additionalDescription`/`upgradeDescription` win when present.
+    mod = {m.game_id: m for m in parse_modules(UNIEQUIP, BATTLE)}["uniequip_002_amiya"]
+    trait = mod.levels[0].trait_changes
+    assert trait is not None and trait[0]["description"] == TRAIT_TEMPLATE
+    assert trait[0]["blackboard"][0]["key"] == "atk_scale"  # emitted together
+    talent = mod.levels[1].talent_changes
+    assert talent is not None and talent[0]["description"] == TALENT_TEMPLATE
+    assert talent[0]["blackboard"][0]["key"] == "prob"
 
 
 def test_stat_and_cost_stored_as_json(tmp_path: Path) -> None:

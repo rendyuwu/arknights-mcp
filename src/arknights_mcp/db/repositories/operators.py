@@ -87,8 +87,8 @@ class SkillLevelRow:
     """One mastery level of a skill (``skill_levels``).
 
     ``blackboard_json`` stays a JSON string here (allowlisted + sanitized at import,
-    §V18/§V31) and is decoded in the service; ``gameplay_description`` is never
-    selected (prose excluded, §V16).
+    §V18/§V31) and is decoded in the service; ``gameplay_description`` is the imported
+    in-game effect TEMPLATE (§V65 (a)/ADR 0010) surfaced alongside the blackboard.
     """
 
     level: int
@@ -97,6 +97,7 @@ class SkillLevelRow:
     duration: float | None
     range_id: str | None
     blackboard_json: str | None
+    gameplay_description: str | None
 
 
 @dataclass(frozen=True)
@@ -110,13 +111,18 @@ class TalentRow:
 
 @dataclass(frozen=True)
 class TalentLevelRow:
-    """One variant of a talent (``talent_levels``); ``blackboard_json`` decoded later."""
+    """One variant of a talent (``talent_levels``); ``blackboard_json`` decoded later.
+
+    ``gameplay_description`` is the imported in-game effect TEMPLATE (§V65 (a)/ADR 0010)
+    surfaced alongside the blackboard.
+    """
 
     variant_index: int
     unlock_phase: int | None
     unlock_level: int | None
     potential_rank: int | None
     blackboard_json: str | None
+    gameplay_description: str | None
 
 
 @dataclass(frozen=True)
@@ -176,7 +182,8 @@ _SKILLS_SQL = (
 )
 
 _SKILL_LEVELS_SQL = (
-    "SELECT level, sp_cost, initial_sp, duration, range_id, blackboard_json "
+    "SELECT level, sp_cost, initial_sp, duration, range_id, blackboard_json, "
+    "gameplay_description "
     "FROM skill_levels WHERE skill_pk = ? ORDER BY level"
 )
 
@@ -186,7 +193,8 @@ _TALENTS_SQL = (
 )
 
 _TALENT_LEVELS_SQL = (
-    "SELECT variant_index, unlock_phase, unlock_level, potential_rank, blackboard_json "
+    "SELECT variant_index, unlock_phase, unlock_level, potential_rank, blackboard_json, "
+    "gameplay_description "
     "FROM talent_levels WHERE talent_pk = ? ORDER BY variant_index"
 )
 
@@ -294,6 +302,7 @@ class OperatorRepository(Repository):
                 duration=r[3],
                 range_id=r[4],
                 blackboard_json=r[5],
+                gameplay_description=r[6],
             )
             for r in self._all(_SKILL_LEVELS_SQL, (skill_pk,))
         ]
@@ -314,6 +323,7 @@ class OperatorRepository(Repository):
                 unlock_level=r[2],
                 potential_rank=r[3],
                 blackboard_json=r[4],
+                gameplay_description=r[5],
             )
             for r in self._all(_TALENT_LEVELS_SQL, (talent_pk,))
         ]

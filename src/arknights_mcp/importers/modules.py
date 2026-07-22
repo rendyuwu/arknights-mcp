@@ -10,9 +10,13 @@ attaches per-record provenance (§V17) to each core ``modules`` row (level rows
 link through their parent). The ``INITIAL`` "no-module" default slot is skipped;
 a module whose ``charId`` names an operator absent from the roster is skipped
 (the ``modules.operator_pk`` FK must resolve, mirroring the operator→skill link).
-Prose fields (``uniEquipDesc``, and the trait/talent bundle ``description`` /
-``upgradeDescription`` / ``additionalDescription``) are never allowlisted, and
-``module_levels.gameplay_description`` is left ``NULL`` by default (§V16).
+The per-candidate trait/talent-change effect description TEMPLATE (mechanic text
+that references the change's blackboard keys) is imported and rides the
+``trait_changes_json`` / ``talent_changes_json`` bundle alongside its blackboard
+for grounding (§V65 path (a), ADR 0010). Lore/story prose -- the module's own
+``uniEquipDesc`` -- is never allowlisted and is excluded (§V16 ceiling holds);
+``module_levels.gameplay_description`` stays ``NULL`` (the module templates live
+per-candidate in the change bundles, next to the blackboard they ground).
 
 Per level only the numeric substrate is kept: ``attributeBlackboard`` →
 ``stat_bonus_json``, the trait/talent override bundles' ``blackboard`` (+ unlock
@@ -130,30 +134,57 @@ def _unlock_condition(cond: Any) -> dict[str, Any] | None:
     return {"phase": as_str(cond.get("phase"), sanitize=True), "level": as_int(cond.get("level"))}
 
 
-def _trait_change(cand: dict[str, Any]) -> dict[str, Any]:
-    """One ``overrideTraitDataBundle`` candidate → numeric-only change (§V16/§V31).
+def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    """First present, non-empty, sanitized effect-description TEMPLATE among ``keys``.
 
-    Only the ``blackboard`` params, unlock condition, and potential rank are kept;
-    ``additionalDescription`` / ``overrideDescripton`` prose is dropped.
+    The module trait/talent-change bundles carry the in-game effect description
+    template under a source-shape-specific key (trait: ``additionalDescription`` then
+    ``overrideDescripton``; talent: ``upgradeDescription`` then ``description``). The
+    template is mechanic text that references the sibling ``blackboard`` keys, so it is
+    imported + emitted alongside the blackboard for grounding (§V65 path (a), ADR 0010).
+    Read from the raw candidate (not the allowlist), so it is sanitized + control-
+    stripped + length-capped here as untrusted data (§V18). A blank-after-sanitize or
+    absent value yields ``None`` -- never an empty template.
+    """
+    for key in keys:
+        text = as_str(source.get(key), sanitize=True)
+        if text:
+            return text
+    return None
+
+
+def _trait_change(cand: dict[str, Any]) -> dict[str, Any]:
+    """One ``overrideTraitDataBundle`` candidate → numeric params + effect template.
+
+    Keeps the ``blackboard`` params, unlock condition, potential rank, and the in-game
+    trait effect description TEMPLATE (``additionalDescription`` then the misspelled
+    upstream ``overrideDescripton``) -- mechanic text referencing the blackboard keys,
+    emitted alongside them for grounding (§V65 path (a), ADR 0010; sanitized + capped
+    §V18). No lore/story prose is kept (§V16 ceiling).
     """
     return {
         "unlockCondition": _unlock_condition(cand.get("unlockCondition")),
         "requiredPotentialRank": as_int(cand.get("requiredPotentialRank")),
         "blackboard": allowlist_blackboard(cand.get("blackboard")),
+        "description": _effect_template(cand, ("additionalDescription", "overrideDescripton")),
     }
 
 
 def _talent_change(cand: dict[str, Any]) -> dict[str, Any]:
-    """One ``addOrOverrideTalentDataBundle`` candidate → numeric-only change (§V16/§V31).
+    """One ``addOrOverrideTalentDataBundle`` candidate → numeric params + effect template.
 
-    Keeps the talent index, unlock condition, potential rank, and ``blackboard``
-    params; the ``name`` / ``description`` / ``upgradeDescription`` prose is dropped.
+    Keeps the talent index, unlock condition, potential rank, ``blackboard`` params,
+    and the in-game talent effect description TEMPLATE (``upgradeDescription`` then
+    ``description``) -- mechanic text referencing the blackboard keys, emitted alongside
+    them for grounding (§V65 path (a), ADR 0010; sanitized + capped §V18). The ``name``
+    label and any lore/story prose are dropped (§V16 ceiling).
     """
     return {
         "talentIndex": as_int(cand.get("talentIndex")),
         "unlockCondition": _unlock_condition(cand.get("unlockCondition")),
         "requiredPotentialRank": as_int(cand.get("requiredPotentialRank")),
         "blackboard": allowlist_blackboard(cand.get("blackboard")),
+        "description": _effect_template(cand, ("upgradeDescription", "description")),
     }
 
 

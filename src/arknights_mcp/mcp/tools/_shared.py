@@ -35,6 +35,48 @@ ConnectionProvider = Callable[[], sqlite3.Connection]
 DB_UNAVAILABLE_MESSAGE = "the active database is unavailable"
 DB_UNAVAILABLE_ACTION = "run `arknights-mcp status` to check the active build"
 
+#: §V65 grounding, path (b): the standing limitation attached to every tool response
+#: that emits blackboard effect data -- ``get_operator`` skills/talents/modules and
+#: ``compare_operator_modules`` trait/talent/stat changes. Path (a) (T127/ADR 0010) now
+#: imports the in-game effect description template and emits it alongside the blackboard,
+#: but a template may be absent for some effects, so this limitation still rides every
+#: emit: it tells the client to read the template when present and never to infer
+#: mechanics from a raw key name (some are counterintuitive), which is the exact
+#: fabrication the server instructions forbid (§V26 "absent -> say so"). Shared: one
+#: wording, one home (§V37). Client-facing string, so no internal cites/jargon (§V71) --
+#: the cites live in this comment, never the emitted text.
+BLACKBOARD_LIMITATION = (
+    "Effect text is the in-game description template, included alongside the blackboard "
+    "when present in the source (it may be absent for some effects). Skill, talent, and "
+    "module effects are otherwise raw blackboard key-value data straight from the game "
+    "files. Read the template to interpret the values; do not infer mechanics from a "
+    "key name alone: a key's meaning is context-dependent and some are counterintuitive."
+)
+
+#: §V65 grounding FLOOR, path (c): a short glossary of common blackboard keys folded
+#: into the description of every tool that emits bare blackboard data, so an MCP client
+#: has a grounded reference instead of guessing. These are common interpretations only
+#: -- the exact meaning of a key is set by the specific effect (hence the §V65 (b)
+#: limitation still rides every emit). Shared: one glossary, one home (§V37). Client-
+#: facing text, so no internal cites/jargon (§V71).
+BLACKBOARD_KEY_GLOSSARY = (
+    "Common blackboard keys (interpretation depends on the specific effect): "
+    "atk / atk_scale = ATK modifier or multiplier; def / def_scale = DEF modifier; "
+    "max_hp = max HP modifier; magic_resistance = RES modifier; "
+    "attack@atk_scale = ATK multiplier for that hit; attack@times / times = hit count; "
+    "damage = flat damage; damage_scale = damage-taken multiplier; "
+    "heal_scale = healing multiplier; sp / sp_cost = skill point cost; "
+    "sp_recovery_per_sec = SP gained per second; duration = effect length in seconds; "
+    "interval = interval in seconds; prob = trigger chance (0 to 1); stun = stun seconds; "
+    "sleep = sleep seconds; freeze = freeze seconds; "
+    "attack_speed = attack-speed (ASPD) modifier; "
+    "base_attack_time = attack interval in seconds; move_speed = move-speed modifier; "
+    "cost = deploy cost modifier; respawn_time = redeploy seconds; "
+    "max_target = maximum targets hit; block_cnt = block-count modifier; "
+    "range_extend = added range; charge = charge or stack state; "
+    "hp_ratio = HP as a fraction; value = generic magnitude."
+)
+
 
 def run_guarded[Result](
     get_conn: ConnectionProvider,
