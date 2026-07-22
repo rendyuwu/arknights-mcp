@@ -54,3 +54,49 @@ def test_cited_invariants_covered() -> None:
     corpus = "\n".join((ADR_DIR / name).read_text(encoding="utf-8") for name in EXPECTED_ADRS)
     for inv in REQUIRED_INVARIANT_CITES:
         assert f"§{inv}" in corpus, f"no ADR references §{inv}"
+
+
+# ---------------------------------------------------------------------------
+# T128: ADR 0011 — response-shape v0.2 coordination ADR.
+#
+# 0011 is a §V21-mandated wire-contract ADR (a breaking `schema_version` bump
+# needs an ADR); it reverses no founder decision, so — unlike the parametrized
+# EXPECTED_ADRS above, which each require a D# cite — it is checked on its own
+# for shape + the invariants it coordinates (§V21/§V66/§V67/§V71).
+# ---------------------------------------------------------------------------
+
+ADR_0011 = "0011-response-shape-v0.2.md"
+
+#: The invariants T128 coordinates under one schema_version bump.
+ADR_0011_INVARIANT_CITES = ["V21", "V66", "V67", "V71"]
+
+
+def test_adr_0011_present() -> None:
+    assert (ADR_DIR / ADR_0011).is_file(), f"missing ADR: {ADR_0011}"
+
+
+def test_adr_0011_shape() -> None:
+    text = (ADR_DIR / ADR_0011).read_text(encoding="utf-8")
+    assert "Status:" in text and "Accepted" in text
+    assert "## Context" in text
+    assert "## Decision" in text
+    assert "## Consequences" in text
+
+
+def test_adr_0011_cites_coordinated_invariants() -> None:
+    text = (ADR_DIR / ADR_0011).read_text(encoding="utf-8")
+    for inv in ADR_0011_INVARIANT_CITES:
+        assert f"§{inv}" in text, f"ADR 0011 does not cite §{inv}"
+
+
+def test_adr_0011_records_single_schema_version_bump() -> None:
+    # The whole point of T128: coordinate the breaking M13 wire changes under
+    # ONE schema_version bump (0.1 -> 0.2), not one bump per change.
+    text = (ADR_DIR / ADR_0011).read_text(encoding="utf-8")
+    assert "schema_version" in text.lower()
+    assert "0.1" in text and "0.2" in text
+
+
+def test_adr_0011_indexed_in_readme() -> None:
+    readme = (ADR_DIR / "README.md").read_text(encoding="utf-8")
+    assert ADR_0011 in readme, "ADR 0011 not linked from the ADR index"

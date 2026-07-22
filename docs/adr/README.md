@@ -17,3 +17,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0008](0008-art-asset-url-references.md) | Art asset URL references — derive, link out, never bundle | D5 | §V63, §V16, §V1, §V27 |
 | [0009](0009-image-refs-authenticated-emit.md) | Image refs on authenticated deployments (amends 0008) | D4 (refined) | §V63, §V9, §V16, §V20 |
 | [0010](0010-effect-description-template-import.md) | Effect-description template import — mechanic text in, lore/story/wiki prose out | D4, D11 | §V65, §V18, §V16, §V21 |
+| [0011](0011-response-shape-v0.2.md) | Response-shape v0.2 — one coordinated `schema_version` bump for the M13 breaking wire changes | none (§V21-mandated) | §V21, §V66, §V67, §V71 |
