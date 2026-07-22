@@ -51,6 +51,7 @@ from arknights_mcp.sources.penguin_statistics import (
     PenguinStatsAdapter,
 )
 from arknights_mcp.sources.registry import SourceRegistry
+from arknights_mcp.util.sqlite import savepoint
 from arknights_mcp.util.text import is_placeholder
 
 
@@ -107,16 +108,19 @@ def _ride_along(
     game-data import, into the SAME candidate, before validate/promote, so the extra
     rows join one atomic build (§V4/§V58). The candidate connection runs in autocommit
     mode so each region's ``RELEASE`` commits its rows independently, and each region is
-    imported under a per-server ``SAVEPOINT`` so a fetch/import failure rolls back only
-    THAT region's partial inserts (all-or-nothing per server, §V58).
+    imported under a per-server :func:`~arknights_mcp.util.sqlite.savepoint` (the single
+    §V37 home for the savepoint dance, shared with the main-build banner isolation §T116)
+    so a fetch/import failure rolls back only THAT region's partial inserts (all-or-nothing
+    per server, §V58).
 
     Fail-open (§V58, must not break §V3): a failure of ANY kind (network, importer
     :class:`ImporterError` incl. its own §V30 non-empty-or-fail, a duplicate collision,
-    or a malformed payload surfacing as ``ValueError``/``OverflowError``) is caught +
-    warned, the region's savepoint is rolled back, and the build continues game-data-only
-    -- the ride-along tables are outside CRITICAL_TABLES, so an empty domain is legitimate.
-    The catch is deliberately broad rather than a fixed error tuple, and ``SAVEPOINT``
-    creation is inside the guard, because fail-open is the whole point.
+    or a malformed payload surfacing as ``ValueError``/``OverflowError``) re-raises out of
+    the ``savepoint`` helper (which has already rolled back the region's partial inserts)
+    and is caught + warned by this loop, so the build continues game-data-only -- the
+    ride-along tables are outside CRITICAL_TABLES, so an empty domain is legitimate. The
+    catch is deliberately broad rather than a fixed error tuple, because fail-open is the
+    whole point.
 
     ``per_server`` runs on the writable candidate for one region and returns a success
     message to print, or ``None`` to skip the region without a success line (a region
@@ -135,36 +139,22 @@ def _ride_along(
         conn.execute("PRAGMA foreign_keys = ON")
         for server in servers:
             try:
-                conn.execute("SAVEPOINT ride_along")
-                message = per_server(conn, server)
-                conn.execute("RELEASE SAVEPOINT ride_along")
+                with savepoint(conn, "ride_along"):
+                    message = per_server(conn, server)
                 if message is not None:
                     _out(f"  {message}")
             except Exception as exc:
-                # Roll back only this region's partial inserts and keep going; if the
-                # failure already aborted the transaction the savepoint is gone, and if
-                # SAVEPOINT itself failed there is nothing to release -- swallow the
-                # cleanup error rather than let it defeat fail-open (§V58/§V3).
-                try:
-                    conn.execute("ROLLBACK TO SAVEPOINT ride_along")
-                    conn.execute("RELEASE SAVEPOINT ride_along")
-                except sqlite3.Error:
-                    pass
+                # The savepoint helper already rolled back this region's partial inserts;
+                # swallow the failure and keep going (fail-open, §V58/§V3).
                 _out(
                     f"  {label} {server}: unavailable, skipped; "
                     f"continuing game-data-only (§V58): {exc}"
                 )
         if after_all is not None:
             try:
-                conn.execute("SAVEPOINT ride_along_after")
-                after_all(conn)
-                conn.execute("RELEASE SAVEPOINT ride_along_after")
+                with savepoint(conn, "ride_along_after"):
+                    after_all(conn)
             except Exception as exc:
-                try:
-                    conn.execute("ROLLBACK TO SAVEPOINT ride_along_after")
-                    conn.execute("RELEASE SAVEPOINT ride_along_after")
-                except sqlite3.Error:
-                    pass
                 _out(
                     f"  {label}: post-import step failed, skipped; "
                     f"continuing game-data-only (§V58): {exc}"

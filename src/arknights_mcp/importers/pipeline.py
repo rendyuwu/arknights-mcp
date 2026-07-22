@@ -24,6 +24,7 @@ discarded, and the active database stays untouched (fail-closed, §V3).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -31,7 +32,7 @@ from pathlib import Path
 
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
-from arknights_mcp.importers.banners import import_banners
+from arknights_mcp.importers.banners import BannerImportResult, import_banners
 from arknights_mcp.importers.enemies import ImporterError, import_enemies
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
 from arknights_mcp.importers.modules import import_modules
@@ -40,6 +41,9 @@ from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.sources.registry import SourceRegistry, SourceRegistryEntry
+from arknights_mcp.util.sqlite import savepoint
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -174,10 +178,25 @@ def _import_one(
     # is combat-scoped).
     modules = import_modules(conn, job.adapter, record.snapshot_id)
     # Banners soft-resolve featured char ids to an operator_pk, so they import after
-    # operators; a snapshot without gacha_table imports zero (optional per snapshot,
-    # B36/§V41). A non-empty gacha_table yielding zero banners fails closed (§V30,
-    # enforced inside import_banners), but an absent table is a legitimate empty build.
-    banners = import_banners(conn, job.adapter, record.snapshot_id)
+    # operators, INSIDE this main build (not as a post-promotion ride-along) -- a
+    # snapshot without gacha_table imports zero (optional per snapshot, B36/§V41). But an
+    # OPTIONAL archive must not fail-close the MANDATORY combat core (§V62/§V58/B53), so
+    # the banner import is savepoint-isolated: a banner ImporterError (§V30 non-empty
+    # gacha_table -> 0 banners, or a §V33 dup gachaPoolId / repeated featured char id)
+    # rolls back only THIS region's partial banner + featured-op + provenance rows and the
+    # build continues game-data-only (banners are outside CRITICAL_TABLES, so an empty
+    # archive is legitimate; §V3 combat fail-closed unchanged). The savepoint name is fixed
+    # because regions run sequentially (mirrors _ride_along's fixed "ride_along" name).
+    try:
+        with savepoint(conn, "banners"):
+            banners = import_banners(conn, job.adapter, record.snapshot_id)
+    except ImporterError as exc:
+        _LOG.warning(
+            "%s: banner archive unavailable, skipped; continuing combat build (§V62/§V58): %s",
+            job.server,
+            exc,
+        )
+        banners = BannerImportResult()
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,

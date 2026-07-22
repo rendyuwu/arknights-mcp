@@ -44,6 +44,7 @@ this asserts the whole M11 story end to end:
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -52,7 +53,6 @@ from pathlib import Path
 import pytest
 
 from arknights_mcp.db.connection import open_read_only
-from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.services.banners import (
     STANDARD_BANNER_LIMITATION,
@@ -229,7 +229,7 @@ def test_accept_regions_never_silently_mixed(conn: sqlite3.Connection) -> None:
     assert cn.provenance == ()
 
 
-# --- fail-closed vs tolerant-absent (§V30/B36) --------------------------------
+# --- tolerant-absent + banner fail-open isolation (§V30/§V58/B36/B53) ---------
 
 
 def test_accept_absent_gacha_table_promotes_empty(conn: sqlite3.Connection) -> None:
@@ -239,23 +239,76 @@ def test_accept_absent_gacha_table_promotes_empty(conn: sqlite3.Connection) -> N
     assert get_banners(conn, server="cn").banners == ()
 
 
-def test_accept_non_empty_gacha_yielding_zero_fails_closed(tmp_path: Path) -> None:
-    # §V30: a non-empty gachaPoolClient whose entries all lack a gachaPoolId resolves to
-    # zero banners -> the whole candidate build fails closed (a shape/id mismatch is never
-    # a silently promoted empty banner build); the active DB stays untouched (§V3).
+def _build_with_gacha(tmp_path: Path, payload: object) -> Path:
+    """Build a single-region en candidate whose gacha_table is overwritten with ``payload``.
+
+    Everything else (the operator/combat data) is the real en fixture, so the build
+    exercises the whole main pipeline; only the banner archive is deliberately broken.
+    """
     snap = tmp_path / "en"
     shutil.copytree(OPERATOR_FIXTURES / "en", snap)
-    idless = {"gachaPoolClient": [{"gachaRuleType": "NORMAL"}, {"gachaPoolName": "x"}]}
     (snap / "gamedata" / "excel" / "gacha_table.json").write_text(
-        json.dumps(idless), encoding="utf-8"
+        json.dumps(payload), encoding="utf-8"
     )
-    with pytest.raises(ImporterError, match="silent empty banner build"):
-        build_candidate(
-            tmp_path / "cand.sqlite",
-            [ServerImport("en", _adapter(snap, "en"), "local_snapshot")],
-            registry=load_source_registry(REGISTRY),
-            imported_at=PINNED_IMPORTED_AT,
-        )
+    path = tmp_path / "cand.sqlite"
+    build_candidate(
+        path,
+        [ServerImport("en", _adapter(snap, "en"), "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+        imported_at=PINNED_IMPORTED_AT,
+    )
+    return path
+
+
+#: Three ways a banner import fails-closed INSIDE import_banners (§V30 non-empty->0, and
+#: two §V33 UNIQUE collisions), each of which T116 now isolates so the combat build
+#: continues rather than the whole candidate aborting (B53).
+_IDLESS = {"gachaPoolClient": [{"gachaRuleType": "NORMAL"}, {"gachaPoolName": "x"}]}
+_DUP_POOL_ID = {
+    "gachaPoolClient": [
+        {"gachaPoolId": "DUP", "gachaPoolName": "A", "gachaRuleType": "NORMAL"},
+        {"gachaPoolId": "DUP", "gachaPoolName": "B", "gachaRuleType": "NORMAL"},
+    ]
+}
+_DUP_FEATURED_CHAR = {
+    "gachaPoolClient": [
+        {
+            "gachaPoolId": "C1",
+            "gachaPoolName": "Classic",
+            "gachaRuleType": "CLASSIC",
+            "dynMeta": {"attainRare6CharList": ["char_002_amiya", "char_002_amiya"]},
+        }
+    ]
+}
+
+
+@pytest.mark.parametrize(
+    ("payload", "label"),
+    [
+        (_IDLESS, "§V30 non-empty->0"),
+        (_DUP_POOL_ID, "dup pool id"),
+        (_DUP_FEATURED_CHAR, "dup char"),
+    ],
+)
+def test_accept_banner_failure_is_isolated_combat_promotes(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, payload: dict, label: str
+) -> None:
+    # §V62/§V58/B53: a banner ImporterError (§V30 non-empty->0, or a §V33 dup gachaPoolId /
+    # repeated featured char) no longer nukes the whole candidate. The banner rows roll
+    # back to the savepoint (zero banners), a warning is emitted, and the MANDATORY combat
+    # core (operators here) is STILL promoted -- an OPTIONAL archive cannot fail-close §V3.
+    with caplog.at_level(logging.WARNING):
+        conn = open_read_only(_build_with_gacha(tmp_path, payload))
+    try:
+        # The build promoted (no exception) and the banner archive is empty for the region.
+        assert get_banners(conn, server="en").banners == ()
+        assert conn.execute("SELECT COUNT(*) FROM banners").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM banner_featured_ops").fetchone()[0] == 0
+        # The combat core survived the isolated banner rollback (operators still present).
+        assert conn.execute("SELECT COUNT(*) FROM operators").fetchone()[0] >= 1
+    finally:
+        conn.close()
+    assert any("banner archive unavailable" in r.getMessage() for r in caplog.records), label
 
 
 # --- since/until open-time window (§V19) --------------------------------------
