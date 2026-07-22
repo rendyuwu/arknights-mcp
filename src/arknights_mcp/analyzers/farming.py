@@ -1,4 +1,4 @@
-"""Farming-efficiency analyzer (§T90/§T103; §V6, §V8, §V26, §V55, §V7, §V60).
+"""Farming-efficiency analyzer (§T90/§T103/§T129; §V6, §V8, §V26, §V55, §V7, §V60, §V66).
 
 Deterministic, evidence-backed observations about the sanity cost of farming an
 item. Pure and DB-free: two entry points share one math + conservatism core (§V37):
@@ -18,31 +18,44 @@ The core figure is *sanity per item* = a stage's ``sanity_cost`` divided by the
 item's ``drop_rate`` (expected drops per run): the average sanity spent to obtain
 one of the item. It is computed in exactly one place (:func:`_efficiency`, §V37) so
 the stage view and the item comparison can never diverge on the math or the
-confidence ladder. Each observation carries the five §V6 fields (``rule_id`` +
-evidence + confidence + limitations + ``analyzer_version``) reusing the shared
-:class:`~arknights_mcp.analyzers.base.Observation` / ``EvidenceItem`` vocabulary
-(§V37). Observations state the computed cost factually -- never a
-"best farm" / "mandatory" verdict (§V7).
+confidence ladder.
+
+Emission shape (§V66.1/§T129): each entry point emits a SINGLE
+:class:`RankedObservation` per rule rather than one observation per ranked entity.
+The five §V6 fields (``rule_id`` / ``confidence`` / ``analyzer_version`` plus the
+category/tag/title identity) are stated ONCE at the observation level; the per-entity
+data lives in :class:`RankingRow` rows ``{id, name, sanity_per_item}`` ranked
+ascending. A row's ``id`` REFERENCES the sibling drops/stages facts list the tool
+already emits (which carries ``sanity_cost`` / ``drop_rate`` / ``sample_size``), so
+those numbers are never re-copied onto the observation (evidence by reference, §V66.1
+~85% token cut). Per-row ``confidence`` / ``limitations`` appear ONLY where a row
+deviates from the observation-level baseline -- a thin sample or an expired cache --
+so the deviant row stays visible without restating the shared fields on every row.
+The §V6 discipline is intact: the observation is fully attributed and every figure
+still carries its own conservatism caveat where it applies.
 
 Conservatism (§V8/§V55):
 
-* a drop sample below :data:`SAMPLE_SIZE_FLOOR` runs -> confidence is reduced and a
-  limitation records the thin sample (the rate is noisy, §V55 extends §V8);
-* an expired drop cache (§V53) -> the efficiency is downgraded to a limitation and
-  confidence is forced below the §V8 recommendation threshold, never presented as a
+* a drop sample below :data:`SAMPLE_SIZE_FLOOR` runs -> the row's confidence is
+  reduced and a limitation records the thin sample (the rate is noisy, §V55 extends
+  §V8);
+* an expired drop cache (§V53) -> the row's figure is downgraded to a limitation and
+  its confidence forced below the §V8 recommendation threshold, never presented as a
   fresh recommendation (§V55);
-* a missing ``sanity_cost`` or an absent/zero ``drop_rate`` yields no figure -- it is
-  a §V26 warning, never a fabricated or divide-by-zero conclusion.
+* a missing ``sanity_cost`` or an absent/zero ``drop_rate`` yields no row -- it is a
+  §V26 warning, never a fabricated or divide-by-zero conclusion.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from arknights_mcp.analyzers.base import ANALYZER_VERSION, EvidenceItem, Observation
+from arknights_mcp.analyzers.base import ANALYZER_VERSION
 
 RULE_ID = "farming.sanity_per_item"
 _CATEGORY = "farming"
+_TAG = "sanity_per_item"
+_TITLE = "Farming sanity cost per item"
 
 #: A drop sample of at least this many runs is treated as a stable rate; below it the
 #: rate is noisy, so confidence is reduced and a limitation is recorded (§V8/§V55).
@@ -50,7 +63,9 @@ SAMPLE_SIZE_FLOOR = 100
 
 #: Confidence when the drop rate rests on a sufficient sample and the cache is fresh:
 #: the figure is a deterministic ratio of two typed numeric fields (§V26), so it is
-#: high but never certain (sampling variance remains).
+#: high but never certain (sampling variance remains). This is the observation-level
+#: BASELINE (§V66.1): a ranking row that matches it is non-deviating and omits its own
+#: confidence/limitation; a thin/expired row deviates below it.
 _CONF_STABLE = 0.8
 #: Confidence when the sample is below the floor -- kept under the §V8 threshold so a
 #: thin-sample figure is a limitation, not a recommendation (§V55).
@@ -70,6 +85,55 @@ _RECOMMENDATION_THRESHOLD = 0.5
 # not just documented).
 assert _CONF_THIN_SAMPLE < _RECOMMENDATION_THRESHOLD <= _CONF_STABLE
 assert _CONF_EXPIRED < _RECOMMENDATION_THRESHOLD
+
+
+@dataclass(frozen=True)
+class RankingRow:
+    """One ranked entity in a compacted farming observation (§V66.1/§T129).
+
+    ``id`` is the entity's stable reference into the SIBLING facts list the tool
+    already emits -- a drop's ``item_game_id`` in the stage view, a stage's identifier
+    in the item comparison -- so a client joins on it to read the ``sanity_cost`` /
+    ``drop_rate`` / ``sample_size`` carried there; those numbers are NOT re-copied
+    here (§V66.1). ``sanity_per_item`` is the derived ranking figure (not present in
+    the sibling list). ``confidence`` and ``limitations`` are populated ONLY when this
+    row deviates from the observation-level baseline (:data:`_CONF_STABLE`) -- a thin
+    sample or an expired cache -- so a non-deviating row stays the minimal three fields
+    and a deviant one carries its own §V8/§V55 caveat.
+    """
+
+    id: str
+    name: str | None
+    sanity_per_item: float
+    confidence: float | None = None
+    limitations: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RankedObservation:
+    """One compacted, evidence-backed farming observation over a ranked set (§V66.1/§V6).
+
+    Replaces the pre-v0.2 "one observation per entity" emission (§T129). The §V6
+    identity fields (``rule_id`` / ``confidence`` / ``analyzer_version``) are stated
+    ONCE here; the per-entity data lives in ``ranking`` rows whose ``id`` references
+    the sibling facts list (evidence by reference, never a re-copied number, §V66.1).
+    The ranking is ascending by ``sanity_per_item`` -- an ordering + evidence, never a
+    "best farm" / mandatory verdict (§V7/§V55). ``confidence`` is the baseline for a
+    fresh, well-sampled figure (:data:`_CONF_STABLE`); a row that deviates (thin sample
+    / expired) carries its OWN lower confidence + limitation. ``limitations`` here are
+    observation-level caveats that apply to the whole ranking (the §V60 comparison
+    caveats for the item view; empty for the stage view).
+    """
+
+    rule_id: str
+    category: str
+    tag: str
+    title: str
+    summary: str
+    confidence: float
+    ranking: tuple[RankingRow, ...]
+    limitations: tuple[str, ...] = ()
+    analyzer_version: str = ANALYZER_VERSION
 
 
 @dataclass(frozen=True)
@@ -107,22 +171,18 @@ class FarmingContext:
 
 @dataclass(frozen=True)
 class FarmingAnalysis:
-    """Aggregate result of running the farming rule over one stage's drops (§V6)."""
+    """Aggregate result of running the farming rule over one stage's drops (§V6/§V66.1).
+
+    ``observation`` is the SINGLE ranked observation (§T129) over the stage's drops, or
+    ``None`` when no drop is rankable (a missing sanity cost, or every drop rate absent
+    -- the reason rides ``warnings``, §V26).
+    """
 
     server: str
     stage_code: str | None
-    observations: tuple[Observation, ...]
+    observation: RankedObservation | None
     warnings: tuple[str, ...]
     analyzer_version: str = ANALYZER_VERSION
-
-
-def _item_label(drop: DropFact) -> str:
-    """A stable handle for an item in a summary (the allowlisted name or its id).
-
-    The ``display_name`` is a proper name, not prose; the ``game_id`` keeps summaries
-    deterministic and language-neutral when the name is absent (§V26).
-    """
-    return drop.item_display_name or drop.item_game_id
 
 
 @dataclass(frozen=True)
@@ -181,75 +241,79 @@ def _efficiency(
     )
 
 
-def _drop_observation(drop: DropFact, *, sanity_cost: int, expired: bool) -> Observation:
-    """Observation of the sanity-per-item cost for one drop (§V6, §V26, §V55).
+def _ranking_row(
+    *,
+    entity_id: str,
+    name: str | None,
+    sanity_cost: int,
+    drop_rate: float,
+    sample_size: int | None,
+    expired: bool,
+) -> tuple[float, RankingRow]:
+    """Build one ranking row + its ascending sort key (§V66.1/§V6/§V37).
 
-    Caller guarantees a positive ``sanity_cost`` and a positive ``drop_rate`` (a
-    missing/zero either is a §V26 warning handled upstream), so the ratio is always
-    well-defined here. The figure + confidence + limitations come from the shared
-    :func:`_efficiency` core (§V37); this shaper only builds the item-ref evidence and
-    the factual summary on top.
+    Caller guarantees a positive ``sanity_cost`` and ``drop_rate``. The figure +
+    confidence + limitations come from the shared :func:`_efficiency` core (§V37); this
+    only shapes them into a :class:`RankingRow`. The row omits its ``confidence`` when
+    it matches the observation-level baseline (:data:`_CONF_STABLE`) and carries it
+    only where the row DEVIATES (thin sample / expired), so a non-deviating row stays
+    the minimal ``{id, name, sanity_per_item}`` (§V66.1). The sibling facts list holds
+    ``sanity_cost`` / ``drop_rate`` / ``sample_size``; ``entity_id`` references them
+    rather than re-copying (§V66.1). The returned float is the sanity-per-item used to
+    rank ascending (§V60).
     """
-    assert drop.drop_rate is not None and drop.drop_rate > 0  # guarded by caller
     eff = _efficiency(
         sanity_cost=sanity_cost,
-        drop_rate=drop.drop_rate,
-        sample_size=drop.sample_size,
+        drop_rate=drop_rate,
+        sample_size=sample_size,
         expired=expired,
     )
-
-    evidence = (
-        EvidenceItem(
-            ref=drop.item_game_id,
-            field="sanity_cost",
-            value=sanity_cost,
-            note="stage sanity cost per run",
-        ),
-        EvidenceItem(
-            ref=drop.item_game_id,
-            field="drop_rate",
-            value=drop.drop_rate,
-            note="expected drops per run (penguin quantity/times)",
-        ),
-        EvidenceItem(
-            ref=drop.item_game_id,
-            field="sample_size",
-            value=drop.sample_size,
-            note="penguin sampled runs (times)",
-        ),
-        EvidenceItem(
-            ref=drop.item_game_id,
-            field="sanity_per_item",
-            value=round(eff.sanity_per_item, 2),
-            note="computed sanity_cost / drop_rate",
-        ),
-    )
-    return Observation(
-        rule_id=RULE_ID,
-        category=_CATEGORY,
-        tag="sanity_per_item",
-        title="Farming sanity cost per item",
-        summary=(
-            f"{_item_label(drop)} costs about {eff.sanity_per_item:.1f} sanity per copy on "
-            "this stage (stage sanity cost divided by the expected drops per run)."
-        ),
-        confidence=eff.confidence,
-        evidence=evidence,
+    deviates = eff.confidence != _CONF_STABLE or bool(eff.limitations)
+    row = RankingRow(
+        id=entity_id,
+        name=name,
+        sanity_per_item=round(eff.sanity_per_item, 2),
+        confidence=eff.confidence if deviates else None,
         limitations=eff.limitations,
     )
+    return eff.sanity_per_item, row
+
+
+def _ranked_observation(
+    *, summary: str, ranking: tuple[RankingRow, ...], limitations: tuple[str, ...]
+) -> RankedObservation:
+    """Assemble the single ranked observation with the §V6 fields once (§V66.1/§V6)."""
+    return RankedObservation(
+        rule_id=RULE_ID,
+        category=_CATEGORY,
+        tag=_TAG,
+        title=_TITLE,
+        summary=summary,
+        confidence=_CONF_STABLE,
+        ranking=ranking,
+        limitations=limitations,
+    )
+
+
+_STAGE_SUMMARY = (
+    "Sanity spent per item for each drop on this stage, computed as the stage sanity "
+    "cost divided by the expected drops per run; items are ordered from the lowest "
+    "sanity per copy."
+)
 
 
 def analyze_farming(ctx: FarmingContext) -> FarmingAnalysis:
-    """Run the deterministic farming-efficiency rule over ``ctx`` (§V6, §V26, §V55).
+    """Run the deterministic farming-efficiency rule over ``ctx`` (§V6/§V26/§V55/§V66.1).
 
-    Drops are processed in ``item_game_id`` order so observations + warnings are
-    emitted deterministically (§V26). A stage with no ``sanity_cost`` warns once and
-    computes nothing (§V26); a drop with an absent or non-positive ``drop_rate`` warns
-    per item, never fabricating a figure or dividing by zero. Every emitted
-    observation carries the five §V6 fields; the analyzer adds no prescriptive
-    language (§V7).
+    Emits a SINGLE ranked observation (§T129) whose ``ranking`` rows cover the stage's
+    drops, ordered ascending by sanity per item (tie-broken by ``item_game_id`` so the
+    output is deterministic, §V26/§V60). A stage with no ``sanity_cost`` warns once and
+    produces no observation (§V26); a drop with an absent or non-positive ``drop_rate``
+    warns per item, never fabricating a figure or dividing by zero. The §V6 fields are
+    stated once at the observation level; a row deviates (its own confidence +
+    limitation) only for a thin sample or an expired cache. The analyzer adds no
+    prescriptive language (§V7).
     """
-    observations: list[Observation] = []
     warnings: list[str] = []
 
     if ctx.sanity_cost is None or ctx.sanity_cost <= 0:
@@ -259,10 +323,11 @@ def analyze_farming(ctx: FarmingContext) -> FarmingAnalysis:
         return FarmingAnalysis(
             server=ctx.server,
             stage_code=ctx.stage_code,
-            observations=(),
+            observation=None,
             warnings=tuple(warnings),
         )
 
+    rows: list[tuple[float, str, RankingRow]] = []
     for drop in sorted(ctx.drops, key=lambda d: d.item_game_id):
         if drop.drop_rate is None or drop.drop_rate <= 0:
             warnings.append(
@@ -270,14 +335,30 @@ def analyze_farming(ctx: FarmingContext) -> FarmingAnalysis:
                 "sanity-per-item not computed"
             )
             continue
-        observations.append(
-            _drop_observation(drop, sanity_cost=ctx.sanity_cost, expired=ctx.expired)
+        key, row = _ranking_row(
+            entity_id=drop.item_game_id,
+            name=drop.item_display_name,
+            sanity_cost=ctx.sanity_cost,
+            drop_rate=drop.drop_rate,
+            sample_size=drop.sample_size,
+            expired=ctx.expired,
         )
+        # Rank ascending by sanity/item, tie-broken by item id so equal-cost items rank
+        # deterministically (§V26/§V60).
+        rows.append((key, drop.item_game_id, row))
 
+    rows.sort(key=lambda r: (r[0], r[1]))
+    ranking = tuple(row for _, _, row in rows)
+
+    observation = (
+        _ranked_observation(summary=_STAGE_SUMMARY, ranking=ranking, limitations=())
+        if ranking
+        else None
+    )
     return FarmingAnalysis(
         server=ctx.server,
         stage_code=ctx.stage_code,
-        observations=tuple(observations),
+        observation=observation,
         warnings=tuple(warnings),
     )
 
@@ -288,13 +369,21 @@ def analyze_farming(ctx: FarmingContext) -> FarmingAnalysis:
 #: cache models neither a stage's open/closed availability (an event stage is not
 #: permanently farmable) nor the one-time first-clear bonus, and byproduct /
 #: synthesis-recipe routes to the item are not modeled. The ranking is
-#: sanity-per-direct-drop only; the decision stays the user's (§V7).
+#: sanity-per-direct-drop only; the decision stays the user's (§V7). Under §V66.1
+#: these ride the single observation's observation-level ``limitations`` (they apply to
+#: the whole ranking), stated once rather than per row.
 _ITEM_COMPARISON_LIMITATIONS: tuple[str, ...] = (
     "stage availability is not modeled: an event stage may be closed and not currently "
     "farmable; the drop cache does not track open/closed windows",
     "the one-time first-clear bonus is not modeled; only the repeatable drop rate is",
     "byproduct and synthesis-recipe routes to this item are not modeled; only direct "
     "stage drops are ranked",
+)
+
+_ITEM_SUMMARY = (
+    "Sanity spent per copy of this item across the stages that drop it, computed as "
+    "each stage's sanity cost divided by the expected drops per run; stages are ordered "
+    "from the lowest sanity per copy."
 )
 
 
@@ -334,99 +423,43 @@ class ItemFarmingContext:
 
 @dataclass(frozen=True)
 class ItemFarmingAnalysis:
-    """Ranked result of comparing one item across the stages that drop it (§V60).
+    """Ranked result of comparing one item across the stages that drop it (§V60/§V66.1).
 
-    ``observations`` are ranked ascending by sanity per item (lowest first) -- an
-    ordering + evidence, never a "best farm"/mandatory verdict (§V7). ``limitations``
-    carries the mandatory §V60 comparison caveats (stage availability / first-clear /
-    byproduct not modeled); ``warnings`` records any stage excluded for a missing
-    ``sanity_cost`` or ``drop_rate`` (§V26). Every observation still carries its own
-    five §V6 fields (incl. the expired/thin-sample limitation from :func:`_efficiency`).
+    ``observation`` is the SINGLE ranked observation (§T129); its ``ranking`` rows are
+    ordered ascending by sanity per item (lowest first) -- an ordering + evidence,
+    never a "best farm"/mandatory verdict (§V7). The mandatory §V60 comparison caveats
+    (stage availability / first-clear / byproduct not modeled) ride the observation's
+    observation-level ``limitations`` (they qualify the whole ranking). ``observation``
+    is ``None`` when no stage is rankable (the reason rides ``warnings``, §V26); the
+    service reports ``not_found`` upstream when there is nothing to compare.
+    ``warnings`` records any stage excluded for a missing ``sanity_cost`` or
+    ``drop_rate`` (§V26).
     """
 
     server: str
     item_game_id: str
-    observations: tuple[Observation, ...]
-    limitations: tuple[str, ...]
+    observation: RankedObservation | None
     warnings: tuple[str, ...]
     analyzer_version: str = ANALYZER_VERSION
 
 
-def _item_stage_observation(drop: ItemStageDrop) -> tuple[float, Observation]:
-    """Efficiency observation for one stage's drop of the item, plus its sort key (§V6).
-
-    Caller guarantees a positive ``sanity_cost`` and ``drop_rate``. Reuses the shared
-    :func:`_efficiency` core (§V37); the evidence ``ref`` is the STAGE (the comparison
-    varies stages for a fixed item, the reverse of the stage view), and the returned
-    float is the sanity-per-item used to rank ascending (§V60).
-    """
-    assert drop.sanity_cost is not None and drop.sanity_cost > 0  # guarded by caller
-    assert drop.drop_rate is not None and drop.drop_rate > 0  # guarded by caller
-    eff = _efficiency(
-        sanity_cost=drop.sanity_cost,
-        drop_rate=drop.drop_rate,
-        sample_size=drop.sample_size,
-        expired=drop.expired,
-    )
-    stage_ref = drop.stage_code or drop.stage_game_id
-    evidence = (
-        EvidenceItem(
-            ref=stage_ref,
-            field="sanity_cost",
-            value=drop.sanity_cost,
-            note="stage sanity cost per run",
-        ),
-        EvidenceItem(
-            ref=stage_ref,
-            field="drop_rate",
-            value=drop.drop_rate,
-            note="expected drops per run (penguin quantity/times)",
-        ),
-        EvidenceItem(
-            ref=stage_ref,
-            field="sample_size",
-            value=drop.sample_size,
-            note="penguin sampled runs (times)",
-        ),
-        EvidenceItem(
-            ref=stage_ref,
-            field="sanity_per_item",
-            value=round(eff.sanity_per_item, 2),
-            note="computed sanity_cost / drop_rate",
-        ),
-    )
-    obs = Observation(
-        rule_id=RULE_ID,
-        category=_CATEGORY,
-        tag="sanity_per_item",
-        title="Farming sanity cost per item",
-        summary=(
-            f"{stage_ref} yields this item for about {eff.sanity_per_item:.1f} sanity per "
-            "copy (stage sanity cost divided by the expected drops per run)."
-        ),
-        confidence=eff.confidence,
-        evidence=evidence,
-        limitations=eff.limitations,
-    )
-    return eff.sanity_per_item, obs
-
-
 def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
-    """Rank one item's farming efficiency across the stages that drop it (§V60/§V55).
+    """Rank one item's farming efficiency across the stages that drop it (§V60/§V55/§V66.1).
 
     The §V60 reverse of :func:`analyze_farming`: for a fixed item, each stage's
     sanity-per-item is computed via the shared :func:`_efficiency` core (§V37) and the
-    observations are RANKED ASCENDING (lowest sanity per copy first) -- an ordering +
-    evidence, never a "best farm"/mandatory verdict (§V7). A stage with a missing
-    ``sanity_cost`` or an absent/non-positive ``drop_rate`` is excluded with a §V26
-    warning (never a fabricated figure); the per-stage warnings are emitted in stage
-    order so the output is deterministic (§V26). An expired stage's figure is
-    downgraded to a limitation (via ``_efficiency``) but KEPT in the ranking, not
-    dropped (§V60/§V53). The mandatory §V60 comparison caveats ride the analysis
-    ``limitations`` whenever a ranking exists.
+    ranking rows are ordered ASCENDING (lowest sanity per copy first) inside a SINGLE
+    ranked observation (§T129) -- an ordering + evidence, never a "best farm"/mandatory
+    verdict (§V7). A stage with a missing ``sanity_cost`` or an absent/non-positive
+    ``drop_rate`` is excluded with a §V26 warning (never a fabricated figure); the
+    per-stage warnings are emitted in stage order so the output is deterministic
+    (§V26). An expired stage's figure is downgraded to a per-row limitation (via
+    ``_efficiency``) but KEPT in the ranking, not dropped (§V60/§V53). The mandatory
+    §V60 comparison caveats ride the observation's observation-level ``limitations``
+    whenever a ranking exists.
     """
-    ranked: list[tuple[float, str, str, Observation]] = []
     warnings: list[str] = []
+    rows: list[tuple[float, str, str, RankingRow]] = []
 
     for drop in sorted(ctx.drops, key=lambda d: (d.stage_code or "", d.stage_game_id)):
         stage_ref = drop.stage_code or drop.stage_game_id
@@ -441,20 +474,35 @@ def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
                 f"{stage_ref}: drop rate is missing or non-positive; sanity-per-item not computed"
             )
             continue
-        sanity_per_item, obs = _item_stage_observation(drop)
+        key, row = _ranking_row(
+            entity_id=stage_ref,
+            name=None,
+            sanity_cost=drop.sanity_cost,
+            drop_rate=drop.drop_rate,
+            sample_size=drop.sample_size,
+            expired=drop.expired,
+        )
         # Sort ascending by sanity/item, tie-broken by stage identity so equal-cost
         # stages rank deterministically (§V26/§V60).
-        ranked.append((sanity_per_item, drop.stage_code or "", drop.stage_game_id, obs))
+        rows.append((key, drop.stage_code or "", drop.stage_game_id, row))
 
-    ranked.sort(key=lambda r: (r[0], r[1], r[2]))
-    observations = tuple(obs for _, _, _, obs in ranked)
+    rows.sort(key=lambda r: (r[0], r[1], r[2]))
+    ranking = tuple(row for _, _, _, row in rows)
 
+    # The mandatory comparison caveats accompany an actual ranking; with no rankable
+    # stage there is no comparison to qualify (the service reports not_found upstream).
+    observation = (
+        _ranked_observation(
+            summary=_ITEM_SUMMARY,
+            ranking=ranking,
+            limitations=_ITEM_COMPARISON_LIMITATIONS,
+        )
+        if ranking
+        else None
+    )
     return ItemFarmingAnalysis(
         server=ctx.server,
         item_game_id=ctx.item_game_id,
-        observations=observations,
-        # The mandatory comparison caveats accompany an actual ranking; with no rankable
-        # stage there is no comparison to qualify (the service reports not_found upstream).
-        limitations=_ITEM_COMPARISON_LIMITATIONS if observations else (),
+        observation=observation,
         warnings=tuple(warnings),
     )

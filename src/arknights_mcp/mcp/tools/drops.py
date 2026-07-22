@@ -19,12 +19,16 @@ The load-bearing invariants for both:
   ``expires_at`` (its OWN provenance chain, distinct from the game-data fact); a
   drop served past ``expires_at`` flips the status to ``data_stale`` and adds a
   staleness limitation -- never presented as fresh.
-* **§V55/§V60** -- ``include_efficiency`` surfaces the deterministic farming
-  observations, each carrying every §V6 field (rule_id + evidence + confidence +
-  limitations + analyzer_version); ``get_item_drops`` ranks them ascending by sanity
-  per item (§V60) with the mandatory availability/first-clear/byproduct caveats, an
-  ordering + evidence never a best-farm/mandatory verdict (§V7). An expired cache
-  downgrades a figure to a limitation, never a fresh recommendation.
+* **§V55/§V60/§V66.1** -- ``include_efficiency`` surfaces a SINGLE deterministic
+  ranked farming observation (§T129): the §V6 fields (rule_id + confidence +
+  analyzer_version) are stated once at the observation level and the per-entity data
+  lives in ``ranking`` rows ``{id, name, sanity_per_item}`` whose ``id`` references
+  the sibling drops/stages facts (evidence by reference, never re-copied numbers).
+  ``get_item_drops`` ranks the rows ascending by sanity per item (§V60) with the
+  mandatory availability/first-clear/byproduct caveats on the observation, an ordering
+  + evidence never a best-farm/mandatory verdict (§V7). A per-row confidence +
+  limitation appears only where a row deviates (thin sample / expired); an expired
+  cache downgrades that row below the §V8 threshold, never a fresh recommendation.
 * **§V23** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the
   shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
@@ -41,8 +45,8 @@ from arknights_mcp.mcp.envelopes import (
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     ConnectionProvider,
-    observation_to_dict,
     page_to_dict,
+    ranked_observation_to_dict,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -122,12 +126,13 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
         "drops": [_drop_to_dict(d) for d in result.drops],
     }
     if result.analyzer_version is not None:
-        # include_efficiency was requested: surface the §T90 observations + the
-        # analyzer's §V26 warnings (a missing sanity cost / absent drop rate).
-        data["efficiency"] = {
-            "observations": [observation_to_dict(o) for o in result.observations],
-            "warnings": list(result.warnings),
-        }
+        # include_efficiency was requested: surface the §V66.1 single ranked
+        # observation (§T129) + the analyzer's §V26 warnings (a missing sanity cost /
+        # absent drop rate). The observation is omitted when no drop was rankable.
+        efficiency: dict[str, object] = {"warnings": list(result.warnings)}
+        if result.observation is not None:
+            efficiency["observation"] = ranked_observation_to_dict(result.observation)
+        data["efficiency"] = efficiency
 
     # A stale result is a *delivered* fact flagged as aged, not a failed request, so
     # it keeps the full ``data`` (drops + optional efficiency) rather than the
@@ -264,15 +269,15 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     if result.stages_page is not None:
         data["stages_page"] = page_to_dict(result.stages_page)
     if result.analyzer_version is not None:
-        # include_efficiency was requested: surface the ranked §T103 observations (this
-        # page of the global ranking), its page descriptor, the mandatory §V60 comparison
-        # caveats, and the §V26 warnings (a stage excluded for a missing sanity cost /
-        # drop rate).
-        efficiency: dict[str, object] = {
-            "observations": [observation_to_dict(o) for o in result.observations],
-            "limitations": list(result.limitations),
-            "warnings": list(result.warnings),
-        }
+        # include_efficiency was requested: surface the §V66.1 single ranked
+        # observation (§T129) whose ``ranking`` rows are this page of the global
+        # ranking, its page descriptor, and the §V26 warnings (a stage excluded for a
+        # missing sanity cost / drop rate). The mandatory §V60 comparison caveats ride
+        # the observation's observation-level ``limitations``, so they travel with every
+        # page; the observation is omitted only when no stage was rankable.
+        efficiency: dict[str, object] = {"warnings": list(result.warnings)}
+        if result.observation is not None:
+            efficiency["observation"] = ranked_observation_to_dict(result.observation)
         if result.efficiency_page is not None:
             efficiency["page"] = page_to_dict(result.efficiency_page)
         data["efficiency"] = efficiency

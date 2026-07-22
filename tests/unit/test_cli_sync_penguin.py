@@ -174,8 +174,8 @@ def test_sync_enabled_penguin_promotes_drops(tmp_path: Path) -> None:
     assert "sugar" in drops
     assert drops["sugar"].drop_rate == 0.25
     assert drops["sugar"].region == "en"
-    # include_efficiency ran the farming analyzer over the fresh drop (§V55).
-    assert result.observations
+    # include_efficiency ran the farming analyzer over the fresh drop (§V55/§V66.1).
+    assert result.observation is not None
     # §V16/§V18: the item prose never rode into the served result.
     assert "PENGUINPROSE" not in json.dumps(result, default=lambda o: o.__dict__)
 

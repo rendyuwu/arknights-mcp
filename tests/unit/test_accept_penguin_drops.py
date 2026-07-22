@@ -213,26 +213,27 @@ def test_accept_efficiency_confidence_and_limitation_fresh(conn: sqlite3.Connect
     )
     assert result.status == "ok"
     assert result.analyzer_version is not None
-    obs = {o.evidence[0].ref: o for o in result.observations}
-    assert set(obs) == {"30012", "30013"}
+    obs = result.observation
+    assert obs is not None
+    # §V6: the observation identity is stated once, decided from typed numeric fields
+    # only (§V26).
+    assert obs.rule_id == "farming.sanity_per_item"
+    assert obs.analyzer_version == result.analyzer_version
+    assert 0.0 <= obs.confidence <= 1.0
+    # §V7/§V55: facts + observation only, never a prescriptive verdict.
+    blob = (obs.summary + " " + " ".join(obs.limitations)).lower()
+    assert not any(word in blob for word in _PROSCRIBED)
 
-    for ob in result.observations:
-        # §V6: every observation carries the five mandated fields, decided from
-        # typed numeric fields only (§V26).
-        assert ob.rule_id == "farming.sanity_per_item"
-        assert ob.analyzer_version == result.analyzer_version
-        assert 0.0 <= ob.confidence <= 1.0
-        assert isinstance(ob.limitations, tuple)
-        assert {e.field for e in ob.evidence} >= {"sanity_cost", "drop_rate", "sanity_per_item"}
-        # §V7/§V55: facts + observations only, never a prescriptive verdict.
-        blob = (ob.summary + " " + " ".join(ob.limitations)).lower()
-        assert not any(word in blob for word in _PROSCRIBED)
-
-    # A well-sampled drop (times=5000) is a stable figure; a thin sample (times=40)
-    # is downgraded below the §V8 recommendation threshold with a limitation (§V55).
-    stable, thin = obs["30012"], obs["30013"]
-    assert stable.confidence >= 0.5 and stable.limitations == ()
-    assert thin.confidence < 0.5
+    # §V66.1: per-item data lives in ranking rows that REFERENCE the drops facts.
+    rows = {row.id: row for row in obs.ranking}
+    assert set(rows) == {"30012", "30013"}
+    # A well-sampled drop (times=5000) is a stable figure -> a non-deviating row that
+    # inherits the baseline (omits its own confidence/limitation); a thin sample
+    # (times=40) deviates below the §V8 recommendation threshold with a limitation (§V55).
+    stable, thin = rows["30012"], rows["30013"]
+    assert obs.confidence >= 0.5
+    assert stable.confidence is None and stable.limitations == ()
+    assert thin.confidence is not None and thin.confidence < 0.5
     assert any("floor" in lim.lower() or "noisy" in lim.lower() for lim in thin.limitations)
 
 
@@ -245,10 +246,10 @@ def test_accept_expired_efficiency_downgraded_below_recommendation(
         conn, server="en", stage_code="GS-1", include_efficiency=True, now=NOW_EXPIRED
     )
     assert result.status == "data_stale"
-    assert result.observations
-    for ob in result.observations:
-        assert ob.confidence < 0.5
-        assert any("expired" in lim.lower() for lim in ob.limitations)
+    assert result.observation is not None
+    for row in result.observation.ranking:
+        assert row.confidence is not None and row.confidence < 0.5
+        assert any("expired" in lim.lower() for lim in row.limitations)
 
 
 # --- §V5 region separation ----------------------------------------------------
@@ -313,32 +314,29 @@ def test_accept_item_ranked_ascending_over_two_stages(conn: sqlite3.Connection) 
     assert result.stale is False
     assert result.item is not None and result.item.server == "en"
 
+    obs = result.observation
+    assert obs is not None
     # Two en stages, ranked ascending: GS-1 (60 sanity/item) before GS-2 (100).
-    refs = [o.evidence[0].ref for o in result.observations]
-    assert refs == ["GS-1", "GS-2"]
-    figures = [
-        next(ev.value for ev in o.evidence if ev.field == "sanity_per_item")
-        for o in result.observations
-    ]
+    ids = [row.id for row in obs.ranking]
+    figures = [row.sanity_per_item for row in obs.ranking]
+    assert ids == ["GS-1", "GS-2"]
     assert figures == [60.0, 100.0]
 
-    # §V6: every observation carries the five mandated fields, from typed fields only.
-    for o in result.observations:
-        assert o.rule_id == "farming.sanity_per_item"
-        assert o.analyzer_version == result.analyzer_version
-        assert 0.0 <= o.confidence <= 1.0
-        assert {e.field for e in o.evidence} >= {"sanity_cost", "drop_rate", "sanity_per_item"}
-    # A well-sampled fresh figure (times 5000/6000) is stable, above the §V8 threshold.
-    assert all(o.confidence >= 0.5 for o in result.observations)
+    # §V6: the observation is fully attributed, from typed fields only.
+    assert obs.rule_id == "farming.sanity_per_item"
+    assert obs.analyzer_version == result.analyzer_version
+    assert 0.0 <= obs.confidence <= 1.0
+    # A well-sampled fresh figure (times 5000/6000) is stable: the baseline is above the
+    # §V8 threshold and each row is non-deviating (inherits it).
+    assert obs.confidence >= 0.5
+    assert all(row.confidence is None for row in obs.ranking)
 
-    # §V60: the mandatory availability / first-clear / byproduct caveats ride the ranking.
-    blob = " ".join(result.limitations).lower()
+    # §V60/§V66.1: the mandatory availability / first-clear / byproduct caveats ride the
+    # observation-level limitations.
+    blob = " ".join(obs.limitations).lower()
     assert "availability" in blob and "first-clear" in blob and "byproduct" in blob
     # §V7/§V55: no prescriptive language anywhere in the ranking or its caveats.
-    text = " ".join(
-        f"{o.title} {o.summary} {' '.join(o.limitations)}" for o in result.observations
-    ).lower()
-    text += " " + blob
+    text = f"{obs.title} {obs.summary} {blob}".lower()
     assert not any(word in text for word in _PROSCRIBED)
 
 
@@ -347,14 +345,16 @@ def test_accept_item_comparison_is_region_scoped(conn: sqlite3.Connection) -> No
     # comparison only cn stages -- en/cn never silently mixed in one item's ranking.
     en = get_item_drops(conn, server="en", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
     assert {s.region for s in en.stages} == {"en"}
-    assert [o.evidence[0].ref for o in en.observations] == ["GS-1", "GS-2"]
+    assert en.observation is not None
+    assert [row.id for row in en.observation.ranking] == ["GS-1", "GS-2"]
     assert all(s.snapshot_id.startswith("en:") for s in en.stages)
 
     cn = get_item_drops(conn, server="cn", game_id=_ITEM, include_efficiency=True, now=NOW_FRESH)
     assert cn.status == "ok"
     assert cn.item is not None and cn.item.server == "cn"
     assert {s.region for s in cn.stages} == {"cn"}
-    assert [o.evidence[0].ref for o in cn.observations] == ["CN-1"]
+    assert cn.observation is not None
+    assert [row.id for row in cn.observation.ranking] == ["CN-1"]
     # §V54: the cn ranking is backed by a cn-region penguin snapshot, never an en one.
     assert all(s.snapshot_id.startswith("cn:") for s in cn.stages)
 
@@ -372,10 +372,11 @@ def test_accept_item_expired_stage_downgraded_but_still_ranked(
     # Both en stages are still present in the facts and the ranking, flagged expired.
     assert {s.stage_code for s in result.stages} == {"GS-1", "GS-2"}
     assert all(s.expired for s in result.stages)
-    assert [o.evidence[0].ref for o in result.observations] == ["GS-1", "GS-2"]
-    for o in result.observations:
-        assert o.confidence < 0.5
-        assert any("expired" in lim.lower() for lim in o.limitations)
+    assert result.observation is not None
+    assert [row.id for row in result.observation.ranking] == ["GS-1", "GS-2"]
+    for row in result.observation.ranking:
+        assert row.confidence is not None and row.confidence < 0.5
+        assert any("expired" in lim.lower() for lim in row.limitations)
 
 
 def test_accept_absent_item_is_not_found_no_fetch_fallback(conn: sqlite3.Connection) -> None:
@@ -385,4 +386,4 @@ def test_accept_absent_item_is_not_found_no_fetch_fallback(conn: sqlite3.Connect
     assert result.status == "not_found"
     assert result.item is None
     assert result.stages == ()
-    assert result.observations == () and result.limitations == ()
+    assert result.observation is None

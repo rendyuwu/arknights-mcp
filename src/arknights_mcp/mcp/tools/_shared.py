@@ -20,7 +20,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 
-from arknights_mcp.analyzers import EvidenceItem, Observation
+from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation, RankingRow
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
 from arknights_mcp.services.stages import SectionPage
@@ -172,6 +172,52 @@ def observation_to_dict(obs: Observation) -> dict[str, object]:
         "summary": obs.summary,
         "confidence": obs.confidence,
         "evidence": [evidence_to_dict(e) for e in obs.evidence],
+        "limitations": list(obs.limitations),
+        "analyzer_version": obs.analyzer_version,
+    }
+
+
+def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
+    """One ranked entity in a compacted farming observation (§V66.1; §V37 single home).
+
+    Carries the entity ``id`` (a reference into the sibling drops/stages facts list, so
+    the shared ``sanity_cost`` / ``drop_rate`` / ``sample_size`` are not re-copied
+    here) + its display ``name`` + the derived ``sanity_per_item`` figure. ``confidence``
+    and ``limitations`` are emitted ONLY when the row deviates from the
+    observation-level baseline (a thin sample / expired cache), so a non-deviating row
+    stays a minimal three-field object and the deviant row stays visible.
+    """
+    out: dict[str, object] = {
+        "id": row.id,
+        "name": row.name,
+        "sanity_per_item": row.sanity_per_item,
+    }
+    if row.confidence is not None:
+        out["confidence"] = row.confidence
+    if row.limitations:
+        out["limitations"] = list(row.limitations)
+    return out
+
+
+def ranked_observation_to_dict(obs: RankedObservation) -> dict[str, object]:
+    """A compacted ranked farming observation with the §V6 fields stated once (§V66.1/§V6).
+
+    The §V37 single home for the ranked-observation wire mapping shared by
+    ``get_stage_drops`` and ``get_item_drops``. ``rule_id`` / ``confidence`` /
+    ``analyzer_version`` (the §V6 identity + baseline confidence) appear once at the
+    observation level; the per-entity data lives in ``ranking`` rows whose ``id``
+    references the sibling facts list (evidence by reference, never a re-copied number,
+    §V66.1). Observation-level ``limitations`` are the caveats that apply to the whole
+    ranking (e.g. the §V60 comparison caveats).
+    """
+    return {
+        "rule_id": obs.rule_id,
+        "category": obs.category,
+        "tag": obs.tag,
+        "title": obs.title,
+        "summary": obs.summary,
+        "confidence": obs.confidence,
+        "ranking": [ranking_row_to_dict(r) for r in obs.ranking],
         "limitations": list(obs.limitations),
         "analyzer_version": obs.analyzer_version,
     }

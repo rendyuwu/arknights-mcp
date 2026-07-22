@@ -153,23 +153,33 @@ def test_expired_drop_is_data_stale_but_still_returned(stale_conn: sqlite3.Conne
 # --- §V55 include_efficiency --------------------------------------------------
 
 
-def test_include_efficiency_emits_farming_observations(fresh_conn: sqlite3.Connection) -> None:
+def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.Connection) -> None:
     env = _handler(fresh_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert "efficiency" in data
-    obs = data["efficiency"]["observations"]  # type: ignore[index]
-    assert isinstance(obs, list) and len(obs) == 1
-    ob = obs[0]
-    # §V6: every observation carries the five fields.
-    assert set(ob) >= {"rule_id", "evidence", "confidence", "limitations", "analyzer_version"}
+    # §V66.1: ONE ranked observation, not a list of per-drop observations.
+    ob = data["efficiency"]["observation"]  # type: ignore[index]
+    assert isinstance(ob, dict)
+    # §V6: the identity fields are stated once at the observation level.
+    assert set(ob) >= {"rule_id", "ranking", "confidence", "limitations", "analyzer_version"}
     assert ob["rule_id"] == "farming.sanity_per_item"
-    assert ob["confidence"] >= 0.5  # fresh + well-sampled -> stable confidence
+    assert ob["confidence"] >= 0.5  # fresh + well-sampled -> stable baseline
+    # §V66.1: per-entity data lives in ranking rows that reference the drops facts.
+    ranking = ob["ranking"]
+    assert isinstance(ranking, list) and len(ranking) == 1
+    row = ranking[0]
+    assert row["id"] == "sugar"  # references the sibling drops list
+    assert row["sanity_per_item"] == 72.0  # 18 / 0.25
+    # §V66.1: a non-deviating (fresh + well-sampled) row omits its own confidence/
+    # limitation, and the numbers already in the drops list are NOT re-copied onto it.
+    assert "confidence" not in row and "limitations" not in row
+    for reinstated in ("drop_rate", "sanity_cost", "sample_size", "times"):
+        assert reinstated not in row
     # §V6: the analyzer version rides the envelope too.
     assert env.analyzer_version is not None
-    # §V7/§V55: facts + observations only, never a prescriptive verdict.
-    blob = str(ob).lower()
-    assert not any(word in blob for word in _PROSCRIBED)
+    # §V7/§V55: facts + observation only, never a prescriptive verdict.
+    assert not any(word in str(data["efficiency"]).lower() for word in _PROSCRIBED)
 
 
 def test_efficiency_omitted_without_the_flag(fresh_conn: sqlite3.Connection) -> None:
@@ -182,12 +192,13 @@ def test_expired_efficiency_downgraded_below_recommendation(
     stale_conn: sqlite3.Connection,
 ) -> None:
     # §V53/§V55: an expired cache downgrades the figure below the §V8 threshold, so
-    # it reads as a limitation, never a fresh recommendation.
+    # the row reads as a limitation, never a fresh recommendation.
     env = _handler(stale_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "data_stale"
-    ob = env.to_dict()["data"]["efficiency"]["observations"][0]  # type: ignore[index]
-    assert ob["confidence"] < 0.5
-    assert any("expired" in lim.lower() for lim in ob["limitations"])
+    ob = env.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
+    row = ob["ranking"][0]
+    assert row["confidence"] < 0.5
+    assert any("expired" in lim.lower() for lim in row["limitations"])
 
 
 # --- §V23 typed failures ------------------------------------------------------

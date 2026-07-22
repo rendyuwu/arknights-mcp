@@ -21,6 +21,8 @@ from arknights_mcp.analyzers.farming import (
     DropFact,
     FarmingAnalysis,
     FarmingContext,
+    RankedObservation,
+    RankingRow,
     analyze_farming,
 )
 from arknights_mcp.analyzers.module import (
@@ -50,6 +52,8 @@ __all__ = [
     "ModuleStat",
     "ModuleTalentChange",
     "Observation",
+    "RankedObservation",
+    "RankingRow",
     "RuleResult",
     "StageAnalysis",
     "StageThreatContext",

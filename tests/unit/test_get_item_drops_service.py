@@ -55,8 +55,10 @@ def _candidate(tmp_path: Path) -> Path:
     return path
 
 
-def _sanity_per_item(obs) -> float:  # type: ignore[no-untyped-def]
-    return next(ev.value for ev in obs.evidence if ev.field == "sanity_per_item")
+def _ranking(result):  # type: ignore[no-untyped-def]
+    """The ranking rows of the single ranked observation (§V66.1)."""
+    assert result.observation is not None
+    return result.observation.ranking
 
 
 # --- §V60: ranked ascending over ≥2 stages ------------------------------------
@@ -76,16 +78,17 @@ def test_ranked_ascending_by_sanity_per_item(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="sugar", include_efficiency=True)
     assert result.status == "ok"
     assert result.item is not None and result.item.game_id == "sugar"
-    # Three stages, ranked ascending by sanity per item.
-    figures = [_sanity_per_item(o) for o in result.observations]
-    assert figures == [12.0, 72.0, 120.0]
-    refs = [o.evidence[0].ref for o in result.observations]
-    assert refs == ["a-1", "4-4", "b-2"]
-    # §V60: the mandatory comparison caveats ride the ranked result.
-    blob = " ".join(result.limitations).lower()
+    # §V66.1: ONE ranked observation; its ranking rows are ascending by sanity per item.
+    ranking = _ranking(result)
+    assert [row.sanity_per_item for row in ranking] == [12.0, 72.0, 120.0]
+    assert [row.id for row in ranking] == ["a-1", "4-4", "b-2"]
+    # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
+    obs = result.observation
+    assert obs is not None
+    blob = " ".join(obs.limitations).lower()
     assert "availability" in blob and "byproduct" in blob
     # §V7/§V55: an ordering + evidence, never a prescriptive verdict.
-    text = " ".join(f"{o.title} {o.summary}" for o in result.observations).lower()
+    text = f"{obs.title} {obs.summary} {' '.join(obs.limitations)}".lower()
     assert not any(word in text for word in _PROSCRIBED)
 
 
@@ -96,9 +99,8 @@ def test_facts_present_without_the_efficiency_flag(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="sugar")
     assert result.status == "ok"
     assert len(result.stages) == 2
-    # Without the flag: raw facts only, no ranked observations.
-    assert result.observations == ()
-    assert result.limitations == ()
+    # Without the flag: raw facts only, no ranked observation.
+    assert result.observation is None
     assert result.analyzer_version is None
 
 
@@ -134,12 +136,12 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     # Only the en stage is ranked; the cn stage never leaks into the en comparison.
     assert en.status == "ok"
     assert {s.region for s in en.stages} == {"en"}
-    assert [o.evidence[0].ref for o in en.observations] == ["4-4"]
+    assert [row.id for row in _ranking(en)] == ["4-4"]
     # The item resolves independently per region; the cn item ranks only cn stages.
     cn = get_item_drops(conn, server="cn", game_id="sugar", include_efficiency=True)
     assert cn.status == "ok"
     assert {s.region for s in cn.stages} == {"cn"}
-    assert [o.evidence[0].ref for o in cn.observations] == ["cn-1"]
+    assert [row.id for row in _ranking(cn)] == ["cn-1"]
 
 
 # --- §V53/§V60: expired stage downgraded but KEPT in the ranking ---------------
@@ -161,11 +163,12 @@ def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
     # §V60: the expired stage is flagged, not withheld -- still present in facts + ranking.
     expired_stage = next(s for s in result.stages if s.stage_code == "a-1")
     assert expired_stage.expired is True
-    refs = [o.evidence[0].ref for o in result.observations]
-    assert "a-1" in refs
-    expired_obs = next(o for o in result.observations if o.evidence[0].ref == "a-1")
-    assert expired_obs.confidence < 0.5
-    assert any("expired" in lim for lim in expired_obs.limitations)
+    ranking = _ranking(result)
+    ids = [row.id for row in ranking]
+    assert "a-1" in ids
+    expired_row = next(row for row in ranking if row.id == "a-1")
+    assert expired_row.confidence is not None and expired_row.confidence < 0.5
+    assert any("expired" in lim for lim in expired_row.limitations)
 
 
 # --- §V24: absent item / no drop cache -> not_found, no fetch fallback ---------

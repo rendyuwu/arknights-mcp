@@ -29,16 +29,16 @@ time (§V52/§V1) -- it only reads the cache a CLI sync/import promoted.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Literal
 
-from arknights_mcp.analyzers.base import Observation
 from arknights_mcp.analyzers.farming import (
     DropFact,
     FarmingContext,
     ItemFarmingContext,
     ItemStageDrop,
+    RankedObservation,
     analyze_farming,
     analyze_item_farming,
 )
@@ -94,17 +94,18 @@ class StageDropsResult:
     """Domain result of :func:`get_stage_drops`.
 
     Carries region + provenance on ``stage`` (§V5) and the penguin drop facts with
-    their OWN provenance chain (§V54). ``observations`` is populated only when
-    ``include_efficiency`` was requested (§V55); ``analyzer_version`` is then the
-    analyzer that produced them. ``stale`` mirrors the ``data_stale`` status so a
-    caller need not re-scan the drops.
+    their OWN provenance chain (§V54). ``observation`` is the SINGLE ranked farming
+    observation (§V66.1/§T129), populated only when ``include_efficiency`` was
+    requested (§V55) and at least one drop is rankable, else ``None``;
+    ``analyzer_version`` is then the analyzer that produced it. ``stale`` mirrors the
+    ``data_stale`` status so a caller need not re-scan the drops.
     """
 
     status: StageDropsStatus
     server: str
     stage: StageFacts | None
     drops: tuple[DropFacts, ...]
-    observations: tuple[Observation, ...]
+    observation: RankedObservation | None
     warnings: tuple[str, ...]
     analyzer_version: str | None
     stale: bool
@@ -159,26 +160,27 @@ class ItemStageDropFacts:
 
 @dataclass(frozen=True)
 class ItemDropsResult:
-    """Domain result of :func:`get_item_drops` (§T103/§V60; §V19/§V22).
+    """Domain result of :func:`get_item_drops` (§T103/§V60; §V19/§V22; §V66.1).
 
     Carries the region-attributed ``item`` (§V5) and the per-stage drop facts, each
     with its OWN penguin provenance chain (§V54). ``stages`` is the per-stage facts
-    (ordered by ``stage_code`` then ``game_id``); ``observations`` is the RANKED
-    (ascending sanity-per-item) efficiency comparison, populated only when
-    ``include_efficiency`` was requested (§V55/§V60), with ``analyzer_version`` then
-    the analyzer that produced them and ``limitations`` the mandatory §V60 comparison
-    caveats. ``stale`` mirrors the ``data_stale`` status.
+    (ordered by ``stage_code`` then ``game_id``); ``observation`` is the SINGLE ranked
+    (ascending sanity-per-item) efficiency comparison (§V66.1/§T129), populated only
+    when ``include_efficiency`` was requested (§V55/§V60), with ``analyzer_version``
+    then the analyzer that produced it. Its observation-level ``limitations`` carry the
+    mandatory §V60 comparison caveats. ``stale`` mirrors the ``data_stale`` status.
 
     The reverse item->stage view is unbounded (a common material drops across
     ~100-200 stages), so both growable lists are **paged** (§V22/§V19, B21): ``stages``
-    and ``observations`` each hold only the requested page while their ``*_page``
-    descriptor reports the full ``total`` + ``has_more``. The stale verdict, the ranked
-    ORDER, and ``provenance`` are all computed over the FULL set BEFORE slicing, so
-    page 1 is always the most-efficient N and ``data_stale`` holds even when the
-    expired stage falls on a later page. ``provenance`` is the distinct penguin
-    snapshots (``snapshot_id`` + ``imported_at``) backing the full comparison, all
-    sharing the item's region (§V5); ``efficiency_page`` is ``None`` when
-    ``include_efficiency`` was not requested.
+    holds only the requested page while its ``stages_page`` descriptor reports the full
+    ``total`` + ``has_more``, and ``observation``'s ``ranking`` rows are the requested
+    page of the global ranking while ``efficiency_page`` reports the full ranking's
+    ``total`` + ``has_more``. The stale verdict, the ranked ORDER, and ``provenance``
+    are all computed over the FULL set BEFORE slicing, so page 1 is always the
+    most-efficient N and ``data_stale`` holds even when the expired stage falls on a
+    later page. ``provenance`` is the distinct penguin snapshots (``snapshot_id`` +
+    ``imported_at``) backing the full comparison, all sharing the item's region (§V5);
+    ``efficiency_page`` is ``None`` when ``include_efficiency`` was not requested.
     """
 
     status: ItemDropsStatus
@@ -186,10 +188,9 @@ class ItemDropsResult:
     item: ItemFacts | None
     stages: tuple[ItemStageDropFacts, ...]
     stages_page: SectionPage | None
-    observations: tuple[Observation, ...]
+    observation: RankedObservation | None
     efficiency_page: SectionPage | None
     provenance: tuple[StageProvenance, ...]
-    limitations: tuple[str, ...]
     warnings: tuple[str, ...]
     analyzer_version: str | None
     stale: bool
@@ -236,7 +237,7 @@ def _not_found(server: str) -> StageDropsResult:
         server=server,
         stage=None,
         drops=(),
-        observations=(),
+        observation=None,
         warnings=(),
         analyzer_version=None,
         stale=False,
@@ -285,13 +286,14 @@ def get_stage_drops(
     facts = tuple(_drop_facts(row, clock) for row in drop_rows)
     stale = any(f.expired for f in facts)
 
-    observations: tuple[Observation, ...] = ()
+    observation: RankedObservation | None = None
     warnings: tuple[str, ...] = ()
     analyzer_version: str | None = None
     if include_efficiency:
         # §V55: deterministic sanity-per-item over typed fields only. A stale cache
         # is passed through so every efficiency figure is downgraded to a limitation
         # (never a fresh recommendation, §V53). ``sample_size`` = penguin ``times``.
+        # §V66.1: the analyzer emits ONE ranked observation over the stage's drops.
         analysis = analyze_farming(
             FarmingContext(
                 server=stage.server,
@@ -309,7 +311,7 @@ def get_stage_drops(
                 expired=stale,
             )
         )
-        observations = analysis.observations
+        observation = analysis.observation
         warnings = analysis.warnings
         analyzer_version = analysis.analyzer_version
 
@@ -318,7 +320,7 @@ def get_stage_drops(
         server=stage.server,
         stage=_stage_facts(stage),
         drops=facts,
-        observations=observations,
+        observation=observation,
         warnings=warnings,
         analyzer_version=analyzer_version,
         stale=stale,
@@ -364,10 +366,9 @@ def _item_not_found(server: str) -> ItemDropsResult:
         item=None,
         stages=(),
         stages_page=None,
-        observations=(),
+        observation=None,
         efficiency_page=None,
         provenance=(),
-        limitations=(),
         warnings=(),
         analyzer_version=None,
         stale=False,
@@ -457,17 +458,18 @@ def get_item_drops(
     stale = any(s.expired for s in all_stages)
     provenance = _item_provenance(all_stages)
 
-    observations: tuple[Observation, ...] = ()
+    observation: RankedObservation | None = None
     efficiency_page_info: SectionPage | None = None
-    limitations: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     analyzer_version: str | None = None
     if include_efficiency:
         # §V60: rank the stages ascending by sanity per item over typed fields only
         # (§V55). Each stage carries its OWN §V53 expiry so an expired figure is
-        # downgraded per stage (a limitation) yet KEPT in the ranking, not dropped.
-        # Rank the FULL set, THEN slice to the requested page: page 1 is the
-        # most-efficient N and the global order holds across pages (B21).
+        # downgraded per row (its own confidence + limitation) yet KEPT in the ranking,
+        # not dropped. §V66.1: the analyzer emits ONE ranked observation; rank the FULL
+        # set, THEN slice its ranking rows to the requested page -- page 1 is the
+        # most-efficient N and the global order holds across pages (B21). The
+        # observation-level §V6 fields + the §V60 comparison caveats ride every page.
         analysis = analyze_item_farming(
             ItemFarmingContext(
                 server=item.server,
@@ -485,10 +487,11 @@ def get_item_drops(
                 ),
             )
         )
-        ranked = analysis.observations
-        efficiency_page_info = _section_page(ep, esize, len(ranked))
-        observations = ranked[(ep - 1) * esize : ep * esize]
-        limitations = analysis.limitations
+        full = analysis.observation
+        total = len(full.ranking) if full is not None else 0
+        efficiency_page_info = _section_page(ep, esize, total)
+        if full is not None:
+            observation = replace(full, ranking=full.ranking[(ep - 1) * esize : ep * esize])
         warnings = analysis.warnings
         analyzer_version = analysis.analyzer_version
 
@@ -501,10 +504,9 @@ def get_item_drops(
         item=_item_facts(item),
         stages=stages,
         stages_page=stages_page_info,
-        observations=observations,
+        observation=observation,
         efficiency_page=efficiency_page_info,
         provenance=provenance,
-        limitations=limitations,
         warnings=warnings,
         analyzer_version=analyzer_version,
         stale=stale,

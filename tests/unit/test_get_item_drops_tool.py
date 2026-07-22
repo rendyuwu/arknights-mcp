@@ -131,17 +131,18 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert "efficiency" in data
-    obs = data["efficiency"]["observations"]  # type: ignore[index]
-    assert isinstance(obs, list) and len(obs) == 3
-    # §V6: every observation carries the five fields.
-    for ob in obs:
-        assert set(ob) >= {"rule_id", "evidence", "confidence", "limitations", "analyzer_version"}
-        assert ob["rule_id"] == "farming.sanity_per_item"
+    # §V66.1: ONE ranked observation over the stages, not a list of per-stage observations.
+    ob = data["efficiency"]["observation"]  # type: ignore[index]
+    assert isinstance(ob, dict)
+    assert set(ob) >= {"rule_id", "ranking", "confidence", "limitations", "analyzer_version"}
+    assert ob["rule_id"] == "farming.sanity_per_item"
+    ranking = ob["ranking"]
+    assert isinstance(ranking, list) and len(ranking) == 3
     # §V60: ranked ascending by sanity per item -> stage a-1 (12) first, b-2 (120) last.
-    refs = [ob["evidence"][0]["ref"] for ob in obs]
-    assert refs == ["a-1", "4-4", "b-2"]
-    # §V60: the mandatory comparison caveats ride the ranked result.
-    blob = " ".join(data["efficiency"]["limitations"]).lower()  # type: ignore[index]
+    assert [row["id"] for row in ranking] == ["a-1", "4-4", "b-2"]
+    assert [row["sanity_per_item"] for row in ranking] == [12.0, 72.0, 120.0]
+    # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
+    blob = " ".join(ob["limitations"]).lower()
     assert "availability" in blob and "byproduct" in blob
     # §V6: the analyzer version rides the envelope too.
     assert env.analyzer_version is not None
@@ -175,7 +176,7 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     # Only the en stage rides the comparison; the cn stage never leaks in.
     assert {s["region"] for s in data["stages"]} == {"en"}  # type: ignore[index]
-    refs = [ob["evidence"][0]["ref"] for ob in data["efficiency"]["observations"]]  # type: ignore[index]
+    refs = [row["id"] for row in data["efficiency"]["observation"]["ranking"]]  # type: ignore[index]
     assert refs == ["4-4"]
     # §V5: provenance is en-only.
     prov = env.to_dict()["provenance"]
@@ -200,13 +201,14 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     # §V53: the expired stage is flagged, not withheld -- still in facts + ranking.
     expired_stage = next(s for s in data["stages"] if s["stage_code"] == "a-1")  # type: ignore[index]
     assert expired_stage["expired"] is True
-    obs = data["efficiency"]["observations"]  # type: ignore[index]
-    refs = [ob["evidence"][0]["ref"] for ob in obs]
-    assert "a-1" in refs
-    # §V53/§V55: the expired figure is downgraded below the §V8 recommendation threshold.
-    expired_ob = next(ob for ob in obs if ob["evidence"][0]["ref"] == "a-1")
-    assert expired_ob["confidence"] < 0.5
-    assert any("expired" in lim.lower() for lim in expired_ob["limitations"])
+    obs = data["efficiency"]["observation"]  # type: ignore[index]
+    ranking = obs["ranking"]
+    ids = [row["id"] for row in ranking]
+    assert "a-1" in ids
+    # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
+    expired_row = next(row for row in ranking if row["id"] == "a-1")
+    assert expired_row["confidence"] < 0.5
+    assert any("expired" in lim.lower() for lim in expired_row["limitations"])
     # A staleness limitation names the refresh action; never presented as fresh.
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
 
@@ -254,8 +256,9 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
         include_efficiency=True,
         efficiency_page={"page": 1, "page_size": 2},
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
+    # §V66.1: ONE observation; its ``ranking`` rows are this page of the global ranking.
     # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
-    assert [o["evidence"][0]["ref"] for o in eff1["observations"]] == ["e1", "e4"]
+    assert [row["id"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
     assert eff1["page"] == {"page": 1, "page_size": 2, "total": 5, "has_more": True}
     eff2 = handler(
         server="en",
@@ -264,10 +267,10 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
         efficiency_page={"page": 2, "page_size": 2},
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
     # Page 2 continues the SAME global ranking (not the two lowest of a fresh re-rank).
-    assert [o["evidence"][0]["ref"] for o in eff2["observations"]] == ["e2", "e3"]
+    assert [row["id"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
     assert eff2["page"]["has_more"] is True
-    # §V60: the mandatory comparison caveats ride every page, not just page 1.
-    assert "availability" in " ".join(eff2["limitations"]).lower()
+    # §V60/§V66.1: the mandatory comparison caveats ride the observation on every page.
+    assert "availability" in " ".join(eff2["observation"]["limitations"]).lower()
 
 
 def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
