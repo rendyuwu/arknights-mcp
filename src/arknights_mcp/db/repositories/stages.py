@@ -192,11 +192,6 @@ _TILES_SQL = (
 )
 
 _ROUTE_COUNT_SQL = "SELECT COUNT(*) FROM stage_routes WHERE stage_pk = ?"
-_ROUTES_SQL = (
-    "SELECT route_index, start_position_json, end_position_json, checkpoints_json "
-    "FROM stage_routes WHERE stage_pk = ? "
-    "ORDER BY route_index LIMIT ? OFFSET ?"
-)
 
 # --- render-own map image (§T122): the full grid is read (bounded by an explicit
 # LIMIT the caller derives from the render cap) so the derived SVG covers the whole
@@ -421,12 +416,13 @@ class StageRepository(Repository):
         return [_to_stage_tile_row(r) for r in self._all(_TILES_SQL, (stage_pk, limit, offset))]
 
     def route_count(self, stage_pk: int) -> int:
-        """Total routes in the stage (for the §V19 page descriptor)."""
-        return int(self._one(_ROUTE_COUNT_SQL, (stage_pk,))[0])
+        """Total RAW route records in the stage.
 
-    def routes(self, stage_pk: int, limit: int, offset: int) -> list[StageRouteRow]:
-        """One bounded page of routes, ordered by ``route_index``."""
-        return [_to_stage_route_row(r) for r in self._all(_ROUTES_SQL, (stage_pk, limit, offset))]
+        Feeds the §V49 lane/route analyzer (raw record count, carried with its
+        "raw route records != distinct lanes" limitation). The ``get_stage`` routes
+        section pages over DISTINCT geometry instead (§V74 (a)), reading the full
+        set via :meth:`all_routes` and digesting in the service."""
+        return int(self._one(_ROUTE_COUNT_SQL, (stage_pk,))[0])
 
     def spawn_count(self, stage_pk: int) -> int:
         """Total scheduled spawns in the stage (for the §V19 page descriptor)."""

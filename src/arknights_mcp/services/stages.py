@@ -21,7 +21,8 @@ lives here.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Literal
 
 from arknights_mcp.analyzers import (
@@ -33,17 +34,24 @@ from arknights_mcp.analyzers import (
 from arknights_mcp.analyzers import (
     analyze_stage as run_threat_analysis,
 )
-from arknights_mcp.db.repositories.stages import StageMapRow, StageRepository, StageRow
+from arknights_mcp.db.repositories.stages import (
+    StageMapRow,
+    StageRepository,
+    StageRouteRow,
+    StageRow,
+)
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX
 from arknights_mcp.services.stage_map_render import (
     MAX_MAP_CELLS,
     MAX_MAP_ROUTES,
+    PLACEHOLDER_POINT,
     MapCell,
     MapRoute,
     RenderedMap,
     render_stage_map,
 )
 from arknights_mcp.util.coerce import json_load
+from arknights_mcp.util.text import camel_to_snake
 
 #: Typed outcome of a stage lookup. The full §V23 status vocabulary is wired
 #: into the tool envelope in §T29; the M0 service reports only these two.
@@ -337,29 +345,25 @@ class TileFacts:
     passable: bool | None
 
 
-def _as_checkpoint_list(decoded: object | None) -> list[object]:
-    """Normalize a decoded route ``checkpoints`` fragment to an array (§V51).
-
-    Checkpoints are semantically an ordered list, but the source serializes an
-    empty set as ``{}`` and a ``NULL`` column decodes to ``None`` -- so the raw
-    wire type varied row-to-row (populated ``[{...}]`` vs empty ``{}``), breaking
-    a client that indexes the field as an array unconditionally (B44). A populated
-    list passes through unchanged; any non-list (``None``, ``{}``, a stray dict)
-    normalizes to ``[]`` so the field is *always* a JSON array on the wire.
-    """
-    return decoded if isinstance(decoded, list) else []
-
-
 @dataclass(frozen=True)
 class RouteFacts:
-    """One enemy route; positions decoded from the stored (sanitized) JSON.
+    """One DISTINCT enemy-route geometry + how many raw records share it (§V74 (a)).
 
-    ``checkpoints`` is always a list (§V51): the shaper normalizes the decoded
-    fragment via :func:`_as_checkpoint_list`, so an empty set is ``[]`` on the
-    wire, never the source's ``{}`` -- positions stay single coordinates.
+    A stage stores many route records that share identical ``(start, end,
+    checkpoints)`` geometry (4-4: 26 records, ~4 distinct); emitting every record
+    is a raw dump that overstates the route count (§V49) and burns the §V22 budget.
+    The digest collapses records with identical geometry to one, carrying the raw
+    ``route_indices`` that share it (so a spawn's ``route_index`` still joins) and
+    an ``occurrence_count``.
+
+    ``checkpoints`` is always a list (§V51), with the non-spatial WAIT placeholder
+    positions dropped (§V74 (b)) and each checkpoint object's keys normalized to
+    snake_case (§V71 (d)); an empty set is ``[]`` on the wire, never the source's
+    ``{}``.
     """
 
-    route_index: int
+    route_indices: tuple[int, ...]
+    occurrence_count: int
     start_position: object | None
     end_position: object | None
     checkpoints: list[object]
@@ -486,11 +490,118 @@ def _checkpoint_points(decoded: object | None) -> tuple[tuple[int, int], ...]:
         return ()
     points: list[tuple[int, int]] = []
     for item in decoded:
-        position = item["position"] if isinstance(item, dict) and "position" in item else item
-        point = _point_xy(position)
+        point = _checkpoint_position(item)
         if point is not None:
             points.append(point)
     return tuple(points)
+
+
+#: The distinct-route key: ``(start_xy, end_xy, checkpoint_positions)``. Positions
+#: are ``_point_xy`` normalisations (``None`` for a malformed/absent coordinate);
+#: WAIT placeholders are dropped before the checkpoint sequence is built (§V74).
+_GeometryKey = tuple[
+    tuple[int, int] | None,
+    tuple[int, int] | None,
+    tuple[tuple[int, int] | None, ...],
+]
+
+
+def _checkpoint_position(item: object) -> tuple[int, int] | None:
+    """The ``(x, y)`` grid point of one stored checkpoint, or ``None`` if positionless.
+
+    A checkpoint is a ``{type, position: {col, row}, ...}`` object (§T20); a bare
+    ``{col, row}`` is accepted as a fallback (mirrors :func:`_checkpoint_points`)."""
+    position = item["position"] if isinstance(item, dict) and "position" in item else item
+    return _point_xy(position)
+
+
+def _snake_case_keys(value: object) -> object:
+    """Recursively normalize a decoded checkpoint's dict keys to snake_case (§V71 (d)).
+
+    Upstream checkpoint objects leak camelCase keys (``reachOffset`` /
+    ``randomizeReachOffset`` / ``reachDistance``); the wire contract is snake_case,
+    normalized at the shaping layer via the shared :func:`~arknights_mcp.util.text
+    .camel_to_snake` (§V37) -- the stored fragment keeps the source keys. Nested
+    ``position`` / ``reachOffset`` sub-dicts have their keys normalized too; non-dict
+    leaves pass through."""
+    if isinstance(value, dict):
+        return {camel_to_snake(str(k)): _snake_case_keys(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_snake_case_keys(v) for v in value]
+    return value
+
+
+def _digest_checkpoints(
+    decoded: object | None,
+) -> tuple[list[object], tuple[tuple[int, int] | None, ...]]:
+    """Clean + snake_case a route's checkpoints and return its position sequence (§V74).
+
+    Returns ``(emit_objects, positions)``: WAIT placeholder checkpoints (position ==
+    :data:`~arknights_mcp.services.stage_map_render.PLACEHOLDER_POINT`) are dropped
+    from the emitted objects (§V74 (b)), each surviving object's keys are snake_cased
+    (§V71 (d)), and ``positions`` is the surviving ``(x, y)`` sequence used as part of
+    the distinct-geometry key. A non-list fragment normalises to ``([], ())``."""
+    if not isinstance(decoded, list):
+        return [], ()
+    emit: list[object] = []
+    positions: list[tuple[int, int] | None] = []
+    for item in decoded:
+        point = _checkpoint_position(item)
+        if point == PLACEHOLDER_POINT:
+            continue  # §V74 (b): non-spatial WAIT marker, never emitted as geometry
+        emit.append(_snake_case_keys(item))
+        positions.append(point)
+    return emit, tuple(positions)
+
+
+@dataclass
+class _RouteGroup:
+    """Accumulator for one distinct route geometry while digesting (§V74 (a))."""
+
+    indices: list[int] = field(default_factory=list)
+    start: object | None = None
+    end: object | None = None
+    checkpoints: list[object] = field(default_factory=list)
+
+
+def _distinct_routes(records: Sequence[StageRouteRow]) -> list[RouteFacts]:
+    """Collapse raw route records to DISTINCT geometry (§V74 (a); the wire twin of B65).
+
+    Records sharing an identical ``(start, end, checkpoint-positions)`` geometry --
+    WAIT placeholders already dropped (§V74 (b)) -- collapse to one
+    :class:`RouteFacts` carrying every contributing ``route_index`` (so a spawn's
+    ``route_index`` still joins) and an ``occurrence_count``. The first record's
+    decoded start/end/checkpoint objects represent the group; insertion order (dict)
+    keeps first-occurrence order so paging is deterministic (§C). Mirrors the render's
+    :func:`~arknights_mcp.services.stage_map_render._distinct_route_geometries` (§V37:
+    both digest by spatial geometry -- that one over points, this over the emitted
+    checkpoint objects)."""
+    groups: dict[_GeometryKey, _RouteGroup] = {}
+    for record in records:
+        start = json_load(record.start_position_json)
+        end = json_load(record.end_position_json)
+        emit_checkpoints, positions = _digest_checkpoints(json_load(record.checkpoints_json))
+        key: _GeometryKey = (_point_xy(start), _point_xy(end), positions)
+        group = groups.get(key)
+        if group is None:
+            groups[key] = _RouteGroup(
+                indices=[record.route_index],
+                start=start,
+                end=end,
+                checkpoints=emit_checkpoints,
+            )
+        else:
+            group.indices.append(record.route_index)
+    return [
+        RouteFacts(
+            route_indices=tuple(sorted(group.indices)),
+            occurrence_count=len(group.indices),
+            start_position=group.start,
+            end_position=group.end,
+            checkpoints=group.checkpoints,
+        )
+        for group in groups.values()
+    ]
 
 
 def _build_map_image(
@@ -610,17 +721,14 @@ def get_stage(
     routes: tuple[RouteFacts, ...] = ()
     routes_page_info: SectionPage | None = None
     if include_routes:
+        # §V74 (a)/B21: digest the FULL route set to distinct geometry BEFORE paging,
+        # so page 1 is the first N distinct routes and the total is stable across
+        # pages (a per-page dedup would split one geometry across a page boundary).
+        # The read is bounded by MAX_MAP_ROUTES (§V22), the same cap the render uses.
+        distinct = _distinct_routes(repo.all_routes(stage_pk, MAX_MAP_ROUTES))
         offset = (rp - 1) * rsize
-        routes = tuple(
-            RouteFacts(
-                route_index=r.route_index,
-                start_position=json_load(r.start_position_json),
-                end_position=json_load(r.end_position_json),
-                checkpoints=_as_checkpoint_list(json_load(r.checkpoints_json)),
-            )
-            for r in repo.routes(stage_pk, rsize, offset)
-        )
-        routes_page_info = _section_page(rp, rsize, repo.route_count(stage_pk))
+        routes = tuple(distinct[offset : offset + rsize])
+        routes_page_info = _section_page(rp, rsize, len(distinct))
 
     spawns: tuple[SpawnFacts, ...] = ()
     spawns_page_info: SectionPage | None = None

@@ -59,6 +59,25 @@ def strip_richtext_tags(value: str) -> str:
     return re.sub(r" {2,}", " ", stripped).strip()
 
 
+#: Boundary between a lowercase/digit and an uppercase letter in a lowerCamelCase
+#: identifier -- the single split point for :func:`camel_to_snake`.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def camel_to_snake(name: str) -> str:
+    """Normalize a lowerCamelCase wire key to snake_case (§V71 (d)).
+
+    ``reachOffset`` -> ``reach_offset``, ``randomizeReachOffset`` ->
+    ``randomize_reach_offset``; a single lowercase word (``type``, ``position``,
+    ``row``) is returned unchanged, as is an already-snake_case key. The single
+    §V37 home for the shaping-layer camelCase strip: upstream keys leak in
+    camelCase, but the wire contract is snake_case, and the rename happens where
+    the envelope is built (§V71 (d)) -- the importer and stored fragments keep the
+    source key names.
+    """
+    return _CAMEL_BOUNDARY.sub("_", name).lower()
+
+
 def is_placeholder(value: str | None) -> bool:
     """A value is unset for validation purposes if empty or a ``<...>`` stub.
 

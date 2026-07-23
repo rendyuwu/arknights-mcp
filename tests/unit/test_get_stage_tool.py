@@ -24,6 +24,7 @@ import pytest
 from pydantic import ValidationError
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
+from arknights_mcp.db.repositories.stages import StageRouteRow
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
@@ -38,7 +39,8 @@ from arknights_mcp.services.stages import (
     SpawnFacts,
     StageFacts,
     StageProvenance,
-    _as_checkpoint_list,
+    _digest_checkpoints,
+    _distinct_routes,
     get_stage,
 )
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -115,11 +117,15 @@ def test_include_map_returns_header_and_paged_tiles(conn: sqlite3.Connection) ->
 
 
 def test_include_routes(conn: sqlite3.Connection) -> None:
+    # §V74 (a): routes are emitted as DISTINCT geometry + occurrence_count. The 4-4
+    # fixture has a single route record -> one distinct geometry, occurrence 1.
     data = _handler(conn)(server="en", stage_code="4-4", include_routes=True).to_dict()["data"]
     routes = data["routes"]  # type: ignore[index]
     assert len(routes) == 1
-    assert routes[0]["route_index"] == 0  # type: ignore[index]
+    assert routes[0]["route_indices"] == [0]  # type: ignore[index]
+    assert routes[0]["occurrence_count"] == 1  # type: ignore[index]
     assert routes[0]["start_position"] == {"row": 0, "col": 0}  # type: ignore[index]
+    assert "route_index" not in routes[0]  # type: ignore[operator]
     assert data["routes_page"]["total"] == 1  # type: ignore[index]
 
 
@@ -145,15 +151,80 @@ def test_include_routes_checkpoints_is_always_a_list(conn: sqlite3.Connection) -
     assert isinstance(checkpoints, list)
 
 
-def test_checkpoint_shaper_normalizes_every_source_shape() -> None:
-    # §V51: the RouteFacts shaper coerces any decoded fragment to a JSON array --
-    # the source's empty-set `{}` and a NULL column both become `[]`, a populated
-    # list passes through unchanged (B44: the wire type must not vary row-to-row).
-    assert _as_checkpoint_list({}) == []  # source empty-set serialized as a dict
-    assert _as_checkpoint_list(None) == []  # NULL / undecodable column
-    assert _as_checkpoint_list([]) == []  # already an empty array
-    populated = [{"row": 1, "col": 2}]
-    assert _as_checkpoint_list(populated) == populated  # populated passes through
+def test_checkpoint_digest_normalizes_every_source_shape() -> None:
+    # §V51: the checkpoint digest coerces any decoded fragment to a JSON array --
+    # the source's empty-set `{}` and a NULL column both yield `[]` (B44: the wire
+    # type must not vary row-to-row); the emitted list is always a list.
+    assert _digest_checkpoints({})[0] == []  # source empty-set serialized as a dict
+    assert _digest_checkpoints(None)[0] == []  # NULL / undecodable column
+    assert _digest_checkpoints([])[0] == []  # already an empty array
+
+
+def test_checkpoint_digest_drops_wait_placeholder_and_snake_cases_keys() -> None:
+    # §V74 (b): a WAIT checkpoint carries the non-spatial (0,0) placeholder position
+    # and is dropped from the emitted geometry. §V71 (d): the surviving checkpoint's
+    # camelCase keys (reachOffset/randomizeReachOffset) are normalized to snake_case.
+    decoded = [
+        {"type": "MOVE", "position": {"col": 3, "row": 2}, "reachOffset": {"x": 0, "y": 1}},
+        {"type": "WAIT", "position": {"col": 0, "row": 0}, "randomizeReachOffset": False},
+    ]
+    emit, positions = _digest_checkpoints(decoded)
+    assert positions == ((3, 2),)  # the WAIT placeholder position is gone
+    assert len(emit) == 1
+    cp = emit[0]
+    assert isinstance(cp, dict)
+    assert cp["reach_offset"] == {"x": 0, "y": 1}  # camelCase key renamed
+    assert "reachOffset" not in cp
+    assert cp["type"] == "MOVE"  # value untouched; already-lowercase key kept
+
+
+def _route_row(index: int, start: object, end: object, checkpoints: object) -> StageRouteRow:
+    import json
+
+    return StageRouteRow(
+        route_index=index,
+        start_position_json=json.dumps(start),
+        end_position_json=json.dumps(end),
+        checkpoints_json=json.dumps(checkpoints),
+    )
+
+
+def test_distinct_routes_collapses_identical_geometry() -> None:
+    # §V74 (a): records sharing (start, end, checkpoint positions) collapse to one
+    # distinct geometry carrying every contributing route_index + an occurrence_count.
+    a = {"col": 0, "row": 0}
+    b = {"col": 5, "row": 2}
+    c = {"col": 9, "row": 4}
+    records = [
+        _route_row(0, a, b, []),
+        _route_row(1, a, b, []),  # byte-identical to 0 -> same geometry
+        _route_row(2, a, c, []),  # different end -> distinct
+    ]
+    distinct = _distinct_routes(records)
+    assert len(distinct) == 2
+    assert distinct[0].route_indices == (0, 1)
+    assert distinct[0].occurrence_count == 2
+    assert distinct[0].start_position == a and distinct[0].end_position == b
+    assert distinct[1].route_indices == (2,)
+    assert distinct[1].occurrence_count == 1
+
+
+def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> None:
+    # §V74 (a)+(b): two records with the same spatial path but one carrying an extra
+    # WAIT (0,0) placeholder collapse to one -- the placeholder is not geometry.
+    a = {"col": 0, "row": 0}
+    b = {"col": 5, "row": 2}
+    move = {"type": "MOVE", "position": {"col": 3, "row": 1}}
+    wait = {"type": "WAIT", "position": {"col": 0, "row": 0}}
+    records = [
+        _route_row(0, a, b, [move]),
+        _route_row(1, a, b, [move, wait]),  # same path + a WAIT marker
+    ]
+    distinct = _distinct_routes(records)
+    assert len(distinct) == 1
+    assert distinct[0].route_indices == (0, 1)
+    assert distinct[0].occurrence_count == 2
+    assert len(distinct[0].checkpoints) == 1  # the WAIT marker is dropped from the emit
 
 
 def test_sections_are_independent(conn: sqlite3.Connection) -> None:

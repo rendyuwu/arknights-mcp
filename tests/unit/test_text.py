@@ -14,7 +14,7 @@ import pytest
 
 import arknights_mcp.cli as cli
 import arknights_mcp.config as config
-from arknights_mcp.util.text import is_placeholder, strip_richtext_tags
+from arknights_mcp.util.text import camel_to_snake, is_placeholder, strip_richtext_tags
 
 _SHARED_HOME = "arknights_mcp.util.text"
 
@@ -57,6 +57,23 @@ def test_strip_richtext_tags(value: str, expected: str) -> None:
 )
 def test_is_placeholder(value: str | None, expected: bool) -> None:
     assert is_placeholder(value) is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # §V71 (d): the leaked upstream checkpoint keys the route digest normalizes.
+        ("reachOffset", "reach_offset"),
+        ("randomizeReachOffset", "randomize_reach_offset"),
+        ("reachDistance", "reach_distance"),
+        ("type", "type"),  # single lowercase word unchanged
+        ("position", "position"),
+        ("row", "row"),
+        ("already_snake", "already_snake"),  # idempotent on snake_case
+    ],
+)
+def test_camel_to_snake(value: str, expected: str) -> None:
+    assert camel_to_snake(value) == expected
 
 
 def test_both_call_sites_share_the_one_home() -> None:

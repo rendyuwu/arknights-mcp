@@ -85,8 +85,10 @@ _MARK_PATH = "#ef6c00"  # checkpoint polyline
 
 #: A WAIT checkpoint carries a non-spatial ``(0, 0)`` placeholder rather than a real
 #: grid point (B65/§V74(b)). Drawing it as a path point makes the route polyline
-#: zig-zag through the board corner, so it is dropped from the checkpoint path.
-_PLACEHOLDER_POINT = (0, 0)
+#: zig-zag through the board corner, so it is dropped from the checkpoint path. The
+#: single §V37 home for the placeholder point, shared by this render and the
+#: ``get_stage`` route digest (:mod:`~arknights_mcp.services.stages`, §T144).
+PLACEHOLDER_POINT = (0, 0)
 
 #: §T140 (B65) client-facing legend for the derived map's fixed colour palette, so a
 #: client can decode the opaque hex fills/markers a rendered image carries (the render
@@ -293,12 +295,12 @@ def _clean_checkpoints(
 ) -> tuple[tuple[int, int], ...]:
     """Drop non-spatial WAIT placeholders from a checkpoint path (B65).
 
-    A WAIT checkpoint carries a :data:`_PLACEHOLDER_POINT` ``(0, 0)`` rather than a
+    A WAIT checkpoint carries a :data:`PLACEHOLDER_POINT` ``(0, 0)`` rather than a
     real grid point; left in the polyline it makes the route zig-zag out to the board
     corner and back (a corrupt path). Removing it leaves the route's genuine spatial
     waypoints only, so the drawn polyline follows the real path.
     """
-    return tuple(point for point in checkpoints if point != _PLACEHOLDER_POINT)
+    return tuple(point for point in checkpoints if point != PLACEHOLDER_POINT)
 
 
 def _distinct_route_geometries(routes: Sequence[MapRoute]) -> list[MapRoute]:

@@ -64,7 +64,9 @@ _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
     "game_id. The default response is compact facts + provenance; set include_map "
     "/ include_routes / include_spawns to add the (paged) tile grid, enemy routes, "
-    "or spawn timeline. Spawn timeline values (spawn_time and interval) are in "
+    "or spawn timeline. Enemy routes are collapsed to distinct geometry: each entry "
+    "carries an occurrence_count and the raw route_indices that share it. Spawn "
+    "timeline values (spawn_time and interval) are in "
     "seconds. Set include_map_image for a rendered SVG map drawn from the "
     "stage's own grid data (a derived image, not game artwork); a very large map is "
     "omitted with a note. en/cn are never mixed. " + LIST_FIELD_CONVENTION
@@ -116,8 +118,12 @@ def _map_header_to_dict(stage_map: StageMapFacts) -> dict[str, object]:
 
 
 def _route_to_dict(route: RouteFacts) -> dict[str, object]:
+    # §V74 (a): one row per DISTINCT geometry, not per raw record. ``route_indices``
+    # are the raw indices that share this geometry (a spawn's ``route_index`` joins
+    # to one of them); ``occurrence_count`` is how many records collapsed here.
     return {
-        "route_index": route.route_index,
+        "route_indices": list(route.route_indices),
+        "occurrence_count": route.occurrence_count,
         "start_position": route.start_position,
         "end_position": route.end_position,
         "checkpoints": route.checkpoints,
