@@ -597,6 +597,21 @@ def _distinct_routes(records: Sequence[StageRouteRow]) -> list[RouteFacts]:
     ]
 
 
+def _route_truncated_limitation() -> str:
+    """Say-so when the raw route read hit the ``MAX_MAP_ROUTES`` cap (§V74 (a)/B73).
+
+    The route read is bounded by :data:`MAX_MAP_ROUTES` BEFORE the distinct-geometry
+    dedup (:func:`_distinct_routes`), so a raw count equal to the cap means records past
+    it were never read -- a distinct geometry whose records ALL fall past the cap would
+    vanish and the paged total under-report. Emitting this keeps that undercount visible
+    rather than a silent pre-dedup miss (§V26). Single §V37 home; no spec cite reaches
+    the client string (§V71 (b))."""
+    return (
+        f"route records truncated at the {MAX_MAP_ROUTES}-record read cap; "
+        "distinct-geometry count and paged total may under-report"
+    )
+
+
 def _build_map_image(
     repo: StageRepository, stage_pk: int, raw_map: StageMapRow | None
 ) -> tuple[RenderedMap | None, str | None]:
@@ -719,7 +734,13 @@ def get_stage(
         # so page 1 is the first N distinct routes and the total is stable across
         # pages (a per-page dedup would split one geometry across a page boundary).
         # The read is bounded by MAX_MAP_ROUTES (§V22), the same cap the render uses.
-        distinct = _distinct_routes(repo.all_routes(stage_pk, MAX_MAP_ROUTES))
+        raw_routes = repo.all_routes(stage_pk, MAX_MAP_ROUTES)
+        # §V74 (a)/B73: a raw count equal to the cap means records past it were dropped
+        # BEFORE the dedup, so the distinct total may under-report -- say so rather than
+        # silently undercount (§V26). Detection is raw-count == cap per §V74 (a).
+        if len(raw_routes) == MAX_MAP_ROUTES:
+            limitations.append(_route_truncated_limitation())
+        distinct = _distinct_routes(raw_routes)
         offset = (rp - 1) * rsize
         routes = tuple(distinct[offset : offset + rsize])
         routes_page_info = _section_page(rp, rsize, len(distinct))

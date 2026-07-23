@@ -16,6 +16,7 @@ the pinned 4-4 fixture. They assert:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -41,6 +42,7 @@ from arknights_mcp.services.stages import (
     StageProvenance,
     _digest_checkpoints,
     _distinct_routes,
+    _route_truncated_limitation,
     get_stage,
 )
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -253,6 +255,37 @@ def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> 
     assert distinct[0].route_indices == (0, 1)
     assert distinct[0].occurrence_count == 2
     assert len(distinct[0].checkpoints) == 1  # the WAIT marker is dropped from the emit
+
+
+def test_include_routes_truncation_disclosed_when_read_hits_cap(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # §V74 (a)/B73: the raw route read is capped at MAX_MAP_ROUTES BEFORE dedup, so a
+    # raw count == cap means records past it were dropped and the distinct total may
+    # under-report -- get_stage must say so, not silently undercount. Squeeze the cap
+    # to 1 so the fixture's single route trips it (the same as a real 1000-record cap
+    # hit) without seeding a thousand rows.
+    monkeypatch.setattr("arknights_mcp.services.stages.MAX_MAP_ROUTES", 1)
+    env = _handler(conn)(server="en", stage_code="4-4", include_routes=True)
+    lims = " ".join(env.to_dict()["limitations"])  # type: ignore[arg-type]
+    assert "truncated" in lims and "under-report" in lims
+
+
+def test_include_routes_no_truncation_limitation_under_cap(
+    conn: sqlite3.Connection,
+) -> None:
+    # Negative case: the fixture has 1 route, far under the real cap -> no truncation
+    # say-so (the disclosure fires only on a genuine cap hit).
+    env = _handler(conn)(server="en", stage_code="4-4", include_routes=True)
+    lims = " ".join(env.to_dict()["limitations"])  # type: ignore[arg-type]
+    assert "truncated" not in lims
+
+
+def test_route_truncated_limitation_carries_no_spec_cite() -> None:
+    # §V71 (b): a runtime client-facing string never leaks a §V/§T/B spec cite.
+    text = _route_truncated_limitation()
+    assert "§" not in text
+    assert not re.search(r"\bB\d", text)
 
 
 def test_sections_are_independent(conn: sqlite3.Connection) -> None:
