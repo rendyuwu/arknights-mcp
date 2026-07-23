@@ -9,8 +9,8 @@ identical shape (§V14). The envelope carries, in order (§I):
 Three invariants live here:
 
 * **§V21** -- every envelope stamps a stable :data:`SCHEMA_VERSION`. Required
-  fields stay backward-compatible within v0.1; a breaking change bumps the
-  constant and needs an ADR.
+  fields stay backward-compatible within a schema line (now v0.2); a breaking
+  change bumps the constant and needs an ADR.
 * **§V22** -- a default tool response is capped at :data:`MAX_RESPONSE_BYTES`.
   The builder measures the serialized envelope and, when a payload would exceed
   the cap, fails closed to a bounded ``partial`` envelope (data dropped, a cap
@@ -37,7 +37,10 @@ from pydantic import ValidationError
 #: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
 #: ``ANALYZER`` versions). Additive optional fields do not bump it.
-SCHEMA_VERSION = "0.1"
+#: v0.2 = the single coordinated M13 + M14 breaking reshape (ADR 0011 + ADR 0012):
+#: ranked-single efficiency obs, hoisted provenance, snake_case fields, digested
+#: routes, string-grid tiles, hoisted skill templates. One bump for the whole set.
+SCHEMA_VERSION = "0.2"
 
 #: §V22 default response cap. The serialized envelope (as emitted by
 #: :meth:`ResponseEnvelope.to_dict` -> JSON) must stay under this size, measured

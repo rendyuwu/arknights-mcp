@@ -114,7 +114,7 @@ async def _drive(url: str) -> None:
                 envelope = result.structuredContent
                 assert envelope is not None
                 assert envelope["status"] == "ok"
-                assert envelope["schema_version"] == "0.1"
+                assert envelope["schema_version"] == "0.2"
                 # §V5: a factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"

@@ -100,3 +100,57 @@ def test_adr_0011_records_single_schema_version_bump() -> None:
 def test_adr_0011_indexed_in_readme() -> None:
     readme = (ADR_DIR / "README.md").read_text(encoding="utf-8")
     assert ADR_0011 in readme, "ADR 0011 not linked from the ADR index"
+
+
+# ---------------------------------------------------------------------------
+# T150: ADR 0012 — response-shape v0.2 (continued): fold the M14 breaking
+# reshapes (T144/T145/T146) into the same v0.2 revision and flip
+# SCHEMA_VERSION "0.1" -> "0.2". Like 0011 it is a §V21-mandated wire-contract
+# ADR (reverses no founder decision), so it is checked on its own for shape +
+# the invariants it coordinates (§V21/§V66/§V74/§V49).
+# ---------------------------------------------------------------------------
+
+ADR_0012 = "0012-response-shape-v0.2-m14-fold.md"
+
+#: The invariants T150 coordinates under the (reused) single schema_version bump.
+ADR_0012_INVARIANT_CITES = ["V21", "V66", "V74", "V49"]
+
+
+def test_adr_0012_present() -> None:
+    assert (ADR_DIR / ADR_0012).is_file(), f"missing ADR: {ADR_0012}"
+
+
+def test_adr_0012_shape() -> None:
+    text = (ADR_DIR / ADR_0012).read_text(encoding="utf-8")
+    assert "Status:" in text and "Accepted" in text
+    assert "## Context" in text
+    assert "## Decision" in text
+    assert "## Consequences" in text
+
+
+def test_adr_0012_cites_coordinated_invariants() -> None:
+    text = (ADR_DIR / ADR_0012).read_text(encoding="utf-8")
+    for inv in ADR_0012_INVARIANT_CITES:
+        assert f"§{inv}" in text, f"ADR 0012 does not cite §{inv}"
+
+
+def test_adr_0012_folds_into_the_same_v02_bump() -> None:
+    # The point of T150: fold the M14 reshapes into the SAME v0.2 revision and
+    # reuse the single 0.1 -> 0.2 bump (never mint 0.3), then flip.
+    text = (ADR_DIR / ADR_0012).read_text(encoding="utf-8")
+    assert "schema_version" in text.lower()
+    assert "0.1" in text and "0.2" in text
+    # It must name ADR 0011 as the revision it continues, not supersedes.
+    assert "0011" in text
+
+
+def test_adr_0012_indexed_in_readme() -> None:
+    readme = (ADR_DIR / "README.md").read_text(encoding="utf-8")
+    assert ADR_0012 in readme, "ADR 0012 not linked from the ADR index"
+
+
+def test_schema_version_matches_flipped_v02() -> None:
+    # The flip is the operative half of T150: the constant and the ADR agree.
+    from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
+
+    assert SCHEMA_VERSION == "0.2"

@@ -78,7 +78,7 @@ def test_result_carries_a_single_wire_copy() -> None:
     result = _call_over_wire("get_enemy", {"server": "en", "game_id": "enemy_1007_slime"})
     assert result.content == []
     assert result.structuredContent is not None
-    assert result.structuredContent["schema_version"] == "0.1"
+    assert result.structuredContent["schema_version"] == "0.2"
 
 
 def test_unknown_tool_is_a_typed_envelope() -> None:

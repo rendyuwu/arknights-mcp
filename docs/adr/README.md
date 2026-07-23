@@ -18,3 +18,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0009](0009-image-refs-authenticated-emit.md) | Image refs on authenticated deployments (amends 0008) | D4 (refined) | §V63, §V9, §V16, §V20 |
 | [0010](0010-effect-description-template-import.md) | Effect-description template import — mechanic text in, lore/story/wiki prose out | D4, D11 | §V65, §V18, §V16, §V21 |
 | [0011](0011-response-shape-v0.2.md) | Response-shape v0.2 — one coordinated `schema_version` bump for the M13 breaking wire changes | none (§V21-mandated) | §V21, §V66, §V67, §V71 |
+| [0012](0012-response-shape-v0.2-m14-fold.md) | Response-shape v0.2 (continued) — fold the M14 reshapes into the same bump, then flip `0.1`→`0.2` | none (§V21-mandated) | §V21, §V66, §V74, §V49 |
