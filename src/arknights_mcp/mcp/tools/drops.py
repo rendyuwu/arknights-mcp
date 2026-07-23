@@ -36,6 +36,7 @@ The load-bearing invariants for both:
 
 from __future__ import annotations
 
+from arknights_mcp.analyzers import RankingRow
 from arknights_mcp.mcp.envelopes import (
     Provenance,
     ResponseEnvelope,
@@ -250,7 +251,10 @@ _ITEM_TOOL_DESCRIPTION = (
     "is hoisted to a single drop_provenance block. A stage repeats a provenance field "
     "only when it differs. A stage carries expired:true only when past its cache expiry. "
     "Set include_efficiency to add deterministic farming observations, ranked ascending "
-    "by sanity spent per item. That ranking is an ordering and evidence, never a "
+    "by sanity spent per item. With that flag the ranked observation is the single "
+    "per-stage list, each row folding the stage facts and its sanity-per-item, so the "
+    "stages are never listed twice. Without the flag the raw stages list is returned and "
+    "paged on its own. That ranking is an ordering and evidence, never a "
     "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
     "byproducts/synthesis are not modeled. A stage drop past its expiry is still "
     "returned, flagged data_stale. It is downgraded in the ranking, not dropped. A "
@@ -300,6 +304,45 @@ def _item_stage_provenance_row(stage: ItemStageDropFacts) -> dict[str, object]:
     }
 
 
+def _item_efficiency_row(
+    stage: ItemStageDropFacts, deviation: dict[str, object], row: RankingRow
+) -> dict[str, object]:
+    """One ranking row that SUBSUMES the stage's raw drop facts (§T161/B82; §V66/§V55).
+
+    In efficiency mode the ranking is the SINGLE per-stage list -- the raw drop facts are
+    folded into the ranking row rather than duplicated in a sibling ``stages`` list (which
+    doubled the payload, B82). So this row carries both the §V55 evidence (``sanity_cost``
+    / ``drop_rate`` / ``times`` -- the sample size) and the derived ``sanity_per_item``,
+    keyed by the unambiguous ``id`` = ``stage_game_id`` with the ``stage_code`` shown
+    alongside as ``name`` (§V68). ``stage`` and ``row`` are the same stage (the service
+    aligns them 1:1), so ``stage.stage_game_id == row.id``.
+
+    §V66.2: the penguin provenance shared by every row is hoisted to ``drop_provenance``;
+    ``deviation`` carries only the fields where this row differs. §V67: ``name`` /
+    ``expired`` are omitted at their default (no code / fresh). §V66.1: per-row
+    ``confidence`` / ``limitations`` appear only where the row deviates from the
+    observation-level baseline (a thin sample / an expired cache).
+    """
+    out: dict[str, object] = {
+        "id": stage.stage_game_id,
+        "sanity_cost": stage.sanity_cost,
+        "quantity": stage.quantity,
+        "times": stage.times,
+        "drop_rate": _round_drop_rate(stage.drop_rate),
+        "sanity_per_item": row.sanity_per_item,
+    }
+    if stage.stage_code is not None:  # §V67: display name omitted when absent, never null
+        out["name"] = stage.stage_code
+    out.update(deviation)  # §V66.2: only the provenance fields that deviate from the shared block
+    if stage.expired:
+        out["expired"] = True  # §V67: emitted only when true (default = fresh)
+    if row.confidence is not None:  # §V66.1: only where the row deviates from the baseline
+        out["confidence"] = row.confidence
+    if row.limitations:
+        out["limitations"] = list(row.limitations)
+    return out
+
+
 def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     """Map the item-comparison domain result to a typed §V23 envelope (§V5/§V19/§V60).
 
@@ -319,8 +362,12 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     visible. The hoist is over the emitted page; the ranking + stale verdict +
     provenance were fixed over the full set upstream (B21), so a page never shifts them.
 
-    Both growable lists are paged (§V22/§V19, B21): ``stages`` and ``observations``
-    each carry their page and a ``*_page`` descriptor (``has_more``).
+    §T161/B82: the ranking SUBSUMES the stage rows. With ``include_efficiency`` the
+    single per-stage list is the ranked ``observation`` (each row folds the raw drop
+    facts + its derived ``sanity_per_item``), so no separate ``stages`` list is emitted --
+    the response never lists the same stages twice (~2x payload cut, §V66). Without the
+    flag (or when nothing was rankable) the raw ``stages`` facts are emitted with their
+    ``stages_page``. Whichever list is emitted is paged (§V22/§V19, B21).
     """
     if result.status == "not_found" or result.item is None:
         return error("not_found", _ITEM_NOT_FOUND_MESSAGE, suggested_action=_ITEM_NOT_FOUND_ACTION)
@@ -328,13 +375,6 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     shared_prov, deviations = hoist_drop_provenance(
         [_item_stage_provenance_row(s) for s in result.stages]
     )
-    stages: list[dict[str, object]] = []
-    for stage, deviation in zip(result.stages, deviations, strict=True):
-        row = _item_stage_drop_identity(stage)
-        row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
-        if stage.expired:
-            row["expired"] = True  # §V67: emitted only when true (default = fresh)
-        stages.append(row)
 
     data: dict[str, object] = {
         "item": {
@@ -345,20 +385,43 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
             "item_type": result.item.item_type,
         },
         "drop_provenance": shared_prov,
-        "stages": stages,
     }
-    if result.stages_page is not None:
-        data["stages_page"] = page_to_dict(result.stages_page)
+
+    # §T161/B82: when a ranking exists it subsumes the stage rows -- the service aligns
+    # ``result.stages`` (and thus ``deviations``) 1:1 with the ranking rows, so each raw
+    # fact folds into its ranking row and no separate ``stages`` list is emitted. Only
+    # without a ranking (flag off, or nothing rankable) are the raw ``stages`` emitted.
+    if result.observation is None:
+        stages: list[dict[str, object]] = []
+        for stage, deviation in zip(result.stages, deviations, strict=True):
+            row = _item_stage_drop_identity(stage)
+            row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
+            if stage.expired:
+                row["expired"] = True  # §V67: emitted only when true (default = fresh)
+            stages.append(row)
+        data["stages"] = stages
+        if result.stages_page is not None:
+            data["stages_page"] = page_to_dict(result.stages_page)
+
     if result.analyzer_version is not None:
-        # include_efficiency was requested: surface the §V66.1 single ranked
-        # observation (§T129) whose ``ranking`` rows are this page of the global
-        # ranking, its page descriptor, and the §V26 warnings (a stage excluded for a
-        # missing sanity cost / drop rate). The mandatory §V60 comparison caveats ride
-        # the observation's observation-level ``limitations``, so they travel with every
-        # page; the observation is omitted only when no stage was rankable.
+        # include_efficiency was requested: surface the §V66.1 single ranked observation
+        # (§T129) + the §V26 warnings (a stage excluded for a missing sanity cost / drop
+        # rate). When a ranking exists, its rows are this page of the global ranking, each
+        # folding the raw drop facts (§T161/B82); the mandatory §V60 comparison caveats
+        # ride the observation-level ``limitations`` so they travel with every page. The
+        # observation is omitted only when no stage was rankable (then the raw ``stages``
+        # above stay visible with the §V26 warnings, §V60).
         efficiency: dict[str, object] = {"warnings": list(result.warnings)}
         if result.observation is not None:
-            efficiency["observation"] = ranked_observation_to_dict(result.observation)
+            merged = [
+                _item_efficiency_row(stage, deviation, row)
+                for stage, deviation, row in zip(
+                    result.stages, deviations, result.observation.ranking, strict=True
+                )
+            ]
+            efficiency["observation"] = ranked_observation_to_dict(
+                result.observation, ranking=merged
+            )
         if result.efficiency_page is not None:
             efficiency["page"] = page_to_dict(result.efficiency_page)
         data["efficiency"] = efficiency

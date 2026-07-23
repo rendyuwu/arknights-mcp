@@ -81,12 +81,16 @@ def test_ranked_ascending_by_sanity_per_item(tmp_path: Path) -> None:
     # §V66.1: ONE ranked observation; its ranking rows are ascending by sanity per item.
     ranking = _ranking(result)
     assert [row.sanity_per_item for row in ranking] == [12.0, 72.0, 120.0]
-    # §V68/B57: the row id is the unambiguous stage_game_id (joins to result.stages),
-    # with the stage_code shown alongside as name.
+    # §V68/B57: the row id is the unambiguous stage_game_id, with the stage_code shown
+    # alongside as name.
     assert [row.name for row in ranking] == ["a-1", "4-4", "b-2"]
-    stage_ids = {s.stage_game_id for s in result.stages}
-    assert {row.id for row in ranking} <= stage_ids
     assert all(row.id != row.name for row in ranking)
+    # §T161/B82: in efficiency mode the service realigns result.stages 1:1 with the
+    # ranking PAGE (same order) so the shaper folds each fact into its ranking row and
+    # drops the separate stages list.
+    assert result.stages_page is None
+    assert len(result.stages) == len(ranking)
+    assert [s.stage_game_id for s in result.stages] == [row.id for row in ranking]
     # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
     obs = result.observation
     assert obs is not None

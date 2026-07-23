@@ -164,10 +164,16 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
     assert [row["name"] for row in ranking] == ["a-1", "4-4", "b-2"]
     assert [row["sanity_per_item"] for row in ranking] == [12.0, 72.0, 120.0]
-    # §V68: each ranking ref is the stage_game_id, joinable to the sibling stages list.
-    stage_ids = {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
-    assert {row["id"] for row in ranking} <= stage_ids
+    # §T161/B82: the ranking SUBSUMES the stage rows -- no separate stages list is
+    # emitted, and each ranking row folds the raw drop facts (§V55 evidence:
+    # sanity_cost / drop_rate / times / quantity) alongside its derived sanity_per_item.
+    assert "stages" not in data and "stages_page" not in data
+    for row in ranking:
+        assert {"sanity_cost", "drop_rate", "times", "quantity"} <= set(row)
+    # §V68: the row id is the unambiguous stage_game_id, the stage_code rides as name.
     assert all(row["id"] != row["name"] for row in ranking)
+    # Ascending -> the cheapest stage (a-1, sanity_cost 6) is first, with its facts.
+    assert ranking[0]["sanity_cost"] == 6 and ranking[0]["drop_rate"] == 0.5
     # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
     blob = " ".join(ob["limitations"]).lower()
     assert "availability" in blob and "byproduct" in blob
@@ -184,6 +190,41 @@ def test_efficiency_omitted_without_the_flag(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar")
     assert "efficiency" not in env.to_dict()["data"]
     assert env.analyzer_version is None
+
+
+def test_include_efficiency_omits_stages_ranking_subsumes(tmp_path: Path) -> None:
+    # §T161/B82/§V66: with include_efficiency the ranked observation is the SINGLE
+    # per-stage list -- each row folds the raw drop facts + its sanity_per_item, so no
+    # separate stages[]/stages_page is emitted and the same stages are never listed twice.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("4-4", sanity_cost=18, drop_rate=0.25, times=5000),
+            StageDropSeed("a-1", sanity_cost=6, drop_rate=0.5, times=5000),
+        ],
+    )
+    env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    # No duplicate per-stage list: stages/stages_page are subsumed by the ranking.
+    assert "stages" not in data and "stages_page" not in data
+    assert set(data) == {"item", "drop_provenance", "efficiency"}
+    ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
+    assert len(ranking) == 2
+    # §V55 evidence rides each ranking row (facts folded in) + the derived figure.
+    cheapest = ranking[0]
+    assert cheapest["name"] == "a-1"
+    assert cheapest["sanity_cost"] == 6
+    assert cheapest["times"] == 5000
+    assert cheapest["drop_rate"] == 0.5
+    assert cheapest["sanity_per_item"] == 12.0
+    # §V66.2: the shared penguin provenance is still hoisted once; a fresh row omits it.
+    assert data["drop_provenance"]["snapshot_id"] == "pg:en"  # type: ignore[index]
+    for hoisted in ("snapshot_id", "fetched_at", "expires_at", "imported_at"):
+        assert hoisted not in cheapest
+    # §V67: a fresh row omits expired.
+    assert "expired" not in cheapest
 
 
 # --- §V68/B57: normal + tough share a stage_code -> DISTINCT joinable refs -----
@@ -213,10 +254,10 @@ def test_v68_normal_and_tough_same_code_get_distinct_joinable_refs(tmp_path: Pat
     # §V68: the shared stage_code rides alongside as the display name, never as the ref.
     assert all(row["name"] == "14-18" for row in ranking)
     assert "14-18" not in refs
-    # §V68: every ref joins 1:1 to the sibling stages facts list.
-    stage_ids = {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
-    assert set(refs) <= stage_ids
-    assert {"main_10-09", "tough_10-09"} <= stage_ids
+    # §T161/B82: the ranking subsumes the stage rows -- the distinct refs live on the
+    # single ranking list (no separate stages list to join to).
+    assert "stages" not in data
+    assert set(refs) == {"main_10-09", "tough_10-09"}
 
 
 # --- §V5: region-scoped -- an en item never surfaces a cn stage ----------------
@@ -234,13 +275,14 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
-    # §V77/§V5 (B79): region stated ONCE on the parent item; the cn stage never leaks in
-    # (only 4-4 is ranked below + the provenance is en-only).
     assert data["item"]["server"] == "en"  # type: ignore[index]
-    assert all("region" not in s for s in data["stages"])  # type: ignore[index]
+    # §T161/B82: efficiency mode -> the ranking subsumes the stages (no separate list).
+    assert "stages" not in data
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
+    # §V77/§V5 (B79): region stated ONCE on the parent item, never per ranking row; only
+    # the en stage is ranked -- the cn stage never leaks in.
     assert [row["name"] for row in ranking] == ["4-4"]
-    assert {row["id"] for row in ranking} <= {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]
+    assert all("region" not in row for row in ranking)
     # §V5: provenance is en-only.
     prov = env.to_dict()["provenance"]
     assert {p["server"] for p in prov} == {"en"}  # type: ignore[index]
@@ -261,15 +303,16 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
     assert env.status == "data_stale"
     data = env.to_dict()["data"]
-    # §V53: the expired stage is flagged, not withheld -- still in facts + ranking.
-    expired_stage = next(s for s in data["stages"] if s["stage_code"] == "a-1")  # type: ignore[index]
-    assert expired_stage["expired"] is True
+    # §T161/B82: the ranking subsumes the stages -- no separate stages list.
+    assert "stages" not in data
     obs = data["efficiency"]["observation"]  # type: ignore[index]
     ranking = obs["ranking"]
     names = [row["name"] for row in ranking]
     assert "a-1" in names
-    # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
+    # §V53: the expired stage is flagged on its ranking row, not withheld -- still ranked.
     expired_row = next(row for row in ranking if row["name"] == "a-1")
+    assert expired_row["expired"] is True
+    # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
     assert expired_row["confidence"] < 0.5
     assert any("expired" in lim.lower() for lim in expired_row["limitations"])
     # A staleness limitation names the refresh action; never presented as fresh.
@@ -354,6 +397,10 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
     # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
     # §V68: the row id is the stage_game_id; assert order by the stage_code display name.
     assert [row["name"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
+    # §T161/B82: each ranking row folds the raw drop facts (§V55 evidence).
+    assert all(
+        {"sanity_cost", "drop_rate", "times"} <= set(r) for r in eff1["observation"]["ranking"]
+    )
     assert eff1["page"] == {"page": 1, "page_size": 2, "total": 5, "has_more": True}
     eff2 = handler(
         server="en",

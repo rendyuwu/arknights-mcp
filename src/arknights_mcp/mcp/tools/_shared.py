@@ -337,7 +337,11 @@ def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
     return out
 
 
-def ranked_observation_to_dict(obs: RankedObservation) -> dict[str, object]:
+def ranked_observation_to_dict(
+    obs: RankedObservation,
+    *,
+    ranking: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     """A compacted ranked farming observation with the §V6 fields stated once (§V66.1/§V6).
 
     The §V37 single home for the ranked-observation wire mapping shared by
@@ -347,6 +351,12 @@ def ranked_observation_to_dict(obs: RankedObservation) -> dict[str, object]:
     references the sibling facts list (evidence by reference, never a re-copied number,
     §V66.1). Observation-level ``limitations`` are the caveats that apply to the whole
     ranking (e.g. the §V60 comparison caveats).
+
+    ``ranking`` overrides the default slim rows: ``get_item_drops`` in efficiency mode
+    folds each stage's raw drop facts INTO its ranking row and emits no separate stages
+    list (§T161/B82 -- the ranking subsumes the stage rows), so it passes the merged
+    rows here rather than the slim ``{id, name, sanity_per_item}`` default. When absent,
+    the slim rows are used (``get_stage_drops``, which keeps its sibling ``drops`` facts).
     """
     return {
         "rule_id": obs.rule_id,
@@ -355,7 +365,9 @@ def ranked_observation_to_dict(obs: RankedObservation) -> dict[str, object]:
         "title": obs.title,
         "summary": obs.summary,
         "confidence": obs.confidence,
-        "ranking": [ranking_row_to_dict(r) for r in obs.ranking],
+        "ranking": (
+            ranking if ranking is not None else [ranking_row_to_dict(r) for r in obs.ranking]
+        ),
         "limitations": list(obs.limitations),
         "analyzer_version": obs.analyzer_version,
     }

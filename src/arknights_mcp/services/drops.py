@@ -171,16 +171,28 @@ class ItemDropsResult:
     mandatory §V60 comparison caveats. ``stale`` mirrors the ``data_stale`` status.
 
     The reverse item->stage view is unbounded (a common material drops across
-    ~100-200 stages), so both growable lists are **paged** (§V22/§V19, B21): ``stages``
-    holds only the requested page while its ``stages_page`` descriptor reports the full
-    ``total`` + ``has_more``, and ``observation``'s ``ranking`` rows are the requested
-    page of the global ranking while ``efficiency_page`` reports the full ranking's
-    ``total`` + ``has_more``. The stale verdict, the ranked ORDER, and ``provenance``
-    are all computed over the FULL set BEFORE slicing, so page 1 is always the
-    most-efficient N and ``data_stale`` holds even when the expired stage falls on a
-    later page. ``provenance`` is the distinct penguin snapshots (``snapshot_id`` +
-    ``imported_at``) backing the full comparison, all sharing the item's region (§V5);
-    ``efficiency_page`` is ``None`` when ``include_efficiency`` was not requested.
+    ~100-200 stages), so the growable list is **paged** (§V22/§V19, B21). The two modes
+    carry DIFFERENT per-stage shapes (§T161/B82 -- the ranking subsumes the stage rows
+    so the response never lists the same stages twice):
+
+    * ``include_efficiency`` OFF -- ``stages`` holds the requested ``stages_page`` of the
+      raw per-stage drop facts (``stage_code`` order) and ``stages_page`` reports the full
+      ``total`` + ``has_more``; ``observation`` / ``efficiency_page`` are ``None``.
+    * ``include_efficiency`` ON -- the ranked ``observation`` is the SINGLE per-stage
+      list. ``observation``'s ``ranking`` rows are the requested ``efficiency_page`` of
+      the global ranking (``efficiency_page`` reports its ``total`` + ``has_more``), and
+      ``stages`` carries the raw drop facts for exactly those ranking rows, in the SAME
+      order (1:1, so the shaper folds each fact + its derived ``sanity_per_item`` into one
+      row and emits no separate ``stages`` list); ``stages_page`` is ``None``. When no
+      stage is rankable (every ``sanity_cost`` / ``drop_rate`` absent) the analyzer emits
+      no observation, so ``stages`` falls back to the raw-facts page + ``stages_page`` so
+      the drops stay visible (§V26 warnings name the excluded stages).
+
+    The stale verdict, the ranked ORDER, and ``provenance`` are all computed over the
+    FULL set BEFORE slicing, so page 1 is always the most-efficient N and ``data_stale``
+    holds even when the expired stage falls on a later page. ``provenance`` is the
+    distinct penguin snapshots (``snapshot_id`` + ``imported_at``) backing the full
+    comparison, all sharing the item's region (§V5).
     """
 
     status: ItemDropsStatus
@@ -462,6 +474,11 @@ def get_item_drops(
     efficiency_page_info: SectionPage | None = None
     warnings: tuple[str, ...] = ()
     analyzer_version: str | None = None
+    # Default (efficiency OFF, or ON with nothing rankable): the raw per-stage facts
+    # paged by their own cursor (§V22/§V19, B21).
+    stages_page_info: SectionPage | None = _section_page(sp, ssize, len(all_stages))
+    stages = all_stages[(sp - 1) * ssize : sp * ssize]
+
     if include_efficiency:
         # §V60: rank the stages ascending by sanity per item over typed fields only
         # (§V55). Each stage carries its OWN §V53 expiry so an expired figure is
@@ -488,15 +505,21 @@ def get_item_drops(
             )
         )
         full = analysis.observation
-        total = len(full.ranking) if full is not None else 0
-        efficiency_page_info = _section_page(ep, esize, total)
-        if full is not None:
-            observation = replace(full, ranking=full.ranking[(ep - 1) * esize : ep * esize])
         warnings = analysis.warnings
         analyzer_version = analysis.analyzer_version
-
-    stages_page_info = _section_page(sp, ssize, len(all_stages))
-    stages = all_stages[(sp - 1) * ssize : sp * ssize]
+        if full is not None:
+            # §T161/B82: the ranking SUBSUMES the stage rows -- the shaper folds each raw
+            # fact + its derived sanity_per_item into ONE row, so the response never lists
+            # the same stages twice (~2x payload, §V66). ``stages`` is realigned to the
+            # ranking PAGE (same order, 1:1), and the separate stages page is dropped.
+            page_rows = full.ranking[(ep - 1) * esize : ep * esize]
+            observation = replace(full, ranking=page_rows)
+            efficiency_page_info = _section_page(ep, esize, len(full.ranking))
+            facts_by_id = {s.stage_game_id: s for s in all_stages}
+            stages = tuple(facts_by_id[row.id] for row in page_rows)
+            stages_page_info = None
+        # else: no stage was rankable -- keep the raw-facts page above so the drops stay
+        # visible (§V26 warnings name the excluded stages); no observation to subsume it.
 
     return ItemDropsResult(
         status="data_stale" if stale else "ok",

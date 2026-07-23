@@ -27,12 +27,15 @@ class GetItemDropsInput(StrictModel):
     observations (sanity per item); off by default so the base response is the
     compact per-stage drop facts + provenance + expiry (§V22).
 
-    ``stages_page`` pages the per-stage drop facts (stage-code order) and
-    ``efficiency_page`` the ranked observations (ascending sanity per item); each
-    is its **own** cursor so a client can page one without shifting the other, and
-    neither ever yields an unbounded slice (§V19/§V22, B21). The service ranks +
-    computes the stale verdict + provenance over the FULL set before slicing, so
-    page 1 is always the most-efficient N and the global order holds across pages.
+    The two modes carry different per-stage shapes (§T161/B82 -- the ranking subsumes
+    the stage rows so the response never lists the same stages twice). Without
+    ``include_efficiency``, ``stages_page`` pages the raw per-stage drop facts
+    (stage-code order). With it, the ranked observation is the single per-stage list and
+    ``efficiency_page`` pages it (ascending sanity per item), while ``stages_page`` no
+    longer applies. Neither cursor ever yields an unbounded slice (§V19/§V22, B21). The
+    service ranks + computes the stale verdict + provenance over the FULL set before
+    slicing, so page 1 is always the most-efficient N and the global order holds across
+    pages.
     """
 
     server: Region

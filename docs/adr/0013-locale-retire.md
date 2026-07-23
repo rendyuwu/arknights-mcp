@@ -97,3 +97,18 @@ on T146 per ADR 0012 / B69). Each reshape is recorded here as it lands:
   economy). Wire-only, mirroring T157 (B78): the domain `*Facts.region` fields stay
   (they carry the §V5 attribution the acceptance tests verify and back the parent /
   provenance derivation), and the `region` DB column is untouched.
+
+- **T161 — `get_item_drops` efficiency dual-shape trim (B82/§V66/§V22).** A live
+  `include_efficiency=true` response emitted BOTH a `stages[]` facts list AND an
+  `efficiency.observation.ranking[]` that re-listed the same stages (id + name twice,
+  two full per-stage objects) ≈ 2× payload. The ranking now **subsumes** the stage
+  rows: with `include_efficiency` the ranked observation is the SINGLE per-stage list —
+  each ranking row folds the raw drop facts (`sanity_cost` / `quantity` / `times` /
+  `drop_rate`, the §V55 evidence) plus its derived `sanity_per_item`, keyed by the
+  unambiguous `id` = `stage_game_id` with `stage_code` as `name` (§V68), and carries the
+  hoisted `drop_provenance` deviations + `expired` (§V66.2/§V67) — so the top-level
+  `stages[]` / `stages_page` are omitted and the response never lists the same stages
+  twice. Without the flag (or when nothing is rankable) the raw `stages[]` facts + their
+  `stages_page` are returned unchanged. The `efficiency_page` cursor pages the ranking;
+  `stages_page` no longer applies in efficiency mode. Breaking response-shape change that
+  folds into the still-unreleased v0.2 line, so `SCHEMA_VERSION` stays `"0.2"`.
