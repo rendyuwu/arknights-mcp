@@ -202,6 +202,22 @@ def test_summary_only_response_has_no_blackboard_limitation(conn: sqlite3.Connec
     assert BLACKBOARD_LIMITATION not in env.limitations
 
 
+def test_blackboard_limitation_emitted_once_across_all_sections(conn: sqlite3.Connection) -> None:
+    # §V66/§V72 (T149): the grounding disclaimer is ONE shared block per envelope. A
+    # response carrying ALL THREE blackboard sections (skills + talents + modules) still
+    # attaches it exactly once, never a per-section repeat -- presence stays mandatory.
+    env = _handler(conn)(
+        server="en",
+        game_id=_AMIYA,
+        include_skills=True,
+        include_talents=True,
+        include_modules=True,
+    )
+    op = env.to_dict()["data"]["operator"]  # type: ignore[index]
+    assert op["skills"] and op["talents"] and op["modules"]  # all three sections present
+    assert env.limitations.count(BLACKBOARD_LIMITATION) == 1
+
+
 def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) -> None:
     # §T127/§V65 (a)/ADR 0010: skill + talent + module effects emit the in-game effect
     # description template alongside the raw blackboard (additive/optional, §V21) so a

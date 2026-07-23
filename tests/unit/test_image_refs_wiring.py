@@ -240,6 +240,30 @@ def test_image_refs_limitation_rides_every_emitting_surface(
     assert IMAGE_REFS_LIMITATION in banner_env.limitations
 
 
+def test_n_image_refs_yield_exactly_one_disclaimer(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    # §V72/§V66 (T149): the standing derived-unverified disclaimer is ONE shared block per
+    # envelope, never repeated per ref. A full operator emits 6 refs and a resolved banner
+    # op emits 4, yet the caveat rides the envelope exactly ONCE -- a ~300-char disclaimer
+    # copied per ref would be a §V66 economy breach. Presence stays mandatory (count == 1).
+    op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_AMIYA
+    )
+    op_refs = op_env.to_dict()["data"]["operator"]["image_refs"]  # type: ignore[index]
+    assert len(op_refs) == 6  # portrait 2 + avatar 2 + skin 2 -> more than one ref
+    assert op_env.limitations.count(IMAGE_REFS_LIMITATION) == 1
+
+    banner_conn = open_read_only(_seed_banner_db(tmp_path))
+    banner_env = build_get_banners_spec(lambda: banner_conn, image_refs_enabled=True).handler(
+        server="en"
+    )
+    ops = banner_env.to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
+    resolved_refs = next(o["image_refs"] for o in ops if o["char_id"] == _AMIYA)
+    assert len(resolved_refs) == 4  # portrait 2 + avatar 2 -> more than one ref
+    assert banner_env.limitations.count(IMAGE_REFS_LIMITATION) == 1
+
+
 def test_no_image_refs_limitation_when_gate_off(conn: sqlite3.Connection, tmp_path: Path) -> None:
     # §V72: no ref emitted -> no caveat. With the gate OFF no surface emits image_refs, so
     # the standing limitation never appears (it rides exactly when a link is present).

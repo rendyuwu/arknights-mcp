@@ -38,22 +38,24 @@ DB_UNAVAILABLE_ACTION = (
     "ask the server admin to run `arknights-mcp status` to check the active build"
 )
 
-#: §V65 grounding, path (b): the standing limitation attached to every tool response
-#: that emits blackboard effect data -- ``get_operator`` skills/talents/modules and
-#: ``compare_operator_modules`` trait/talent/stat changes. Path (a) (T127/ADR 0010) now
-#: imports the in-game effect description template and emits it alongside the blackboard,
-#: but a template may be absent for some effects, so this limitation still rides every
-#: emit: it tells the client to read the template when present and never to infer
-#: mechanics from a raw key name (some are counterintuitive), which is the exact
-#: fabrication the server instructions forbid (§V26 "absent -> say so"). Shared: one
-#: wording, one home (§V37). Client-facing string, so no internal cites/jargon (§V71) --
-#: the cites live in this comment, never the emitted text.
+#: §V65 grounding, path (b): the ONE standing limitation attached (once) to every tool
+#: response that emits blackboard effect data -- ``get_operator`` skills/talents/modules
+#: and ``compare_operator_modules`` trait/talent/stat changes. It rides the envelope a
+#: single time regardless of how many skills/modules/sections the response carries (§V66
+#: economy -- never a per-section repeat), and its PRESENCE stays mandatory whenever any
+#: blackboard is emitted. Path (a) (T127/ADR 0010) imports the in-game effect description
+#: template and emits it alongside the blackboard, but a template may be absent for some
+#: effects, so this limitation still rides every emit: read the template when present and
+#: never infer mechanics from a raw key name (some are counterintuitive), the exact
+#: fabrication the server instructions forbid (§V26 "absent -> say so"). Shortened for
+#: §V66 economy (T149) while keeping the grounding intact. Shared: one wording, one home
+#: (§V37). Client-facing string, so no internal cites/jargon (§V71) -- the cites live in
+#: this comment, never the emitted text.
 BLACKBOARD_LIMITATION = (
-    "Effect text is the in-game description template, included alongside the blackboard "
-    "when present in the source (it may be absent for some effects). Skill, talent, and "
-    "module effects are otherwise raw blackboard key-value data straight from the game "
-    "files. Read the template to interpret the values; do not infer mechanics from a "
-    "key name alone: a key's meaning is context-dependent and some are counterintuitive."
+    "Skill, talent, and module effects are raw blackboard key-value data, with the "
+    "in-game description template included when the source has one (some effects lack "
+    "it). Read the template for meaning, and do not infer mechanics from a key name "
+    "alone, as some are counterintuitive."
 )
 
 #: §V65 grounding FLOOR, path (c): a short glossary of common blackboard keys folded
@@ -96,21 +98,23 @@ COST_ITEM_NAME_LIMITATION = (
 )
 
 
-#: §V72/§V26 (§T135, B61): the standing limitation attached to EVERY response that emits
-#: an ``image_refs`` list -- ``get_operator`` / ``get_enemy`` / ``get_banners``. Each URL
-#: is DERIVED at response-build time from a stored game id and is never fetched or
-#: validated by the server (§V63 never-fetch), so a link can be dead when the upstream
+#: §V72/§V26 (§T135, B61): the ONE standing limitation attached to EVERY response that
+#: emits an ``image_refs`` list -- ``get_operator`` / ``get_enemy`` / ``get_banners``. It
+#: rides the envelope a SINGLE time no matter how many refs the response carries (a full
+#: operator emits 6, a banner page many; §V66 economy -- never a per-ref repeat of a
+#: ~300-char disclaimer), and its PRESENCE stays mandatory whenever any ref is emitted.
+#: Each URL is DERIVED at response-build time from a stored game id and is never fetched
+#: or validated by the server (§V63 never-fetch), so a link can be dead when the upstream
 #: mirror lacks that asset -- the disclosure keeps a derived link from being presented as
 #: a verified fact (§V26 "uncertain -> say so", the exact fabrication B61 flagged). The
-#: mirror's portrait tree lags newer operators, so the avatar category has the broadest
-#: coverage and is the most reliable fallback when a portrait/skin URL 404s. Shared: one
-#: wording, one home (§V37). Client-facing text, so no internal cites/jargon (§V71) -- the
-#: cites live in this comment, never the emitted string.
+#: mirror's portrait tree lags newer operators, so the avatar category has the widest
+#: coverage and is the most reliable fallback when a portrait/skin URL 404s. Shortened
+#: for §V66 economy (T149). Shared: one wording, one home (§V37). Client-facing text, so
+#: no internal cites/jargon (§V71) -- the cites live in this comment, never the string.
 IMAGE_REFS_LIMITATION = (
     "Image URLs are derived from a stored game id and are never fetched or validated by "
-    "the server, so a URL may return a 404 if the upstream mirror does not have that "
-    "asset. When more than one image category is available, the avatar category has the "
-    "broadest coverage on the mirror and is the most reliable fallback."
+    "the server, so a URL may 404 if the mirror lacks that asset. The avatar category "
+    "has the widest mirror coverage and is the most reliable fallback."
 )
 
 
