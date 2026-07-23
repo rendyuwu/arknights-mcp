@@ -36,7 +36,11 @@ _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 #: envelope in §T32). ``not_found`` == the region index is present but the
 #: well-formed query matched nothing; ``unsupported_server`` / ``data_stale`` are
 #: the §V50 region-availability verdicts returned *before* asserting absence.
-SearchStatus = Literal["ok", "not_found", "unsupported_server", "data_stale"]
+#: ``locale_unavailable`` is the §V50 verdict on the LOCALE axis (B66): a ``locale``
+#: filter was set but the build carries no alias in that locale (jp/kr source enabled
+#: but never imported) -- returned before asserting absence, mapped to a ``data_stale``
+#: envelope with a locale-specific message at the tool layer.
+SearchStatus = Literal["ok", "not_found", "unsupported_server", "data_stale", "locale_unavailable"]
 
 #: §V5 supported regions as a runtime set, derived from the single ``Region``
 #: literal home (§V37) so the search gate and the input model never diverge.
@@ -181,11 +185,24 @@ def search_entities(
     gate = _region_gate(conn, server)
     if gate is not None:
         return SearchResult(status=gate, query=query, hits=())
+    repo = SearchRepository(conn)
+    # §V50/§V57 (B66): honor LOCALE availability before asserting absence. A ``locale``
+    # filter narrows to entities carrying an alias in that locale; if the build holds
+    # NO alias in that locale (the jp/kr source is enabled but was never imported ->
+    # no active alias snapshot), the filter can never match and a bare ``not_found``
+    # ("check the spelling") is unconditionally misleading -- the alias data is absent,
+    # not the entity. Return a typed ``locale_unavailable`` verdict instead, mapped to
+    # a ``data_stale`` envelope + admin sync action at the tool layer. Runs AFTER the
+    # region gate so region availability is still decided independently of locale (a
+    # jp/kr alias never widens region availability, §V50). The region gate takes
+    # precedence: a locale search scoped to a region with no snapshot stays
+    # ``data_stale`` on the region axis.
+    if locale is not None and not repo.has_locale_alias(locale):
+        return SearchResult(status="locale_unavailable", query=query, hits=())
     match = _match_expression(query)
     if match is None:
         return SearchResult(status="not_found", query=query, hits=())
 
-    repo = SearchRepository(conn)
     rows = repo.search(match, server=server, entity_type=entity_type, locale=locale, limit=bounded)
     return _result_from_rows(query, rows)
 

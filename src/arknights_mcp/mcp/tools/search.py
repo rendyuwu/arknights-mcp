@@ -89,6 +89,18 @@ _DATA_STALE_ACTION = (
     "ask the server admin to run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
 )
 
+#: Fixed, safe copy for the §V50/§V57 LOCALE-availability verdict (B66): a locale
+#: filter was set but the build carries no alias in that locale (the jp/kr source is
+#: enabled but was never imported). Distinct from a bare ``not_found`` (which claims
+#: the entity is absent) and from the region ``data_stale`` message (which is about a
+#: fact region) so a client can tell "alias data never imported" from "no such alias".
+#: The suggested action is an admin sync, never a query-time download (§V24/§V71).
+_LOCALE_UNAVAILABLE_MESSAGE = "locale aliases not imported in this build"
+_LOCALE_UNAVAILABLE_ACTION = (
+    "ask the server admin to run `arknights-mcp sync` with the extra-locale source "
+    "enabled, or search without the locale filter"
+)
+
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     """One hit as a region-tagged locator (§V5: region travels on every row).
@@ -138,6 +150,15 @@ def _guarded_search(
             )
         if result.status == "data_stale":
             return error("data_stale", _DATA_STALE_MESSAGE, suggested_action=_DATA_STALE_ACTION)
+        # §V50/§V57 (B66): a locale filter over a build with no alias in that locale is a
+        # ``data_stale`` envelope, but with a locale-specific message so the client can
+        # tell "alias data never imported" from a bare ``not_found`` ("no such alias").
+        if result.status == "locale_unavailable":
+            return error(
+                "data_stale",
+                _LOCALE_UNAVAILABLE_MESSAGE,
+                suggested_action=_LOCALE_UNAVAILABLE_ACTION,
+            )
         if result.status == "not_found":
             return error("not_found", not_found_message, suggested_action=not_found_action)
         return ok(

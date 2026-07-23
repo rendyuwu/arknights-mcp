@@ -301,15 +301,36 @@ def test_jp_alias_is_searchable_after_rebuild(tmp_path: Path) -> None:
 
 def test_locale_filter_narrows_to_locale_alias(tmp_path: Path) -> None:
     # §V57: a locale filter keeps only entities carrying an alias in that locale.
-    # The drone got a ja alias, so it survives a locale=ja filter; there is no ko
-    # alias in this build, so locale=ko yields nothing for the same query.
+    # The drone got a ja alias, so it survives a locale=ja filter.
     path = _build_with_jp_alias(tmp_path)
     with open_read_only(path) as conn:
         ja = search_entities(conn, query="drone", locale="ja").hits
         assert any(h.game_id == "enemy_1105_drone" for h in ja)
+
+
+def test_locale_with_no_alias_in_build_is_locale_unavailable(tmp_path: Path) -> None:
+    # §V50/§V57 (B66): this build imported a ja alias but NO ko alias (the ko source
+    # was never imported). A locale=ko search must NOT be a bare ``not_found`` (which
+    # claims "no such alias / check the spelling") -- it is ``locale_unavailable``, the
+    # honest "ko alias data not in this build" verdict, returned before asserting
+    # absence. A client can then distinguish "alias never imported" from "no match".
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
         ko = search_entities(conn, query="drone", locale="ko")
-        assert ko.status == "not_found"
+        assert ko.status == "locale_unavailable"
         assert ko.hits == ()
+
+
+def test_locale_with_alias_present_but_query_misses_is_not_found(tmp_path: Path) -> None:
+    # §V50/§V57 (B66): when the locale DOES have alias data (ja here), a query that
+    # matches nothing is a genuine ``not_found`` -- the locale gate only fires when the
+    # locale has no aliases at all, so a real "no such ja alias" still reads as absence,
+    # not a misleading availability verdict.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        miss = search_entities(conn, query="zzzznotanentity", locale="ja")
+        assert miss.status == "not_found"
+        assert miss.hits == ()
 
 
 def test_locale_none_is_unchanged_from_prior_behavior(tmp_path: Path) -> None:

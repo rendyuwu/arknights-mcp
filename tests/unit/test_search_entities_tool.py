@@ -133,6 +133,28 @@ def test_region_without_snapshot_is_data_stale_envelope(conn: sqlite3.Connection
     assert "download" not in action.lower()
 
 
+# --- §V50/§V57 locale-availability gate (B66) ---------------------------------
+
+
+def test_locale_without_alias_data_is_locale_specific_data_stale(conn: sqlite3.Connection) -> None:
+    # §V50/§V57 (B66): this en-only fixture build imported NO extra-locale aliases, so
+    # a locale=ja search must not be a bare ``not_found`` ("check the spelling"). It is
+    # a ``data_stale`` envelope carrying the locale-specific message so a client can
+    # tell "alias data never imported" from "no such alias", with an admin sync action.
+    env = _handler(conn)(query="drone", locale="ja")
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert data["message"] == "locale aliases not imported in this build"
+    action = data["suggested_action"]
+    assert isinstance(action, str)
+    assert "arknights-mcp sync" in action
+    # §V24: the suggested action is an admin step, never a query-time download.
+    assert "download" not in action.lower()
+    # §V71: no internal spec cite / jargon leaks into client-facing text.
+    assert "§" not in str(data)
+
+
 # --- §V19: bounded window -----------------------------------------------------
 
 

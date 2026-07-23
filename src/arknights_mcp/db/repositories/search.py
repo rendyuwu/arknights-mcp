@@ -157,6 +157,25 @@ class SearchRepository(Repository):
         )
         return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
 
+    def has_locale_alias(self, locale: str) -> bool:
+        """Whether ANY alias row is tagged with ``locale`` (§V50/§V57, B66).
+
+        The substrate for the locale-availability gate: a ``locale`` filter narrows
+        to entities carrying an alias in that locale (see the ``EXISTS`` clause in
+        ``_SEARCH_SQL``), so if *zero* alias rows carry ``locale`` the filter can
+        never match and a bare ``not_found`` ("check the spelling") is unconditionally
+        misleading -- the alias data was never imported, not "no such alias" (B66).
+        Checks both alias tables that carry the §T98 ``locale`` column; every value is
+        bound (§V2). ``EXISTS`` + ``LIMIT 1`` short-circuits on the first hit.
+        """
+        row = self._one(
+            "SELECT "
+            "EXISTS (SELECT 1 FROM operator_aliases WHERE locale = ?) "
+            "OR EXISTS (SELECT 1 FROM enemy_aliases WHERE locale = ?)",
+            (locale, locale),
+        )
+        return bool(row[0]) if row else False
+
     def search_stages(
         self,
         match: str,
