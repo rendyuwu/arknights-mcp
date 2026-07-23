@@ -106,6 +106,17 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
         assert "expired" not in stage
 
 
+def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
+    # §V76: the per-stage penguin drop_rate (here 1/3) is emitted rounded to 4dp on the
+    # reverse item->stage rows as well, never the raw 17-digit ``repr`` float.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(path, [StageDropSeed("4-4", drop_rate=1 / 3, times=3000)])
+    data = _handler(open_read_only(path))(server="en", game_id="sugar").to_dict()["data"]
+    stages = data["stages"]  # type: ignore[index]
+    assert stages[0]["drop_rate"] == 0.3333
+    assert stages[0]["drop_rate"] != 1 / 3
+
+
 def test_ok_carries_region_and_provenance(tmp_path: Path) -> None:
     # §V5: every delivered fact carries region + (penguin) provenance.
     path = _candidate(tmp_path)

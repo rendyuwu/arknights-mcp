@@ -89,6 +89,18 @@ _STALE_LIMITATION = (
 )
 
 
+def _round_drop_rate(rate: float | None) -> float | None:
+    """Round an emitted drop rate to 4dp (§V76; §V37 single home).
+
+    Penguin ``quantity / times`` is a sample statistic whose 17-digit float ``repr``
+    over-states its precision, so the raw float is never put on the wire; 4dp matches
+    the sample's real significance (``sanity_per_item`` keeps its 2dp precedent,
+    rounded upstream in the analyzer). An absent rate (``None``) passes through
+    unchanged. Shared by both drop-tool emit sites so the rounding never diverges.
+    """
+    return round(rate, 4) if rate is not None else None
+
+
 def _drop_identity(drop: DropFacts) -> dict[str, object]:
     """One item's typed drop identity + rate, WITHOUT the penguin provenance stamps.
 
@@ -104,7 +116,7 @@ def _drop_identity(drop: DropFacts) -> dict[str, object]:
         "region": drop.region,
         "quantity": drop.quantity,
         "times": drop.times,
-        "drop_rate": drop.drop_rate,
+        "drop_rate": _round_drop_rate(drop.drop_rate),
     }
 
 
@@ -268,7 +280,7 @@ def _item_stage_drop_identity(stage: ItemStageDropFacts) -> dict[str, object]:
         "region": stage.region,
         "quantity": stage.quantity,
         "times": stage.times,
-        "drop_rate": stage.drop_rate,
+        "drop_rate": _round_drop_rate(stage.drop_rate),
     }
 
 

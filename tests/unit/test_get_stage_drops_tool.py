@@ -120,6 +120,19 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert "expired" not in drop
 
 
+def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
+    # §V76: a penguin ``quantity / times`` sample statistic (here 1/3) is emitted
+    # rounded to 4dp -- never the raw 17-digit ``repr`` float, whose digits over-state
+    # the sample's real significance.
+    path = _candidate(tmp_path)
+    seed_stage_drop(path, expires_at=FUTURE_EXPIRY, drop_rate=1 / 3, times=3000)
+    conn = open_read_only(path)
+    drops = _handler(conn)(server="en", stage_code="4-4").to_dict()["data"]["drops"]  # type: ignore[index]
+    assert drops[0]["drop_rate"] == 0.3333
+    # the raw ratio is never on the wire.
+    assert drops[0]["drop_rate"] != 1 / 3
+
+
 def test_ok_carries_region_and_provenance(fresh_conn: sqlite3.Connection) -> None:
     # §V5: every delivered fact carries region + provenance.
     prov = _handler(fresh_conn)(server="en", stage_code="4-4").to_dict()["provenance"]
