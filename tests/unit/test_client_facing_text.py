@@ -197,6 +197,23 @@ def test_search_sibling_ranking_divergence_documented() -> None:
     assert "exact stage-code match is ranked first" in stages
 
 
+# --- §V79/B81: overlapping module tools cross-ref each other in BOTH descriptions ---
+
+
+def test_module_tool_overlap_cross_ref_documented() -> None:
+    # §V79 (B81): compare_operator_modules and get_operator(include_modules) share a
+    # payload surface (same per-level module bundles). BOTH descriptions must name the
+    # sibling + state when to prefer it, so a client never double-fetches or picks the
+    # wrong tool -- get_operator points to compare_operator_modules for side-by-side
+    # module levels, and compare_operator_modules points back to get_operator for the
+    # full kit.
+    get_op = _desc("get_operator")
+    compare = _desc("compare_operator_modules")
+    assert "compare_operator_modules" in get_op  # cross-ref to the sibling tool
+    assert "get_operator" in compare  # cross-ref back
+    assert "include_modules" in compare  # names the overlapping surface + when-to-prefer
+
+
 # --- (b) T137/B62: RUNTIME-emitted client strings carry no cites/jargon either --
 
 # T134 pinned the PUBLISHED surface (titles/descriptions/schemas). B62 showed a

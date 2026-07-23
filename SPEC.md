@@ -156,7 +156,7 @@ T156|x|M15 locale RETIRE (founder 2026-07-23: EN+CN only, ⊥ ja/ko): ADR 0013 �
 T157|x|M15 `get_data_status` provenance single-carrier (B78): envelope provenance ⊥ verbatim-mirror `data.snapshots`; ONE block carries the (server,snapshot_id,imported_at) triple|V66
 T158|x|M15 per-row `region` hoist (B79): drop per-row `region` from drop/announcement/banner/item-stage rows; parent/envelope states region ONCE (§V5 = per-response); breaking → ADR 0013 bundle|V77,V66,V21,V5
 T159|x|M15 image_refs variant label (B80): each ref += `variant` (`e0`\|`e2`\|`base`\|`skin`) \| description gloss maps `_1`/`_2`/`_1b`/`_2b`; additive|V78,V71,V21
-T160|.|M15 module-tool overlap cross-ref (B81): `compare_operator_modules` ↔ `get_operator` descriptions each name sibling + when-to-prefer (compare = side-by-side levels + obs mode; get_operator = full kit incl modules)|V79,V75,V71
+T160|x|M15 module-tool overlap cross-ref (B81): `compare_operator_modules` ↔ `get_operator` descriptions each name sibling + when-to-prefer (compare = side-by-side levels + obs mode; get_operator = full kit incl modules)|V79,V75,V71
 T161|.|M15 `get_item_drops` efficiency dual-shape trim (B82): `include_efficiency=true` → ranking subsumes stage rows (stages slim\|omitted); breaking → ADR 0013 bundle|V66,V22,V21
 T162|.|M15 `get_banners` optional `query` name filter (additive, §V19 bounds; 389 pools page-only today)|V19,V21
 T163|x|M15 OPS redeploy live instance: 1st eval 2026-07-23 hit stale pre-0.2 build (`schema_version:"0.1"`, raw tiles/routes, `valueStr:null`, dup provenance); restart + code refresh DONE 2026-07-22 23:28 — 2nd eval (fresh live) verified 0.2: hoisted `drop_provenance`, compact `tile_grid`, no `valueStr`. residual DB re-sync carved → T171|V21

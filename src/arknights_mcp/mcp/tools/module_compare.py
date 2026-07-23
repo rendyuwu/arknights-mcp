@@ -59,7 +59,10 @@ _TOOL_DESCRIPTION = (
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A module's trait template is emitted once as the "
     "module's trait_change_description when it is the same at every level; it appears on a "
-    "level's trait change only when the wording differs between levels. " + BLACKBOARD_KEY_GLOSSARY
+    "level's trait change only when the wording differs between levels. For an operator's "
+    "full kit (identity, phases, skills, talents, and modules), use get_operator with "
+    "include_modules. This tool instead compares modules level by level, and its "
+    "with_observations mode adds evidence-backed observations. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"

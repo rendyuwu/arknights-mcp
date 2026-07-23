@@ -69,7 +69,9 @@ _TOOL_DESCRIPTION = (
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A skill's template is emitted once as the "
     "skill's description when it is the same at every level; it appears on a level only "
-    "when the wording differs between levels. " + BLACKBOARD_KEY_GLOSSARY
+    "when the wording differs between levels. To compare one operator's modules across "
+    "their upgrade levels side by side, or for evidence-backed module observations, use "
+    "compare_operator_modules instead. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
