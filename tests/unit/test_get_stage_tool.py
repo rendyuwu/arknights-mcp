@@ -36,13 +36,15 @@ from arknights_mcp.mcp.tools.stage import (
     build_get_stage_spec,
 )
 from arknights_mcp.models.common import PAGE_SIZE_MAX
+from arknights_mcp.services.stage_route_digest import (
+    _digest_checkpoints,
+    _distinct_routes,
+    _route_truncated_limitation,
+)
 from arknights_mcp.services.stages import (
     SpawnFacts,
     StageFacts,
     StageProvenance,
-    _digest_checkpoints,
-    _distinct_routes,
-    _route_truncated_limitation,
     get_stage,
 )
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -255,6 +257,50 @@ def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> 
     assert distinct[0].route_indices == (0, 1)
     assert distinct[0].occurrence_count == 2
     assert len(distinct[0].checkpoints) == 1  # the WAIT marker is dropped from the emit
+
+
+def test_checkpoint_digest_keeps_a_real_move_at_grid_corner() -> None:
+    # §V74 (b)/B74: WAIT is detected by the typed `type` field, NOT a (0,0) position
+    # coincidence. A real MOVE targeting grid corner (0,0) must be KEPT -- the earlier
+    # position-only heuristic dropped it as if it were a WAIT placeholder.
+    decoded = [
+        {"type": "MOVE", "position": {"col": 0, "row": 0}},  # real corner MOVE -> kept
+        {"type": "WAIT", "position": {"col": 0, "row": 0}},  # WAIT marker -> dropped
+    ]
+    emit, positions = _digest_checkpoints(decoded)
+    assert positions == ((0, 0),)  # the corner MOVE survives; only the WAIT is gone
+    assert len(emit) == 1
+    assert emit[0]["type"] == "MOVE"  # type: ignore[index,call-overload]
+
+
+def test_checkpoint_digest_falls_back_to_placeholder_only_when_type_absent() -> None:
+    # §V26/B74: position (0,0) is corroboration ONLY -- consulted when a checkpoint
+    # carries no typed `type` field. A typeless (0,0) is treated as a placeholder
+    # (dropped); a typeless non-corner point offers a real waypoint (kept).
+    decoded = [
+        {"position": {"col": 0, "row": 0}},  # typeless corner -> placeholder fallback
+        {"position": {"col": 2, "row": 3}},  # typeless real point -> kept
+    ]
+    _, positions = _digest_checkpoints(decoded)
+    assert positions == ((2, 3),)
+
+
+def test_distinct_routes_keep_routes_differing_only_by_a_corner_move() -> None:
+    # §V74 (a)+(b)/B74: two routes differing ONLY by a real MOVE through grid corner
+    # (0,0) are distinct geometry and must NOT collapse (the position-only heuristic
+    # collapsed them, inflating occurrence_count + corrupting the polyline).
+    a = {"col": 0, "row": 0}
+    b = {"col": 5, "row": 2}
+    move = {"type": "MOVE", "position": {"col": 3, "row": 1}}
+    corner = {"type": "MOVE", "position": {"col": 0, "row": 0}}
+    records = [
+        _route_row(0, a, b, [move]),
+        _route_row(1, a, b, [move, corner]),  # same path + a real corner MOVE
+    ]
+    distinct = _distinct_routes(records)
+    assert len(distinct) == 2
+    assert distinct[0].occurrence_count == 1
+    assert distinct[1].occurrence_count == 1
 
 
 def test_include_routes_truncation_disclosed_when_read_hits_cap(

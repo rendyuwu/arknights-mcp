@@ -83,13 +83,6 @@ _MARK_START = "#2e7d32"  # route entry (enemy spawn)
 _MARK_END = "#c62828"  # route exit (objective)
 _MARK_PATH = "#ef6c00"  # checkpoint polyline
 
-#: A WAIT checkpoint carries a non-spatial ``(0, 0)`` placeholder rather than a real
-#: grid point (B65/§V74(b)). Drawing it as a path point makes the route polyline
-#: zig-zag through the board corner, so it is dropped from the checkpoint path. The
-#: single §V37 home for the placeholder point, shared by this render and the
-#: ``get_stage`` route digest (:mod:`~arknights_mcp.services.stages`, §T144).
-PLACEHOLDER_POINT = (0, 0)
-
 #: §T140 (B65) client-facing legend for the derived map's fixed colour palette, so a
 #: client can decode the opaque hex fills/markers a rendered image carries (the render
 #: previously shipped no colour legend anywhere in the response). Keyed to the same
@@ -290,52 +283,40 @@ def _draw_tiles(cells: Sequence[MapCell], eff_h: int) -> list[str]:
     return parts
 
 
-def _clean_checkpoints(
-    checkpoints: tuple[tuple[int, int], ...],
-) -> tuple[tuple[int, int], ...]:
-    """Drop non-spatial WAIT placeholders from a checkpoint path (B65).
-
-    A WAIT checkpoint carries a :data:`PLACEHOLDER_POINT` ``(0, 0)`` rather than a
-    real grid point; left in the polyline it makes the route zig-zag out to the board
-    corner and back (a corrupt path). Removing it leaves the route's genuine spatial
-    waypoints only, so the drawn polyline follows the real path.
-    """
-    return tuple(point for point in checkpoints if point != PLACEHOLDER_POINT)
-
-
 def _distinct_route_geometries(routes: Sequence[MapRoute]) -> list[MapRoute]:
-    """Collapse routes to DISTINCT, placeholder-cleaned geometry (B65).
+    """Collapse routes to DISTINCT geometry (B65).
 
     A stage stores many route records that share identical start/end/checkpoint
     geometry (4-4: 26 records, ~4 distinct); drawing every record over-plots the
     overlay with dozens of coincident markers (52 start/end circles for ~4 real
-    routes). Each record's checkpoints are placeholder-cleaned first
-    (:func:`_clean_checkpoints`), then records with identical
-    ``(start, end, checkpoints)`` collapse to one. First-occurrence order is kept so
-    the render stays deterministic (§C).
+    routes). Records with identical ``(start, end, checkpoints)`` collapse to one;
+    first-occurrence order is kept so the render stays deterministic (§C).
+
+    Non-spatial WAIT checkpoints are already filtered UPSTREAM by their typed ``type``
+    field (:func:`~arknights_mcp.services.stages._is_wait_checkpoint`, §V74 (b)/B74)
+    before a :class:`MapRoute` reaches the renderer, so the checkpoints here are real
+    grid waypoints only -- a ``MOVE`` legitimately targeting corner ``(0, 0)`` is NOT
+    discarded (the earlier render-layer position-cleaning dropped it, B74). This pure
+    renderer therefore draws whatever points it is given (§V37: one WAIT home, upstream).
     """
     seen: set[tuple[object, object, tuple[tuple[int, int], ...]]] = set()
     distinct: list[MapRoute] = []
     for route in routes:
-        cleaned = MapRoute(
-            start=route.start,
-            end=route.end,
-            checkpoints=_clean_checkpoints(route.checkpoints),
-        )
-        key = (cleaned.start, cleaned.end, cleaned.checkpoints)
+        key = (route.start, route.end, route.checkpoints)
         if key in seen:
             continue
         seen.add(key)
-        distinct.append(cleaned)
+        distinct.append(route)
     return distinct
 
 
 def _draw_routes(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
     """Start/end markers + a checkpoint polyline per DISTINCT route geometry.
 
-    Routes are collapsed to distinct, placeholder-cleaned geometry first (B65) so a
-    stage's many duplicate route records neither over-plot the overlay nor zig-zag the
-    polyline through the board corner.
+    Routes are collapsed to distinct geometry first (B65) so a stage's many duplicate
+    route records do not over-plot the overlay. WAIT placeholders were already filtered
+    upstream by their typed ``type`` field (§V74 (b)/B74) so the polyline follows real
+    grid waypoints only, without zig-zagging through the board corner.
     """
     parts: list[str] = []
     radius = max(_CELL_PX // 3, 2)

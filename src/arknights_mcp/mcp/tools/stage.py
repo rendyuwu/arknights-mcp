@@ -45,10 +45,10 @@ from arknights_mcp.mcp.tools._shared import (
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stage_map_render import RenderedMap
+from arknights_mcp.services.stage_route_digest import RouteFacts
 from arknights_mcp.services.stage_tile_grid import TileGridFacts
 from arknights_mcp.services.stages import (
     EnemyOccurrenceFacts,
-    RouteFacts,
     SpawnFacts,
     StageAnalysisResult,
     StageDetailResult,

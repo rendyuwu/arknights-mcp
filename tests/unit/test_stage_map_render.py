@@ -31,7 +31,8 @@ from arknights_mcp.services.stage_map_render import (
     MapRoute,
     render_stage_map,
 )
-from arknights_mcp.services.stages import _checkpoint_points, _point_xy, get_stage
+from arknights_mcp.services.stage_route_digest import _checkpoint_points, _point_xy
+from arknights_mcp.services.stages import get_stage
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -126,39 +127,25 @@ def test_render_draws_checkpoint_polyline() -> None:
     assert 'class="route-path"' in res.image.svg
 
 
-# --- B65: WAIT placeholder skipped + duplicate route geometry collapsed --------
+# --- B74/B65: render draws real waypoints; WAIT filtered upstream by type ------
 
 
-def test_render_skips_placeholder_checkpoint_in_polyline() -> None:
-    # B65/§V74(b): a WAIT checkpoint carries a non-spatial (0, 0) placeholder. Left in
-    # the polyline it zig-zags out to the board corner and back (the exact 4-4 route-9
-    # corruption `points="44,188 20,212 188,164 20,212"`). The cleaned polyline must
-    # follow the two real waypoints only, never the (0, 0) corner centre.
+def test_render_draws_every_checkpoint_including_grid_corner() -> None:
+    # §V74(b)/B74: WAIT filtering now happens UPSTREAM by the typed `type` field
+    # (services.stages._is_wait_checkpoint), so the pure renderer draws every
+    # checkpoint it is given -- including a real MOVE targeting grid corner (0, 0). The
+    # earlier render-layer (0, 0)-dropping discarded such a genuine waypoint (B74).
     res = render_stage_map(
         width=8,
         height=9,
         cells=[],
-        routes=[MapRoute(start=(1, 1), end=(7, 2), checkpoints=((1, 1), (0, 0), (7, 2), (0, 0)))],
+        routes=[MapRoute(start=(1, 1), end=(7, 2), checkpoints=((1, 1), (0, 0), (7, 2)))],
     )
     assert res.image is not None
     svg = res.image.svg
-    # (0, 0) centre on a height-9 board is "20,212" -- it must not appear as a path point.
-    assert "20,212" not in svg
-    # the two genuine waypoints (1,1)->(7,2) survive as the polyline.
-    assert 'points="44,188 188,164"' in svg
-
-
-def test_render_drops_polyline_when_only_placeholders_remain() -> None:
-    # A route whose every checkpoint is the (0, 0) placeholder has no real path -> no
-    # polyline (the >=2 guard runs on the cleaned points), only start/end markers.
-    res = render_stage_map(
-        width=3,
-        height=3,
-        cells=[],
-        routes=[MapRoute(start=(0, 0), end=(2, 2), checkpoints=((0, 0), (0, 0)))],
-    )
-    assert res.image is not None
-    assert 'class="route-path"' not in res.image.svg
+    # (0, 0) centre on a height-9 board is "20,212" -- it IS drawn as a real path point,
+    # in order, between the two other waypoints (no corner zig-zag: type-filtered upstream).
+    assert 'points="44,188 20,212 188,164"' in svg
 
 
 def test_render_dedups_identical_route_geometry() -> None:
@@ -175,14 +162,16 @@ def test_render_dedups_identical_route_geometry() -> None:
     assert svg.count('class="route-end"') == 2
 
 
-def test_render_dedup_ignores_placeholder_only_differences() -> None:
-    # Two records differing only in a WAIT placeholder collapse to one distinct
-    # geometry once the placeholder is cleaned (they render the same real path).
+def test_render_keeps_routes_distinct_when_a_real_corner_move_differs() -> None:
+    # §V74(a)+B74: the renderer dedups on exact geometry ONLY; WAIT markers are
+    # filtered upstream by type, not here. Two routes differing by a REAL corner (0, 0)
+    # MOVE are distinct paths and must NOT collapse to one (the earlier render-layer
+    # (0, 0)-cleaning would have merged them).
     a = MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (2, 0)))
     b = MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (0, 0), (2, 0)))
     res = render_stage_map(width=3, height=1, cells=[], routes=[a, b])
     assert res.image is not None
-    assert res.image.svg.count('class="route-path"') == 1
+    assert res.image.svg.count('class="route-path"') == 2
 
 
 # --- B65: colour legend carried alongside the image ---------------------------
@@ -267,6 +256,17 @@ def test_checkpoint_points_skips_a_positionless_checkpoint() -> None:
     assert _checkpoint_points([{"type": "MOVE"}, {"position": {}}]) == ()
     # start/end fragments remain flat {col, row}.
     assert _point_xy({"col": 0, "row": 0}) == (0, 0)
+
+
+def test_checkpoint_points_drops_wait_but_keeps_a_corner_move() -> None:
+    # §V74(b)/B74: the render point reducer drops a typed WAIT marker but KEEPS a real
+    # MOVE targeting grid corner (0, 0), so the renderer draws the genuine waypoint.
+    decoded = [
+        {"type": "MOVE", "position": {"col": 0, "row": 0}},  # real corner MOVE -> kept
+        {"type": "WAIT", "position": {"col": 0, "row": 0}},  # WAIT marker -> dropped
+        {"type": "MOVE", "position": {"col": 4, "row": 2}},
+    ]
+    assert _checkpoint_points(decoded) == ((0, 0), (4, 2))
 
 
 # --- get_stage tool wiring (4-4 fixture) --------------------------------------
