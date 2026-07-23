@@ -209,7 +209,7 @@ T150|x|M14 v0.2 schema flip + fold ADR 0012: `SCHEMA_VERSION` `"0.1"`→`"0.2"` 
 T151|x|M14 finder sweep: tile-grid hardening — `build_tile_grid` extent-product guard parity w/ render (`eff_w*eff_h > MAX_MAP_CELLS` → None, B70) + eff extent COVERS all tiles `max(stored_dim, max coord)+1` (B72) + `get_stage` refused/None grid → §V26 limitation (B71); ⊥ 4M-char sparse board, ⊥ silent tile drop, ⊥ None indistinguishable from no-tiles|V74,V22,V26
 T152|x|M14 finder sweep: route raw-read truncation disclosure — `get_stage(include_routes)` raw read hits MAX_MAP_ROUTES → limitation "route records truncated; distinct total may under-report" (B73); ⊥ silent pre-dedup undercount|V74,V22,V26
 T153|x|M14 finder sweep: WAIT checkpoint detection by `type` field (`_digest_checkpoints`/`_clean_checkpoints`), position (0,0) corroboration only — real MOVE @ corner (0,0) ⊥ dropped, routes ⊥ collapse (B74)|V74,V26
-T154|.|M14 finder sweep: `_stat_observation` skip `delta==0` — constant stat across levels ⊥ emit `+0` observation, all-constant → None (B75)|V66,V26
+T154|x|M14 finder sweep: `_stat_observation` skip `delta==0` — constant stat across levels ⊥ emit `+0` observation, all-constant → None (B75)|V66,V26
 T155|.|M14 finder sweep: search locale contract — service docstring `en/zh/ja/ko`→`ja/ko` (B76) + locale gate/filter scoped to entity_type (item/stage + locale → typed "not applicable", ⊥ bare not_found, B77)|V50,V57,V71,V73
 
 ## §B BUGS

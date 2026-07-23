@@ -130,6 +130,63 @@ def test_single_level_stat_bonus_yields_no_observation() -> None:
     assert "stat_bonus" not in {o.tag for o in analysis.observations}
 
 
+def test_constant_stat_across_levels_yields_no_observation() -> None:
+    # §V66.1/B75: a stat that holds constant across two present levels (atk 34 -> 34) is
+    # not a change; emitting a "+0" step would restate a non-change as a change. With the
+    # only stat constant, there is no evidence -> no observation (never a bare "+0").
+    flat = _amiya_cx1(
+        (
+            ModuleLevelInput(
+                level=1,
+                present=True,
+                stats=(ModuleStat(key="atk", value=34.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+            ModuleLevelInput(
+                level=2,
+                present=True,
+                stats=(ModuleStat(key="atk", value=34.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+        )
+    )
+    analysis = analyze_modules(_ctx(flat, levels=(1, 2)))
+    assert "stat_bonus" not in {o.tag for o in analysis.observations}
+    assert all("+0" not in o.summary for o in analysis.observations)
+
+
+def test_constant_stat_skipped_but_changing_stat_kept() -> None:
+    # §V66.1/B75: the skip is per-stat, not all-or-nothing -- atk changes (34 -> 48) so its
+    # +14 delta is kept, while def holds constant (10 -> 10) and contributes no evidence and
+    # no "+0" in the summary.
+    mixed = _amiya_cx1(
+        (
+            ModuleLevelInput(
+                level=1,
+                present=True,
+                stats=(ModuleStat(key="atk", value=34.0), ModuleStat(key="def", value=10.0)),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+            ModuleLevelInput(
+                level=2,
+                present=True,
+                stats=(ModuleStat(key="atk", value=48.0), ModuleStat(key="def", value=10.0)),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+        )
+    )
+    stat = _by_tag(analyze_modules(_ctx(mixed, levels=(1, 2))))["stat_bonus"]
+    seen = {(ev.field, ev.value) for ev in stat.evidence}  # type: ignore[attr-defined]
+    assert ("stat_bonus.atk", 14.0) in seen  # 48 - 34
+    assert not any(ev.field == "stat_bonus.def" for ev in stat.evidence)  # type: ignore[attr-defined]
+    assert "+14" in stat.summary and "def" not in stat.summary  # type: ignore[attr-defined]
+    assert "+0" not in stat.summary  # type: ignore[attr-defined]
+
+
 def test_talent_observation_names_the_typed_index() -> None:
     talent = _by_tag(analyze_modules(_ctx(_full_cx1())))["talent_change"]
     assert any(ev.value == 0 for ev in talent.evidence)  # type: ignore[attr-defined]

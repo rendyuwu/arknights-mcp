@@ -133,6 +133,11 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
     for (level_a, stats_a), (level_b, stats_b) in zip(present, present[1:], strict=False):
         for key in sorted(stats_a.keys() & stats_b.keys()):
             delta = stats_b[key] - stats_a[key]
+            if delta == 0:
+                # A stat constant across two present levels is not a change; emitting a
+                # "+0" step would restate a non-change as a change (§V66.1, B75). Skip it
+                # so an all-constant module falls through to `not evidence` -> None.
+                continue
             evidence.append(
                 EvidenceItem(
                     ref=module.game_id,
