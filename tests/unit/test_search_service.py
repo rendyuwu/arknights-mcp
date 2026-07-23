@@ -251,6 +251,53 @@ def test_operator_tags_and_aliases_indexed(tmp_path: Path) -> None:
         assert any(h.game_id == "char_002_amiya" for h in by_alias)
 
 
+# --- §T142 / §V73: item domain in the shared FTS index (B67) -------------------
+
+
+def _seed_item(tmp_path: Path) -> Path:
+    """Build a DB carrying one synthetic item row + its FTS document (§V37 home)."""
+    path = tmp_path / "item.sqlite"
+    writer = build_database(path)
+    provenance_id = _seed_provenance(writer)
+    writer.execute(
+        "INSERT INTO items (server, game_id, display_name, provenance_id) VALUES (?,?,?,?)",
+        ("en", "30073", "Loxic Kohl", provenance_id),
+    )
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    return path
+
+
+def test_item_searchable_by_name_and_game_id(tmp_path: Path) -> None:
+    # §V73/B67: an item is resolvable by name -> game_id so get_item_drops has a real
+    # name->id path (the FTS locator's game_id is exactly items.game_id).
+    with open_read_only(_seed_item(tmp_path)) as conn:
+        by_name = search_entities(conn, query="Loxic").hits
+        hit = next(h for h in by_name if h.entity_type == "item")
+        assert hit.game_id == "30073"
+        assert hit.server == "en"
+        assert any(h.game_id == "30073" for h in search_entities(conn, query="30073").hits)
+
+
+def test_item_entity_type_filter(tmp_path: Path) -> None:
+    # §V73: the item domain narrows via entity_type, like the other domains.
+    with open_read_only(_seed_item(tmp_path)) as conn:
+        assert search_entities(conn, query="Loxic", entity_type="item").hits
+        assert search_entities(conn, query="Loxic", entity_type="enemy").hits == ()
+
+
+def test_item_locator_feeds_get_item_drops(tmp_path: Path) -> None:
+    # §V73/B67: the item locator's game_id is the key get_item_drops resolves items by
+    # ((server, game_id)), so a search hit is a live name->id bridge, not a dead end.
+    from arknights_mcp.db.repositories.drops import DropRepository
+
+    with open_read_only(_seed_item(tmp_path)) as conn:
+        hit = next(h for h in search_entities(conn, query="Loxic").hits if h.entity_type == "item")
+        resolved = DropRepository(conn).item_by_game_id(hit.server, hit.game_id)
+        assert resolved is not None
+
+
 # --- §T100 / §V57: locale-tagged aliases in the rebuilt FTS index --------------
 
 

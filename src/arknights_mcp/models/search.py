@@ -21,8 +21,9 @@ from arknights_mcp.models.common import (
     StrictModel,
 )
 
-#: Entity domains searchable via the shared FTS index (§T31).
-EntityType = Literal["operator", "enemy", "stage"]
+#: Entity domains searchable via the shared FTS index (§T31; item added T142/§V73 so
+#: get_item_drops has a real name->id path, B67).
+EntityType = Literal["operator", "enemy", "stage", "item"]
 
 
 class SearchEntitiesInput(StrictModel):

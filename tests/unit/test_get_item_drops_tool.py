@@ -399,6 +399,9 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
     action = data["suggested_action"]
     # §V24: never a query-time download/scrape fallback.
     assert "download" not in str(action).lower() and "scrape" not in str(action).lower()
+    # §V73/B67: the pointer is honest -- search_entities now resolves item name -> id,
+    # so the not_found action names it (no longer a dead-end pointer).
+    assert "search_entities" in str(action)
 
 
 # --- §V23 typed failures ------------------------------------------------------

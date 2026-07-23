@@ -48,9 +48,10 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 _ENTITIES_TOOL_NAME = "search_entities"
 _ENTITIES_TOOL_TITLE = "Search entities"
 _ENTITIES_TOOL_DESCRIPTION = (
-    "Search indexed Arknights operators, enemies, and stages by name, alias, "
+    "Search indexed Arknights operators, enemies, stages, and items by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
-    "get_operator / get_enemy / get_stage for full facts. A stage locator carries "
+    "get_operator / get_enemy / get_stage for full facts, or feed an item locator's "
+    "game_id to get_item_drops. A stage locator carries "
     "its difficulty tag, so a normal stage and its challenge or tough variant that "
     "share a code and name stay distinguishable. An optional locale "
     "(ja/ko) filters to entities carrying a name/alias in that locale -- a "

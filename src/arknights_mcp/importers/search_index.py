@@ -11,7 +11,8 @@ Sources per entity type:
 
 * enemy  -> ``enemies`` (name) + ``enemy_aliases`` (aliases);
 * stage  -> ``stages`` (name + ``stage_code``);
-* operator -> ``operators`` (name + ``tag_json`` -> tags) + ``operator_aliases``.
+* operator -> ``operators`` (name + ``tag_json`` -> tags) + ``operator_aliases``;
+* item -> ``items`` (name; no alias/code/tag table -- T142/§V73).
 
 Only entity types actually present contribute rows, so this is a no-op for the
 domains not yet imported (operators land in M4); the index simply grows with the
@@ -49,6 +50,11 @@ _OPERATOR_SQL = (
     "WHERE a.operator_pk = o.operator_pk) "
     "FROM operators o"
 )
+# Items are name-only: no alias/stage_code/tag table, so no GROUP_CONCAT (§V37 -- the
+# ORDER-BY concern that B22 pins does not arise). Indexing the item domain makes an
+# item resolvable by name -> game_id in ``search_entities`` (§V73), so ``get_item_drops``
+# has a real name->id path instead of the dead-end pointer B67 flagged.
+_ITEM_SQL = "SELECT i.item_pk, i.server, i.game_id, i.display_name FROM items i"
 
 
 def _tags_from_json(raw: str | None) -> str | None:
@@ -82,6 +88,9 @@ def build_search_index(conn: sqlite3.Connection) -> int:
     for operator_pk, server, game_id, name, tag_json, aliases in conn.execute(_OPERATOR_SQL):
         tags = _tags_from_json(tag_json)
         rows.append(("operator", server, operator_pk, game_id, name, aliases, None, tags))
+
+    for item_pk, server, game_id, name in conn.execute(_ITEM_SQL):
+        rows.append(("item", server, item_pk, game_id, name, None, None, None))
 
     conn.executemany(_INSERT_SQL, rows)
     return len(rows)

@@ -1,6 +1,6 @@
 """Entity search service (§T31): the single domain entry point both transports
-call to search operators / enemies / stages by name, alias, code, id, or tag
-(§V14).
+call to search operators / enemies / stages / items by name, alias, code, id, or
+tag (§V14). The item domain (T142/§V73) gives ``get_item_drops`` a name->id path.
 
 Given a read-only SQLite connection and a free-text query, it tokenizes the
 query into a safe FTS5 ``MATCH`` expression (§V2/§V18 -- no operator or SQL
@@ -168,7 +168,8 @@ def search_entities(
     """Search indexed entities for ``query``. Read-only; parameterized SQL only (§V2).
 
     ``server`` scopes the result to one region (§V5, never silently mixed);
-    ``entity_type`` narrows to ``operator`` | ``enemy`` | ``stage``. ``limit`` is
+    ``entity_type`` narrows to ``operator`` | ``enemy`` | ``stage`` | ``item``.
+    An ``item`` locator's ``game_id`` feeds ``get_item_drops`` (§V73). ``limit`` is
     validated against the §V19 window -- an out-of-range value is *rejected*
     (``ValueError``), never silently widened. Region availability is honored
     *before* asserting absence (§V24/§V50): an unsupported region or a region with

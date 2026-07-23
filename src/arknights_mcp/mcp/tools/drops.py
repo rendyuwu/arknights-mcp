@@ -244,9 +244,13 @@ _ITEM_TOOL_DESCRIPTION = (
 )
 
 _ITEM_NOT_FOUND_MESSAGE = "no drop data matched the given region and item"
+# §V73/§V71(a): the item game_id is now resolvable by name via search_entities (T142),
+# so the pointer is honest -- no longer a dead-end (B67). Names an MCP-callable tool
+# first, then the admin sync (phrased as an admin step, never a query-time download).
 _ITEM_NOT_FOUND_ACTION = (
-    "verify the server and item game_id, or ask the server admin to run "
-    "`arknights-mcp sync --server all` to fetch the penguin drop cache"
+    "use search_entities to find the item's game_id by name, verify the server, or "
+    "ask the server admin to run `arknights-mcp sync --server all` to fetch the "
+    "penguin drop cache"
 )
 
 
