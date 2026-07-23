@@ -182,6 +182,21 @@ def test_list_descriptions_are_short_sentences(name: str) -> None:
     assert longest <= 240, (name, longest)
 
 
+# --- §V75/B68: sibling-search ranking divergence documented in BOTH descriptions ---
+
+
+def test_search_sibling_ranking_divergence_documented() -> None:
+    # §V75 (B68): search_stages ranks an exact stage-code match first; search_entities
+    # does not. The divergence must be documented in BOTH sibling descriptions so a
+    # client never discovers it only by a miss -- search_stages states its exact-code
+    # rule, and search_entities cross-refs search_stages for a stage code.
+    entities = _desc("search_entities")
+    stages = _desc("search_stages")
+    assert "search_stages" in entities  # cross-ref to the sibling tool
+    assert "stage code" in entities.lower()
+    assert "exact stage-code match is ranked first" in stages
+
+
 # --- (b) T137/B62: RUNTIME-emitted client strings carry no cites/jargon either --
 
 # T134 pinned the PUBLISHED surface (titles/descriptions/schemas). B62 showed a
