@@ -54,9 +54,7 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "game_id to get_item_drops. A stage locator carries "
     "its difficulty tag, so a normal stage and its challenge or tough variant that "
     "share a code and name stay distinguishable. For a stage code like 4-4, prefer "
-    "search_stages, which ranks an exact stage-code match first. An optional locale "
-    "(ja/ko) filters to entities carrying a name/alias in that locale -- a "
-    "name-tag filter only, it never changes an entity's own en/cn region facts. "
+    "search_stages, which ranks an exact stage-code match first. "
     "Results are bounded (default 10, max 50) and en/cn are never mixed."
 )
 _STAGES_TOOL_NAME = "search_stages"
@@ -89,28 +87,6 @@ _UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
 _DATA_STALE_MESSAGE = "no active snapshot for the requested region in the active build"
 _DATA_STALE_ACTION = (
     "ask the server admin to run `arknights-mcp sync --server <region>` or `arknights-mcp import`"
-)
-
-#: Fixed, safe copy for the §V50/§V57 LOCALE-availability verdict (B66): a locale
-#: filter was set but the build carries no alias in that locale (the jp/kr source is
-#: enabled but was never imported). Distinct from a bare ``not_found`` (which claims
-#: the entity is absent) and from the region ``data_stale`` message (which is about a
-#: fact region) so a client can tell "alias data never imported" from "no such alias".
-#: The suggested action is an admin sync, never a query-time download (§V24/§V71).
-_LOCALE_UNAVAILABLE_MESSAGE = "locale aliases not imported in this build"
-_LOCALE_UNAVAILABLE_ACTION = (
-    "ask the server admin to run `arknights-mcp sync` with the extra-locale source "
-    "enabled, or search without the locale filter"
-)
-
-#: Fixed, safe copy for the §V57/§V73 locale-not-applicable verdict (B77): the locale
-#: filter was set on an entity_type that carries no locale-alias table (item/stage).
-#: The client fixes the request, so this maps to an ``invalid_input`` envelope: drop the
-#: locale filter, or search operators/enemies where locale names exist. No spec cites or
-#: internal jargon in the client-facing text (§V71).
-_LOCALE_NOT_APPLICABLE_MESSAGE = "the locale filter applies only to operator and enemy searches"
-_LOCALE_NOT_APPLICABLE_ACTION = (
-    "drop the locale filter, or set entity_type to operator or enemy where locale names exist"
 )
 
 
@@ -162,25 +138,6 @@ def _guarded_search(
             )
         if result.status == "data_stale":
             return error("data_stale", _DATA_STALE_MESSAGE, suggested_action=_DATA_STALE_ACTION)
-        # §V50/§V57 (B66): a locale filter over a build with no alias in that locale is a
-        # ``data_stale`` envelope, but with a locale-specific message so the client can
-        # tell "alias data never imported" from a bare ``not_found`` ("no such alias").
-        if result.status == "locale_unavailable":
-            return error(
-                "data_stale",
-                _LOCALE_UNAVAILABLE_MESSAGE,
-                suggested_action=_LOCALE_UNAVAILABLE_ACTION,
-            )
-        # §V57/§V73 (B77): a locale filter on item/stage (no alias table) is an
-        # inapplicable filter combination -- a client mistake, delivered as
-        # ``invalid_input`` (never a bare ``not_found`` that would imply the entity
-        # is absent). The client drops the filter or picks an operator/enemy type.
-        if result.status == "locale_not_applicable":
-            return error(
-                "invalid_input",
-                _LOCALE_NOT_APPLICABLE_MESSAGE,
-                suggested_action=_LOCALE_NOT_APPLICABLE_ACTION,
-            )
         if result.status == "not_found":
             return error("not_found", not_found_message, suggested_action=not_found_action)
         return ok(
@@ -217,7 +174,6 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 query=parsed.query,
                 server=parsed.server,
                 entity_type=parsed.entity_type,
-                locale=parsed.locale,
                 limit=parsed.limit,
             ),
             not_found_message=_ENTITIES_NOT_FOUND_MESSAGE,

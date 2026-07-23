@@ -111,26 +111,16 @@ def test_search_region_optional() -> None:
     assert SearchEntitiesInput(query="dusk").server is None
 
 
-# --- §V57/B50: locale filter domain is the extra-locale tags (ja|ko) ONLY ---
+# --- §V57/T156: the extra-locale (ja/ko) NAME-alias filter is RETIRED ---
 
 
-def test_search_locale_extra_locale_tags_accepted() -> None:
-    # §V57/B50: the jp/kr NAME-alias tags are the only valid locale filter values.
-    assert SearchEntitiesInput(query="dusk", locale="ja").locale == "ja"
-    assert SearchEntitiesInput(query="dusk", locale="ko").locale == "ko"
-
-
-def test_search_locale_defaults_to_none() -> None:
-    assert SearchEntitiesInput(query="dusk").locale is None
-
-
-def test_search_locale_fact_region_locale_rejected() -> None:
-    # §V57/B50: a fact-region locale (en/zh) is degenerate (≈ server=) AND
-    # asymmetric-broken (only operators self-alias) -> rejected at the model gate,
-    # never a silent narrow that keeps operators and drops every enemy.
-    for bad in ("en", "zh"):
+def test_search_entities_rejects_locale_param() -> None:
+    # §V57/§V21 (T156, founder 2026-07-23, EN+CN only): the `locale` filter is gone.
+    # The model is `extra="forbid"` (§V18), so a client still sending `locale` is
+    # rejected at the gate -- never silently accepted or ignored.
+    for value in ("ja", "ko", "en", "zh"):
         with pytest.raises(ValidationError):
-            SearchEntitiesInput(query="dusk", locale=bad)  # type: ignore[arg-type]
+            SearchEntitiesInput(query="dusk", locale=value)  # type: ignore[call-arg]
 
 
 # --- selector: exactly one of stage_code | game_id ---

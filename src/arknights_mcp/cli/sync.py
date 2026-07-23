@@ -22,8 +22,6 @@ from arknights_mcp.cli._shared import (
 )
 from arknights_mcp.config import AppConfig
 from arknights_mcp.importers.announcements import import_announcements
-from arknights_mcp.importers.extra_locale_aliases import import_locale_aliases
-from arknights_mcp.importers.field_policy import EXTRA_LOCALE_FOR_REGION
 from arknights_mcp.importers.penguin_drops import (
     import_penguin_drops,
     penguin_server_for_region,
@@ -35,12 +33,6 @@ from arknights_mcp.sources.announcements import (
     source_id_for_region,
 )
 from arknights_mcp.sources.arknights_assets import ArknightsAssetsAdapter
-from arknights_mcp.sources.extra_locale_aliases import (
-    DEFAULT_SOURCE_ID as _EXTRA_LOCALE_SOURCE_ID,
-)
-from arknights_mcp.sources.extra_locale_aliases import (
-    ExtraLocaleAliasAdapter,
-)
 from arknights_mcp.sources.http_fetch import DownloadBudget, DownloadLimits, Fetcher
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.penguin_statistics import (
@@ -291,111 +283,31 @@ def _ride_along_announcements(
     _ride_along(candidate, servers=servers, label="announcements", per_server=_import)
 
 
-def _extra_locale_base_url(config: AppConfig, locale: str) -> str | None:
-    """Resolve a per-extra-locale base URL from ``[sync.<id>].base_url(s)`` (§T109).
+def _reindex_after_ride_alongs(candidate: Path) -> None:
+    """Rebuild ``entity_fts`` after the post-build ride-alongs so items are searchable.
 
-    Like the announcement feed (and unlike penguin), the jp/kr gamedata tree has no
-    shipped default -- an unset/placeholder value returns ``None`` so the ride-along
-    skips that locale rather than fetching a guessed URL (§V57/§V1). A single
-    ``base_url`` with a ``{server}`` token (substituted per locale) or an explicit
-    per-locale ``[.base_urls]`` entry both work, mirroring the primary source (§V5:
-    each locale points at a distinct tree).
+    The pipeline builds the FTS index (:func:`build_search_index`) at the end of the
+    game-data import -- BEFORE the penguin ride-along imports the ``items`` table
+    (§V58/§T102). Items are a searchable entity domain (§V73/§T142: an item locator's
+    game_id feeds ``get_item_drops``), so the freshly-imported item rows would be
+    invisible to ``search_entities(entity_type=item)`` unless the index is rebuilt from
+    the now-complete row set. This is the single §V37 rebuild home
+    (:func:`rebuild_search_index`), run once after every ride-along has settled (B83:
+    a build that predates the item FTS rows dead-ends the drops name->id path).
+
+    Fail-open under its own savepoint (§V58, must not defeat §V3): a rebuild failure is
+    caught + warned and rolled back to the game-data index the pipeline already built --
+    a broken post-step degrades item search, it never blocks the promote.
     """
-    source_cfg = config.sync.sources.get(_EXTRA_LOCALE_SOURCE_ID)
-    if source_cfg is None:
-        return None
-    url = source_cfg.base_url_for(locale)
-    return None if is_placeholder(url) else url
-
-
-def _extra_locale_eligible(config: AppConfig, registry: SourceRegistry) -> bool:
-    """Whether the extra-locale source is wired to fetch at least one locale (§V57/§V58).
-
-    Eligible == the source is BOTH in ``[sync].enabled_sources`` and registry-enabled
-    AND at least one extra locale (jp/kr) has a configured ``base_url``. The gamedata
-    tree URL has no shipped default, so an enabled-but-unconfigured source has nothing
-    to fetch -- treated as "off" here so the ride-along skips the write connection AND
-    the FTS rebuild entirely (mirrors the announcement pre-check). The hot promote path
-    should not pay for a write connection + index rebuild on every sync of an install
-    that never configured a jp/kr tree.
-    """
-    if _EXTRA_LOCALE_SOURCE_ID not in config.sync.enabled_sources:
-        return False
-    entry = registry.get(_EXTRA_LOCALE_SOURCE_ID)
-    if entry is None or not entry.enabled:
-        return False
-    return any(
-        _extra_locale_base_url(config, locale) is not None for locale in EXTRA_LOCALE_FOR_REGION
-    )
-
-
-def _ride_along_extra_locale(
-    candidate: Path,
-    *,
-    config: AppConfig,
-    registry: SourceRegistry,
-    fetcher: Fetcher | None,
-    limits: DownloadLimits,
-    budget: DownloadBudget,
-) -> None:
-    """Import jp/kr NAME aliases into the candidate before validation (§V57/§T109).
-
-    Closes the T99 gap: ``ExtraLocaleAliasAdapter`` + ``import_locale_aliases`` were
-    built + tested but never called by any CLI, so ``search_entities(locale=ja/ko)``
-    was empty on a synced db (the same inert class as the T102/T106 gaps). Mirrors the
-    penguin (§T102) and announcement (§T106) ride-alongs (:func:`_ride_along`, §V37):
-    runs only when the source is both in ``[sync].enabled_sources`` and registry-enabled
-    AND a ``[sync.<id>].base_url`` is configured for the locale (no shipped default,
-    §V57/§V1). Each extra locale (jp/kr) is fetched under its own per-locale ``SAVEPOINT``
-    and attached onto the EXISTING en/cn entities in the same candidate; a fetch/import
-    failure rolls back only THAT locale and the build continues game-data-only (fail-open,
-    §V58 -- the alias tables are outside CRITICAL_TABLES).
-
-    After every locale, ``entity_fts`` is rebuilt from the surviving rows (the single
-    §V37 rebuild home, :func:`rebuild_search_index`) so the freshly-imported aliases
-    become searchable -- the in-pipeline index was built before these aliases existed.
-    The rebuild is idempotent, so it is harmless even when a locale failed and rolled
-    back (it just reproduces the game-data index).
-
-    NB the extra locales are independent of the fact regions being synced: jp/kr NAMES
-    attach to whatever en/cn entities the candidate holds, so the ride-along iterates the
-    configured extra locales, not ``sync --server``.
-    """
-    if not _extra_locale_eligible(config, registry):
-        return
-
-    def _import(conn: sqlite3.Connection, locale: str) -> str | None:
-        base_url = _extra_locale_base_url(config, locale)
-        if base_url is None:
-            # Enabled but no base_url configured for this locale -- skip rather than
-            # fetch a guessed endpoint (§V57/§V1). Logged so the operator sees why.
-            _out(
-                f"  extra-locale {locale}: no base_url configured "
-                f"([sync.{_EXTRA_LOCALE_SOURCE_ID}]); skipped"
-            )
-            return None
-        adapter = ExtraLocaleAliasAdapter(
-            base_url, locale, fetcher=fetcher, limits=limits, budget=budget
-        )
-        result = import_locale_aliases(conn, adapter, region=locale)
-        return (
-            f"extra-locale {locale} ({result.locale}): "
-            f"{result.operator_aliases_inserted} operator + "
-            f"{result.enemy_aliases_inserted} enemy alias(es)"
-        )
-
-    def _rebuild_fts(conn: sqlite3.Connection) -> None:
-        # Rebuild the FTS index (returns a row count we discard) so the freshly-imported
-        # jp/kr aliases become searchable -- the single §V37 rebuild home.
-        rebuild_search_index(conn)
-
-    _ride_along(
-        candidate,
-        servers=sorted(EXTRA_LOCALE_FOR_REGION),
-        label="extra-locale",
-        per_server=_import,
-        after_all=_rebuild_fts,
-    )
+    conn = sqlite3.connect(str(candidate), isolation_level=None)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        with savepoint(conn, "reindex_after"):
+            rebuild_search_index(conn)
+    except Exception as exc:
+        _out(f"  search index: rebuild failed, skipped; continuing (§V58): {exc}")
+    finally:
+        conn.close()
 
 
 def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
@@ -470,14 +382,10 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
                     limits=limits,
                     budget=budget,
                 )
-                _ride_along_extra_locale(
-                    candidate,
-                    config=config,
-                    registry=registry,
-                    fetcher=ctx.fetcher,
-                    limits=limits,
-                    budget=budget,
-                )
+                # Rebuild the FTS index once the ride-alongs have settled so penguin
+                # items land in ``search_entities`` (§V73/B83); the pipeline built the
+                # index before the item rows existed.
+                _reindex_after_ride_alongs(candidate)
 
             return _build_validate_promote(
                 config, registry, imports, servers=servers, post_build=_post_build

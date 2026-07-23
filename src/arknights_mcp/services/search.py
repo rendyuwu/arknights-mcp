@@ -35,32 +35,15 @@ _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 #: Typed outcome (a subset of the §V23 status vocabulary wired into the tool
 #: envelope in §T32). ``not_found`` == the region index is present but the
 #: well-formed query matched nothing; ``unsupported_server`` / ``data_stale`` are
-#: the §V50 region-availability verdicts returned *before* asserting absence.
-#: ``locale_unavailable`` is the §V50 verdict on the LOCALE axis (B66): a ``locale``
-#: filter was set but the build carries no alias in that locale (jp/kr source enabled
-#: but never imported) -- returned before asserting absence, mapped to a ``data_stale``
-#: envelope with a locale-specific message at the tool layer.
-#: ``locale_not_applicable`` (B77) is the LOCALE axis verdict when the queried
-#: ``entity_type`` has no locale-alias domain at all (``item`` / ``stage`` carry no
-#: alias table): a ``locale`` filter can never match, so a bare ``not_found`` ("check
-#: the spelling") for an entity that exists is misleading -- the filter is inapplicable
-#: to the type, not the entity absent. Mapped to an ``invalid_input`` envelope at the
-#: tool layer (the client fixes the request by dropping ``locale`` or naming an
-#: operator/enemy type). Decided before the region/availability gates.
+#: the §V50 region-availability verdicts returned *before* asserting absence. The
+#: extra-locale (ja/ko) axis and its ``locale_unavailable`` / ``locale_not_applicable``
+#: verdicts are RETIRED (§V57, T156 -- founder 2026-07-23, EN+CN only).
 SearchStatus = Literal[
     "ok",
     "not_found",
     "unsupported_server",
     "data_stale",
-    "locale_unavailable",
-    "locale_not_applicable",
 ]
-
-#: The entity domains that carry a locale-tagged alias table (§T98): only operators
-#: and enemies. A ``locale`` filter is meaningless for any other domain -- items and
-#: stages have no alias table (§V57/§V73, B77) -- so a locale search explicitly scoped
-#: to one of those types is ``locale_not_applicable``, never a bare ``not_found``.
-_LOCALE_ALIAS_ENTITY_TYPES: frozenset[str] = frozenset({"operator", "enemy"})
 
 #: §V5 supported regions as a runtime set, derived from the single ``Region``
 #: literal home (§V37) so the search gate and the input model never diverge.
@@ -182,7 +165,6 @@ def search_entities(
     query: str,
     server: str | None = None,
     entity_type: str | None = None,
-    locale: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> SearchResult:
     """Search indexed entities for ``query``. Read-only; parameterized SQL only (§V2).
@@ -196,51 +178,21 @@ def search_entities(
     no active snapshot returns ``unsupported_server`` / ``data_stale``, never a bare
     ``not_found`` (see :func:`_region_gate`). Both transports call this (§V14).
 
-    ``locale`` (§V57) filters to entities carrying a jp/kr NAME alias in that locale
-    (``ja``/``ko`` only, B50); it is a NAME-tag axis, NOT a fact region. It applies
-    only to the operator/enemy domain -- items and stages have no locale-alias table,
-    so a ``locale`` filter explicitly scoped to ``entity_type`` ``item``/``stage``
-    returns ``locale_not_applicable`` rather than a misleading bare ``not_found`` (B77).
-    The region gate runs *independently* of ``locale`` -- a jp/kr locale search over a
-    region with no snapshot is still ``data_stale``, so a locale match never widens
-    region availability (§V50/§V57). ``None`` = no locale filter.
+    The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156 -- founder
+    2026-07-23, EN+CN only): there is no ``locale`` parameter, and the alias tables
+    are no longer consulted at query time (operator self-aliases still feed the FTS
+    ``name`` document at build time, §T98).
     """
     bounded = _validate_limit(limit)
-    # §V57/§V73 (B77): a locale filter is meaningful only for the operator/enemy alias
-    # domain. If the caller explicitly scopes to an entity_type with no alias table
-    # (item/stage), the filter can never match; report it as inapplicable to the type
-    # (an invalid filter combination) rather than letting the search fall through to a
-    # bare not_found that would wrongly imply the entity is absent. Decided before the
-    # region gate: the request is malformed regardless of region availability.
-    locale_scoped_off_domain = (
-        locale is not None
-        and entity_type is not None
-        and entity_type not in _LOCALE_ALIAS_ENTITY_TYPES
-    )
-    if locale_scoped_off_domain:
-        return SearchResult(status="locale_not_applicable", query=query, hits=())
     gate = _region_gate(conn, server)
     if gate is not None:
         return SearchResult(status=gate, query=query, hits=())
-    repo = SearchRepository(conn)
-    # §V50/§V57 (B66): honor LOCALE availability before asserting absence. A ``locale``
-    # filter narrows to entities carrying an alias in that locale; if the build holds
-    # NO alias in that locale (the jp/kr source is enabled but was never imported ->
-    # no active alias snapshot), the filter can never match and a bare ``not_found``
-    # ("check the spelling") is unconditionally misleading -- the alias data is absent,
-    # not the entity. Return a typed ``locale_unavailable`` verdict instead, mapped to
-    # a ``data_stale`` envelope + admin sync action at the tool layer. Runs AFTER the
-    # region gate so region availability is still decided independently of locale (a
-    # jp/kr alias never widens region availability, §V50). The region gate takes
-    # precedence: a locale search scoped to a region with no snapshot stays
-    # ``data_stale`` on the region axis.
-    if locale is not None and not repo.has_locale_alias(locale, entity_type=entity_type):
-        return SearchResult(status="locale_unavailable", query=query, hits=())
     match = _match_expression(query)
     if match is None:
         return SearchResult(status="not_found", query=query, hits=())
 
-    rows = repo.search(match, server=server, entity_type=entity_type, locale=locale, limit=bounded)
+    repo = SearchRepository(conn)
+    rows = repo.search(match, server=server, entity_type=entity_type, limit=bounded)
     return _result_from_rows(query, rows)
 
 

@@ -56,15 +56,10 @@ class SearchHitRow:
 # (server / game_id / stage_code) are qualified to ``entity_fts`` so the join adds
 # no interpolation and every value stays bound (§V2).
 #
-# The locale filter (§V57) is the trailing ``(? IS NULL OR EXISTS ...)`` clause: when
-# a locale is bound, a hit survives only if its entity carries an alias tagged with
-# that locale in ``operator_aliases`` / ``enemy_aliases`` (the two alias tables that
-# carry the §T98 ``locale`` column). Stages have no alias table, so a locale-scoped
-# search never returns a stage -- correct, since a stage carries no locale name. The
-# ``EXISTS`` sub-selects key on the UNINDEXED ``entity_pk`` + ``entity_type`` so the
-# filter is a pure post-match narrowing; every value stays bound (§V2). A ``NULL``
-# locale short-circuits the whole clause, so the unfiltered path is byte-unchanged
-# (§V21 additive).
+# The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156): there is no
+# trailing locale ``EXISTS`` clause and the alias tables are no longer consulted at
+# query time. Aliases still feed the FTS ``name`` document at build time (operator
+# self-aliases, §T98), so an operator remains matchable by appellation.
 _SEARCH_SQL = (
     "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
     "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty "
@@ -76,14 +71,6 @@ _SEARCH_SQL = (
     "WHERE entity_fts MATCH ? "
     "AND (? IS NULL OR entity_fts.server = ?) "
     "AND (? IS NULL OR entity_fts.entity_type = ?) "
-    "AND (? IS NULL OR ("
-    "  (entity_fts.entity_type = 'operator' AND EXISTS ("
-    "    SELECT 1 FROM operator_aliases oa "
-    "    WHERE oa.operator_pk = entity_fts.entity_pk AND oa.locale = ?)) "
-    "  OR (entity_fts.entity_type = 'enemy' AND EXISTS ("
-    "    SELECT 1 FROM enemy_aliases ea "
-    "    WHERE ea.enemy_pk = entity_fts.entity_pk AND ea.locale = ?)) "
-    ")) "
     "ORDER BY rank "
     "LIMIT ?"
 )
@@ -132,61 +119,17 @@ class SearchRepository(Repository):
         *,
         server: str | None,
         entity_type: str | None,
-        locale: str | None = None,
         limit: int,
     ) -> list[SearchHitRow]:
         """Return up to ``limit`` ranked hits for the FTS ``match`` expression.
 
         ``match`` is a pre-built FTS5 expression (already tokenized + quoted by the
-        service); ``server`` / ``entity_type`` / ``locale`` are optional filters
-        (``None`` = unfiltered). A ``locale`` filter (§V57) keeps only entities
-        carrying an alias in that locale (operators/enemies; a stage has no locale
-        alias so a locale-scoped search never returns one). ``limit`` is expected
-        pre-clamped to the §V19 bound.
+        service); ``server`` / ``entity_type`` are optional filters (``None`` =
+        unfiltered). ``limit`` is expected pre-clamped to the §V19 bound. The
+        extra-locale (ja/ko) alias filter is retired (§V57, T156).
         """
-        params = (
-            match,
-            server,
-            server,
-            entity_type,
-            entity_type,
-            locale,
-            locale,
-            locale,
-            limit,
-        )
+        params = (match, server, server, entity_type, entity_type, limit)
         return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
-
-    def has_locale_alias(self, locale: str, *, entity_type: str | None = None) -> bool:
-        """Whether an alias row is tagged with ``locale`` in the queried domain (§V50/§V57).
-
-        The substrate for the locale-availability gate: a ``locale`` filter narrows
-        to entities carrying an alias in that locale (see the ``EXISTS`` clause in
-        ``_SEARCH_SQL``), so if *zero* alias rows carry ``locale`` the filter can
-        never match and a bare ``not_found`` ("check the spelling") is unconditionally
-        misleading -- the alias data was never imported, not "no such alias" (B66).
-
-        Scoped to the queried ``entity_type`` (B77): only ``operator`` /  ``enemy``
-        carry the §T98 ``locale`` column, so the check inspects exactly the alias
-        table(s) the search will actually filter -- ``operator`` -> ``operator_aliases``,
-        ``enemy`` -> ``enemy_aliases``, ``None`` (any type) -> both. An ``item`` /
-        ``stage`` search carries no alias table at all and is handled one layer up
-        (the service returns ``locale_not_applicable`` before calling this), so this
-        method is never asked about those domains. Every value is bound (§V2);
-        ``EXISTS`` short-circuits on the first hit.
-        """
-        clauses: list[str] = []
-        params: list[str] = []
-        if entity_type in (None, "operator"):
-            clauses.append("EXISTS (SELECT 1 FROM operator_aliases WHERE locale = ?)")
-            params.append(locale)
-        if entity_type in (None, "enemy"):
-            clauses.append("EXISTS (SELECT 1 FROM enemy_aliases WHERE locale = ?)")
-            params.append(locale)
-        if not clauses:
-            return False
-        row = self._one("SELECT " + " OR ".join(clauses), tuple(params))
-        return bool(row[0]) if row else False
 
     def search_stages(
         self,

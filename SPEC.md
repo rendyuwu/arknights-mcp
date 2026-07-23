@@ -152,7 +152,7 @@ V84: static shared tool-description text (blackboard glossary ≈1.5KB) = 1 home
 T87-T155 (M8-M14) ALL done → purged 2026-07-23 (record lives in git history + §B cites). ids stay monotonic.
 
 id|status|task|cites
-T156|.|M15 locale RETIRE (founder 2026-07-23: EN+CN only, ⊥ ja/ko): ADR 0013 — drop `locale` param from `SearchEntitiesInput`/service/repo EXISTS filter + locale-gate paths (B66/B77 code); registry `arknights_extra_locale_names` removed\|disabled; migrations 0011/0012 STAY (harmless empty alias tables); retire locale tests; descriptions drop locale sentence|V57,V50,V21,V37
+T156|x|M15 locale RETIRE (founder 2026-07-23: EN+CN only, ⊥ ja/ko): ADR 0013 — drop `locale` param from `SearchEntitiesInput`/service/repo EXISTS filter + locale-gate paths (B66/B77 code); registry `arknights_extra_locale_names` removed\|disabled; migrations 0011/0012 STAY (harmless empty alias tables); retire locale tests; descriptions drop locale sentence|V57,V50,V21,V37
 T157|.|M15 `get_data_status` provenance single-carrier (B78): envelope provenance ⊥ verbatim-mirror `data.snapshots`; ONE block carries the (server,snapshot_id,imported_at) triple|V66
 T158|.|M15 per-row `region` hoist (B79): drop per-row `region` from drop/announcement/banner/item-stage rows; parent/envelope states region ONCE (§V5 = per-response); breaking → ADR 0013 bundle|V77,V66,V21,V5
 T159|.|M15 image_refs variant label (B80): each ref += `variant` (`e0`\|`e2`\|`base`\|`skin`) \| description gloss maps `_1`/`_2`/`_1b`/`_2b`; additive|V78,V71,V21

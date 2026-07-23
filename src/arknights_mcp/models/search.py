@@ -17,7 +17,6 @@ from arknights_mcp.models.common import (
     SEARCH_DEFAULT_LIMIT,
     SEARCH_MAX_LIMIT,
     Region,
-    SearchLocale,
     StrictModel,
 )
 
@@ -27,22 +26,18 @@ EntityType = Literal["operator", "enemy", "stage", "item"]
 
 
 class SearchEntitiesInput(StrictModel):
-    """Parameters for ``search_entities`` (§I; §V19/§V57).
+    """Parameters for ``search_entities`` (§I; §V19).
 
     ``query`` is free text, length-capped (§V18). ``server`` optionally scopes to
     one region (§V5); ``entity_type`` narrows the domain. ``limit`` is bounded to
     the §V19 window (default 10, max 50) -- an out-of-range value is rejected.
 
-    ``locale`` (§V57, additive/optional §V21) filters to entities carrying a
-    jp/kr NAME alias in that locale (``ja``/``ko`` only, B50). It is a NAME-tag axis,
-    NOT a fact region: a match still returns the entity's OWN en/cn facts and never
-    widens region availability (§V50). The fact-region locales (``en``/``zh``) are not
-    filter values -- they are degenerate (≈ ``server=``) and asymmetric-broken (only
-    operators self-alias). ``None`` = no locale filter (prior behavior).
+    The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156 -- founder
+    2026-07-23, EN+CN only): there is no ``locale`` parameter, and ``extra="forbid"``
+    rejects one if a client still sends it.
     """
 
     query: str = Field(min_length=1, max_length=MAX_QUERY_LEN)
     server: Region | None = None
     entity_type: EntityType | None = None
-    locale: SearchLocale | None = None
     limit: int = Field(default=SEARCH_DEFAULT_LIMIT, ge=1, le=SEARCH_MAX_LIMIT)
