@@ -212,6 +212,23 @@ def test_data_status_carries_per_snapshot_provenance(registry: ToolRegistry) -> 
         assert prov.imported_at
 
 
+def test_data_status_provenance_single_carrier(registry: ToolRegistry) -> None:
+    # §V66 (B78/T157): the envelope provenance is the SOLE carrier of the
+    # (server, snapshot_id, imported_at) triple -- the data.snapshots rows must not
+    # re-emit it (~600B dup/response), but keep the source/commit/version/age extras.
+    env = _call(registry, "get_data_status", **_VALID_CALLS["get_data_status"])
+    snapshots = env.to_dict()["data"]["snapshots"]  # type: ignore[index]
+    assert isinstance(snapshots, list) and snapshots
+    for snap in snapshots:
+        # Triple lives only in the envelope provenance, never in the row.
+        assert "server" not in snap
+        assert "snapshot_id" not in snap
+        assert "imported_at" not in snap
+        # Extras stay on the row.
+        assert snap["source_id"]
+        assert "age_days" in snap and "status" in snap
+
+
 # --- not_found -> typed status, safe copy -------------------------------------
 
 

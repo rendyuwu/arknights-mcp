@@ -73,6 +73,13 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     # serializable for the tool envelope / CLI --json
     json.dumps(status.to_dict())
 
+    # §V66/B78 (T157): the extras view drops the (server, snapshot_id, imported_at)
+    # triple -- carried by the envelope provenance -- and keeps the rest. to_dict
+    # stays full for the CLI, which has no envelope provenance to carry the triple.
+    extras = snap.to_provenance_extras()
+    assert extras.keys() == {"source_id", "commit_sha", "upstream_version", "age_days", "status"}
+    assert {"server", "snapshot_id", "imported_at"} <= snap.to_dict().keys()
+
 
 def test_data_status_empty_db_is_data_stale(tmp_path: Path) -> None:
     path = tmp_path / "empty.sqlite"

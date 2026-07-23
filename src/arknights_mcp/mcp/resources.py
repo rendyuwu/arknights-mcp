@@ -319,7 +319,10 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
             data = dict(status.to_dict())
             data["server"] = server
             data["status"] = env_status
-            data["snapshots"] = [s.to_dict() for s in snapshots]
+            # §V66/B78: the envelope ``provenance`` is the sole triple carrier here
+            # too -- snapshot rows keep only the source/commit/version/age extras
+            # (top-level ``server`` scopes the region). Same dedup as the tool (§V37).
+            data["snapshots"] = [s.to_provenance_extras() for s in snapshots]
             data["warnings"] = list(warnings)
             data["suggested_action"] = suggested_action
             return build_envelope(

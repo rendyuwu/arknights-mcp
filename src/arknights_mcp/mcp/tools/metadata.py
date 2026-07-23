@@ -43,10 +43,11 @@ _STATUS_TOOL_NAME = "get_data_status"
 _STATUS_TOOL_TITLE = "Get data status"
 _STATUS_TOOL_DESCRIPTION = (
     "Report the active build's data status: schema + analyzer version, deployment "
-    "mode, and the active snapshots per region (source, commit/version, import "
-    "time, and age in days so the client can judge freshness). Warns when the "
-    "active build has no snapshots or no imported entities, with a suggested admin "
-    "action. en/cn are never mixed."
+    "mode, and the active snapshots per region (source, commit/version, and age in "
+    "days so the client can judge freshness). Each snapshot's region, id, and import "
+    "time travel with the response provenance, one entry per snapshot in order. "
+    "Warns when the active build has no snapshots or no imported entities, with a "
+    "suggested admin action. en/cn are never mixed."
 )
 
 _SOURCES_TOOL_NAME = "get_data_sources"
@@ -78,9 +79,17 @@ def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
         Provenance(server=s.server, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
         for s in status.snapshots
     )
+    # §V66/B78: the envelope ``provenance`` above is the SOLE carrier of the
+    # (server, snapshot_id, imported_at) triple. Trim it from the ``data.snapshots``
+    # rows -- which keep the source/commit/version/age extras -- so the triple is
+    # emitted once, not duplicated per snapshot (~600B/response). ``provenance[i]``
+    # and ``snapshots[i]`` share the ``status.snapshots`` order, so they stay
+    # positionally 1:1 (the contract test pins ``len`` equality).
+    data = status.to_dict()
+    data["snapshots"] = [s.to_provenance_extras() for s in status.snapshots]
     return build_envelope(
         status.status,
-        data=status.to_dict(),
+        data=data,
         provenance=provenance,
         analyzer_version=status.analyzer_version,
     )

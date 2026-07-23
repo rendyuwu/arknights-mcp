@@ -56,6 +56,24 @@ class SnapshotStatus:
             "status": self.status,
         }
 
+    def to_provenance_extras(self) -> dict[str, object]:
+        """Snapshot fields *outside* the (server, snapshot_id, imported_at) triple.
+
+        The triple travels with the envelope ``provenance`` entry (§V5), so an MCP
+        ``data.snapshots`` row emitting it too duplicates ~600B/response (B78). The
+        MCP surfaces (tool + ``arknights://status`` resource) build their per-row
+        body from this extras-only view so the envelope stays the sole triple carrier
+        (§V66). ``to_dict`` keeps the full row for the CLI ``status``/``--json``,
+        which has no envelope provenance to carry the triple.
+        """
+        return {
+            "source_id": self.source_id,
+            "commit_sha": self.commit_sha,
+            "upstream_version": self.upstream_version,
+            "age_days": self.age_days,
+            "status": self.status,
+        }
+
 
 @dataclass(frozen=True)
 class DataStatus:
