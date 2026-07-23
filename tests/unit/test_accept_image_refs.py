@@ -203,6 +203,15 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
     ]
     assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
     assert by_cat["skin"] == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
+    # §V78/B80: the variant label rides through the full shared-registry tool path.
+    assert [(r["category"], r["variant"]) for r in refs] == [
+        ("portrait", "e0"),
+        ("portrait", "e2"),
+        ("avatar", "base"),
+        ("avatar", "e2"),
+        ("skin", "skin"),
+        ("skin", "skin"),
+    ]
 
 
 def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> None:
@@ -210,7 +219,12 @@ def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> N
     tools = _tools(conn, _registry(image_source_enabled=True))
     enemy = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
-        {"category": "enemy", "url": f"{BASE}/enemy/{_SLIME}.png", "source_id": SOURCE_ID}
+        {
+            "category": "enemy",
+            "url": f"{BASE}/enemy/{_SLIME}.png",
+            "variant": "base",
+            "source_id": SOURCE_ID,
+        }
     ]
 
 

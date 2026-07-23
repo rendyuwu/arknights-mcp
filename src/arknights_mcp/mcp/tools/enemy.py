@@ -48,7 +48,8 @@ _TOOL_DESCRIPTION = (
     "attack interval in seconds, attack range, move speed, weight, life-point "
     "reduction) with immunities and abilities. When the image-reference source is "
     "enabled, an additional image_refs list with the derived enemy sprite URL is "
-    "included. en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "included; each ref carries a variant label (the enemy sprite is variant base). "
+    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no enemy matched the given region and game_id"

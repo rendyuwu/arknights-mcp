@@ -158,13 +158,27 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
     ]
     assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
     assert by_cat["skin"] == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
+    # §V78/B80: each ref carries the E0/E2/skin/base variant label on the wire.
+    assert [(r["category"], r["variant"]) for r in refs] == [
+        ("portrait", "e0"),
+        ("portrait", "e2"),
+        ("avatar", "base"),
+        ("avatar", "e2"),
+        ("skin", "skin"),
+        ("skin", "skin"),
+    ]
 
 
 def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> None:
     handler = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler
     enemy = handler(server="en", game_id=_SLIME).to_dict()["data"]["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
-        {"category": "enemy", "url": f"{BASE}/enemy/{_SLIME}.png", "source_id": SOURCE_ID}
+        {
+            "category": "enemy",
+            "url": f"{BASE}/enemy/{_SLIME}.png",
+            "variant": "base",
+            "source_id": SOURCE_ID,
+        }
     ]
 
 
@@ -179,10 +193,30 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
     # portrait (E0/E2) AND avatar (base/E2) -- the avatar rides ALONGSIDE the portrait so
     # the mirror's lagging portrait tree never leaves a portrait-only (possibly dead) ref.
     assert resolved[_AMIYA]["image_refs"] == [
-        {"category": "portrait", "url": f"{BASE}/portrait/{_AMIYA}_1.png", "source_id": SOURCE_ID},
-        {"category": "portrait", "url": f"{BASE}/portrait/{_AMIYA}_2.png", "source_id": SOURCE_ID},
-        {"category": "avatar", "url": f"{BASE}/avatar/{_AMIYA}.png", "source_id": SOURCE_ID},
-        {"category": "avatar", "url": f"{BASE}/avatar/{_AMIYA}_2.png", "source_id": SOURCE_ID},
+        {
+            "category": "portrait",
+            "url": f"{BASE}/portrait/{_AMIYA}_1.png",
+            "variant": "e0",
+            "source_id": SOURCE_ID,
+        },
+        {
+            "category": "portrait",
+            "url": f"{BASE}/portrait/{_AMIYA}_2.png",
+            "variant": "e2",
+            "source_id": SOURCE_ID,
+        },
+        {
+            "category": "avatar",
+            "url": f"{BASE}/avatar/{_AMIYA}.png",
+            "variant": "base",
+            "source_id": SOURCE_ID,
+        },
+        {
+            "category": "avatar",
+            "url": f"{BASE}/avatar/{_AMIYA}_2.png",
+            "variant": "e2",
+            "source_id": SOURCE_ID,
+        },
     ]
     # An UNRESOLVED featured op carries no ref (its raw char id may not name an operator).
     assert "image_refs" not in resolved["char_999_ghost"]

@@ -28,9 +28,12 @@ from arknights_mcp.config import AppConfig, ImageRefsConfig, load_config
 from arknights_mcp.services import image_refs
 from arknights_mcp.services.image_refs import (
     SOURCE_ID,
+    enemy_image_refs,
     enemy_image_url,
+    image_ref_to_dict,
     operator_avatar_urls,
     operator_banner_refs,
+    operator_image_refs,
     operator_portrait_urls,
     operator_skin_urls,
 )
@@ -91,6 +94,42 @@ def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
         ("avatar", f"{BASE}/avatar/{OPERATOR_ID}_2.png"),
     ]
     assert all(r.source_id == SOURCE_ID for r in refs)
+    # §V78/B80: portrait = E0/E2, avatar = base/E2.
+    assert [r.variant for r in refs] == ["e0", "e2", "base", "e2"]
+
+
+# --- §V78 (B80): each ref carries a variant label the client reads directly --------
+
+
+def test_v78_operator_refs_carry_variant_labels() -> None:
+    # §V78/B80/§T159: the E0/E2/skin/base meaning of the mirror's _1/_2/_1b/_2b filename
+    # suffix is stated on the wire per ref so the client never guesses from the filename.
+    refs = operator_image_refs(OPERATOR_ID)
+    assert [(r.category, r.variant) for r in refs] == [
+        ("portrait", "e0"),
+        ("portrait", "e2"),
+        ("avatar", "base"),
+        ("avatar", "e2"),
+        ("skin", "skin"),
+        ("skin", "skin"),
+    ]
+
+
+def test_v78_enemy_ref_variant_is_base() -> None:
+    # §V78: the enemy sprite carries no elite suffix -> variant base.
+    (ref,) = enemy_image_refs(ENEMY_ID)
+    assert ref.variant == "base"
+
+
+def test_v78_wire_dict_carries_variant() -> None:
+    # §V21/§V78: the {category, url, variant, source_id} wire shape includes variant.
+    (ref,) = enemy_image_refs(ENEMY_ID)
+    assert image_ref_to_dict(ref) == {
+        "category": "enemy",
+        "url": f"{BASE}/enemy/{ENEMY_ID}.png",
+        "variant": "base",
+        "source_id": SOURCE_ID,
+    }
 
 
 # --- §V63: unconditional percent-encode -------------------------------------------

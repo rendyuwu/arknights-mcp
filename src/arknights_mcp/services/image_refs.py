@@ -35,6 +35,11 @@ Shape verified against the live repo tree (branch ``main``, 2026-07-22; §V63/AD
 Base ids never contain ``#``/``+``, but skin-variant filenames can, so the derivation
 percent-encodes ``#``→``%23`` and ``+``→``%2B`` **unconditionally** (§V63) -- one
 encoder, applied the same way to every derived URL.
+
+Each emitted ref also carries a ``variant`` label (§V78/B80/§T159) naming the art the
+mirror's ``_1``/``_2``/``_1b``/``_2b`` suffix encodes -- ``_1``→``e0``, ``_2``→``e2``,
+``_1b``/``_2b``→``skin``, no-suffix (avatar/enemy base)→``base`` -- so a client picks
+E0-vs-E2 art from the typed field, not a filename-convention guess.
 """
 
 from __future__ import annotations
@@ -58,6 +63,23 @@ CATEGORY_PORTRAIT = "portrait"
 CATEGORY_AVATAR = "avatar"
 CATEGORY_SKIN = "skin"
 CATEGORY_ENEMY = "enemy"
+
+#: The per-ref ``variant`` label (§V78/B80): the E0/E2/skin/base meaning of the mirror's
+#: ``_1``/``_2``/``_1b``/``_2b`` filename suffix, stated on the wire where the client reads
+#: it so picking E0-vs-E2 art needs no filename-convention knowledge. Single §T159 home for
+#: the label stamped on each ref; ``_1``→E0, ``_2``→E2, ``_1b``/``_2b``→skin, no-suffix→base.
+VARIANT_E0 = "e0"
+VARIANT_E2 = "e2"
+VARIANT_BASE = "base"
+VARIANT_SKIN = "skin"
+
+#: The variant sequence each ordered ``*_urls`` tuple carries, zipped onto the derived URLs
+#: in :func:`_refs` (§V37 single home, no parallel-list drift -- ``zip(strict=True)`` guards
+#: it): portrait = (E0, E2), avatar = (base, E2), skin = (E0-skin, E2-skin) both labelled
+#: ``skin`` per §V78's ``_1b``/``_2b``→skin grouping.
+_PORTRAIT_VARIANTS = (VARIANT_E0, VARIANT_E2)
+_AVATAR_VARIANTS = (VARIANT_BASE, VARIANT_E2)
+_SKIN_VARIANTS = (VARIANT_SKIN, VARIANT_SKIN)
 
 #: Raw-content base for the mirror, pinned to ``main`` (§V63/ADR 0008). The folder and
 #: ``<file>.png`` are appended by :func:`_png_url`. This literal has exactly ONE home in
@@ -138,30 +160,47 @@ def enemy_image_url(game_id: str) -> str:
 class ImageRef:
     """One derived image reference for the wire (§T120/§V63).
 
-    A ``{category, url, source_id}`` triple: ``url`` is a query-time DERIVED link (never
-    stored, never fetched -- §V63); ``category`` is one of the :data:`CATEGORY_*` labels;
-    ``source_id`` is the §V27 registry attribution the wiring stamps on every ref.
+    A ``{category, url, variant, source_id}`` entry: ``url`` is a query-time DERIVED link
+    (never stored, never fetched -- §V63); ``category`` is one of the :data:`CATEGORY_*`
+    labels; ``variant`` is one of the :data:`VARIANT_*` labels naming the E0/E2/skin/base
+    art the mirror filename suffix encodes (§V78/B80), stated on the wire so a client picks
+    E0-vs-E2 without filename-convention knowledge; ``source_id`` is the §V27 registry
+    attribution the wiring stamps on every ref.
     """
 
     category: str
     url: str
+    variant: str
     source_id: str = SOURCE_ID
 
 
 def image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
-    """One derived image reference for the wire (§T120/§V63): {category, url, source_id}.
+    """One derived image reference for the wire (§T120/§V63): {category, url, variant, source_id}.
 
-    The single §V37 home for the ``{category, url, source_id}`` wire shape shared by
-    every image-ref-bearing tool (get_operator/get_enemy/get_banners). The URL is a
-    query-time DERIVED link (never stored, never fetched); ``source_id`` is the §V27
-    registry attribution.
+    The single §V37 home for the ``{category, url, variant, source_id}`` wire shape shared
+    by every image-ref-bearing tool (get_operator/get_enemy/get_banners). The URL is a
+    query-time DERIVED link (never stored, never fetched); ``variant`` names the E0/E2/skin/
+    base art (§V78/B80); ``source_id`` is the §V27 registry attribution.
     """
-    return {"category": ref.category, "url": ref.url, "source_id": ref.source_id}
+    return {
+        "category": ref.category,
+        "url": ref.url,
+        "variant": ref.variant,
+        "source_id": ref.source_id,
+    }
 
 
-def _refs(category: str, urls: tuple[str, ...]) -> list[ImageRef]:
-    """Stamp ``category`` + :data:`SOURCE_ID` onto each derived URL (§T120/§V37)."""
-    return [ImageRef(category=category, url=url) for url in urls]
+def _refs(category: str, urls: tuple[str, ...], variants: tuple[str, ...]) -> list[ImageRef]:
+    """Stamp ``category`` + per-URL ``variant`` + :data:`SOURCE_ID` onto each derived URL.
+
+    ``urls`` and ``variants`` are zipped in order (§T120/§V37/§V78); ``zip(strict=True)``
+    fails closed on any length mismatch so the ordered ``*_urls`` tuple and its
+    :data:`_PORTRAIT_VARIANTS`-style variant tuple can never silently drift apart.
+    """
+    return [
+        ImageRef(category=category, url=url, variant=variant)
+        for url, variant in zip(urls, variants, strict=True)
+    ]
 
 
 def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
@@ -172,9 +211,9 @@ def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
     enumeration (§V19). Pure derivation; whether it is *emitted* is decided by the wiring
     gate (:func:`refs_enabled`). No network (§V1/§V24).
     """
-    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id))
-    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id))
-    refs += _refs(CATEGORY_SKIN, operator_skin_urls(game_id))
+    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id), _PORTRAIT_VARIANTS)
+    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id), _AVATAR_VARIANTS)
+    refs += _refs(CATEGORY_SKIN, operator_skin_urls(game_id), _SKIN_VARIANTS)
     return tuple(refs)
 
 
@@ -188,8 +227,8 @@ def operator_banner_refs(game_id: str) -> tuple[ImageRef, ...]:
     avatar returns 200 one category over -- emitting the avatar alongside keeps a working
     reference. Pure derivation -- no network (§V1/§V24).
     """
-    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id))
-    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id))
+    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id), _PORTRAIT_VARIANTS)
+    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id), _AVATAR_VARIANTS)
     return tuple(refs)
 
 
@@ -199,7 +238,7 @@ def enemy_image_refs(game_id: str) -> tuple[ImageRef, ...]:
     A single ref attached to the one already-fetched enemy entity (§V19 -- no catalog).
     Pure derivation -- no network (§V1/§V24).
     """
-    return (ImageRef(category=CATEGORY_ENEMY, url=enemy_image_url(game_id)),)
+    return (ImageRef(category=CATEGORY_ENEMY, url=enemy_image_url(game_id), variant=VARIANT_BASE),)
 
 
 def refs_enabled(*, config_enabled: bool, registry: SourceRegistry) -> bool:

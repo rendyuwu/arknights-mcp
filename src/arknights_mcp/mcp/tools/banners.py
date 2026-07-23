@@ -60,6 +60,7 @@ _TOOL_DESCRIPTION = (
     "(inclusive). Results are newest-first and paged (bounded page/page_size). When the "
     "image-reference source is enabled, a featured operator that resolved to a present "
     "operator also carries an image_refs list with its derived portrait and avatar URLs. "
+    "Each ref carries a variant label (e0/e2 for portrait, base/e2 for avatar). "
     "en/cn are never mixed."
 )
 
