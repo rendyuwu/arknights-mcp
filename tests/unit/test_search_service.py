@@ -416,6 +416,72 @@ def test_locale_filter_excludes_stages(tmp_path: Path) -> None:
         assert search_entities(conn, query="4-4", locale="ja").hits == ()
 
 
+def test_locale_scoped_to_item_type_is_not_applicable(tmp_path: Path) -> None:
+    # §V57/§V73 (B77): items have no locale-alias table, so a locale filter explicitly
+    # scoped to entity_type=item can never match. The service returns the typed
+    # ``locale_not_applicable`` verdict (an inapplicable filter, decided BEFORE the
+    # availability gate) -- never a bare ``not_found`` that would imply the item absent.
+    # The build DOES carry a ja alias (on the enemy), so this is not a ja-unavailable
+    # case: the verdict is driven purely by the queried type's missing alias domain.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        res = search_entities(conn, query="drone", entity_type="item", locale="ja")
+        assert res.status == "locale_not_applicable"
+        assert res.hits == ()
+
+
+def test_locale_scoped_to_stage_type_is_not_applicable(tmp_path: Path) -> None:
+    # §V57/§V73 (B77): stages likewise have no alias table. entity_type=stage + a locale
+    # filter is inapplicable, distinct from the unscoped case where a stage simply drops
+    # out of a mixed result set (test_locale_filter_excludes_stages).
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        res = search_entities(conn, query="4-4", entity_type="stage", locale="ja")
+        assert res.status == "locale_not_applicable"
+        assert res.hits == ()
+
+
+def test_locale_not_applicable_precedes_region_gate(tmp_path: Path) -> None:
+    # §V57/§V73 (B77): the type/locale mismatch is a malformed filter combination
+    # regardless of region availability, so it is decided BEFORE the region gate --
+    # an item+locale search scoped to a region with no snapshot still reads as
+    # ``locale_not_applicable``, not ``data_stale`` (the request is wrong either way).
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        res = search_entities(conn, query="drone", entity_type="item", locale="ja", server="cn")
+        assert res.status == "locale_not_applicable"
+
+
+def test_locale_scoped_to_enemy_type_still_filters(tmp_path: Path) -> None:
+    # §V57 (B77): the entity-type scoping must NOT break the operator/enemy domain --
+    # the enemy carries a ja alias, so entity_type=enemy + locale=ja still resolves it.
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="drone", entity_type="enemy", locale="ja").hits
+        assert any(h.game_id == "enemy_1105_drone" for h in hits)
+
+
+def test_locale_gate_scoped_to_operator_domain(tmp_path: Path) -> None:
+    # §V57/§V50 (B77): the availability gate is scoped to the queried type's alias
+    # domain. This build carries a ja alias on the enemy but NONE on any operator, so a
+    # ja search scoped to entity_type=operator sees an empty operator-alias domain ->
+    # ``locale_unavailable`` (the operator ja aliases were never imported), not a bare
+    # not_found. An unscoped ja search still passes the gate (the enemy carries ja).
+    path = _build_with_jp_alias(tmp_path)
+    with open_read_only(path) as conn:
+        scoped = search_entities(conn, query="drone", entity_type="operator", locale="ja")
+        assert scoped.status == "locale_unavailable"
+
+
+def test_service_docstring_advertises_ja_ko_only() -> None:
+    # §V57/B76: the SERVICE docstring must advertise the locale domain as ja/ko only
+    # (matching ``SearchLocale`` + the tool description), never the stale en/zh/ja/ko
+    # -- a dev reading it must not expect an en/zh filter that the model rejects.
+    doc = search_entities.__doc__ or ""
+    assert "``ja``/``ko``" in doc
+    assert "``en``/``zh``/``ja``/``ko``" not in doc
+
+
 def test_search_locale_domain_matches_field_policy_maps() -> None:
     # §V37/B50: the ``SearchLocale`` filter domain is kept in lock-step with the single
     # ``field_policy`` extra-locale map rather than re-declared. The searchable locales

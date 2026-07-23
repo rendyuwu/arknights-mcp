@@ -103,6 +103,16 @@ _LOCALE_UNAVAILABLE_ACTION = (
     "enabled, or search without the locale filter"
 )
 
+#: Fixed, safe copy for the §V57/§V73 locale-not-applicable verdict (B77): the locale
+#: filter was set on an entity_type that carries no locale-alias table (item/stage).
+#: The client fixes the request, so this maps to an ``invalid_input`` envelope: drop the
+#: locale filter, or search operators/enemies where locale names exist. No spec cites or
+#: internal jargon in the client-facing text (§V71).
+_LOCALE_NOT_APPLICABLE_MESSAGE = "the locale filter applies only to operator and enemy searches"
+_LOCALE_NOT_APPLICABLE_ACTION = (
+    "drop the locale filter, or set entity_type to operator or enemy where locale names exist"
+)
+
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     """One hit as a region-tagged locator (§V5: region travels on every row).
@@ -160,6 +170,16 @@ def _guarded_search(
                 "data_stale",
                 _LOCALE_UNAVAILABLE_MESSAGE,
                 suggested_action=_LOCALE_UNAVAILABLE_ACTION,
+            )
+        # §V57/§V73 (B77): a locale filter on item/stage (no alias table) is an
+        # inapplicable filter combination -- a client mistake, delivered as
+        # ``invalid_input`` (never a bare ``not_found`` that would imply the entity
+        # is absent). The client drops the filter or picks an operator/enemy type.
+        if result.status == "locale_not_applicable":
+            return error(
+                "invalid_input",
+                _LOCALE_NOT_APPLICABLE_MESSAGE,
+                suggested_action=_LOCALE_NOT_APPLICABLE_ACTION,
             )
         if result.status == "not_found":
             return error("not_found", not_found_message, suggested_action=not_found_action)

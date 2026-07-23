@@ -155,6 +155,34 @@ def test_locale_without_alias_data_is_locale_specific_data_stale(conn: sqlite3.C
     assert "§" not in str(data)
 
 
+# --- §V57/§V73 locale-not-applicable gate (B77) -------------------------------
+
+
+def test_locale_on_item_type_is_invalid_input(conn: sqlite3.Connection) -> None:
+    # §V57/§V73 (B77): items carry no locale-alias table, so a locale filter scoped to
+    # entity_type=item can never match. The verdict is ``invalid_input`` (a client
+    # mistake -- drop the filter or pick operator/enemy), NOT a bare ``not_found`` that
+    # would wrongly imply the item is absent. The global operator ja aliases (if any)
+    # must not let this pass the gate.
+    env = _handler(conn)(query="orirock", entity_type="item", locale="ja")
+    assert env.status == "invalid_input"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert data["message"] == "the locale filter applies only to operator and enemy searches"
+    action = data["suggested_action"]
+    assert isinstance(action, str)
+    assert "locale" in action
+    # §V71: no internal spec cite / jargon leaks into client-facing text.
+    assert "§" not in str(data)
+
+
+def test_locale_on_stage_type_is_invalid_input(conn: sqlite3.Connection) -> None:
+    # §V57/§V73 (B77): stages likewise have no locale-alias table. A locale filter
+    # explicitly scoped to entity_type=stage is inapplicable, not a not_found.
+    env = _handler(conn)(query="4-4", entity_type="stage", locale="ja")
+    assert env.status == "invalid_input"
+
+
 # --- §V19: bounded window -----------------------------------------------------
 
 

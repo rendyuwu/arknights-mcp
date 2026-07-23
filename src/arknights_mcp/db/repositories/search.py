@@ -157,23 +157,35 @@ class SearchRepository(Repository):
         )
         return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
 
-    def has_locale_alias(self, locale: str) -> bool:
-        """Whether ANY alias row is tagged with ``locale`` (§V50/§V57, B66).
+    def has_locale_alias(self, locale: str, *, entity_type: str | None = None) -> bool:
+        """Whether an alias row is tagged with ``locale`` in the queried domain (§V50/§V57).
 
         The substrate for the locale-availability gate: a ``locale`` filter narrows
         to entities carrying an alias in that locale (see the ``EXISTS`` clause in
         ``_SEARCH_SQL``), so if *zero* alias rows carry ``locale`` the filter can
         never match and a bare ``not_found`` ("check the spelling") is unconditionally
         misleading -- the alias data was never imported, not "no such alias" (B66).
-        Checks both alias tables that carry the §T98 ``locale`` column; every value is
-        bound (§V2). ``EXISTS`` + ``LIMIT 1`` short-circuits on the first hit.
+
+        Scoped to the queried ``entity_type`` (B77): only ``operator`` /  ``enemy``
+        carry the §T98 ``locale`` column, so the check inspects exactly the alias
+        table(s) the search will actually filter -- ``operator`` -> ``operator_aliases``,
+        ``enemy`` -> ``enemy_aliases``, ``None`` (any type) -> both. An ``item`` /
+        ``stage`` search carries no alias table at all and is handled one layer up
+        (the service returns ``locale_not_applicable`` before calling this), so this
+        method is never asked about those domains. Every value is bound (§V2);
+        ``EXISTS`` short-circuits on the first hit.
         """
-        row = self._one(
-            "SELECT "
-            "EXISTS (SELECT 1 FROM operator_aliases WHERE locale = ?) "
-            "OR EXISTS (SELECT 1 FROM enemy_aliases WHERE locale = ?)",
-            (locale, locale),
-        )
+        clauses: list[str] = []
+        params: list[str] = []
+        if entity_type in (None, "operator"):
+            clauses.append("EXISTS (SELECT 1 FROM operator_aliases WHERE locale = ?)")
+            params.append(locale)
+        if entity_type in (None, "enemy"):
+            clauses.append("EXISTS (SELECT 1 FROM enemy_aliases WHERE locale = ?)")
+            params.append(locale)
+        if not clauses:
+            return False
+        row = self._one("SELECT " + " OR ".join(clauses), tuple(params))
         return bool(row[0]) if row else False
 
     def search_stages(
