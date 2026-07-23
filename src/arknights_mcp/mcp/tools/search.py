@@ -53,7 +53,7 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "get_operator / get_enemy / get_stage for full facts. A stage locator carries "
     "its difficulty tag, so a normal stage and its challenge or tough variant that "
     "share a code and name stay distinguishable. An optional locale "
-    "(en/zh/ja/ko) filters to entities carrying a name/alias in that locale -- a "
+    "(ja/ko) filters to entities carrying a name/alias in that locale -- a "
     "name-tag filter only, it never changes an entity's own en/cn region facts. "
     "Results are bounded (default 10, max 50) and en/cn are never mixed."
 )
