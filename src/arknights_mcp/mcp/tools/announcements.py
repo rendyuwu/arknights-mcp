@@ -53,14 +53,18 @@ _TOOL_DESCRIPTION = (
 
 
 def _announcement_to_dict(ann: AnnouncementFacts) -> dict[str, object]:
-    """One announcement's metadata fields for the wire (metadata-only, §V56/§V16)."""
+    """One announcement's metadata fields for the wire (metadata-only, §V56/§V16).
+
+    §V77/§V66 (B79): no per-row ``region`` -- the response is single-region (``server``
+    is required, §V5), so region is stated ONCE on the parent ``server`` field, never
+    repeated on every row.
+    """
     return {
         "announce_id": ann.announce_id,
         "title": ann.title,
         "date": ann.date,
         "url": ann.url,
         "category": ann.category,
-        "region": ann.region,
     }
 
 
@@ -75,8 +79,12 @@ def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
     backing the FULL filtered set (§V5, derived in the service so a later page never
     drops one); the comparison is region-scoped, so every provenance row shares the
     requested region.
+
+    §V77/§V66 (B79): region is stated ONCE on the parent ``server`` field (and the
+    envelope provenance), never repeated on every announcement row.
     """
     data: dict[str, object] = {
+        "server": result.server,
         "announcements": [_announcement_to_dict(a) for a in result.announcements],
         "page": page_to_dict(result.page),
     }

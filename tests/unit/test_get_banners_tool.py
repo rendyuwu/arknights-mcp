@@ -50,14 +50,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 _SOURCE_ID = "local_snapshot"
 
-#: The metadata keys a banner may carry on the wire (§V62); never gacha prose.
+#: The metadata keys a banner row may carry on the wire (§V62); never gacha prose.
+#: §V77/§V66 (B79): no per-row ``region`` -- it rides the parent ``server`` field once.
 _ALLOWED_KEYS = {
     "game_id",
     "display_name",
     "open_time",
     "end_time",
     "rule_type",
-    "region",
     "featured_ops",
 }
 
@@ -197,13 +197,15 @@ def test_ok_returns_banner_metadata(conn: sqlite3.Connection) -> None:
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"banners", "page"}
+    assert set(data) == {"server", "banners", "page"}
+    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    assert data["server"] == "en"
     banners = data["banners"]
     assert isinstance(banners, list) and len(banners) == 3
     # §V26: newest first (open_time DESC).
     assert [b["game_id"] for b in banners] == ["LIMITED_1", "CLASSIC_1", "NORMAL_1"]
     for b in banners:
-        assert b["region"] == "en"
+        assert "region" not in b
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
@@ -217,9 +219,11 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     # §V5/§V62: a cn query returns cn-only data; en banners are not surfaced.
     env = _handler(conn)(server="cn")
     assert env.status == "ok"
-    banners = env.to_dict()["data"]["banners"]  # type: ignore[index]
+    data = env.to_dict()["data"]
+    assert data["server"] == "cn"  # type: ignore[index]
+    banners = data["banners"]  # type: ignore[index]
     assert [b["game_id"] for b in banners] == ["CN_1"]
-    assert all(b["region"] == "cn" for b in banners)
+    assert all("region" not in b for b in banners)
 
 
 # --- typed featured ops + §V62/§V26 limitations -------------------------------

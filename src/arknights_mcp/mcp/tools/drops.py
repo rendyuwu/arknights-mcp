@@ -107,13 +107,16 @@ def _drop_identity(drop: DropFacts) -> dict[str, object]:
     §V66.2: the ``snapshot_id`` / ``fetched_at`` / ``expires_at`` shared by every drop
     are hoisted to a single ``drop_provenance`` block by :func:`_shape`; a row repeats
     one only when it deviates, and carries ``expired`` only when it is past expiry.
+
+    §V77/§V66 (B79): no per-drop ``region`` -- the response is single-region (``server``
+    is a required selector, §V5), so region is stated ONCE on the parent ``stage`` +
+    envelope provenance, never repeated on every row.
     """
     return {
         "item_game_id": drop.item_game_id,
         "item_display_name": drop.item_display_name,
         "item_rarity": drop.item_rarity,
         "item_type": drop.item_type,
-        "region": drop.region,
         "quantity": drop.quantity,
         "times": drop.times,
         "drop_rate": _round_drop_rate(drop.drop_rate),
@@ -272,12 +275,15 @@ def _item_stage_drop_identity(stage: ItemStageDropFacts) -> dict[str, object]:
     The ``snapshot_id`` / ``fetched_at`` / ``expires_at`` / ``imported_at`` shared by
     every stage are hoisted to a single ``drop_provenance`` block by :func:`_shape_item`;
     a row repeats one only when it deviates, and carries ``expired`` only when past expiry.
+
+    §V77/§V66 (B79): no per-stage ``region`` -- an item's comparison is single-region
+    (resolved PER region, §V5), so region is stated ONCE on the parent ``item`` +
+    envelope provenance, never repeated on every stage row.
     """
     return {
         "stage_game_id": stage.stage_game_id,
         "stage_code": stage.stage_code,
         "sanity_cost": stage.sanity_cost,
-        "region": stage.region,
         "quantity": stage.quantity,
         "times": stage.times,
         "drop_rate": _round_drop_rate(stage.drop_rate),

@@ -92,12 +92,14 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
         "expires_at": FUTURE_EXPIRY,
         "imported_at": "2026-07-19T00:00:00+00:00",
     }
+    # §V77/§V66 (B79): region stated ONCE on the parent item, never per stage row.
+    assert data["item"]["server"] == "en"  # type: ignore[index]
     stages = data["stages"]
     assert isinstance(stages, list) and len(stages) == 2
     # §V22/§V19: a two-stage item fits page 1 with no further page.
     assert data["stages_page"] == {"page": 1, "page_size": 50, "total": 2, "has_more": False}  # type: ignore[index]
     for stage in stages:
-        assert stage["region"] == "en"
+        assert "region" not in stage
         assert stage["sanity_cost"] is not None
         # §V66.2: the shared provenance is NOT repeated per stage; §V67: a fresh stage
         # omits ``expired``.
@@ -232,8 +234,10 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
-    # Only the en stage rides the comparison; the cn stage never leaks in.
-    assert {s["region"] for s in data["stages"]} == {"en"}  # type: ignore[index]
+    # §V77/§V5 (B79): region stated ONCE on the parent item; the cn stage never leaks in
+    # (only 4-4 is ranked below + the provenance is en-only).
+    assert data["item"]["server"] == "en"  # type: ignore[index]
+    assert all("region" not in s for s in data["stages"])  # type: ignore[index]
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
     assert [row["name"] for row in ranking] == ["4-4"]
     assert {row["id"] for row in ranking} <= {s["stage_game_id"] for s in data["stages"]}  # type: ignore[index]

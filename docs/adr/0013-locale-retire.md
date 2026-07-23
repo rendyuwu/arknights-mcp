@@ -79,3 +79,21 @@ confirm the axis was only ever meaningful for the jp/kr NAME aliases now removed
   happened to be configured (§V73/B83).
 - History for the retired feature lives in git (T98–T101, T108–T109) and in the
   §B backprop rows (B50/B51/B52/B66/B76/B77) it resolved.
+
+## M15 reshape log
+
+This ADR is the M15 bundle anchor (see **Continues**, above): the M15 breaking
+response reshapes fold into the still-unreleased v0.2 line, so `SCHEMA_VERSION`
+stays `"0.2"` (same reasoning as decision point 4 — v0.2 is external-release-gated
+on T146 per ADR 0012 / B69). Each reshape is recorded here as it lands:
+
+- **T158 — per-row `region` hoist (B79/§V77/§V66).** `get_stage_drops`,
+  `get_item_drops`, `get_announcements`, and `get_banners` no longer stamp `region`
+  on every drop / stage / announcement / banner row. Each response is single-region
+  (`server` is a required selector, §V5), so region is stated ONCE: on the parent
+  object (`data.stage.server` / `data.item.server` for the drop tools; a new
+  `data.server` field on the `get_announcements` / `get_banners` list envelopes) plus
+  the envelope provenance. A 50-row page dropped 50 redundant `region` fields (§V66
+  economy). Wire-only, mirroring T157 (B78): the domain `*Facts.region` fields stay
+  (they carry the §V5 attribution the acceptance tests verify and back the parent /
+  provenance derivation), and the `region` DB column is untouched.

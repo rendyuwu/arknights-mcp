@@ -90,14 +90,18 @@ def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> di
 
 
 def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[str, object]:
-    """One banner's metadata fields for the wire (metadata-only, §V62/§V16)."""
+    """One banner's metadata fields for the wire (metadata-only, §V62/§V16).
+
+    §V77/§V66 (B79): no per-row ``region`` -- the response is single-region (``server``
+    is required, §V5), so region is stated ONCE on the parent ``server`` field, never
+    repeated on every banner row.
+    """
     return {
         "game_id": banner.game_id,
         "display_name": banner.display_name,
         "open_time": banner.open_time,
         "end_time": banner.end_time,
         "rule_type": banner.rule_type,
-        "region": banner.region,
         "featured_ops": [
             _featured_op_to_dict(op, image_refs_enabled=image_refs_enabled)
             for op in banner.featured_ops
@@ -115,8 +119,12 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
     ``banners`` holds only the requested page. Provenance is the distinct banner
     snapshots backing the FULL filtered set (§V5, derived in the service so a later page
     never drops one). The §V62/§V26 caveats ride the envelope ``limitations``.
+
+    §V77/§V66 (B79): region is stated ONCE on the parent ``server`` field (and the
+    envelope provenance), never repeated on every banner row.
     """
     data: dict[str, object] = {
+        "server": result.server,
         "banners": [
             _banner_to_dict(b, image_refs_enabled=image_refs_enabled) for b in result.banners
         ],

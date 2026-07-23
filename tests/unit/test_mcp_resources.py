@@ -201,7 +201,9 @@ def test_banners_read_is_region_scoped_ok_list(resources: ResourceRegistry) -> N
     body = _body(resources.read("arknights://banners/en"))
     assert body["status"] == "ok"
     data = body["data"]
-    assert set(data) == {"banners", "page"}  # type: ignore[arg-type]
+    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    assert set(data) == {"server", "banners", "page"}  # type: ignore[arg-type]
+    assert data["server"] == "en"  # type: ignore[index]
     assert data["banners"] == []  # type: ignore[index]
     assert data["page"]["total"] == 0  # type: ignore[index]
 

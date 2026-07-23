@@ -99,6 +99,8 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     # per-drop provenance repetition, no efficiency block without the flag.
     assert set(data) == {"stage", "drop_provenance", "drops"}
     assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
+    # §V77/§V66 (B79): region stated ONCE on the parent stage, never per drop row.
+    assert data["stage"]["server"] == "en"  # type: ignore[index]
     # §V54/§V66.2: the shared penguin provenance chain (snapshot + stamps) rides once.
     prov = data["drop_provenance"]
     assert prov == {  # type: ignore[comparison-overlap]
@@ -110,9 +112,10 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert isinstance(drops, list) and len(drops) == 1
     drop = drops[0]
     assert drop["item_game_id"] == "sugar"
-    assert drop["region"] == "en"
     assert drop["drop_rate"] == 0.25
     assert drop["times"] == 5000
+    # §V77/§V66 (B79): no per-drop region -- it rides the parent stage once.
+    assert "region" not in drop
     # §V66.2: the shared provenance is NOT repeated on the row; §V67: a fresh drop
     # omits ``expired`` (its absence = not expired), so the deviant row stays visible.
     for hoisted in ("snapshot_id", "fetched_at", "expires_at"):

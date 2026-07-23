@@ -45,8 +45,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The five §V56 metadata keys the wire may carry, plus the explicit region (§V5).
-_ALLOWED_KEYS = {"announce_id", "title", "date", "url", "category", "region"}
+#: The five §V56 metadata keys a wire row may carry. §V77/§V66 (B79): no per-row
+#: ``region`` -- it rides the parent ``server`` field once, never on every row.
+_ALLOWED_KEYS = {"announce_id", "title", "date", "url", "category"}
 
 #: Three en announcements with distinct ISO dates so ordering + windowing are
 #: deterministic; each carries forbidden body/html that must never survive (§V16).
@@ -154,13 +155,15 @@ def test_ok_returns_announcement_metadata(conn: sqlite3.Connection) -> None:
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"announcements", "page"}
+    assert set(data) == {"server", "announcements", "page"}
+    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    assert data["server"] == "en"
     anns = data["announcements"]
     assert isinstance(anns, list) and len(anns) == 3
     # §V26: newest first.
     assert [a["announce_id"] for a in anns] == ["ann-en-3", "ann-en-2", "ann-en-1"]
     for a in anns:
-        assert a["region"] == "en"
+        assert "region" not in a
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
@@ -175,9 +178,11 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     # §V5/§V56: a cn query returns cn-only data; en announcements are not surfaced.
     env = _handler(conn)(server="cn")
     assert env.status == "ok"
-    anns = env.to_dict()["data"]["announcements"]  # type: ignore[index]
+    data = env.to_dict()["data"]
+    assert data["server"] == "cn"  # type: ignore[index]
+    anns = data["announcements"]  # type: ignore[index]
     assert [a["announce_id"] for a in anns] == ["ann-cn-1"]
-    assert all(a["region"] == "cn" for a in anns)
+    assert all("region" not in a for a in anns)
 
 
 # --- metadata-only: no body/html/prose survives (§V56/§V16) -------------------
