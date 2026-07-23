@@ -118,34 +118,22 @@
       "evidence": [
         {
           "field": "stat_bonus.atk",
-          "note": "module level 1",
+          "note": "module level 1 to 2",
           "ref": "uniequip_002_amiya",
-          "value": 34.0
+          "value": 14.0
         },
         {
           "field": "stat_bonus.atk",
-          "note": "module level 2",
+          "note": "module level 2 to 3",
           "ref": "uniequip_002_amiya",
-          "value": 48.0
-        },
-        {
-          "field": "stat_bonus.atk",
-          "note": "module level 3",
-          "ref": "uniequip_002_amiya",
-          "value": 66.0
-        },
-        {
-          "field": "stat_bonus.max_hp",
-          "note": "module level 3",
-          "ref": "uniequip_002_amiya",
-          "value": 150.0
+          "value": 18.0
         }
       ],
       "limitations": [],
       "rule_id": "module.stat_bonus",
-      "summary": "CX-1 module grants attribute bonuses -- atk: 34 (Lv1), 48 (Lv2), 66 (Lv3); max_hp: 150 (Lv3).",
+      "summary": "CX-1 module attribute bonus changes across levels -- atk: +14 (Lv1->2), +18 (Lv2->3).",
       "tag": "stat_bonus",
-      "title": "Module attribute bonuses"
+      "title": "Module attribute bonus change across levels"
     },
     {
       "analyzer_version": "1",

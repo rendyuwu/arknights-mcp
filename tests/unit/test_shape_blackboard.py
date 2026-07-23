@@ -1,5 +1,5 @@
-"""T138 (§V67/§V37/B63): the shared blackboard-shaping helper drops always-null
-``valueStr`` keys at emit.
+"""T138/T148 (§V67/§V37/B63): the shared blackboard-shaping helper omits always-null
+optional keys (``valueStr``; a change bundle's effect ``description`` template) at emit.
 
 :func:`~arknights_mcp.services.operators.shape_blackboard` is the single §V37 home the
 ``get_operator`` and ``compare_operator_modules`` read services route their decoded
@@ -64,6 +64,24 @@ def test_valuestr_only_dropped_when_null_not_when_falsey() -> None:
     # (degenerate but present) string value and is kept -- the guard tests ``is None``.
     assert shape_blackboard([{"key": "k", "value": 1, "valueStr": ""}]) == [
         {"key": "k", "value": 1, "valueStr": ""}
+    ]
+
+
+# --- T148 (§V67): a null effect ``description`` template is omitted too ---------
+
+
+def test_null_description_key_is_dropped() -> None:
+    # §T148/§V67: a change bundle whose effect template is absent carries description=None
+    # (a module's -1 token-effect talent change hits this); omit the key, never emit null.
+    assert shape_blackboard([{"talentIndex": -1, "description": None, "blackboard": []}]) == [
+        {"talentIndex": -1, "blackboard": []}
+    ]
+
+
+def test_non_null_description_template_is_kept() -> None:
+    # A real imported effect template survives untouched -- only the null key is omitted.
+    assert shape_blackboard([{"description": "Adds a {prob:0%} chance.", "blackboard": []}]) == [
+        {"description": "Adds a {prob:0%} chance.", "blackboard": []}
     ]
 
 

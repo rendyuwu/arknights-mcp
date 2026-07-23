@@ -224,21 +224,31 @@ def _tags(tag_json: str | None) -> tuple[str, ...]:
     return tuple(t for t in decoded if isinstance(t, str))
 
 
-def shape_blackboard(value: object) -> object:
-    """Drop always-null ``valueStr`` keys from a decoded blackboard structure (§T138/§V67/B63).
+#: Optional keys omitted when their value is ``null`` (§V67 null discipline): a blackboard
+#: entry's ``valueStr`` (null for ~60 numeric params on a full operator; §T138/B63) and a
+#: trait/talent-change bundle's effect ``description`` template (null when the source carried
+#: no template -- e.g. a module's -1 token-effect talent change; §T148). Never emit ``null``
+#: for these so a client is not forced to decide "none vs unknown"; omission is additive (§V21).
+_NULL_OMIT_KEYS: frozenset[str] = frozenset({"valueStr", "description"})
 
-    A blackboard entry's ``valueStr`` is an optional string param that is ``null`` for
-    virtually every numeric parameter (~60 per full operator); §V67 omits an always-null
-    optional key rather than emit ``null`` so the client is not forced to decide "none vs
-    unknown". Recurses through the decoded dict/list structure so a ``blackboard`` nested
-    inside a trait/talent-change bundle is cleaned too; a *non-null* ``valueStr`` (a real
-    string param) is kept, and every other key/shape is preserved exactly -- dropping an
-    absent-optional key is additive/backward-compatible (§V21). The single §V37 home shared
-    by the operator + module-compare read services.
+
+def shape_blackboard(value: object) -> object:
+    """Omit always-null optional keys from a decoded blackboard structure (§V67; §T138/§T148).
+
+    Drops a ``valueStr`` / ``description`` key whose value is ``null`` (:data:`_NULL_OMIT_KEYS`)
+    rather than emit ``null`` so the client is not forced to decide "none vs unknown" (§V67).
+    Recurses through the decoded dict/list structure so a ``blackboard`` nested inside a
+    trait/talent-change bundle is cleaned too, and a bundle's null effect ``description``
+    (a module -1 token-effect change carries none) is dropped; a *non-null* value (a real
+    string param or an imported template) is kept, and every other key/shape is preserved
+    exactly -- omitting an absent-optional key is additive/backward-compatible (§V21). The
+    single §V37 home shared by the operator + module-compare read services.
     """
     if isinstance(value, dict):
         return {
-            k: shape_blackboard(v) for k, v in value.items() if not (k == "valueStr" and v is None)
+            k: shape_blackboard(v)
+            for k, v in value.items()
+            if not (k in _NULL_OMIT_KEYS and v is None)
         }
     if isinstance(value, list):
         return [shape_blackboard(item) for item in value]

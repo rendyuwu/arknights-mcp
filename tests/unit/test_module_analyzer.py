@@ -98,16 +98,36 @@ def test_stat_talent_trait_observations_emitted() -> None:
             assert ev.ref == "uniequip_002_amiya" and ev.field
 
 
-def test_stat_evidence_traces_each_typed_level_value() -> None:
-    # §V26: the stat observation reads typed key/value pairs -- one evidence row per
-    # (level, stat), so the whole progression is auditable.
+def test_stat_observation_reports_cross_level_diff() -> None:
+    # §T148/§V66.1: the per-level absolute bonuses are visible in the stat_bonus rows, so
+    # the observation reports only the computed cross-level delta -- atk +14 (Lv1->2), +18
+    # (Lv2->3). max_hp appears at a single level so it contributes no delta (§V26).
     stat = _by_tag(analyze_modules(_ctx(_full_cx1())))["stat_bonus"]
     seen = {(ev.field, ev.value) for ev in stat.evidence}  # type: ignore[attr-defined]
-    assert ("stat_bonus.atk", 34.0) in seen
-    assert ("stat_bonus.atk", 66.0) in seen
-    assert ("stat_bonus.max_hp", 150.0) in seen
-    # The summary states the values factually (no prescription; §V7).
-    assert "atk" in stat.summary and "150" in stat.summary  # type: ignore[attr-defined]
+    assert ("stat_bonus.atk", 14.0) in seen  # 48 - 34
+    assert ("stat_bonus.atk", 18.0) in seen  # 66 - 48
+    assert not any(ev.field == "stat_bonus.max_hp" for ev in stat.evidence)  # single level
+    # The summary states the signed change, never the raw absolute already in the rows.
+    assert "+14" in stat.summary and "+18" in stat.summary  # type: ignore[attr-defined]
+    assert "34" not in stat.summary  # type: ignore[attr-defined]
+
+
+def test_single_level_stat_bonus_yields_no_observation() -> None:
+    # §T148/§V66.1: a stat bonus at a single level is fully visible in its stat_bonus row,
+    # so there is no cross-level change to compute -> no observation (never restate a row).
+    one = _amiya_cx1(
+        (
+            ModuleLevelInput(
+                level=1,
+                present=True,
+                stats=(ModuleStat(key="atk", value=34.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+        )
+    )
+    analysis = analyze_modules(_ctx(one, levels=(1,)))
+    assert "stat_bonus" not in {o.tag for o in analysis.observations}
 
 
 def test_talent_observation_names_the_typed_index() -> None:
@@ -116,12 +136,51 @@ def test_talent_observation_names_the_typed_index() -> None:
     assert "0" in talent.summary  # type: ignore[attr-defined]
 
 
+def _token_module(talents: tuple[ModuleTalentChange, ...]) -> ModuleInput:
+    # module_type=None so the label falls back to the -1-free game_id -- a "-1" in the
+    # summary then can only be a leaked talentIndex, not the module type (e.g. "CX-1").
+    return ModuleInput(
+        game_id="uniequip_002_amiya",
+        module_type=None,
+        display_name=None,
+        levels=(
+            ModuleLevelInput(
+                level=1, present=True, stats=(), trait_change_count=0, talent_changes=talents
+            ),
+        ),
+    )
+
+
+def test_talent_observation_glosses_token_effect_index() -> None:
+    # §T148/§V71: talentIndex -1 is the token/summon effect convention, not a numbered
+    # talent; the observation glosses it as "the token effect" and leaks no bare -1 --
+    # neither in the summary nor the evidence (a typed token_effect flag instead).
+    module = _token_module((ModuleTalentChange(talent_index=-1),))
+    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
+    assert "token effect" in talent.summary  # type: ignore[attr-defined]
+    assert "-1" not in talent.summary  # type: ignore[attr-defined]
+    assert all(ev.value != -1 for ev in talent.evidence)  # type: ignore[attr-defined]
+    assert any(ev.field == "talent_changes.token_effect" for ev in talent.evidence)  # type: ignore[attr-defined]
+
+
+def test_talent_observation_combines_numbered_and_token_effect() -> None:
+    # §T148: a module that changes a numbered talent AND the token effect names both,
+    # with the -1 still glossed (numbered talents first, token effect appended).
+    module = _token_module(
+        (ModuleTalentChange(talent_index=0), ModuleTalentChange(talent_index=-1))
+    )
+    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
+    assert "talent(s) 0" in talent.summary  # type: ignore[attr-defined]
+    assert "the token effect" in talent.summary  # type: ignore[attr-defined]
+    assert "-1" not in talent.summary  # type: ignore[attr-defined]
+
+
 # --- §V26: absent level -> warning, missing != zero ----------------------------
 
 
 def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
-    # A module defined only at level 1 but level 3 requested: the missing level is
-    # warned, never reported as an empty/zero change (§V26).
+    # A module defined at levels 1-2 but level 3 requested: the missing level is warned,
+    # never reported as an empty/zero change (§V26), and forms no cross-level delta.
     partial = _amiya_cx1(
         (
             ModuleLevelInput(
@@ -132,15 +191,23 @@ def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
                 talent_changes=(),
             ),
             ModuleLevelInput(
+                level=2,
+                present=True,
+                stats=(ModuleStat(key="atk", value=48.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+            ModuleLevelInput(
                 level=3, present=False, stats=(), trait_change_count=0, talent_changes=()
             ),
         )
     )
-    analysis = analyze_modules(_ctx(partial, levels=(1, 3)))
+    analysis = analyze_modules(_ctx(partial, levels=(1, 2, 3)))
     assert any("level 3 is not defined" in w for w in analysis.warnings)
     stat = _by_tag(analysis)["stat_bonus"]
-    # Only the present level contributes evidence -- the absent level adds nothing.
-    assert {ev.value for ev in stat.evidence} == {34.0}  # type: ignore[attr-defined]
+    # Only the two present levels form a delta (48 - 34); the absent level adds nothing.
+    assert {ev.value for ev in stat.evidence} == {14.0}  # type: ignore[attr-defined]
+    assert "+14" in stat.summary  # type: ignore[attr-defined]
 
 
 def test_module_with_no_typed_changes_yields_no_observation() -> None:
@@ -186,6 +253,13 @@ def test_modules_processed_in_supplied_order() -> None:
                 trait_change_count=0,
                 talent_changes=(),
             ),
+            ModuleLevelInput(
+                level=2,
+                present=True,
+                stats=(ModuleStat(key="atk", value=20.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
         ),
     )
     b = ModuleInput(
@@ -196,11 +270,18 @@ def test_modules_processed_in_supplied_order() -> None:
             ModuleLevelInput(
                 level=1,
                 present=True,
-                stats=(ModuleStat(key="def", value=20.0),),
+                stats=(ModuleStat(key="def", value=5.0),),
+                trait_change_count=0,
+                talent_changes=(),
+            ),
+            ModuleLevelInput(
+                level=2,
+                present=True,
+                stats=(ModuleStat(key="def", value=12.0),),
                 trait_change_count=0,
                 talent_changes=(),
             ),
         ),
     )
-    refs = [obs.evidence[0].ref for obs in analyze_modules(_ctx(a, b, levels=(1,))).observations]
+    refs = [obs.evidence[0].ref for obs in analyze_modules(_ctx(a, b, levels=(1, 2))).observations]
     assert refs == ["uniequip_002_a", "uniequip_003_b"]

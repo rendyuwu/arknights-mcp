@@ -9,8 +9,10 @@ typed fields only (§V26), never a name or description string.
 Each observation carries the five §V6 fields (``rule_id`` + evidence + confidence
 + limitations + ``analyzer_version``) reusing the shared
 :class:`~arknights_mcp.analyzers.base.Observation` / ``EvidenceItem`` vocabulary
-(§V37). Observations state capability facts (what a module changes, by how much,
-at which level) -- never a "mandatory" / "best-in-slot" verdict (§V7). A requested
+(§V37). Observations state capability facts (which talents a module changes and how
+its stat bonus scales across levels) -- never a "mandatory" / "best-in-slot" verdict
+(§V7); the raw per-level bonuses live in the comparison rows, so the stat observation
+reports only the cross-level change they do not spell out (§V66.1). A requested
 level a module does not define is recorded as a §V26 warning, never concluded from.
 """
 
@@ -98,49 +100,57 @@ def _label(module: ModuleInput) -> str:
     return module.module_type or module.game_id
 
 
-def _stat_summary(by_key: dict[str, list[tuple[int, float]]]) -> str:
-    """Render the per-stat progression factually: ``atk: 34 (Lv1), 48 (Lv2)``.
+def _stat_diff_summary(by_key: dict[str, list[tuple[int, int, float]]]) -> str:
+    """Render each stat's per-step cross-level change: ``atk: +14 (Lv1->2), +18 (Lv2->3)``.
 
-    No sign is forced onto a value -- ``{:g}`` shows a negative naturally, so a
-    module that trades a stat down is stated correctly rather than as ``+-5``.
+    The sign is forced (``{:+g}``) so a raise reads ``+14`` and a downward trade reads
+    ``-5`` -- the change, not the absolute value already visible in the stat_bonus rows.
     """
     parts: list[str] = []
     for key in sorted(by_key):
-        points = ", ".join(f"{value:g} (Lv{level})" for level, value in by_key[key])
-        parts.append(f"{key}: {points}")
+        steps = ", ".join(f"{delta:+g} (Lv{a}->{b})" for a, b, delta in by_key[key])
+        parts.append(f"{key}: {steps}")
     return "; ".join(parts)
 
 
 def _stat_observation(module: ModuleInput) -> Observation | None:
-    """Observation of a module's attribute bonuses across the present levels (§V6).
+    """How a module's attribute bonuses CHANGE across its levels (§V6, §V66.1).
 
-    ``None`` when no present level grants a typed stat -- an absent bonus is not
-    reported as a zero bonus (§V26).
+    The per-level absolute bonuses already sit in the comparison's ``stat_bonus`` rows, so
+    restating them adds nothing (§V66.1: evidence refs the facts, never copies them). This
+    computes the cross-level delta the raw rows do not spell out -- each stat's step change
+    between consecutive present levels that both define it. ``None`` when no stat changes
+    across two present levels: a single-level bonus is fully visible in its own row, so it
+    needs no observation, and an absent level is never treated as a zero (§V26).
     """
+    present = [
+        (level.level, {stat.key: stat.value for stat in level.stats})
+        for level in module.levels
+        if level.present
+    ]
     evidence: list[EvidenceItem] = []
-    by_key: dict[str, list[tuple[int, float]]] = {}
-    for level in module.levels:
-        if not level.present:
-            continue
-        for stat in level.stats:
+    by_key: dict[str, list[tuple[int, int, float]]] = {}
+    for (level_a, stats_a), (level_b, stats_b) in zip(present, present[1:], strict=False):
+        for key in sorted(stats_a.keys() & stats_b.keys()):
+            delta = stats_b[key] - stats_a[key]
             evidence.append(
                 EvidenceItem(
                     ref=module.game_id,
-                    field=f"stat_bonus.{stat.key}",
-                    value=stat.value,
-                    note=f"module level {level.level}",
+                    field=f"stat_bonus.{key}",
+                    value=delta,
+                    note=f"module level {level_a} to {level_b}",
                 )
             )
-            by_key.setdefault(stat.key, []).append((level.level, stat.value))
+            by_key.setdefault(key, []).append((level_a, level_b, delta))
     if not evidence:
         return None
-    label = _label(module)
     return Observation(
         rule_id="module.stat_bonus",
         category=_CATEGORY,
         tag="stat_bonus",
-        title="Module attribute bonuses",
-        summary=f"{label} module grants attribute bonuses -- {_stat_summary(by_key)}.",
+        title="Module attribute bonus change across levels",
+        summary=f"{_label(module)} module attribute bonus changes across levels -- "
+        f"{_stat_diff_summary(by_key)}.",
         confidence=_CONFIDENCE,
         evidence=tuple(evidence),
         limitations=(),
@@ -175,26 +185,52 @@ def _trait_observation(module: ModuleInput) -> Observation | None:
 
 
 def _talent_observation(module: ModuleInput) -> Observation | None:
-    """Observation of the talents a module adds/overrides, by typed index (§V6)."""
+    """Observation of the talents a module adds/overrides, by typed index (§V6, §V71).
+
+    A ``talentIndex`` of ``-1`` is the game-data convention for the operator's TOKEN /
+    summon effect, not a numbered operator talent; it is glossed as "the token effect"
+    rather than emitted as a bare ``-1`` -- an internal convention never reaches the
+    client (§V71), in the summary or the evidence. Numbered talents (index >= 0) are
+    named by their index; an absent index is a generic "a talent" (§V26 invents none).
+    """
     evidence: list[EvidenceItem] = []
     indices: set[int] = set()
+    token_effect = False
     for level in module.levels:
         if not level.present:
             continue
         for change in level.talent_changes:
+            idx = change.talent_index
+            if idx is not None and idx < 0:
+                # -1 = the operator's token/summon effect; a typed flag, never a bare -1.
+                token_effect = True
+                evidence.append(
+                    EvidenceItem(
+                        ref=module.game_id,
+                        field="talent_changes.token_effect",
+                        value=True,
+                        note=f"module level {level.level}",
+                    )
+                )
+                continue
             evidence.append(
                 EvidenceItem(
                     ref=module.game_id,
                     field="talent_changes.talentIndex",
-                    value=change.talent_index,
+                    value=idx,
                     note=f"module level {level.level}",
                 )
             )
-            if change.talent_index is not None:
-                indices.add(change.talent_index)
+            if idx is not None:
+                indices.add(idx)
     if not evidence:
         return None
-    named = "talent(s) " + ", ".join(str(i) for i in sorted(indices)) if indices else "a talent"
+    phrases: list[str] = []
+    if indices:
+        phrases.append("talent(s) " + ", ".join(str(i) for i in sorted(indices)))
+    if token_effect:
+        phrases.append("the token effect")
+    named = " and ".join(phrases) if phrases else "a talent"
     return Observation(
         rule_id="module.talent_change",
         category=_CATEGORY,
