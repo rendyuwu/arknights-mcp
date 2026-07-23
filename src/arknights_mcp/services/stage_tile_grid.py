@@ -68,10 +68,24 @@ class TileGridFacts:
 
 
 def tile_grid_oversize_limitation() -> str:
-    """§V22 caption for a board too large to lay out compactly (single §V37 home)."""
+    """§V22 caption for a board with more raw tiles than the cap (single §V37 home)."""
     return (
         f"tile grid omitted: the stage has more than {MAX_MAP_CELLS} tiles; "
         "use include_map_image for a rendered overview instead"
+    )
+
+
+def tile_grid_refused_limitation() -> str:
+    """§V26/§V22 caption when a non-empty board cannot be laid out compactly.
+
+    Distinct from :func:`tile_grid_oversize_limitation` (raw tile COUNT over the cap):
+    a board can carry few tiles yet a huge extent (a sparse-wide board over the
+    extent-product cap, §V74 (c)/B70) or more distinct tile types than the symbol pool.
+    Emitting it means a refused grid is never a silent ``None`` a client reads as
+    "board has no tiles" (§V26/B71). Single §V37 home."""
+    return (
+        "tile grid omitted: the board extent or distinct-tile-type count exceeds the "
+        "compact-encoding limit; use include_map_image for a rendered overview instead"
     )
 
 
@@ -89,15 +103,26 @@ def build_tile_grid(
     ``y``) first so the text grid reads the same way up as the rendered image
     (:func:`~arknights_mcp.services.stage_map_render.render_stage_map`).
 
-    Returns ``None`` when there is nothing to lay out (no tiles / no extent) or the
-    distinct-type count exceeds the symbol pool (a pathological board refused rather
-    than encoded ambiguously). No imported prose reaches the grid -- only the typed,
-    already-allowlisted tile fields (§V18)."""
+    Returns ``None`` when there is nothing to lay out (no tiles / no extent), when the
+    board extent exceeds :data:`MAX_MAP_CELLS` cells (extent-product guard, parity with
+    the render, §V74 (c)/B70), or when the distinct-type count exceeds the symbol pool
+    (a pathological board refused rather than encoded ambiguously). Use
+    :func:`resolve_tile_grid` when a refusal must carry a §V26 limitation. No imported
+    prose reaches the grid -- only the typed, already-allowlisted tile fields (§V18)."""
     if not tiles:
         return None
-    eff_w = width if (width is not None and width > 0) else max(t.x for t in tiles) + 1
-    eff_h = height if (height is not None and height > 0) else max(t.y for t in tiles) + 1
+    # §V74 (c)/B72: the effective extent must COVER every tile -- a stored width/height
+    # that UNDER-reports the real tile extent (a tile at x=15 with a stored width of 13)
+    # would otherwise never be visited by the range() below and be silently dropped, so
+    # take max(stored_dim, max coord + 1).
+    eff_w = max(width if (width is not None and width > 0) else 0, max(t.x for t in tiles) + 1)
+    eff_h = max(height if (height is not None and height > 0) else 0, max(t.y for t in tiles) + 1)
     if eff_w <= 0 or eff_h <= 0:
+        return None
+    # §V74 (c)/B70: extent-product guard, parity with render_stage_map -- a sparse board
+    # (2 tiles at (0,0) and (2000,2000)) passes a row-COUNT cap yet spans a 2001x2001
+    # grid (~4M-char rows string = §V22 breach), so refuse on extent, not just count.
+    if eff_w * eff_h > MAX_MAP_CELLS:
         return None
     by_xy: dict[tuple[int, int], StageTileRow] = {(t.x, t.y): t for t in tiles}
     symbols: dict[_TileTypeKey, str] = {}
@@ -134,3 +159,27 @@ def build_tile_grid(
             chars.append(sym)
         rows.append("".join(chars))
     return TileGridFacts(rows=tuple(rows), legend=tuple(legend), absent_symbol=_GRID_ABSENT_SYMBOL)
+
+
+def resolve_tile_grid(
+    tiles: Sequence[StageTileRow], width: int | None, height: int | None
+) -> tuple[TileGridFacts | None, str | None]:
+    """Encode the grid, pairing a refused non-empty board with its §V26 limitation.
+
+    Single §V37 home for the whole tile-grid decision so the stage service only wires
+    the result. Returns:
+
+    * ``(grid, None)`` -- laid out in budget;
+    * ``(None, None)`` -- there are simply no tiles, so the caller emits no grid and no
+      limitation (an absent grid is honest here);
+    * ``(None, limitation)`` -- the raw tile COUNT is over the cap
+      (:func:`tile_grid_oversize_limitation`), or a non-empty board was REFUSED by
+      :func:`build_tile_grid` (extent over the cap / too many distinct types / degenerate
+      extent → :func:`tile_grid_refused_limitation`) so a refused grid is never a silent
+      ``None`` a client reads as "no tiles" (§V26/§V22/B70/B71)."""
+    if len(tiles) > MAX_MAP_CELLS:
+        return None, tile_grid_oversize_limitation()
+    grid = build_tile_grid(tiles, width, height)
+    if grid is None and tiles:
+        return None, tile_grid_refused_limitation()
+    return grid, None

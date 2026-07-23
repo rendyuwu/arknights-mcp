@@ -52,8 +52,7 @@ from arknights_mcp.services.stage_map_render import (
 )
 from arknights_mcp.services.stage_tile_grid import (
     TileGridFacts,
-    build_tile_grid,
-    tile_grid_oversize_limitation,
+    resolve_tile_grid,
 )
 from arknights_mcp.util.coerce import json_load
 from arknights_mcp.util.text import camel_to_snake
@@ -702,14 +701,16 @@ def get_stage(
                 map_version=raw_map.map_version if raw_map else None,
                 environment=json_load(raw_map.environment_json) if raw_map else None,
             )
-            if len(tile_rows) > MAX_MAP_CELLS:
-                limitations.append(tile_grid_oversize_limitation())
-            else:
-                tile_grid = build_tile_grid(
-                    tile_rows,
-                    raw_map.width if raw_map else None,
-                    raw_map.height if raw_map else None,
-                )
+            # §V74 (c)/§V26: resolve the grid and, when a non-empty board is over the
+            # count cap or refused (over-extent / too many types), the say-so limitation
+            # (B70/B71) so a refused grid is never a silent None read as "no tiles".
+            tile_grid, grid_limitation = resolve_tile_grid(
+                tile_rows,
+                raw_map.width if raw_map else None,
+                raw_map.height if raw_map else None,
+            )
+            if grid_limitation is not None:
+                limitations.append(grid_limitation)
 
     routes: tuple[RouteFacts, ...] = ()
     routes_page_info: SectionPage | None = None
