@@ -37,7 +37,6 @@
                   "value": 1.1
                 }
               ],
-              "description": "Increases ATK to {atk_scale:0%} when attacking.",
               "requiredPotentialRank": 0,
               "unlockCondition": {
                 "level": 1,
@@ -106,6 +105,7 @@
         }
       ],
       "module_type": "CX-1",
+      "trait_change_description": "Increases ATK to {atk_scale:0%} when attacking.",
       "unlock_level": 40,
       "unlock_phase": 2
     }

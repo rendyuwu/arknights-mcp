@@ -66,7 +66,9 @@ _TOOL_DESCRIPTION = (
     "never mixed. Skill, talent, and module effects include the in-game effect "
     "description template (when present in the source) alongside raw blackboard "
     "key-value data; read the template to interpret the values, and do not infer "
-    "mechanics from a key name alone. " + BLACKBOARD_KEY_GLOSSARY
+    "mechanics from a key name alone. A skill's template is emitted once as the "
+    "skill's description when it is the same at every level; it appears on a level only "
+    "when the wording differs between levels. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -119,18 +121,20 @@ def _skill_level_to_dict(level: SkillLevelFacts) -> dict[str, object]:
         "initial_sp": level.initial_sp,
         "duration": level.duration,
         "blackboard": level.blackboard,
-        # §V65 (a)/ADR 0010: the in-game effect TEMPLATE emitted alongside the
-        # blackboard so its keys are grounded (additive/optional, §V21).
-        "description": level.description,
     }
     # §V67: omit the always-optional ``range_id`` scalar when the source carried none.
     if level.range_id is not None:
         out["range_id"] = level.range_id
+    # §V66.3: the effect TEMPLATE is emitted once on the parent skill when it is
+    # byte-identical across levels; a level carries it only when the templates differ.
+    # Omit the key otherwise rather than emit an ambiguous null (§V67).
+    if level.description is not None:
+        out["description"] = level.description
     return out
 
 
 def _skill_to_dict(skill: OperatorSkillFacts) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "game_id": skill.game_id,
         "display_name": skill.display_name,
         "skill_type": skill.skill_type,
@@ -141,6 +145,12 @@ def _skill_to_dict(skill: OperatorSkillFacts) -> dict[str, object]:
         "unlock_level": skill.unlock_level,
         "levels": [_skill_level_to_dict(lv) for lv in skill.levels],
     }
+    # §V66.3/§V65 (a): the in-game effect TEMPLATE, hoisted here once when it is
+    # identical across every level (applies to all of them); omitted when it varies by
+    # level (each level then carries its own). §V67: absent key, never a null.
+    if skill.description is not None:
+        out["description"] = skill.description
+    return out
 
 
 def _talent_to_dict(talent: OperatorTalentFacts) -> dict[str, object]:

@@ -25,6 +25,7 @@
     "server": "cn",
     "skills": [
       {
+        "description": "对目标造成相当于攻击力{atk:0%}的物理伤害。",
         "display_name": "瞬影",
         "duration_type": "NONE",
         "game_id": "skchr_chen_1",
@@ -36,7 +37,7 @@
                 "value": 1.8
               }
             ],
-            "description": "对目标造成相当于攻击力{atk:0%}的物理伤害。",
+            "description": null,
             "duration": 15.0,
             "initial_sp": 10,
             "level": 1,

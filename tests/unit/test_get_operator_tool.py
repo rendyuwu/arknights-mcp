@@ -215,15 +215,34 @@ def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) ->
     )
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     skills = {s["game_id"]: s for s in op["skills"]}
-    lv = skills["skchr_amiya_2"]["levels"][0]
+    skill2 = skills["skchr_amiya_2"]
+    lv = skill2["levels"][0]
     # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
     assert lv["blackboard"] == [{"key": "atk", "value": 1.5}]
-    assert "{atk:0%}" in lv["description"]  # template references the blackboard key
+    # §T146/§V66.3: skchr_amiya_2 has one level, so its template is byte-identical across
+    # "all" levels and is hoisted once to the skill; the level no longer carries it.
+    assert "{atk:0%}" in skill2["description"]  # template references the blackboard key
+    assert "description" not in lv
     tvar = op["talents"][0]["variants"][0]
     assert "{atk_scale:0%}" in tvar["description"] and tvar["blackboard"]
-    # The module trait change carries its template alongside its blackboard (level 1).
+    # get_operator modules are unchanged by §T146: the trait change still carries its
+    # template inline alongside its blackboard (level 1).
     trait = op["modules"][0]["levels"][0]["trait_changes"]
     assert trait and "{atk_scale:0%}" in trait[0]["description"]
+
+
+def test_skill_template_kept_per_level_when_levels_differ(conn: sqlite3.Connection) -> None:
+    # §T146/§V66.3: the hoist is byte-lossless. skchr_amiya_1's two levels carry DIFFERENT
+    # templates (level 1 has a {charge} placeholder, level 2 does not), so nothing is
+    # hoisted to the skill and each level keeps its own text -- no wording is lost.
+    env = _handler(conn)(server="en", game_id=_AMIYA, include_skills=True)
+    op = env.to_dict()["data"]["operator"]  # type: ignore[index]
+    skill1 = {s["game_id"]: s for s in op["skills"]}["skchr_amiya_1"]
+    assert "description" not in skill1  # not hoisted -- templates differ across levels
+    levels = {lv["level"]: lv for lv in skill1["levels"]}
+    assert "{charge}" in levels[1]["description"]
+    assert "{charge}" not in levels[2]["description"]
+    assert levels[1]["description"] != levels[2]["description"]
 
 
 def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> None:

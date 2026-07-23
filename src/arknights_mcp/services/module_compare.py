@@ -40,6 +40,7 @@ from arknights_mcp.db.repositories.operators import OperatorRepository
 from arknights_mcp.services.operators import (
     OperatorProvenance,
     cost_item_ids,
+    hoist_uniform_template,
     pair_cost_item_names,
     shape_blackboard,
 )
@@ -71,13 +72,21 @@ class ModuleLevelComparison:
 
 @dataclass(frozen=True)
 class ModuleComparison:
-    """One module: metadata + its per-requested-level change bundles."""
+    """One module: metadata + its per-requested-level change bundles.
+
+    ``trait_change_description`` is the in-game trait effect TEMPLATE hoisted once to the
+    module when every level's trait change carries the identical template (§V66.3); it is
+    ``None`` when the module carries no trait template or the templates differ across
+    levels, in which case each level's ``trait_changes`` entry keeps its own. The hoist is
+    byte-lossless -- the text lives in exactly one place.
+    """
 
     game_id: str
     module_type: str | None
     display_name: str | None
     unlock_phase: int | None
     unlock_level: int | None
+    trait_change_description: str | None
     levels: tuple[ModuleLevelComparison, ...]
 
 
@@ -145,6 +154,32 @@ def _trait_count(trait_changes: object) -> int:
     return len(trait_changes) if isinstance(trait_changes, list) else 0
 
 
+def _change_descriptions(changes: object) -> list[str | None]:
+    """The ``description`` template of each change bundle in a decoded list (§V66.3 input).
+
+    A non-list value (the source carried no change at this level) yields an empty list, so
+    a trait-less level does not inject a spurious ``None`` into the uniformity check.
+    """
+    if not isinstance(changes, list):
+        return []
+    return [b.get("description") for b in changes if isinstance(b, dict)]
+
+
+def _strip_change_description(changes: object) -> object:
+    """Drop the hoisted ``description`` from each bundle of a decoded change list (§V66.3).
+
+    Applied to a level's shaped ``trait_changes`` only when the template was hoisted to the
+    parent module; every other key (blackboard, unlock condition, potential rank) is
+    preserved and a non-list value is returned unchanged.
+    """
+    if not isinstance(changes, list):
+        return changes
+    return [
+        {k: v for k, v in b.items() if k != "description"} if isinstance(b, dict) else b
+        for b in changes
+    ]
+
+
 def _not_found(
     server: str, game_id: str, levels: tuple[int, ...], mode: CompareMode
 ) -> ModuleCompareResult:
@@ -208,6 +243,16 @@ def compare_operator_modules(
     comparisons: list[ModuleComparison] = []
     analyzer_modules: list[ModuleInput] = []
     for module, rows in module_rows:
+        # §V66.3: the trait effect TEMPLATE is byte-identical across a module's levels in
+        # the common case, so hoist it once to the module (dropped from every per-level
+        # trait_changes entry below) when every level agrees; keep it inline when the
+        # templates differ so no text is lost. Computed over the raw decode before shaping.
+        trait_change_description = hoist_uniform_template(
+            desc
+            for level in requested
+            if (present_row := rows.get(level)) is not None
+            for desc in _change_descriptions(json_load(present_row.trait_changes_json))
+        )
         comp_levels: list[ModuleLevelComparison] = []
         analyzer_levels: list[ModuleLevelInput] = []
         for level in requested:
@@ -236,15 +281,20 @@ def compare_operator_modules(
             stat_bonus = json_load(row.stat_bonus_json)
             trait_changes = json_load(row.trait_changes_json)
             talent_changes = json_load(row.talent_changes_json)
+            # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at emit (the
+            # analyzer inputs below read key/value/talentIndex from the raw decode, so they
+            # are unaffected by the shaping).
+            trait_shaped = shape_blackboard(trait_changes)
+            # §V66.3: when the trait template was hoisted to the module, strip it from this
+            # level's trait_changes so the text is emitted exactly once.
+            if trait_change_description is not None:
+                trait_shaped = _strip_change_description(trait_shaped)
             comp_levels.append(
                 ModuleLevelComparison(
                     level=level,
                     present=True,
-                    # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at
-                    # emit (the analyzer inputs below read key/value/talentIndex, so they
-                    # are unaffected by the shaping).
                     stat_bonus=shape_blackboard(stat_bonus),
-                    trait_changes=shape_blackboard(trait_changes),
+                    trait_changes=trait_shaped,
                     talent_changes=shape_blackboard(talent_changes),
                     # §T132/§V69: each {id,count,type} cost entry paired with its item
                     # display_name (additive, §V21); an un-named id is left as-is.
@@ -267,6 +317,7 @@ def compare_operator_modules(
                 display_name=module.display_name,
                 unlock_phase=module.unlock_phase,
                 unlock_level=module.unlock_level,
+                trait_change_description=trait_change_description,
                 levels=tuple(comp_levels),
             )
         )

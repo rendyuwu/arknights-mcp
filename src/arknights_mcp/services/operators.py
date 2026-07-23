@@ -20,7 +20,7 @@ transports share this exact function (§V14). No transport-specific logic lives 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -95,7 +95,10 @@ class SkillLevelFacts:
 
     ``description`` is the imported in-game effect TEMPLATE (mechanic text referencing
     the blackboard keys; §V65 (a)/ADR 0010), emitted alongside the blackboard for
-    grounding; ``None`` when the source level carries none.
+    grounding. When the template is byte-identical across every one of the skill's
+    levels it is hoisted once to the parent :class:`OperatorSkillFacts` and this
+    per-level field is ``None`` (§V66.3 payload dedup); it is populated here only when
+    the levels' templates differ, so the varying text is never lost.
     """
 
     level: int
@@ -109,7 +112,14 @@ class SkillLevelFacts:
 
 @dataclass(frozen=True)
 class OperatorSkillFacts:
-    """One skill slot: metadata + its ordered mastery levels."""
+    """One skill slot: metadata + its ordered mastery levels.
+
+    ``description`` is the in-game effect TEMPLATE hoisted once to the skill when it is
+    byte-identical across all the skill's levels (§V66.3); it is ``None`` when the
+    template varies by level, in which case each :class:`SkillLevelFacts` carries its
+    own. The hoist is byte-lossless -- exactly one of the skill-level or per-level
+    ``description`` carries the text.
+    """
 
     game_id: str
     display_name: str | None
@@ -119,6 +129,7 @@ class OperatorSkillFacts:
     slot_index: int
     unlock_phase: int | None
     unlock_level: int | None
+    description: str | None
     levels: tuple[SkillLevelFacts, ...]
 
 
@@ -234,6 +245,25 @@ def shape_blackboard(value: object) -> object:
     return value
 
 
+def hoist_uniform_template(values: Iterable[str | None]) -> str | None:
+    """The single effect TEMPLATE shared by every element of ``values``, else ``None`` (§V66.3).
+
+    Returns the string when ``values`` collapses to exactly one distinct, non-``None``
+    template -- the per-level byte-identical case §V66.3 targets, where the template is
+    hoisted once to the parent and dropped from every row. Returns ``None`` when the
+    templates differ, or when none is present, so the caller keeps the per-row copies and
+    loses no information (the hoist is lossless: the text lives in exactly one place). The
+    single §V37 home shared by the skill hoist (:func:`_skill_facts`) and the module-compare
+    trait-change hoist.
+    """
+    distinct = set(values)
+    if len(distinct) == 1:
+        (only,) = distinct
+        if isinstance(only, str):
+            return only
+    return None
+
+
 def _summary(operator: OperatorRow, counts: OperatorSectionCounts) -> OperatorSummary:
     return OperatorSummary(
         rarity=operator.rarity,
@@ -266,6 +296,15 @@ def _phase_facts(row: OperatorPhaseRow) -> OperatorPhaseFacts:
 
 
 def _skill_facts(repo: OperatorRepository, row: OperatorSkillRow) -> OperatorSkillFacts:
+    """One skill's facts, its effect template hoisted out of the level rows when uniform (§V66.3).
+
+    The in-game effect TEMPLATE is byte-identical across a skill's mastery levels in the
+    common case (~30% of a full-operator payload); when every level shares it, it is
+    hoisted once to the skill and dropped from each level row (§V66.3). When the levels'
+    templates differ it stays per-level so no text is lost (:func:`hoist_uniform_template`).
+    """
+    level_rows = repo.skill_levels(row.skill_pk)
+    hoisted = hoist_uniform_template(lv.gameplay_description for lv in level_rows)
     return OperatorSkillFacts(
         game_id=row.game_id,
         display_name=row.display_name,
@@ -275,11 +314,13 @@ def _skill_facts(repo: OperatorRepository, row: OperatorSkillRow) -> OperatorSki
         slot_index=row.slot_index,
         unlock_phase=row.unlock_phase,
         unlock_level=row.unlock_level,
-        levels=tuple(_skill_level_facts(lv) for lv in repo.skill_levels(row.skill_pk)),
+        description=hoisted,
+        levels=tuple(_skill_level_facts(lv, hoisted=hoisted is not None) for lv in level_rows),
     )
 
 
-def _skill_level_facts(row: SkillLevelRow) -> SkillLevelFacts:
+def _skill_level_facts(row: SkillLevelRow, *, hoisted: bool) -> SkillLevelFacts:
+    """One skill level; its effect template is dropped when it was hoisted to the skill (§V66.3)."""
     return SkillLevelFacts(
         level=row.level,
         sp_cost=row.sp_cost,
@@ -287,7 +328,7 @@ def _skill_level_facts(row: SkillLevelRow) -> SkillLevelFacts:
         duration=row.duration,
         range_id=row.range_id,
         blackboard=shape_blackboard(json_load(row.blackboard_json)),
-        description=row.gameplay_description,
+        description=None if hoisted else row.gameplay_description,
     )
 
 

@@ -57,7 +57,9 @@ _TOOL_DESCRIPTION = (
     "en/cn are never mixed. Each stat/trait/talent change includes the in-game "
     "effect description template (when present in the source) alongside raw blackboard "
     "key-value data; read the template to interpret the values, and do not infer "
-    "mechanics from a key name alone. " + BLACKBOARD_KEY_GLOSSARY
+    "mechanics from a key name alone. A module's trait template is emitted once as the "
+    "module's trait_change_description when it is the same at every level; it appears on a "
+    "level's trait change only when the wording differs between levels. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -80,7 +82,7 @@ def _level_to_dict(level: ModuleLevelComparison) -> dict[str, object]:
 
 
 def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "game_id": module.game_id,
         "module_type": module.module_type,
         "display_name": module.display_name,
@@ -88,6 +90,12 @@ def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
         "unlock_level": module.unlock_level,
         "levels": [_level_to_dict(lv) for lv in module.levels],
     }
+    # §V66.3: the trait effect TEMPLATE is emitted once here when it is identical at every
+    # level (dropped from each level's trait_changes); omitted when it varies (each level
+    # keeps its own) or absent. §V67: absent key, never a null.
+    if module.trait_change_description is not None:
+        out["trait_change_description"] = module.trait_change_description
+    return out
 
 
 def _shape(result: ModuleCompareResult) -> ResponseEnvelope:

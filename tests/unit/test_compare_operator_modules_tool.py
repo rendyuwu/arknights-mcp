@@ -37,7 +37,11 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.mcp.tools.module_compare import build_compare_operator_modules_spec
 from arknights_mcp.models.common import MAX_ID_LEN
-from arknights_mcp.services.module_compare import compare_operator_modules
+from arknights_mcp.services.module_compare import (
+    _change_descriptions,
+    _strip_change_description,
+    compare_operator_modules,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -168,15 +172,39 @@ def test_module_changes_carry_grounding_limitation(conn: sqlite3.Connection) -> 
 
 
 def test_effect_template_rides_trait_and_talent_changes(conn: sqlite3.Connection) -> None:
-    # §T127/§V65 (a)/ADR 0010: each per-level trait/talent change emits its in-game
-    # effect description template alongside the raw blackboard (additive, §V21).
+    # §T127/§V65 (a)/ADR 0010: each per-level change emits its in-game effect description
+    # template alongside the raw blackboard (additive, §V21).
     env = _handler(conn)(server="en", game_id=_AMIYA)
     module = _cx1(env.to_dict()["data"])
     levels = {lv["level"]: lv for lv in module["levels"]}
+    # §T146/§V66.3: the trait template is byte-identical across the module's levels (only
+    # level 1 defines a trait change here), so it is hoisted once to the module and dropped
+    # from the per-level trait_changes entry -- but the blackboard values stay per level.
+    assert "{atk_scale:0%}" in module["trait_change_description"]
     trait = levels[1]["trait_changes"]
-    assert trait and "{atk_scale:0%}" in trait[0]["description"]
+    assert trait and "description" not in trait[0]
+    assert trait[0]["blackboard"] == [{"key": "atk_scale", "value": 1.1}]
+    # talent_changes are unchanged by §T146: the template still rides each entry inline.
     talent = levels[2]["talent_changes"]
     assert talent and "{prob:0%}" in talent[0]["description"]
+
+
+def test_change_descriptions_extracts_templates_and_ignores_trait_less_levels() -> None:
+    # §T146/§V66.3 hoist input: the descriptions of each bundle in a decoded change list;
+    # a non-list (trait-less level) yields no entries so it does not force non-uniformity.
+    assert _change_descriptions([{"description": "X"}, {"description": "Y"}]) == ["X", "Y"]
+    assert _change_descriptions(None) == []
+    assert _change_descriptions([{"blackboard": []}]) == [None]
+
+
+def test_strip_change_description_drops_only_that_key() -> None:
+    # §T146/§V66.3: stripping the hoisted template leaves every other bundle key intact;
+    # a non-list value is returned unchanged.
+    stripped = _strip_change_description(
+        [{"description": "X", "blackboard": [{"key": "atk_scale", "value": 1.1}]}]
+    )
+    assert stripped == [{"blackboard": [{"key": "atk_scale", "value": 1.1}]}]
+    assert _strip_change_description(None) is None
 
 
 def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> None:

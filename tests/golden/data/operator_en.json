@@ -137,6 +137,7 @@
     "server": "en",
     "skills": [
       {
+        "description": null,
         "display_name": "Arts Charge",
         "duration_type": "NONE",
         "game_id": "skchr_amiya_1",
@@ -172,6 +173,7 @@
         "unlock_phase": 0
       },
       {
+        "description": "The next attack deals {atk:0%} of ATK as Arts damage to all enemies in range.",
         "display_name": "Chain Cast",
         "duration_type": "NONE",
         "game_id": "skchr_amiya_2",
@@ -183,7 +185,7 @@
                 "value": 1.5
               }
             ],
-            "description": "The next attack deals {atk:0%} of ATK as Arts damage to all enemies in range.",
+            "description": null,
             "duration": 20.0,
             "initial_sp": 0,
             "level": 1,

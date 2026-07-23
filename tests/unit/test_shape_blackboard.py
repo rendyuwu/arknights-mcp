@@ -12,7 +12,7 @@ is preserved (additive/backward-compatible, §V21).
 
 from __future__ import annotations
 
-from arknights_mcp.services.operators import shape_blackboard
+from arknights_mcp.services.operators import hoist_uniform_template, shape_blackboard
 
 
 def test_null_valuestr_key_is_dropped() -> None:
@@ -65,3 +65,26 @@ def test_valuestr_only_dropped_when_null_not_when_falsey() -> None:
     assert shape_blackboard([{"key": "k", "value": 1, "valueStr": ""}]) == [
         {"key": "k", "value": 1, "valueStr": ""}
     ]
+
+
+# --- T146 (§V66.3/§V37): the shared per-level template hoist helper -----------
+
+
+def test_hoist_returns_the_single_shared_template() -> None:
+    # Every level carries the identical template -> hoist it once to the parent.
+    assert hoist_uniform_template(["X", "X", "X"]) == "X"
+    # A single level is trivially uniform.
+    assert hoist_uniform_template(["X"]) == "X"
+
+
+def test_hoist_declines_when_templates_differ() -> None:
+    # Differing templates -> None so the caller keeps the per-row copies (lossless).
+    assert hoist_uniform_template(["X", "Y"]) is None
+    # A present template mixed with a null level is NOT uniform -> keep per-row.
+    assert hoist_uniform_template(["X", None]) is None
+
+
+def test_hoist_returns_none_when_nothing_to_hoist() -> None:
+    # No values and all-null both yield None (there is no template to hoist).
+    assert hoist_uniform_template([]) is None
+    assert hoist_uniform_template([None, None]) is None
