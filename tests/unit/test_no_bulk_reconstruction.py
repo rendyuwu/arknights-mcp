@@ -230,7 +230,7 @@ def test_page_size_rejected_at_model_and_service(conn: sqlite3.Connection, bad_s
     with pytest.raises(ValidationError):
         PageParams(page_size=bad_size)  # nested page bound, validated on construction
     with pytest.raises(ValueError, match="page_size"):
-        get_stage(conn, server="en", stage_code="4-4", map_page_size=bad_size)
+        get_stage(conn, server="en", stage_code="4-4", spawns_page_size=bad_size)
 
 
 def test_page_below_one_rejected_at_model_and_service(conn: sqlite3.Connection) -> None:
@@ -261,10 +261,10 @@ def test_stage_pagination_requires_a_selector_so_stages_are_not_listable(
     # "get every stage" call to seed an enumeration.
     with pytest.raises(ValidationError):
         GetStageInput(server="en")
-    # A named stage's section is capped per page (never an unbounded slice).
+    # A named stage's paged section is capped per page (never an unbounded slice).
     page = get_stage(
-        conn, server="en", stage_code="4-4", include_map=True, map_page_size=1
-    ).tiles_page
+        conn, server="en", stage_code="4-4", include_spawns=True, spawns_page_size=1
+    ).spawns_page
     assert page is not None and page.page_size == 1 and page.total >= len(("only-a-cap-check",))
 
 

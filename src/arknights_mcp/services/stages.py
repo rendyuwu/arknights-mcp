@@ -50,6 +50,11 @@ from arknights_mcp.services.stage_map_render import (
     RenderedMap,
     render_stage_map,
 )
+from arknights_mcp.services.stage_tile_grid import (
+    TileGridFacts,
+    build_tile_grid,
+    tile_grid_oversize_limitation,
+)
 from arknights_mcp.util.coerce import json_load
 from arknights_mcp.util.text import camel_to_snake
 
@@ -334,18 +339,6 @@ class StageMapFacts:
 
 
 @dataclass(frozen=True)
-class TileFacts:
-    """One tile of the stage grid (already allowlisted + sanitized; §V18)."""
-
-    x: int
-    y: int
-    tile_key: str | None
-    height_type: str | None
-    buildable_type: str | None
-    passable: bool | None
-
-
-@dataclass(frozen=True)
 class RouteFacts:
     """One DISTINCT enemy-route geometry + how many raw records share it (§V74 (a)).
 
@@ -394,8 +387,11 @@ class StageDetailResult:
     """Domain result of :func:`get_stage`.
 
     Carries region + provenance on ``stage`` (§V5). The heavy sections are
-    populated only when their include flag is set; each populated section pairs
-    its rows with a bounded :class:`SectionPage` (§V19/§V22). ``map_image`` is the
+    populated only when their include flag is set; ``routes`` and ``spawns`` each
+    pair their rows with a bounded :class:`SectionPage` (§V19/§V22). ``tile_grid``
+    is the compact per-row grid encoding (§V74 (c)) -- a whole board fits one
+    response, so it carries no page cursor; an over-budget board yields
+    ``tile_grid=None`` plus a §V22 caption in ``limitations``. ``map_image`` is the
     render-own SVG of the stage grid (§T122), populated only when
     ``include_map_image`` is set and the board renders within the §V22 budget;
     ``limitations`` carries any §V22 caption (e.g. an over-budget map image was
@@ -406,8 +402,7 @@ class StageDetailResult:
     server: str
     stage: StageFacts | None
     stage_map: StageMapFacts | None
-    tiles: tuple[TileFacts, ...]
-    tiles_page: SectionPage | None
+    tile_grid: TileGridFacts | None
     routes: tuple[RouteFacts, ...]
     routes_page: SectionPage | None
     spawns: tuple[SpawnFacts, ...]
@@ -448,8 +443,7 @@ def _not_found_detail(server: str) -> StageDetailResult:
         server=server,
         stage=None,
         stage_map=None,
-        tiles=(),
-        tiles_page=None,
+        tile_grid=None,
         routes=(),
         routes_page=None,
         spawns=(),
@@ -652,8 +646,6 @@ def get_stage(
     include_routes: bool = False,
     include_spawns: bool = False,
     include_map_image: bool = False,
-    map_page: int = 1,
-    map_page_size: int = PAGE_SIZE_DEFAULT,
     routes_page: int = 1,
     routes_page_size: int = PAGE_SIZE_DEFAULT,
     spawns_page: int = 1,
@@ -662,18 +654,20 @@ def get_stage(
     """Fetch one stage's facts + optional map/routes/spawns (§T34; §V5/§V19/§V22).
 
     Read-only; parameterized SQL only (§V2). The default response is facts +
-    provenance only (§V22 -- the heavy sections stay off). Each opted-in section
-    pages through its **own** cursor (``map_page``/``routes_page``/``spawns_page``),
-    so a client can request several sections at once and still page a large one
-    without shifting the others off, and no included payload ever yields an
-    unbounded slice (§V19). ``include_map_image`` (off by default, §V22) adds a
-    render-own SVG of the stage grid (§T122) -- a DERIVED image drawn from the
-    stored typed grid data, never third-party art (§V16) and never the §V63 URL
-    reference; an over-budget board is omitted with a §V22 limitation. Every cursor
-    is validated against the §V19 window here too, mirroring the model gate. Both
-    transports call this function (§V14).
+    provenance only (§V22 -- the heavy sections stay off). ``include_map`` returns
+    the tile grid as one compact per-row block (§V74 (c), no page cursor -- a whole
+    board fits one response); ``include_routes``/``include_spawns`` each page
+    through their **own** cursor (``routes_page``/``spawns_page``), so a client can
+    request several sections at once and still page a large one without shifting the
+    others off, and no included payload ever yields an unbounded slice (§V19). A
+    tile board larger than the §V22 cap yields no grid + a limitation.
+    ``include_map_image`` (off by default, §V22) adds a render-own SVG of the stage
+    grid (§T122) -- a DERIVED image drawn from the stored typed grid data, never
+    third-party art (§V16) and never the §V63 URL reference; an over-budget board is
+    omitted with a §V22 limitation. Every cursor is validated against the §V19
+    window here too, mirroring the model gate. Both transports call this function
+    (§V14).
     """
-    mp, msize = _validate_page(map_page, map_page_size)
     rp, rsize = _validate_page(routes_page, routes_page_size)
     sp, ssize = _validate_page(spawns_page, spawns_page_size)
     repo = StageRepository(conn)
@@ -682,41 +676,40 @@ def get_stage(
         return _not_found_detail(server)
 
     stage_pk = stage.stage_pk
+    limitations: list[str] = []
 
-    # The map header is read once and shared by the paged tile section and the
-    # render-own image (§V37), so a request for both does not query it twice.
+    # The map header is read once and shared by the tile grid and the render-own
+    # image (§V37), so a request for both does not query it twice.
     raw_map: StageMapRow | None = None
     if include_map or include_map_image:
         raw_map = repo.stage_map(stage_pk)
 
     stage_map: StageMapFacts | None = None
-    tiles: tuple[TileFacts, ...] = ()
-    tiles_page_info: SectionPage | None = None
+    tile_grid: TileGridFacts | None = None
     if include_map:
-        total_tiles = repo.tile_count(stage_pk)
+        # Read the full grid, bounded by the §V22 cap so an oversized table is never
+        # loaded whole (the +1 detects the over-cap case). The compact per-row
+        # encoding makes a whole board fit one response, so tiles are not paged
+        # (§V74 (c)).
+        tile_rows = repo.all_tiles(stage_pk, MAX_MAP_CELLS + 1)
         # Only surface a map section when there is one; an all-null header with no
         # tiles is indistinguishable from "map absent", so omit it instead (the
         # tool then emits no ``map`` key at all).
-        if raw_map is not None or total_tiles > 0:
-            offset = (mp - 1) * msize
+        if raw_map is not None or tile_rows:
             stage_map = StageMapFacts(
                 width=raw_map.width if raw_map else None,
                 height=raw_map.height if raw_map else None,
                 map_version=raw_map.map_version if raw_map else None,
                 environment=json_load(raw_map.environment_json) if raw_map else None,
             )
-            tiles = tuple(
-                TileFacts(
-                    x=t.x,
-                    y=t.y,
-                    tile_key=t.tile_key,
-                    height_type=t.height_type,
-                    buildable_type=t.buildable_type,
-                    passable=t.passable,
+            if len(tile_rows) > MAX_MAP_CELLS:
+                limitations.append(tile_grid_oversize_limitation())
+            else:
+                tile_grid = build_tile_grid(
+                    tile_rows,
+                    raw_map.width if raw_map else None,
+                    raw_map.height if raw_map else None,
                 )
-                for t in repo.tiles(stage_pk, msize, offset)
-            )
-            tiles_page_info = _section_page(mp, msize, total_tiles)
 
     routes: tuple[RouteFacts, ...] = ()
     routes_page_info: SectionPage | None = None
@@ -752,7 +745,6 @@ def get_stage(
         spawns_page_info = _section_page(sp, ssize, repo.spawn_count(stage_pk))
 
     map_image: RenderedMap | None = None
-    limitations: list[str] = []
     if include_map_image:
         map_image, image_limitation = _build_map_image(repo, stage_pk, raw_map)
         if image_limitation is not None:
@@ -763,8 +755,7 @@ def get_stage(
         server=stage.server,
         stage=_stage_facts(stage),
         stage_map=stage_map,
-        tiles=tiles,
-        tiles_page=tiles_page_info,
+        tile_grid=tile_grid,
         routes=routes,
         routes_page=routes_page_info,
         spawns=spawns,

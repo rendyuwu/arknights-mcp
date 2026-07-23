@@ -321,14 +321,13 @@ def test_include_map_image_renders_main_story_stage(conn: sqlite3.Connection) ->
 
 
 def test_map_image_is_independent_of_include_map(conn: sqlite3.Connection) -> None:
-    # §V22: the image is its own opt-in -- requesting it does not pull the paged
+    # §V22: the image is its own opt-in -- requesting it does not pull the compact
     # tile grid, and vice versa.
     data = _handler(conn)(server="en", stage_code="4-4", include_map_image=True).to_dict()["data"]
     assert isinstance(data, dict)
     assert "map_image" in data
     assert "map" not in data
-    assert "tiles" not in data
-    assert "tiles_page" not in data
+    assert "tile_grid" not in data
 
 
 def test_include_map_image_is_read_only(conn: sqlite3.Connection) -> None:

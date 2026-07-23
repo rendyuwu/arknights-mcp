@@ -1,9 +1,10 @@
 """Bounded input models for the stage tools (§T30; §V19/§V22).
 
 Covers ``search_stages`` (§T33), ``get_stage`` (§T34) and ``analyze_stage``
-(§T40). The §V22 lever lives here: the heavy ``get_stage`` sections (map tiles,
-routes, spawns) are opt-in include flags that default ``False``, and each is paged
-through the bounded :class:`~arknights_mcp.models.common.PageParams`.
+(§T40). The §V22 lever lives here: the heavy ``get_stage`` sections (tile grid,
+routes, spawns) are opt-in include flags that default ``False``. The tile grid is
+a single compact per-row block (§V74 (c)); routes and spawns page through the
+bounded :class:`~arknights_mcp.models.common.PageParams`.
 """
 
 from __future__ import annotations
@@ -64,11 +65,13 @@ class GetStageInput(_StageSelector):
 
     The heavy sections are opt-in: ``include_map`` (tile grid), ``include_routes``
     and ``include_spawns`` each default ``False`` so the default response stays
-    small (§V22). Each requested section is paged through its **own** bounds --
-    ``map_page`` / ``routes_page`` / ``spawns_page`` -- so a client can hold the
-    whole stage in one call yet page a large section (e.g. the spawn timeline)
-    without shifting the others off (§V19). Every page is bounded, so no opted-in
-    payload ever returns an unbounded slice.
+    small (§V22). ``include_map`` returns the grid as one compact per-row block
+    (§V74 (c)) -- a whole board fits one response, so it takes no page cursor; an
+    over-budget board is omitted with a §V22 limitation. ``include_routes`` and
+    ``include_spawns`` are paged through their **own** bounds -- ``routes_page`` /
+    ``spawns_page`` -- so a client can hold the whole stage in one call yet page a
+    large section (e.g. the spawn timeline) without shifting the others off (§V19).
+    Every page is bounded, so no opted-in payload ever returns an unbounded slice.
 
     ``include_map_image`` (default ``False``, §V22) adds a render-own SVG of the
     stage grid (§T122) -- a DERIVED image drawn from the stored typed grid data,
@@ -80,7 +83,6 @@ class GetStageInput(_StageSelector):
     include_routes: bool = False
     include_spawns: bool = False
     include_map_image: bool = False
-    map_page: PageParams = Field(default_factory=PageParams)
     routes_page: PageParams = Field(default_factory=PageParams)
     spawns_page: PageParams = Field(default_factory=PageParams)
 

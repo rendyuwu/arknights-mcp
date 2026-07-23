@@ -192,7 +192,7 @@ def _oversize_limitation() -> str:
     kib = MAX_MAP_IMAGE_BYTES // 1000
     return (
         f"map image omitted: the rendered stage map exceeds the {kib} KB image "
-        "budget; use include_map for the paged tile grid instead"
+        "budget; use include_map for the compact tile grid instead"
     )
 
 

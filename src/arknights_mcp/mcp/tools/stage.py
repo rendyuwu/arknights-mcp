@@ -45,6 +45,7 @@ from arknights_mcp.mcp.tools._shared import (
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stage_map_render import RenderedMap
+from arknights_mcp.services.stage_tile_grid import TileGridFacts
 from arknights_mcp.services.stages import (
     EnemyOccurrenceFacts,
     RouteFacts,
@@ -53,7 +54,6 @@ from arknights_mcp.services.stages import (
     StageDetailResult,
     StageFacts,
     StageMapFacts,
-    TileFacts,
     analyze_stage,
     get_stage,
 )
@@ -63,13 +63,29 @@ _TOOL_TITLE = "Get stage"
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
     "game_id. The default response is compact facts + provenance; set include_map "
-    "/ include_routes / include_spawns to add the (paged) tile grid, enemy routes, "
-    "or spawn timeline. Enemy routes are collapsed to distinct geometry: each entry "
-    "carries an occurrence_count and the raw route_indices that share it. Spawn "
-    "timeline values (spawn_time and interval) are in "
-    "seconds. Set include_map_image for a rendered SVG map drawn from the "
-    "stage's own grid data (a derived image, not game artwork); a very large map is "
-    "omitted with a note. en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "/ include_routes / include_spawns to add the tile grid, enemy routes, or spawn "
+    "timeline. The tile grid comes as tile_grid: one string per grid row (top row "
+    "first) plus a legend mapping each character to its tile fields; absent_symbol "
+    "marks a cell with no tile. A tile's tile_key/buildable_type describe where you "
+    "may DEPLOY (a tile_forbidden tile blocks deployment), while passable describes "
+    "whether ENEMIES may cross it -- so a forbidden tile can still be passable; the "
+    "two are not in conflict. Enemy routes are collapsed to distinct geometry: each "
+    "entry carries an occurrence_count and the raw route_indices that share it. "
+    "Spawn timeline values (spawn_time and interval) are in seconds. Set "
+    "include_map_image for a rendered SVG map drawn from the stage's own grid data "
+    "(a derived image, not game artwork); a very large map is omitted with a note. "
+    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
+)
+
+#: §V74 (d): the standing gloss attached to every response that emits ``tile_grid``.
+#: The raw source pairs a ``tile_forbidden`` tile_key with ``passable:true``, which
+#: reads as a contradiction; it is not. Client-facing prose only -- no spec cites or
+#: internal jargon (§V71).
+_TILE_GRID_LIMITATION = (
+    "tile_key and buildable_type describe deployment (where you can place "
+    "operators); passable describes enemy movement. A tile_forbidden or "
+    "non-buildable tile can still be passable by enemies -- the two are separate "
+    "properties, not a contradiction."
 )
 
 _NOT_FOUND_MESSAGE = "no stage matched the given region and selector"
@@ -95,14 +111,23 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
     }
 
 
-def _tile_to_dict(tile: TileFacts) -> dict[str, object]:
+def _tile_grid_to_dict(grid: TileGridFacts) -> dict[str, object]:
+    # §V74 (c): the compact per-row grid -- one string per row (top row first) +
+    # a legend decoding each character. A whole board rides one response instead of
+    # the ~3 pages the per-tile object dump needed.
     return {
-        "x": tile.x,
-        "y": tile.y,
-        "tile_key": tile.tile_key,
-        "height_type": tile.height_type,
-        "buildable_type": tile.buildable_type,
-        "passable": tile.passable,
+        "rows": list(grid.rows),
+        "absent_symbol": grid.absent_symbol,
+        "legend": [
+            {
+                "symbol": entry.symbol,
+                "tile_key": entry.tile_key,
+                "height_type": entry.height_type,
+                "buildable_type": entry.buildable_type,
+                "passable": entry.passable,
+            }
+            for entry in grid.legend
+        ],
     }
 
 
@@ -192,10 +217,13 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     data: dict[str, object] = {"stage": _stage_to_dict(result.stage)}
-    if result.stage_map is not None and result.tiles_page is not None:
+    tile_grid_limitation: tuple[str, ...] = ()
+    if result.stage_map is not None:
         data["map"] = _map_header_to_dict(result.stage_map)
-        data["tiles"] = [_tile_to_dict(t) for t in result.tiles]
-        data["tiles_page"] = page_to_dict(result.tiles_page)
+        if result.tile_grid is not None:
+            data["tile_grid"] = _tile_grid_to_dict(result.tile_grid)
+            # §V74 (d): the forbidden-vs-passable gloss rides every grid response.
+            tile_grid_limitation = (_TILE_GRID_LIMITATION,)
     if result.routes_page is not None:
         data["routes"] = [_route_to_dict(r) for r in result.routes]
         data["routes_page"] = page_to_dict(result.routes_page)
@@ -215,9 +243,14 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
                 imported_at=prov.imported_at,
             )
         ],
-        # §V67/§V26 (B58): the §V22 map caption (if any) plus a "not present in source"
-        # limitation naming any expected stage scalar the source omitted.
-        limitations=(*result.limitations, *_stage_absent_field_limitations(result.stage)),
+        # §V74 (d) forbidden-vs-passable gloss (when a grid is emitted), the §V22 map
+        # caption (if any), plus the §V67/§V26 (B58) "not present in source" limitation
+        # naming any expected stage scalar the source omitted.
+        limitations=(
+            *tile_grid_limitation,
+            *result.limitations,
+            *_stage_absent_field_limitations(result.stage),
+        ),
     )
 
 
@@ -248,8 +281,6 @@ def build_get_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 include_routes=parsed.include_routes,
                 include_spawns=parsed.include_spawns,
                 include_map_image=parsed.include_map_image,
-                map_page=parsed.map_page.page,
-                map_page_size=parsed.map_page.page_size,
                 routes_page=parsed.routes_page.page,
                 routes_page_size=parsed.routes_page.page_size,
                 spawns_page=parsed.spawns_page.page,

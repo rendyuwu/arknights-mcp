@@ -105,15 +105,43 @@ def test_lookup_by_game_id_matches_code(conn: sqlite3.Connection) -> None:
 # --- opt-in sections ----------------------------------------------------------
 
 
-def test_include_map_returns_header_and_paged_tiles(conn: sqlite3.Connection) -> None:
+def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connection) -> None:
     data = _handler(conn)(server="en", stage_code="4-4", include_map=True).to_dict()["data"]
     header = data["map"]  # type: ignore[index]
     assert header["width"] == 8  # type: ignore[index]
     assert header["height"] == 5  # type: ignore[index]
-    # Tiles ride as their own top-level paged section (symmetric with routes/spawns).
-    tiles = data["tiles"]  # type: ignore[index]
-    assert {(t["x"], t["y"]) for t in tiles} == {(0, 0), (7, 4)}  # type: ignore[index]
-    assert data["tiles_page"] == {"page": 1, "page_size": 50, "total": 2, "has_more": False}  # type: ignore[index]
+    # §V74 (c): the grid rides as ONE compact per-row block -- one string per grid row
+    # (top row / highest y first), a legend decoding each character, and a reserved
+    # absent symbol for a cell with no tile. No per-tile object list, no page cursor.
+    assert "tiles" not in data and "tiles_page" not in data
+    grid = data["tile_grid"]  # type: ignore[index]
+    assert grid["absent_symbol"] == "."  # type: ignore[index]
+    assert len(grid["rows"]) == 5  # one string per grid row (height)  # type: ignore[index]
+    assert all(len(row) == 8 for row in grid["rows"])  # width chars each  # type: ignore[index]
+    # Decode the two fixture tiles via the legend: tile_end at (7,4) is top-right,
+    # tile_start at (0,0) is bottom-left (rows[0] is the top row, y == height - 1).
+    by_symbol = {e["symbol"]: e for e in grid["legend"]}  # type: ignore[index]
+    top_right = by_symbol[grid["rows"][0][7]]  # type: ignore[index]
+    bottom_left = by_symbol[grid["rows"][4][0]]  # type: ignore[index]
+    assert top_right["tile_key"] == "tile_end"
+    assert bottom_left["tile_key"] == "tile_start"
+    # Every legend entry carries the four typed tile fields (§V18 allowlisted), no more.
+    for entry in grid["legend"]:  # type: ignore[index]
+        assert set(entry) == {"symbol", "tile_key", "height_type", "buildable_type", "passable"}
+
+
+def test_tile_grid_response_carries_forbidden_vs_passable_gloss(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V74 (d): the raw source pairs a forbidden/non-buildable tile_key with
+    # passable:true, which reads as a contradiction; every grid response carries a
+    # gloss that deployment and enemy-passability are separate properties. The same
+    # gloss is stated in the tool description.
+    env = _handler(conn)(server="en", stage_code="4-4", include_map=True)
+    lims = " ".join(env.to_dict()["limitations"])  # type: ignore[arg-type]
+    assert "passable" in lims and "deploy" in lims.lower()
+    desc = build_get_stage_spec(lambda: conn).description
+    assert "tile_forbidden" in desc and "passable" in desc
 
 
 def test_include_routes(conn: sqlite3.Connection) -> None:
@@ -233,24 +261,26 @@ def test_sections_are_independent(conn: sqlite3.Connection) -> None:
     assert set(data) == {"stage", "spawns", "spawns_page"}
 
 
-def test_sections_page_independently(conn: sqlite3.Connection) -> None:
-    # §V19 fix: each section has its own cursor -- paging the map to page 2 does
-    # not shift the spawns section off (which keeps its own default page 1).
+def test_sections_coexist_and_spawns_page_independently(conn: sqlite3.Connection) -> None:
+    # §V19/§V74 (c): the tile grid rides whole (unpaged) while spawns still page on
+    # their own cursor -- requesting both returns the full grid AND a bounded spawns
+    # page, neither shifting the other.
     data = _handler(conn)(
         server="en",
         stage_code="4-4",
         include_map=True,
         include_spawns=True,
-        map_page={"page": 2, "page_size": 1},
+        spawns_page={"page": 1, "page_size": 1},
     ).to_dict()["data"]
-    assert len(data["tiles"]) == 1  # type: ignore[index]
-    assert data["tiles_page"]["page"] == 2  # type: ignore[index]
-    # spawns stay on their own page 1 -- both spawns still present, not emptied.
-    assert {s["enemy_game_id"] for s in data["spawns"]} == {  # type: ignore[index]
-        "enemy_1007_slime",
-        "enemy_1105_drone",
+    assert data["tile_grid"]["rows"]  # full grid present, no page cursor  # type: ignore[index]
+    # spawns bounded to their own page (1 of 2), untouched by the map section.
+    assert len(data["spawns"]) == 1  # type: ignore[index]
+    assert data["spawns_page"] == {  # type: ignore[index]
+        "page": 1,
+        "page_size": 1,
+        "total": 2,
+        "has_more": True,
     }
-    assert data["spawns_page"]["page"] == 1  # type: ignore[index]
 
 
 # --- §V67/§V26 (B58) null discipline: omit always-null scalars + absent limitation --
@@ -366,38 +396,35 @@ def test_description_states_list_field_convention(conn: sqlite3.Connection) -> N
 # --- §V19 bounded pagination --------------------------------------------------
 
 
-def test_tile_pagination_bounds_and_has_more(conn: sqlite3.Connection) -> None:
-    # §V19: a small page_size yields a bounded slice + has_more, never a dump.
+def test_tile_grid_is_a_single_unpaged_block(conn: sqlite3.Connection) -> None:
+    # §V74 (c): the compact grid replaces the paged per-tile list -- there is no map
+    # page cursor and the whole board comes in one response. map_page is no longer an
+    # accepted parameter (dropped with the paged shape).
     handler = _handler(conn)
-    d1 = handler(
-        server="en", stage_code="4-4", include_map=True, map_page={"page": 1, "page_size": 1}
-    ).to_dict()["data"]
-    assert len(d1["tiles"]) == 1  # type: ignore[index]
-    assert d1["tiles_page"] == {"page": 1, "page_size": 1, "total": 2, "has_more": True}  # type: ignore[index]
-    d2 = handler(
-        server="en", stage_code="4-4", include_map=True, map_page={"page": 2, "page_size": 1}
-    ).to_dict()["data"]
-    assert len(d2["tiles"]) == 1  # type: ignore[index]
-    assert d2["tiles_page"]["has_more"] is False  # type: ignore[index]
-    # The two pages are disjoint -- deterministic (y, x) ordering.
-    assert d1["tiles"][0] != d2["tiles"][0]  # type: ignore[index]
+    data = handler(server="en", stage_code="4-4", include_map=True).to_dict()["data"]
+    assert "tile_grid" in data and "tiles_page" not in data
+    with pytest.raises(ValidationError):
+        handler(server="en", stage_code="4-4", include_map=True, map_page={"page": 1})
 
 
 def test_page_size_out_of_range_rejected_at_gate(conn: sqlite3.Connection) -> None:
-    # §V19: the model gate *rejects* an out-of-range page_size before any query.
+    # §V19: the model gate *rejects* an out-of-range page_size before any query
+    # (asserted on the still-paged spawns section).
     handler = _handler(conn)
     for bad in (0, -1, PAGE_SIZE_MAX + 1):
         with pytest.raises(ValidationError):
-            handler(server="en", stage_code="4-4", include_map=True, map_page={"page_size": bad})
+            handler(
+                server="en", stage_code="4-4", include_spawns=True, spawns_page={"page_size": bad}
+            )
     with pytest.raises(ValidationError):
-        handler(server="en", stage_code="4-4", map_page={"page": 0})
+        handler(server="en", stage_code="4-4", spawns_page={"page": 0})
 
 
 def test_service_rejects_out_of_range_page_size(conn: sqlite3.Connection) -> None:
     # §V19 mirrored at the service: a direct caller gets the same rejection, not a
     # silent clamp (parallels the search-service limit contract, B23).
     with pytest.raises(ValueError, match="page_size"):
-        get_stage(conn, server="en", stage_code="4-4", map_page_size=PAGE_SIZE_MAX + 1)
+        get_stage(conn, server="en", stage_code="4-4", spawns_page_size=PAGE_SIZE_MAX + 1)
     with pytest.raises(ValueError, match="page"):
         get_stage(conn, server="en", stage_code="4-4", spawns_page=0)
 
@@ -477,7 +504,9 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     # §V18/§V19: unknown params forbidden + the page_size bound rides the wire.
     assert tool.inputSchema["additionalProperties"] is False
     props = tool.inputSchema["properties"]
-    assert {"map_page", "routes_page", "spawns_page"} <= set(props)
+    # §V74 (c): the tile grid is unpaged, so map_page is gone; routes/spawns still page.
+    assert {"routes_page", "spawns_page"} <= set(props)
+    assert "map_page" not in props
     page_schema = tool.inputSchema["$defs"]["PageParams"]
     assert page_schema["properties"]["page_size"]["maximum"] == PAGE_SIZE_MAX
     assert page_schema["additionalProperties"] is False

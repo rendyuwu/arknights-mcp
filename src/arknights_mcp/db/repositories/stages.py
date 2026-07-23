@@ -184,18 +184,12 @@ _TILE_SUMMARY_SQL = (
 # unbounded slice (§V19), and repeat a page reproducibly.
 _MAP_SQL = "SELECT width, height, map_version, environment_json FROM stage_maps WHERE stage_pk = ?"
 
-_TILE_COUNT_SQL = "SELECT COUNT(*) FROM stage_tiles WHERE stage_pk = ?"
-_TILES_SQL = (
-    "SELECT x, y, tile_key, height_type, buildable_type, passable "
-    "FROM stage_tiles WHERE stage_pk = ? "
-    "ORDER BY y, x LIMIT ? OFFSET ?"
-)
-
 _ROUTE_COUNT_SQL = "SELECT COUNT(*) FROM stage_routes WHERE stage_pk = ?"
 
-# --- render-own map image (§T122): the full grid is read (bounded by an explicit
-# LIMIT the caller derives from the render cap) so the derived SVG covers the whole
-# stage; the image is a coarse derived view, not a per-tile record dump (§V22).
+# --- full-grid read (§T122 render + §V74 (c) tile grid): the full grid is read
+# (bounded by an explicit LIMIT the caller derives from the map cell cap) so the
+# derived SVG / compact grid covers the whole stage; both are coarse derived views,
+# not a per-tile record dump (§V22).
 _ALL_TILES_SQL = (
     "SELECT x, y, tile_key, height_type, buildable_type, passable "
     "FROM stage_tiles WHERE stage_pk = ? "
@@ -407,14 +401,6 @@ class StageRepository(Repository):
         row = self._one(_MAP_SQL, (stage_pk,))
         return _to_stage_map_row(row) if row is not None else None
 
-    def tile_count(self, stage_pk: int) -> int:
-        """Total tiles in the stage grid (for the §V19 page descriptor)."""
-        return int(self._one(_TILE_COUNT_SQL, (stage_pk,))[0])
-
-    def tiles(self, stage_pk: int, limit: int, offset: int) -> list[StageTileRow]:
-        """One bounded page of tiles, ordered ``(y, x)`` for deterministic paging."""
-        return [_to_stage_tile_row(r) for r in self._all(_TILES_SQL, (stage_pk, limit, offset))]
-
     def route_count(self, stage_pk: int) -> int:
         """Total RAW route records in the stage.
 
@@ -432,14 +418,15 @@ class StageRepository(Repository):
         """One bounded page of spawns, ordered ``(wave, spawn_time, enemy, spawn_pk)``."""
         return [_to_stage_spawn_row(r) for r in self._all(_SPAWNS_SQL, (stage_pk, limit, offset))]
 
-    # --- render-own map image (§T122): full-grid reads, each bounded by ``limit``.
+    # --- full-grid reads (§T122 render + §V74 (c) tile grid), each bounded by ``limit``.
 
     def all_tiles(self, stage_pk: int, limit: int) -> list[StageTileRow]:
         """Every tile of the stage grid (up to ``limit``), ordered ``(y, x)``.
 
-        Bounded by an explicit ``limit`` the caller derives from the render cell
-        cap so an oversized tile table is never read whole (§V22); the rows feed
-        the derived map render, not a per-tile record response.
+        Bounded by an explicit ``limit`` the caller derives from the map cell cap so
+        an oversized tile table is never read whole (§V22); the rows feed the
+        derived map render (§T122) and the compact per-row tile grid (§V74 (c)), not
+        a per-tile record response.
         """
         return [_to_stage_tile_row(r) for r in self._all(_ALL_TILES_SQL, (stage_pk, limit))]
 
