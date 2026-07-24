@@ -167,6 +167,17 @@ def test_unit_fields_state_seconds_in_descriptions() -> None:
     assert "interval = interval in seconds" in operator
 
 
+def test_drop_rate_and_times_glossed_in_drop_descriptions() -> None:
+    # §V71 (e)/B87: drop_rate reads like a probability but is expected items per run
+    # (quantity / times); times is the sample run count. BOTH drop tools gloss BOTH so a
+    # client never reads 0.1192 as an 11.9% chance.
+    for name in ("get_stage_drops", "get_item_drops"):
+        desc = _desc(name)
+        assert "expected number of items per run" in desc, name
+        assert "not a probability" in desc, name
+        assert "sample run count" in desc, name
+
+
 # --- (e/f): the list descriptions are short sentences, not a clause chain ------
 
 
