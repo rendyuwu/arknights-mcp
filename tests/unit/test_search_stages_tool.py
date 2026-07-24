@@ -222,6 +222,35 @@ def test_stage_without_difficulty_carries_null_tag(tmp_path: Path) -> None:
     assert "difficulty" in rows[0]
 
 
+def test_v80_tough_and_easy_prefix_locators_truthful(tmp_path: Path) -> None:
+    # §V80/B84: the tough/easy variants of a stage carry source difficulty "NORMAL"
+    # and share a display_name + stage_code with the normal stage -- only the
+    # game_id prefix separates them. The locator's difficulty tag is derived from the
+    # prefix, so the tough locator reports TOUGH (never NORMAL) and the easy locator
+    # EASY, distinguishable without game_id-prefix jargon.
+    path = tmp_path / "prefixvariants.sqlite"
+    writer = build_database(path)
+    prov = _seed_provenance(writer)
+    _insert_stage(writer, "main_14-06", "14-6", "Break", prov, difficulty="NORMAL")
+    _insert_stage(writer, "tough_14-06", "14-6", "Break", prov, difficulty="NORMAL")
+    _insert_stage(writer, "easy_14-06", "14-6", "Break", prov, difficulty="NORMAL")
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        rows = _handler(conn)(query="14-6").to_dict()["data"]["results"]  # type: ignore[index]
+
+    by_game_id = {row["game_id"]: row["difficulty"] for row in rows}
+    assert by_game_id == {
+        "main_14-06": "NORMAL",
+        "tough_14-06": "TOUGH",
+        "easy_14-06": "EASY",
+    }
+    # §V80: a tough_*/easy_* locator is NEVER left NORMAL.
+    assert by_game_id["tough_14-06"] != "NORMAL"
+    assert by_game_id["easy_14-06"] != "NORMAL"
+
+
 # --- §V23 typed envelope: not_found -------------------------------------------
 
 

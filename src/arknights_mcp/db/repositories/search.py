@@ -22,13 +22,12 @@ from arknights_mcp.db.repositories.base import Repository
 class SearchHitRow:
     """One FTS hit: its typed identity + region (§V5) and display fields.
 
-    ``difficulty`` is the stage variant tag (§V70): a stage carries its
-    ``stages.difficulty`` value (the same value ``get_stage`` returns), so two
-    stages that share a ``display_name`` + ``stage_code`` (a normal stage and its
-    challenge variant) are distinguishable in one result set without parsing the
-    game-data ``game_id`` suffix (B59). It is ``None`` for a non-stage hit
-    (operators/enemies have no difficulty) and for a stage with no difficulty in
-    source.
+    ``difficulty`` is the RAW ``stages.difficulty`` column (§V70): the search
+    service derives the client-facing variant tag from it plus the game_id prefix
+    through the one §V37 home (§V80/B84 -- ``tough_*`` / ``easy_*`` upgraded off
+    ``NORMAL``), so the wire value matches ``get_stage``. It is ``None`` for a
+    non-stage hit (operators/enemies have no difficulty) and for a stage with no
+    difficulty in source.
     """
 
     entity_type: str

@@ -21,6 +21,7 @@ from typing import Literal, get_args
 from arknights_mcp.db.repositories.metadata import MetadataRepository
 from arknights_mcp.db.repositories.search import SearchHitRow, SearchRepository
 from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, Region
+from arknights_mcp.services.stage_variant import stage_variant
 
 #: §V19 search-result bounds. Single home is ``models.common`` (§V37); re-exported
 #: under the service-local names the rest of this module already uses.
@@ -57,11 +58,14 @@ class SearchHit:
     Full facts + provenance are fetched by the entity tools (``get_enemy`` /
     ``get_stage`` / ``get_operator``); a hit is a region-scoped locator.
 
-    ``difficulty`` is the §V70 stage variant tag: a stage hit carries the same
-    ``difficulty`` value ``get_stage`` returns, so two stages sharing a
-    ``display_name`` + ``stage_code`` (a normal stage and its challenge variant)
-    stay distinguishable in one result set without the game-data ``game_id``
-    suffix (B59). ``None`` for a non-stage hit or a stage with no difficulty.
+    ``difficulty`` is the §V70/§V80 stage variant tag: a stage hit carries the same
+    truthful variant ``get_stage`` returns, so two stages sharing a
+    ``display_name`` + ``stage_code`` stay distinguishable in one result set without
+    the game-data ``game_id`` suffix/prefix (B59/B84). It is derived through the one
+    §V37 home (:func:`~arknights_mcp.services.stage_variant.stage_variant`): the
+    source ``FOUR_STAR`` challenge variant (``#f#``) plus the prefix-derived
+    ``TOUGH`` / ``EASY`` (``tough_*`` / ``easy_*``, never left ``NORMAL``). ``None``
+    for a non-stage hit or a plain stage with no variant.
     """
 
     entity_type: str
@@ -152,7 +156,9 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
             game_id=row.game_id,
             display_name=row.name,
             stage_code=row.stage_code,
-            difficulty=row.difficulty,
+            # §V80/B84: the same truthful variant tag get_stage emits, through the
+            # one §V37 home -- a ``tough_*`` / ``easy_*`` locator is never NORMAL.
+            difficulty=stage_variant(row.game_id, row.difficulty),
         )
         for row in rows
     )

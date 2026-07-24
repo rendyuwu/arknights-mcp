@@ -58,6 +58,7 @@ from arknights_mcp.services.stage_tile_grid import (
     TileGridFacts,
     resolve_tile_grid,
 )
+from arknights_mcp.services.stage_variant import stage_variant
 from arknights_mcp.util.coerce import json_load
 
 #: Typed outcome of a stage lookup. The full §V23 status vocabulary is wired
@@ -171,7 +172,10 @@ def _stage_facts(stage: StageRow) -> StageFacts:
         display_name=stage.display_name,
         zone_game_id=stage.zone_game_id,
         stage_type=stage.stage_type,
-        difficulty=stage.difficulty,
+        # §V80/B84: the emitted ``difficulty`` is the truthful stage-variant tag, not
+        # the raw source column -- a ``tough_*`` / ``easy_*`` game_id is upgraded off
+        # ``NORMAL`` through the one §V37 home shared with the search locators.
+        difficulty=stage_variant(stage.game_id, stage.difficulty),
         sanity_cost=stage.sanity_cost,
         recommended_level=stage.recommended_level,
         max_life_points=stage.max_life_points,

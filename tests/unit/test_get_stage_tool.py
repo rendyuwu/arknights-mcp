@@ -25,6 +25,7 @@ import pytest
 from pydantic import ValidationError
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
+from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.repositories.stages import StageRouteRow
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
@@ -424,6 +425,63 @@ def test_4_4_stage_has_no_absent_field_limitation(conn: sqlite3.Connection) -> N
     # 4-4 carries recommendedLevel (45) + maxLifePoints (3), so no "not present" caveat.
     env = _handler(conn)(server="en", stage_code="4-4")
     assert not any("not present" in lim.lower() for lim in env.limitations)
+
+
+# --- §V80/B84: get_stage difficulty is the truthful variant tag ---------------
+
+
+def _seed_stage(conn: sqlite3.Connection, game_id: str, difficulty: str | None) -> None:
+    """Insert one stage (with the provenance join get_stage needs) into a DB."""
+    conn.execute(
+        "INSERT OR IGNORE INTO data_sources (source_id, display_name, owner_name, "
+        "canonical_url, source_type, regions_json, adapter_version, license_status, "
+        "permission_status, redistribution_status, attribution_text, enabled, "
+        "last_reviewed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("s", "S", "O", "https://x", "t", '["en"]', "1", "l", "p", "r", "a", 1, "2026-07-17"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO source_snapshots (snapshot_id, source_id, server, "
+        "imported_at, manifest_hash, status, field_policy_version) VALUES (?,?,?,?,?,?,?)",
+        ("en:abc", "s", "en", "2026-07-17", "mh", "imported", "1"),
+    )
+    prov = conn.execute(
+        "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
+        "record_hash, transform_version, field_policy_version) VALUES (?,?,?,?,?,?)",
+        ("en:abc", "p", game_id, "h", "1", "1"),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO stages (server, game_id, stage_code, display_name, difficulty, "
+        "provenance_id) VALUES (?,?,?,?,?,?)",
+        ("en", game_id, "14-6", "Break", difficulty, prov),
+    )
+
+
+def test_v80_get_stage_tough_prefix_reports_tough_not_normal(tmp_path: Path) -> None:
+    # §V80/B84: a tough_* stage carries source difficulty "NORMAL", yet get_stage must
+    # emit the truthful variant tag TOUGH -- never NORMAL -- so a client is not silently
+    # mixing normal/tough stats. The same tag the search locators surface (§V37 home).
+    path = tmp_path / "toughstage.sqlite"
+    writer = build_database(path)
+    _seed_stage(writer, "tough_14-06", "NORMAL")
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        data = _handler(conn)(server="en", game_id="tough_14-06").to_dict()["data"]
+    assert data["stage"]["difficulty"] == "TOUGH"  # type: ignore[index]
+
+
+def test_v80_get_stage_four_star_source_variant_preserved(tmp_path: Path) -> None:
+    # §V80: a genuine source variant (FOUR_STAR challenge, #f# suffix, no tough/easy
+    # prefix) is authoritative and passes through unchanged -- the prefix rule never
+    # clobbers it.
+    path = tmp_path / "fourstar.sqlite"
+    writer = build_database(path)
+    _seed_stage(writer, "main_14-06#f#", "FOUR_STAR")
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        data = _handler(conn)(server="en", game_id="main_14-06#f#").to_dict()["data"]
+    assert data["stage"]["difficulty"] == "FOUR_STAR"  # type: ignore[index]
 
 
 def test_bare_stage_names_absent_scalars_on_the_wire(tmp_path: Path) -> None:
