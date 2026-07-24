@@ -38,7 +38,7 @@ from arknights_mcp.importers.banners import ParsedBanner, insert_banners
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools.banners import build_get_banners_spec
-from arknights_mcp.models.common import MAX_ID_LEN
+from arknights_mcp.models.common import MAX_ID_LEN, MAX_QUERY_LEN
 from arknights_mcp.services.banners import (
     STANDARD_BANNER_LIMITATION,
     UNRESOLVED_FEATURED_OP_LIMITATION,
@@ -326,6 +326,81 @@ def test_date_only_until_is_inclusive_of_that_day(conn: sqlite3.Connection) -> N
     # A bare-date until strictly before the newest banner still excludes it.
     older = _handler(conn)(server="en", until="2026-07-19").to_dict()["data"]["banners"]  # type: ignore[index]
     assert [b["game_id"] for b in older] == ["CLASSIC_1", "NORMAL_1"]
+
+
+# --- optional query display-name filter (additive, §V21/§V19) -----------------
+
+
+def test_query_narrows_by_display_name_substring(conn: sqlite3.Connection) -> None:
+    # A query narrows the list to banners whose display_name contains it; only
+    # "Limited Headhunting" carries "Limited".
+    banners = _handler(conn)(server="en", query="Limited").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in banners] == ["LIMITED_1"]
+
+
+def test_query_is_case_insensitive(conn: sqlite3.Connection) -> None:
+    # SQLite's default LIKE is case-insensitive for ASCII, so a lowercased query matches.
+    banners = _handler(conn)(server="en", query="limited").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in banners] == ["LIMITED_1"]
+
+
+def test_query_matches_shared_substring_newest_first(conn: sqlite3.Connection) -> None:
+    # All three en banners share "Headhunting"; the filtered set is still newest-first.
+    banners = _handler(conn)(server="en", query="Headhunting").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in banners] == ["LIMITED_1", "CLASSIC_1", "NORMAL_1"]
+
+
+def test_query_no_match_is_ok_empty_list(conn: sqlite3.Connection) -> None:
+    # A query matching nothing is a legitimate empty ``ok`` list, never a ``not_found``.
+    env = _handler(conn)(server="en", query="Nonexistent")
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    assert data["banners"] == []  # type: ignore[index]
+    assert data["page"] == {"page": 1, "page_size": 50, "total": 0, "has_more": False}  # type: ignore[index]
+
+
+def test_query_wildcard_chars_are_literal(conn: sqlite3.Connection) -> None:
+    # §V2/§V18: a '%'/'_' in the query is escaped, so it matches a LITERAL char rather
+    # than widening the filter to match-everything -- no display_name carries them.
+    for wildcard in ("%", "_"):
+        banners = _handler(conn)(server="en", query=wildcard).to_dict()["data"]["banners"]  # type: ignore[index]
+        assert banners == [], wildcard
+
+
+def test_query_composes_with_window_and_paging(conn: sqlite3.Connection) -> None:
+    # The query narrows FIRST, then the since/until window + page apply over the
+    # filtered set: "Headhunting" keeps all three, until drops LIMITED_1, page reports 2.
+    env = _handler(conn)(
+        server="en",
+        query="Headhunting",
+        until="2026-07-15T00:00:00+00:00",
+        page={"page": 1, "page_size": 1},
+    )
+    data = env.to_dict()["data"]
+    assert [b["game_id"] for b in data["banners"]] == ["CLASSIC_1"]  # type: ignore[index]
+    assert data["page"] == {"page": 1, "page_size": 1, "total": 2, "has_more": True}  # type: ignore[index]
+
+
+def test_query_stays_within_region(conn: sqlite3.Connection) -> None:
+    # §V5: a cn query matches only cn banners; an en-only name returns nothing on cn.
+    cn = _handler(conn)(server="cn", query="限定").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert [b["game_id"] for b in cn] == ["CN_1"]
+    en_name_on_cn = _handler(conn)(server="cn", query="Headhunting").to_dict()["data"]["banners"]  # type: ignore[index]
+    assert en_name_on_cn == []
+
+
+def test_oversized_query_rejected(conn: sqlite3.Connection) -> None:
+    with pytest.raises(ValidationError):
+        _handler(conn)(server="en", query="x" * (MAX_QUERY_LEN + 1))
+
+
+def test_empty_query_rejected(conn: sqlite3.Connection) -> None:
+    # min_length=1 (after whitespace strip): an empty/blank query is a malformed filter,
+    # rejected at the model gate rather than degenerating into a match-nothing pattern.
+    with pytest.raises(ValidationError):
+        _handler(conn)(server="en", query="")
+    with pytest.raises(ValidationError):
+        _handler(conn)(server="en", query="   ")
 
 
 # --- §V19/§V22 bounded pagination ---------------------------------------------

@@ -84,12 +84,17 @@ class BannerRow:
 # until) while a strictly-later one is still excluded. The lower bound needs no such
 # sentinel -- ">=" already includes every timestamp whose date/prefix matches the bound.
 # A banner with a NULL open_time is excluded once EITHER bound is set (it cannot be placed
-# in the window), but kept when the window is fully open. The LEFT JOIN to
-# banner_featured_ops keeps a standard banner (no featured op) in the result with NULL op
-# columns; the further LEFT JOIN to operators resolves the featured op's display name when
-# it is present. Ordered by open_time DESC (newest first), then game_id, then char_id so
-# every banner's leaves are contiguous + the payload is deterministic (§V26); NULL
-# open_time sorts last under DESC.
+# in the window), but kept when the window is fully open. The optional display-name filter
+# uses the same NULL-passes idiom on a bound LIKE pattern: a NULL query leaves that side
+# open; a set query narrows to banners whose display_name CONTAINS the term (case-
+# insensitive for ASCII, SQLite's default LIKE). The pattern is pre-escaped so a '%'/'_'
+# in the client's text matches literally (ESCAPE '\'). A banner with a NULL display_name
+# is excluded once a query is set (it cannot match a name filter), mirroring the NULL
+# open_time behaviour under a date bound. The LEFT JOIN to banner_featured_ops keeps a
+# standard banner (no featured op) in the result with NULL op columns; the further LEFT
+# JOIN to operators resolves the featured op's display name when it is present. Ordered by
+# open_time DESC (newest first), then game_id, then char_id so every banner's leaves are
+# contiguous + the payload is deterministic (§V26); NULL open_time sorts last under DESC.
 _BANNERS_SQL = (
     "SELECT b.banner_pk, b.game_id, b.display_name, b.open_time, b.end_time, "
     "b.rule_type, b.region, p.snapshot_id, ss.imported_at, "
@@ -102,8 +107,22 @@ _BANNERS_SQL = (
     "WHERE b.server = ? "
     "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time >= ?)) "
     "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time <= (? || '~'))) "
+    "AND (? IS NULL OR (b.display_name IS NOT NULL AND b.display_name LIKE ? ESCAPE '\\')) "
     "ORDER BY b.open_time DESC, b.game_id, f.char_id"
 )
+
+
+def _like_contains(term: str) -> str:
+    """A LIKE pattern matching any display_name CONTAINING ``term`` literally (§V2/§V18).
+
+    The client's free text is untrusted, so the LIKE metacharacters it may carry ('%',
+    '_', and the escape char '\\' itself) are escaped and the whole is wrapped in '%...%'
+    for a substring match under ``ESCAPE '\\'``. This makes a '%' in the query match a
+    literal '%' rather than "any run of characters", so the filter cannot be widened into
+    a match-everything wildcard by crafted input. The value is still passed as a bound
+    parameter (§V2 -- nothing is interpolated into the SQL string)."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _to_banner_row(row: Any) -> BannerRow:
@@ -143,11 +162,19 @@ class BannerRepository(Repository):
     """Read-only access to the banner archive (§V2)."""
 
     def banners_for_region(
-        self, region: str, *, since: str | None = None, until: str | None = None
+        self,
+        region: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        query: str | None = None,
     ) -> list[BannerRow]:
-        """Every banner for ``region`` within the optional ``since``/``until``
-        open-time window, newest first, one row per featured-op leaf (§V26). Region-
-        scoped so en/cn are never mixed (§V5); both bounds parameterized (§V2)."""
+        """Every banner for ``region`` within the optional ``since``/``until`` open-time
+        window and optional ``query`` display-name substring, newest first, one row per
+        featured-op leaf (§V26). Region-scoped so en/cn are never mixed (§V5); the date
+        bounds and the pre-escaped LIKE pattern are all parameterized (§V2)."""
+        pattern = _like_contains(query) if query is not None else None
         return [
-            _to_banner_row(r) for r in self._all(_BANNERS_SQL, (region, since, since, until, until))
+            _to_banner_row(r)
+            for r in self._all(_BANNERS_SQL, (region, since, since, until, until, query, pattern))
         ]

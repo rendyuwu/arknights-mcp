@@ -57,7 +57,9 @@ _TOOL_DESCRIPTION = (
     "typed game data. That absence is reported as a limitation, never fabricated. This "
     "is a historical schedule fact, not gacha planning. It has no pull-probability, "
     "pity, or spark. Optional since/until bounds window the list by ISO open-time "
-    "(inclusive). Results are newest-first and paged (bounded page/page_size). When the "
+    "(inclusive). An optional query narrows the list to banners whose display name "
+    "contains that text (case-insensitive). Results are newest-first and paged (bounded "
+    "page/page_size). When the "
     "image-reference source is enabled, a featured operator that resolved to a present "
     "operator also carries an image_refs list with its derived portrait and avatar URLs. "
     "Each ref carries a variant label (e0/e2 for portrait, base/e2 for avatar). "
@@ -179,6 +181,7 @@ def build_get_banners_spec(
                 server=parsed.server,
                 since=parsed.since,
                 until=parsed.until,
+                query=parsed.query,
                 page=parsed.page.page,
                 page_size=parsed.page.page_size,
             ),

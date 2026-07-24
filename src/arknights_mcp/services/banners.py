@@ -197,6 +197,7 @@ def get_banners(
     server: str,
     since: str | None = None,
     until: str | None = None,
+    query: str | None = None,
     page: int = 1,
     page_size: int = PAGE_SIZE_DEFAULT,
 ) -> BannersResult:
@@ -206,7 +207,9 @@ def get_banners(
     Returns a :class:`BannersResult` with region + provenance on every banner (§V5) and
     the requested bounded page (§V19/§V22). ``since``/``until`` narrow by the stored ISO
     ``open_time`` string (inclusive; a banner with no open_time is excluded once either
-    bound is set).
+    bound is set). ``query`` optionally narrows to banners whose ``display_name`` contains
+    it (case-insensitive substring, additive §V21; a banner with no display_name is
+    excluded once it is set) -- still a paged list, so the §V19 no-dump bound holds.
 
     The banner archive is unbounded in principle (it accretes past + near-future
     banners), so it is **paged** (§V22/§V19): ``page`` is validated against the §V19
@@ -218,7 +221,9 @@ def get_banners(
     """
     p, size = _validate_page(page, page_size)
 
-    all_rows = tuple(BannerRepository(conn).banners_for_region(server, since=since, until=until))
+    all_rows = tuple(
+        BannerRepository(conn).banners_for_region(server, since=since, until=until, query=query)
+    )
     all_banners = _group_banners(all_rows)
     provenance = _banner_provenance(all_rows)
     page_info = _section_page(p, size, len(all_banners))
