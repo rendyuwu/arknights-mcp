@@ -174,23 +174,113 @@ def test_render_keeps_routes_distinct_when_a_real_corner_move_differs() -> None:
     assert res.image.svg.count('class="route-path"') == 2
 
 
-# --- B65: colour legend carried alongside the image ---------------------------
+# --- B65/B86: colour legend carried alongside the image ------------------------
+
+
+def _legend_map(res) -> dict[str, str]:  # type: ignore[no-untyped-def]
+    assert res.image is not None
+    return {entry["color"]: entry["meaning"] for entry in res.image.legend}
 
 
 def test_render_carries_colour_legend() -> None:
-    # B65: the render shipped no colour legend anywhere in the response, so a client
-    # could not decode the opaque hex fills. Every rendered image carries the legend.
-    res = render_stage_map(width=2, height=2, cells=[MapCell(0, 0, "LOWLAND", "NONE", True)])
+    # B65: the render shipped no colour legend, so a client could not decode the opaque
+    # hex fills. Every rendered image carries a legend whose meanings are plain
+    # client-facing text -- no spec cites / internal jargon (§V71).
+    res = render_stage_map(
+        width=2,
+        height=2,
+        cells=[MapCell(0, 0, "LOWLAND", "NONE", True, tile_key="tile_road")],
+        routes=[MapRoute(start=(0, 0), end=(1, 1))],
+    )
     assert res.image is not None
-    legend = res.image.legend
+    legend = _legend_map(res)
     assert legend  # non-empty
-    # every fill/marker colour the SVG actually emits is decodable via the legend.
-    colours = {entry["color"] for entry in legend}
-    for used in ("#546e7a", "#a5d6a7", "#90caf9", "#cfd8dc", "#2e7d32", "#c62828", "#ef6c00"):
-        assert used in colours
-    # meanings are plain client-facing text -- no spec cites / internal jargon (§V71).
-    for entry in legend:
-        assert "§" not in entry["meaning"]
+    # every fill/marker colour the SVG actually emits is decodable via the legend, and
+    # in the fixed canonical order (§C determinism): road tile fill, then start, then end.
+    order = [e["color"] for e in res.image.legend]
+    assert order == ["#cfd8dc", "#2e7d32", "#c62828"]
+    for meaning in legend.values():
+        assert "§" not in meaning
+
+
+def test_legend_lists_only_present_colours() -> None:
+    # §V82/B86: the legend lists ONLY the colours THIS render draws -- an "impassable"
+    # swatch (#546e7a) is never listed for a board with no wall tiles, and no route
+    # marker colour appears when there are no routes.
+    res = render_stage_map(
+        width=1, height=1, cells=[MapCell(0, 0, "LOWLAND", "MELEE", True)], routes=[]
+    )
+    legend = _legend_map(res)
+    assert set(legend) == {"#90caf9"}  # a lone buildable-ground tile, nothing else
+    assert "#546e7a" not in legend  # impassable not painted -> not listed
+    assert "#2e7d32" not in legend and "#c62828" not in legend  # no routes -> no markers
+
+
+def test_road_tile_is_enemy_path_not_buildable_ground() -> None:
+    # §V82/B86: a road tile (the enemy path) that is ALSO melee-buildable must not read
+    # as plain "buildable ground" -- it is coloured/labelled as the enemy path.
+    res = render_stage_map(
+        width=1, height=1, cells=[MapCell(0, 0, "LOWLAND", "MELEE", True, tile_key="tile_road")]
+    )
+    legend = _legend_map(res)
+    assert set(legend) == {"#cfd8dc"}
+    assert "#90caf9" not in legend  # NOT the melee "buildable ground" colour
+    assert "buildable ground" not in legend["#cfd8dc"]
+    assert "enemy path" in legend["#cfd8dc"]
+
+
+def test_forbidden_tile_is_not_a_walkable_path() -> None:
+    # §V82/B86: a passable, non-buildable, non-path tile (tile_forbidden) is a
+    # non-deployable tile, NOT glossed a "walkable path".
+    res = render_stage_map(
+        width=1, height=1, cells=[MapCell(0, 0, "LOWLAND", "NONE", True, tile_key="tile_forbidden")]
+    )
+    legend = _legend_map(res)
+    assert set(legend) == {"#eceff1"}
+    assert "walkable path" not in legend["#eceff1"]
+    assert "cannot deploy" in legend["#eceff1"] or "non-deployable" in legend["#eceff1"]
+
+
+def test_highland_ranged_platform_is_a_deploy_tile_not_a_wall() -> None:
+    # §V82: a buildable highland platform is a ranged deploy surface even when it is not
+    # ground-passable -- buildable is classified before passable, so it is not a wall.
+    res = render_stage_map(
+        width=1, height=1, cells=[MapCell(0, 0, "HIGHLAND", "RANGED", False, tile_key="tile_wall")]
+    )
+    legend = _legend_map(res)
+    assert set(legend) == {"#a5d6a7"}
+    assert "#546e7a" not in legend
+
+
+def test_degenerate_route_is_not_rendered() -> None:
+    # §V82/B86: a start==end, 0-checkpoint route stacks the start+end circles on one
+    # cell (an artifact) -- it is dropped, drawing no markers and listing no marker colour.
+    res = render_stage_map(
+        width=3,
+        height=3,
+        cells=[MapCell(0, 0, "LOWLAND", "NONE", True, tile_key="tile_road")],
+        routes=[MapRoute(start=(0, 0), end=(0, 0))],
+    )
+    assert res.image is not None
+    svg = res.image.svg
+    assert 'class="route-start"' not in svg
+    assert 'class="route-end"' not in svg
+    legend = _legend_map(res)
+    assert "#2e7d32" not in legend and "#c62828" not in legend
+
+
+def test_start_equals_end_with_checkpoints_is_a_real_loop_kept() -> None:
+    # §V82/B86: only the 0-checkpoint start==end route is degenerate. A start==end route
+    # that still carries checkpoints is a real loop and IS drawn.
+    res = render_stage_map(
+        width=3,
+        height=3,
+        cells=[],
+        routes=[MapRoute(start=(0, 0), end=(0, 0), checkpoints=((1, 1), (2, 2)))],
+    )
+    assert res.image is not None
+    assert 'class="route-start"' in res.image.svg
+    assert 'class="route-path"' in res.image.svg
 
 
 # --- pure renderer: §V22 bounded, fail closed ---------------------------------

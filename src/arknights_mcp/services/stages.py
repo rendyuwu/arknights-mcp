@@ -451,6 +451,7 @@ def _build_map_image(
             height_type=t.height_type,
             buildable_type=t.buildable_type,
             passable=t.passable,
+            tile_key=t.tile_key,
         )
         for t in repo.all_tiles(stage_pk, MAX_MAP_CELLS + 1)
     ]

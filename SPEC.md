@@ -162,7 +162,7 @@ T162|x|M15 `get_banners` optional `query` name filter (additive, §V19 bounds; 3
 T163|x|M15 OPS redeploy live instance: 1st eval 2026-07-23 hit stale pre-0.2 build (`schema_version:"0.1"`, raw tiles/routes, `valueStr:null`, dup provenance); restart + code refresh DONE 2026-07-22 23:28 — 2nd eval (fresh live) verified 0.2: hoisted `drop_provenance`, compact `tile_grid`, no `valueStr`. residual DB re-sync carved → T171|V21
 T164|x|M15 stage variant truthful (B84): derive variant from game_id prefix → typed field in `get_stage` + both search locators; fix both search descriptions|V80,V70,V21
 T165|x|M15 checkpoint default-suppress (B85): omit zero/false checkpoint fields; description states omit=default|V81,V67,V22
-T166|.|M15 SVG render fix (B86): legend keyed on tile_key semantics, only-present colors, skip degenerate routes|V82,V74
+T166|x|M15 SVG render fix (B86): legend keyed on tile_key semantics, only-present colors, skip degenerate routes|V82,V74
 T167|.|M15 drop-rate unit gloss (B87): `drop_rate` = "expected items per run (quantity÷times)" + `times` = sample-run count in `get_stage_drops`/`get_item_drops` descriptions|V71
 T168|.|M15 module effect dedup + token label (B88): collapse dup talent/trait rows; label `talentIndex:-1`; breaking → ADR 0013 bundle|V83,V66,V21
 T169|.|M15 glossary single home (B89): blackboard glossary → server instructions\|resource; both descriptions carry pointer|V84,V71,V37

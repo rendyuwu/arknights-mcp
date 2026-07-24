@@ -72,10 +72,11 @@ _PAD_PX = 8
 
 # Fixed fill palette keyed on TYPED tile fields only (§V16/§V26 discipline): no
 # imported string reaches the document, only these literals we author.
-_FILL_WALL = "#546e7a"  # not passable (void/blocked)
+_FILL_WALL = "#546e7a"  # impassable void/blocked, non-deployable, off the enemy path
 _FILL_RANGED = "#a5d6a7"  # buildable HIGHLAND (ranged platform)
 _FILL_MELEE = "#90caf9"  # buildable LOWLAND (melee ground)
-_FILL_ROAD = "#cfd8dc"  # passable, non-buildable (path)
+_FILL_ROAD = "#cfd8dc"  # enemy-path tile (tile_road/start/end/flystart ...)
+_FILL_FORBIDDEN = "#eceff1"  # passable-but-non-buildable, non-path (tile_forbidden ...)
 _STROKE_BOARD = "#37474f"
 _STROKE_GRID = "#b0bec5"
 _FILL_BACKDROP = "#fafafa"
@@ -83,31 +84,76 @@ _MARK_START = "#2e7d32"  # route entry (enemy spawn)
 _MARK_END = "#c62828"  # route exit (objective)
 _MARK_PATH = "#ef6c00"  # checkpoint polyline
 
-#: §T140 (B65) client-facing legend for the derived map's fixed colour palette, so a
-#: client can decode the opaque hex fills/markers a rendered image carries (the render
-#: previously shipped no colour legend anywhere in the response). Keyed to the same
-#: authored literals :func:`_tile_fill` / :func:`_draw_routes` emit -- the single §V37
-#: home for the colour meanings. Attached to every rendered image (surfaced on the wire
-#: as ``map_image.legend``). Meanings are plain client-facing text -- no spec cites or
-#: internal jargon (§V71).
-MAP_LEGEND: tuple[dict[str, str], ...] = (
-    {"color": _FILL_WALL, "meaning": "impassable -- void or blocked tile, not deployable"},
-    {"color": _FILL_MELEE, "meaning": "buildable ground -- deploy melee (blocking) operators here"},
-    {"color": _FILL_RANGED, "meaning": "buildable highland -- deploy ranged operators here"},
-    {"color": _FILL_ROAD, "meaning": "walkable path -- enemies travel here, not buildable"},
-    {"color": _MARK_START, "meaning": "route start -- where enemies spawn"},
-    {"color": _MARK_END, "meaning": "route end -- the objective enemies march toward"},
-    {"color": _MARK_PATH, "meaning": "enemy route path"},
+#: Typed source ``tileKey`` values naming a tile the enemy route runs over -- the
+#: enemy PATH. A road that is ALSO melee-buildable stays a road here so its enemy-path
+#: meaning is not hidden behind a deploy-surface colour (§V82/B86: a melee-deploy road
+#: must not read as plain "buildable ground"). Read of the typed field only (§V26); an
+#: unknown key falls through to the buildable/passable classification below.
+_ROAD_TILE_KEYS = frozenset(
+    {"tile_road", "tile_start", "tile_end", "tile_flystart", "tile_telin", "tile_telout"}
 )
+
+#: §T140 (B65)/§T166 (B86) canonical colour -> client-facing meaning for the derived
+#: map's fixed palette, so a client can decode the opaque hex fills/markers a rendered
+#: image carries. Keyed on the SAME typed tile_key/buildable/passable semantics the
+#: compact tile-grid legend exposes (§V82) -- the single §V37 home for the colour
+#: meanings, read by both :func:`_tile_fill` and the per-render legend. Meanings are
+#: plain client-facing text -- no spec cites or internal jargon (§V71).
+_LEGEND_MEANINGS: dict[str, str] = {
+    _FILL_WALL: "impassable -- blocked or void tile; not deployable and not on the enemy path",
+    _FILL_MELEE: "buildable ground -- deploy melee (blocking) operators here",
+    _FILL_RANGED: "buildable highland -- deploy ranged operators here",
+    _FILL_ROAD: "enemy path -- enemies advance along these tiles",
+    _FILL_FORBIDDEN: "non-deployable tile -- cannot deploy here and not on the enemy path",
+    _MARK_START: "route start -- where enemies spawn",
+    _MARK_END: "route end -- the objective enemies march toward",
+    _MARK_PATH: "enemy route path",
+}
+
+#: Fixed legend emission order (single §V37 home). A per-render legend lists ONLY the
+#: colours actually drawn (§V82/B86), in this order.
+_LEGEND_ORDER: tuple[str, ...] = (
+    _FILL_WALL,
+    _FILL_MELEE,
+    _FILL_RANGED,
+    _FILL_ROAD,
+    _FILL_FORBIDDEN,
+    _MARK_START,
+    _MARK_END,
+    _MARK_PATH,
+)
+
+#: The full palette legend (every colour, in order) -- documentation of the whole map,
+#: not what any one render ships. A rendered image carries :func:`_legend_for`, the
+#: present-colours subset (§V82). Surfaced on the wire as ``map_image.legend``.
+MAP_LEGEND: tuple[dict[str, str], ...] = tuple(
+    {"color": color, "meaning": _LEGEND_MEANINGS[color]} for color in _LEGEND_ORDER
+)
+
+
+def _legend_for(colors: set[str]) -> tuple[dict[str, str], ...]:
+    """The legend for the colours a render actually emits, in canonical order (§V82).
+
+    §V82/B86: the legend lists ONLY the fills/markers present in THIS render -- a colour
+    no tile or route drew (an "impassable" swatch on a board with no walls) is never
+    listed. Ordered by :data:`_LEGEND_ORDER` so the legend stays deterministic (§C)."""
+    return tuple(
+        {"color": color, "meaning": _LEGEND_MEANINGS[color]}
+        for color in _LEGEND_ORDER
+        if color in colors
+    )
 
 
 @dataclass(frozen=True)
 class MapCell:
     """One tile of the stage grid, reduced to the fields the render keys on (§T122).
 
-    ``x``/``y`` are the stored grid coordinates; ``height_type``/``buildable_type``
-    are the typed source enums the fill colour is chosen from; ``passable`` walls a
-    cell when explicitly ``False``. No field is emitted verbatim into the SVG.
+    ``x``/``y`` are the stored grid coordinates; ``height_type``/``buildable_type``/
+    ``tile_key`` are the typed source enums the fill colour is chosen from (the same
+    fields the compact tile-grid legend exposes, §V82); ``passable`` walls a cell when
+    explicitly ``False``. ``tile_key`` distinguishes an enemy-path tile (a road) from a
+    non-buildable non-path tile (``tile_forbidden``) so neither is mislabelled (§V82/B86).
+    No field is emitted verbatim into the SVG.
     """
 
     x: int
@@ -115,6 +161,7 @@ class MapCell:
     height_type: str | None
     buildable_type: str | None
     passable: bool | None
+    tile_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -139,8 +186,9 @@ class RenderedMap:
     URL reference -- §V63 is a different path); ``media_type`` is
     :data:`SVG_MEDIA_TYPE`. ``pixel_width``/``pixel_height`` are the document
     viewport; ``tile_count`` is how many stored tiles were drawn. ``legend`` maps the
-    image's fixed colours to plain client-facing meanings (:data:`MAP_LEGEND`) so a
-    client can decode the opaque fills the SVG carries (B65).
+    image's fixed colours to plain client-facing meanings so a client can decode the
+    opaque fills the SVG carries (B65) -- and lists ONLY the colours THIS render
+    actually emits (§V82/B86, :func:`_legend_for`).
     """
 
     media_type: str
@@ -148,7 +196,7 @@ class RenderedMap:
     pixel_width: int
     pixel_height: int
     tile_count: int
-    legend: tuple[dict[str, str], ...] = MAP_LEGEND
+    legend: tuple[dict[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,19 +238,33 @@ def _oversize_limitation() -> str:
 
 
 def _tile_fill(cell: MapCell) -> str:
-    """Pick a fixed fill for a tile from its TYPED fields only (§V16/§V26).
+    """Pick a fixed fill for a tile from its TYPED fields only (§V16/§V26/§V82).
 
-    Order of precedence: an explicitly non-passable cell is a wall; a buildable
-    cell is a deploy surface (ranged on HIGHLAND, else melee); anything else is
-    path. Unknown/absent enum values fall through to the path colour -- the raw
-    source string is never emitted, only these authored literals.
+    Keyed on the same tile_key/buildable/passable semantics the compact tile-grid
+    legend exposes (§V82), so the render and the grid agree. Order of precedence:
+
+    * an enemy-path tile (``tile_key`` in :data:`_ROAD_TILE_KEYS`) is a ROAD -- even
+      when it is also melee-buildable, so a melee-deploy road never reads as plain
+      "buildable ground" (§V82/B86);
+    * a buildable cell is a deploy surface (ranged on HIGHLAND / explicit RANGED, else
+      melee) -- checked before ``passable`` so a highland ranged platform (buildable but
+      not ground-passable) is a deploy tile, not a wall;
+    * an explicitly non-passable, non-buildable cell is an impassable wall;
+    * anything else (a passable, non-buildable, non-path tile such as ``tile_forbidden``)
+      is a non-deployable tile, NOT a "walkable path" (§V82/B86).
+
+    Unknown/absent enum values fall through -- the raw source string is never emitted,
+    only these authored literals.
     """
-    if cell.passable is False:
-        return _FILL_WALL
+    if (cell.tile_key or "").lower() in _ROAD_TILE_KEYS:
+        return _FILL_ROAD
     buildable = (cell.buildable_type or "").upper()
     if buildable not in ("", "NONE"):
-        return _FILL_RANGED if (cell.height_type or "").upper() == "HIGHLAND" else _FILL_MELEE
-    return _FILL_ROAD
+        highland = (cell.height_type or "").upper() == "HIGHLAND"
+        return _FILL_RANGED if (highland or buildable == "RANGED") else _FILL_MELEE
+    if cell.passable is False:
+        return _FILL_WALL
+    return _FILL_FORBIDDEN
 
 
 def _effective_extent(
@@ -310,17 +372,36 @@ def _distinct_route_geometries(routes: Sequence[MapRoute]) -> list[MapRoute]:
     return distinct
 
 
-def _draw_routes(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
-    """Start/end markers + a checkpoint polyline per DISTINCT route geometry.
+def _is_degenerate(route: MapRoute) -> bool:
+    """A route whose start and end coincide with no checkpoints between them (§V82/B86).
 
-    Routes are collapsed to distinct geometry first (B65) so a stage's many duplicate
-    route records do not over-plot the overlay. WAIT placeholders were already filtered
-    upstream by their typed ``type`` field (§V74 (b)/B74) so the polyline follows real
-    grid waypoints only, without zig-zagging through the board corner.
-    """
+    Rendered, it stacks the green start circle and the red end circle on one cell -- an
+    artifact, not real geometry (the live 4-4 eval carried a ``start==end==(0, 0)``,
+    0-checkpoint route). Such a route is dropped from the overlay so no stacked-marker
+    artifact is drawn. A start==end route that still has checkpoints is a real loop and
+    is kept."""
+    return route.start is not None and route.start == route.end and not route.checkpoints
+
+
+def _drawable_routes(routes: Sequence[MapRoute]) -> list[MapRoute]:
+    """The routes actually drawn: DISTINCT geometry (B65) minus degenerate ones (§V82/B86).
+
+    Single §V37 home for "which routes reach the overlay", so the drawn markers and the
+    present-colours legend (:func:`_present_colors`) never diverge."""
+    return [route for route in _distinct_route_geometries(routes) if not _is_degenerate(route)]
+
+
+def _draw_route_markers(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
+    """Start/end markers + a checkpoint polyline for each already-drawable route.
+
+    ``routes`` is the :func:`_drawable_routes` list (distinct geometry, degenerate routes
+    already dropped), so a stage's many duplicate route records do not over-plot the
+    overlay (B65) and a start==end 0-checkpoint route draws no stacked circles (§V82/B86).
+    WAIT placeholders were already filtered upstream by their typed ``type`` field
+    (§V74 (b)/B74) so the polyline follows real grid waypoints only."""
     parts: list[str] = []
     radius = max(_CELL_PX // 3, 2)
-    for route in _distinct_route_geometries(routes):
+    for route in routes:
         if len(route.checkpoints) >= 2:
             points = " ".join(
                 f"{cx},{cy}" for cx, cy in (_cell_center(x, y, eff_h) for x, y in route.checkpoints)
@@ -341,6 +422,23 @@ def _draw_routes(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
                 f'<circle class="route-end" cx="{cx}" cy="{cy}" r="{radius}" fill="{_MARK_END}"/>'
             )
     return parts
+
+
+def _present_colors(cells: Sequence[MapCell], drawable_routes: Sequence[MapRoute]) -> set[str]:
+    """The set of fills/markers the render actually emits (§V82/B86, legend input).
+
+    Read from the SAME classifiers the draw functions use -- :func:`_tile_fill` per tile
+    and the drawn-marker conditions per drawable route -- so the legend lists exactly the
+    colours on the board, never a swatch nothing drew (§V37: one classification home)."""
+    colors: set[str] = {_tile_fill(cell) for cell in cells}
+    for route in drawable_routes:
+        if len(route.checkpoints) >= 2:
+            colors.add(_MARK_PATH)
+        if route.start is not None:
+            colors.add(_MARK_START)
+        if route.end is not None:
+            colors.add(_MARK_END)
+    return colors
 
 
 def render_stage_map(
@@ -372,9 +470,12 @@ def render_stage_map(
     pixel_width = eff_w * _CELL_PX + 2 * _PAD_PX
     pixel_height = eff_h * _CELL_PX + 2 * _PAD_PX
 
+    # Resolve the routes actually drawn ONCE (distinct geometry, degenerate dropped) so
+    # the overlay and the present-colours legend agree (§V37/§V82).
+    drawable_routes = _drawable_routes(routes)
     body: list[str] = _draw_grid_lines(eff_w, eff_h)
     body += _draw_tiles(cells, eff_h)
-    body += _draw_routes(routes, eff_h)
+    body += _draw_route_markers(drawable_routes, eff_h)
 
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{pixel_width}" '
@@ -398,5 +499,7 @@ def render_stage_map(
             pixel_width=pixel_width,
             pixel_height=pixel_height,
             tile_count=len(cells),
+            # §V82/B86: legend lists ONLY the colours this render actually drew.
+            legend=_legend_for(_present_colors(cells, drawable_routes)),
         )
     )
