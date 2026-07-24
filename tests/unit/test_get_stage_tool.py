@@ -32,6 +32,7 @@ from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
 from arknights_mcp.mcp.tools.stage import (
+    _TOOL_DESCRIPTION,
     _spawn_to_dict,
     _stage_absent_field_limitations,
     build_get_stage_spec,
@@ -209,6 +210,51 @@ def test_checkpoint_digest_drops_wait_placeholder_and_snake_cases_keys() -> None
     assert cp["reach_offset"] == {"x": 0, "y": 1}  # camelCase key renamed
     assert "reachOffset" not in cp
     assert cp["type"] == "MOVE"  # value untouched; already-lowercase key kept
+
+
+def test_checkpoint_digest_suppresses_zero_default_optional_fields() -> None:
+    # §V81/§V67 (B85): a checkpoint always carries type + position; the optional
+    # time/reach_distance/reach_offset/randomize_reach_offset fields are dropped when
+    # they sit at their zero/false default, and kept only when they deviate.
+    decoded = [
+        {
+            "type": "MOVE",
+            "position": {"col": 3, "row": 2},
+            "time": 0,
+            "reachDistance": 0,
+            "reachOffset": {"x": 0, "y": 0},  # all-zero offset -> default
+            "randomizeReachOffset": False,
+        },
+        {
+            "type": "MOVE",
+            "position": {"col": 5, "row": 1},
+            "time": 1.5,  # deviates
+            "reachOffset": {"x": 0, "y": 2},  # not all-zero -> deviates
+            "randomizeReachOffset": True,  # deviates
+            # no reach_distance key at all -> stays absent
+        },
+    ]
+    emit, _ = _digest_checkpoints(decoded)
+    all_default, deviating = emit
+    assert isinstance(all_default, dict) and isinstance(deviating, dict)
+    # every optional field at its default -> only type + position ride
+    assert all_default == {"type": "MOVE", "position": {"col": 3, "row": 2}}
+    # deviating fields survive (snake_cased); the absent default reach_distance stays out
+    assert deviating["type"] == "MOVE"
+    assert deviating["position"] == {"col": 5, "row": 1}
+    assert deviating["time"] == 1.5
+    assert deviating["reach_offset"] == {"x": 0, "y": 2}
+    assert deviating["randomize_reach_offset"] is True
+    assert "reach_distance" not in deviating
+    assert "reachOffset" not in deviating  # camelCase never leaks
+
+
+def test_tool_description_states_checkpoint_omit_is_default() -> None:
+    # §V81 (B85): omit=default is part of the client contract, so the tool description
+    # must name the suppressible checkpoint fields and say an omit means "at default".
+    desc = _TOOL_DESCRIPTION
+    assert "reach_offset" in desc and "randomize_reach_offset" in desc
+    assert "omitted" in desc and "default" in desc
 
 
 def _route_row(index: int, start: object, end: object, checkpoints: object) -> StageRouteRow:

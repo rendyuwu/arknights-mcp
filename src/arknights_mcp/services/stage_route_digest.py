@@ -5,7 +5,8 @@ checkpoints)`` geometry (4-4: 26 records, ~4 distinct); emitting every record is
 raw dump that overstates the route count (§V49) and burns the §V22 budget. This
 module collapses records to distinct geometry, normalises the stored checkpoint
 shapes to the wire contract (snake_case keys §V71 (d); WAIT markers dropped by
-their typed ``type`` field §V74 (b)/B74), and reports the read-cap truncation
+their typed ``type`` field §V74 (b)/B74; zero/false-default optional fields
+suppressed §V81/B85), and reports the read-cap truncation
 say-so (§V74 (a)/B73). It is a self-contained, pure transform over the typed route
 rows -- no SQL, no network, no imported prose reaches it (§V18) -- kept out of the
 stage service module so that module stays within the §V38 size cap (parallel to
@@ -42,7 +43,9 @@ class RouteFacts:
     ``checkpoints`` is always a list (§V51), with the non-spatial WAIT placeholder
     positions dropped (§V74 (b)) and each checkpoint object's keys normalized to
     snake_case (§V71 (d)); an empty set is ``[]`` on the wire, never the source's
-    ``{}``.
+    ``{}``. Each checkpoint carries ``type`` + ``position`` always; its optional
+    ``time`` / ``reach_distance`` / ``reach_offset`` / ``randomize_reach_offset``
+    fields ride only when they deviate from their zero/false default (§V81/B85).
     """
 
     route_indices: tuple[int, ...]
@@ -154,6 +157,55 @@ def _snake_case_keys(value: object) -> object:
     return value
 
 
+#: Optional checkpoint keys emitted ONLY when they deviate from their zero/false
+#: default (§V81/§V67 omit-discipline). A MOVE checkpoint carries these at their
+#: default on nearly every record, so suppressing the defaults roughly halves route
+#: bytes (§V22/§V66). Keys are snake_case -- suppression runs AFTER
+#: :func:`_snake_case_keys`. ``type`` + ``position`` are always emitted (§V81).
+_CHECKPOINT_OPTIONAL_KEYS = frozenset(
+    {"time", "reach_distance", "reach_offset", "randomize_reach_offset"}
+)
+
+
+def _is_checkpoint_field_default(value: object) -> bool:
+    """Is one optional checkpoint field at its zero/false default (§V81)?
+
+    ``time``/``reach_distance`` default to numeric ``0``; ``randomize_reach_offset``
+    to ``False``; ``reach_offset`` to an all-zero ``{x, y}`` offset. A scalar ``0`` /
+    ``0.0`` / ``False`` counts, as does a dict/list whose every leaf is itself a
+    default (an empty dict/list too). ``bool`` is tested before ``int`` so a truthy
+    flag does not read as a non-zero number. Any other value is a real deviation and
+    is kept (§V67: an omitted key means "at default", never "unknown")."""
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value is False
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, dict):
+        return all(_is_checkpoint_field_default(v) for v in value.values())
+    if isinstance(value, list):
+        return all(_is_checkpoint_field_default(v) for v in value)
+    return False
+
+
+def _suppress_default_checkpoint_fields(item: object) -> object:
+    """Drop a checkpoint's optional fields sitting at their zero/false default (§V81/B85).
+
+    ``type`` + ``position`` always ride; the four optional fields
+    (:data:`_CHECKPOINT_OPTIONAL_KEYS`) are emitted ONLY when they deviate from the
+    default (§V67 omit-discipline) -- a suppressed key reads as "at default", not
+    "unknown". Cuts ~50% of route bytes on the common all-default MOVE (§V22/§V66). A
+    non-dict checkpoint passes through untouched; an unrecognised key is kept."""
+    if not isinstance(item, dict):
+        return item
+    return {
+        k: v
+        for k, v in item.items()
+        if k not in _CHECKPOINT_OPTIONAL_KEYS or not _is_checkpoint_field_default(v)
+    }
+
+
 def _digest_checkpoints(
     decoded: object | None,
 ) -> tuple[list[object], tuple[tuple[int, int] | None, ...]]:
@@ -161,10 +213,11 @@ def _digest_checkpoints(
 
     Returns ``(emit_objects, positions)``: typed WAIT checkpoints
     (:func:`_is_wait_checkpoint`, by ``type`` -- NOT a ``(0, 0)`` coincidence, B74) are
-    dropped (§V74 (b)), surviving keys snake_cased (§V71 (d)); ``positions`` is the
-    surviving ``(x, y)`` sequence for the distinct-geometry key -- a real ``MOVE`` at
-    corner ``(0, 0)`` is retained so routes differing only there stay distinct (B74).
-    A non-list fragment normalises to ``([], ())``."""
+    dropped (§V74 (b)), surviving keys snake_cased (§V71 (d)) and their optional
+    fields default-suppressed (:func:`_suppress_default_checkpoint_fields`, §V81/B85);
+    ``positions`` is the surviving ``(x, y)`` sequence for the distinct-geometry key --
+    a real ``MOVE`` at corner ``(0, 0)`` is retained so routes differing only there stay
+    distinct (B74). A non-list fragment normalises to ``([], ())``."""
     if not isinstance(decoded, list):
         return [], ()
     emit: list[object] = []
@@ -172,7 +225,7 @@ def _digest_checkpoints(
     for item in decoded:
         if _is_wait_checkpoint(item):
             continue  # §V74 (b)/B74: non-spatial WAIT marker (typed), never geometry
-        emit.append(_snake_case_keys(item))
+        emit.append(_suppress_default_checkpoint_fields(_snake_case_keys(item)))
         positions.append(_checkpoint_position(item))
     return emit, tuple(positions)
 
