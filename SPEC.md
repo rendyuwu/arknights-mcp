@@ -167,7 +167,7 @@ T167|x|M15 drop-rate unit gloss (B87): `drop_rate` = "expected items per run (qu
 T168|x|M15 module effect dedup + token label (B88): collapse dup talent/trait rows; label `talentIndex:-1`; breaking → ADR 0013 bundle|V83,V66,V21
 T169|x|M15 glossary single home (B89): blackboard glossary → server instructions\|resource; both descriptions carry pointer|V84,V71,V37
 T170|x|M15 null scrub (B90): omit `stage_code`/`difficulty` on non-stage locators + `variant_id` when absent; omit-optional = additive-safe|V67,V21
-T171|.|M15 OPS re-sync live DB (B83): active DB imported 2026-07-22 21:43 = PRE-pull ∴ predates T142 item FTS rows; run `arknights-mcp sync --server all` on current code; acceptance: live `search_entities("Orirock", entity_type=item)` returns row|V73,V4
+T171|x|M15 OPS re-sync live DB (B83): active DB imported 2026-07-22 21:43 = PRE-pull ∴ predates T142 item FTS rows; run `arknights-mcp sync --server all` on current code; acceptance: live `search_entities("Orirock", entity_type=item)` returns row|V73,V4
 
 ## §B BUGS
 
