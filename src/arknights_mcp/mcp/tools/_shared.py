@@ -58,28 +58,16 @@ BLACKBOARD_LIMITATION = (
     "alone, as some are counterintuitive."
 )
 
-#: §V65 grounding FLOOR, path (c): a short glossary of common blackboard keys folded
-#: into the description of every tool that emits bare blackboard data, so an MCP client
-#: has a grounded reference instead of guessing. These are common interpretations only
-#: -- the exact meaning of a key is set by the specific effect (hence the §V65 (b)
-#: limitation still rides every emit). Shared: one glossary, one home (§V37). Client-
-#: facing text, so no internal cites/jargon (§V71).
-BLACKBOARD_KEY_GLOSSARY = (
-    "Common blackboard keys (interpretation depends on the specific effect): "
-    "atk / atk_scale = ATK modifier or multiplier; def / def_scale = DEF modifier; "
-    "max_hp = max HP modifier; magic_resistance = RES modifier; "
-    "attack@atk_scale = ATK multiplier for that hit; attack@times / times = hit count; "
-    "damage = flat damage; damage_scale = damage-taken multiplier; "
-    "heal_scale = healing multiplier; sp / sp_cost = skill point cost; "
-    "sp_recovery_per_sec = SP gained per second; duration = effect length in seconds; "
-    "interval = interval in seconds; prob = trigger chance (0 to 1); stun = stun seconds; "
-    "sleep = sleep seconds; freeze = freeze seconds; "
-    "attack_speed = attack-speed (ASPD) modifier; "
-    "base_attack_time = attack interval in seconds; move_speed = move-speed modifier; "
-    "cost = deploy cost modifier; respawn_time = redeploy seconds; "
-    "max_target = maximum targets hit; block_cnt = block-count modifier; "
-    "range_extend = added range; charge = charge or stack state; "
-    "hp_ratio = HP as a fraction; value = generic magnitude."
+#: §V65 grounding FLOOR path (c) + §V84/§T169: the one-line pointer folded into the
+#: description of every tool that emits bare blackboard data (``get_operator`` +
+#: ``compare_operator_modules``). The glossary itself is ~1.5KB, so embedding it in each
+#: description made a client pay for it twice every session (B89); it now lives once in the
+#: server instructions (:data:`arknights_mcp.instructions.BLACKBOARD_KEY_GLOSSARY`) and each
+#: description carries only this pointer (§V84 one home, no >=500-char block duplicated across
+#: descriptions; §V37 one pointer home). Client-facing text, so no internal cites/jargon
+#: (§V71 b); a short sentence (§V71 f).
+BLACKBOARD_GLOSSARY_POINTER = (
+    "A glossary of common blackboard keys is provided in this server's instructions."
 )
 
 

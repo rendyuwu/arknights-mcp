@@ -31,7 +31,7 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
-    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_LIMITATION,
@@ -73,7 +73,7 @@ _TOOL_DESCRIPTION = (
     "skill's description when it is the same at every level; it appears on a level only "
     "when the wording differs between levels. " + MODULE_CHANGE_DEDUP_NOTE + " To compare "
     "one operator's modules across their upgrade levels side by side, or for evidence-backed "
-    "module observations, use compare_operator_modules instead. " + BLACKBOARD_KEY_GLOSSARY
+    "module observations, use compare_operator_modules instead. " + BLACKBOARD_GLOSSARY_POINTER
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"

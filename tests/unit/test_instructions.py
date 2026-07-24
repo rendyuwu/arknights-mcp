@@ -7,6 +7,7 @@ text must respect §V6 (observations = evidence-backed inference) and §V7
 from __future__ import annotations
 
 from arknights_mcp.instructions import (
+    BLACKBOARD_KEY_GLOSSARY,
     FIRST_SEGMENT_CHARS,
     SERVER_INSTRUCTIONS,
     core_segment,
@@ -53,6 +54,16 @@ def test_recommendations_capability_based_never_mandatory() -> None:
     assert "optional" in lowered
     # The only mention of mandatory/best is the prohibition itself.
     assert "never mandatory or best-in-slot" in lowered
+
+
+def test_blackboard_glossary_folded_in_after_core_segment() -> None:
+    # §V84/§T169 (B89): the common-key glossary lives once here (was duplicated into two
+    # tool descriptions). It elaborates only, so it follows the truncation-safe core
+    # segment -- a truncating client still keeps the three-tier distinction intact.
+    assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
+    assert BLACKBOARD_KEY_GLOSSARY not in core_segment()
+    for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
+        assert key in SERVER_INSTRUCTIONS, key
 
 
 def test_covers_remaining_prd_13_1_host_directives() -> None:

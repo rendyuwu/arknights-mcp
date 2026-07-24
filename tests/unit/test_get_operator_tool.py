@@ -26,10 +26,11 @@ from tests.support.items import seed_items
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
+from arknights_mcp.instructions import BLACKBOARD_KEY_GLOSSARY, SERVER_INSTRUCTIONS
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import (
-    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
@@ -262,13 +263,16 @@ def test_skill_template_kept_per_level_when_levels_differ(conn: sqlite3.Connecti
     assert levels[1]["description"] != levels[2]["description"]
 
 
-def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> None:
-    # §V65 (c): a common-key glossary rides the tool description so a client has a
-    # grounded reference for the emitted keys instead of guessing.
+def test_description_points_to_blackboard_glossary(conn: sqlite3.Connection) -> None:
+    # §V84/§T169 (B89): the ~1.5KB glossary lives once in the server instructions; the
+    # description carries only a pointer, not the glossary itself (no double-billing).
     desc = build_get_operator_spec(lambda: conn).description
-    assert BLACKBOARD_KEY_GLOSSARY in desc
+    assert BLACKBOARD_GLOSSARY_POINTER in desc
+    assert BLACKBOARD_KEY_GLOSSARY not in desc
+    # §V65 (c) grounding floor: the glossary is still reachable, now in one home.
+    assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
     for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
-        assert key in desc, key
+        assert key in BLACKBOARD_KEY_GLOSSARY, key
 
 
 def test_description_documents_change_dedup_and_token_label(conn: sqlite3.Connection) -> None:

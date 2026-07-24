@@ -25,8 +25,9 @@ from pathlib import Path
 
 import pytest
 
+from arknights_mcp.instructions import BLACKBOARD_KEY_GLOSSARY, SERVER_INSTRUCTIONS
 from arknights_mcp.mcp.tools import build_tool_registry
-from arknights_mcp.mcp.tools._shared import DB_UNAVAILABLE_ACTION
+from arknights_mcp.mcp.tools._shared import BLACKBOARD_GLOSSARY_POINTER, DB_UNAVAILABLE_ACTION
 from arknights_mcp.mcp.tools.drops import _ITEM_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.drops import _NOT_FOUND_ACTION as _DROPS_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.enemy import _NOT_FOUND_ACTION as _ENEMY_NOT_FOUND_ACTION
@@ -162,9 +163,11 @@ def test_unit_fields_state_seconds_in_descriptions() -> None:
     assert "spawn_time" in stage and "seconds" in stage
     analyze = _desc("analyze_stage")
     assert "seconds" in analyze
-    operator = _desc("get_operator")  # the blackboard-key glossary
-    assert "duration = effect length in seconds" in operator
-    assert "interval = interval in seconds" in operator
+    # §V84/§T169: the blackboard-key glossary (which glosses the second-valued keys)
+    # lives once in the server instructions now, not in each tool description.
+    assert "duration = effect length in seconds" in BLACKBOARD_KEY_GLOSSARY
+    assert "interval = interval in seconds" in BLACKBOARD_KEY_GLOSSARY
+    assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
 
 
 def test_drop_rate_and_times_glossed_in_drop_descriptions() -> None:
@@ -223,6 +226,25 @@ def test_module_tool_overlap_cross_ref_documented() -> None:
     assert "compare_operator_modules" in get_op  # cross-ref to the sibling tool
     assert "get_operator" in compare  # cross-ref back
     assert "include_modules" in compare  # names the overlapping surface + when-to-prefer
+
+
+# --- §V84/B89: the blackboard glossary has ONE home + descriptions point to it ---
+
+
+def test_blackboard_glossary_single_home_with_pointers() -> None:
+    # §V84 (B89): the ~1.5KB glossary was embedded in BOTH get_operator +
+    # compare_operator_modules descriptions = 2x every-session context cost. It now lives
+    # once in the server instructions, and each emitting description carries only a short
+    # pointer -- no >=500-char block is duplicated across the two descriptions.
+    assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
+    assert len(BLACKBOARD_KEY_GLOSSARY) >= 500  # the block §V84 forbids duplicating
+    for name in ("get_operator", "compare_operator_modules"):
+        desc = _desc(name)
+        assert BLACKBOARD_GLOSSARY_POINTER in desc, name  # the one-line pointer
+        assert BLACKBOARD_KEY_GLOSSARY not in desc, name  # not the glossary itself
+    # §V71 (b): the pointer is client-facing, so it carries no internal cite/jargon.
+    assert "§" not in BLACKBOARD_GLOSSARY_POINTER
+    assert not _BUG_CITE.search(BLACKBOARD_GLOSSARY_POINTER)
 
 
 # --- (b) T137/B62: RUNTIME-emitted client strings carry no cites/jargon either --

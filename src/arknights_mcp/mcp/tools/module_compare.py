@@ -28,7 +28,7 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
-    BLACKBOARD_KEY_GLOSSARY,
+    BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
@@ -64,7 +64,8 @@ _TOOL_DESCRIPTION = (
     + MODULE_CHANGE_DEDUP_NOTE
     + " For an operator's full kit (identity, phases, skills, talents, and modules), use "
     "get_operator with include_modules. This tool instead compares modules level by level, "
-    "and its with_observations mode adds evidence-backed observations. " + BLACKBOARD_KEY_GLOSSARY
+    "and its with_observations mode adds evidence-backed observations. "
+    + BLACKBOARD_GLOSSARY_POINTER
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
