@@ -67,18 +67,34 @@ def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
 
 
 def test_results_carry_region_and_type(conn: sqlite3.Connection) -> None:
-    # §V5 region travels per row; the locator carries its typed identity. The
-    # §V70 difficulty variant tag is always keyed (null for a non-stage hit).
+    # §V5 region travels per row; the locator carries its typed identity. A
+    # non-stage locator (enemy Slug) omits the stage-only stage_code/difficulty
+    # keys rather than emitting them as an ambiguous null (§V67/B90).
     for row in _handler(conn)(query="slug").to_dict()["data"]["results"]:  # type: ignore[index]
         assert row["server"] == "en"
-        assert set(row) == {
-            "entity_type",
-            "server",
-            "game_id",
-            "display_name",
-            "stage_code",
-            "difficulty",
-        }
+        assert set(row) == {"entity_type", "server", "game_id", "display_name"}
+
+
+def test_non_stage_locator_omits_stage_code_and_difficulty(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V67/B90: stage_code + difficulty are stage-only; an enemy locator carries
+    # neither key (not a bare null).
+    rows = _handler(conn)(query="drone", entity_type="enemy").to_dict()["data"]["results"]
+    assert rows  # sanity: the enemy is indexed
+    for row in rows:  # type: ignore[union-attr]
+        assert "stage_code" not in row
+        assert "difficulty" not in row
+
+
+def test_stage_locator_keeps_stage_code_and_difficulty(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V67/§V80: a stage locator DOES carry the stage-only keys (positive case).
+    rows = _handler(conn)(query="4-4", entity_type="stage").to_dict()["data"]["results"]
+    stage = next(r for r in rows if r["game_id"] == "main_04-04")  # type: ignore[index,union-attr]
+    assert stage["stage_code"] == "4-4"
+    assert "difficulty" in stage
 
 
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:

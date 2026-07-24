@@ -51,8 +51,9 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "Search indexed Arknights operators, enemies, stages, and items by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
     "get_operator / get_enemy / get_stage for full facts, or feed an item locator's "
-    "game_id to get_item_drops. A stage locator carries a difficulty variant tag "
-    "(NORMAL, FOUR_STAR challenge, TOUGH, or EASY), so a normal stage and its "
+    "game_id to get_item_drops. Only a stage locator carries stage_code and a "
+    "difficulty variant tag (NORMAL, FOUR_STAR challenge, TOUGH, or EASY); other "
+    "locators omit both keys. The difficulty tag lets a normal stage and its "
     "challenge, tough, or easy variant that share a code and name stay "
     "distinguishable. For a stage code like 4-4, prefer "
     "search_stages, which ranks an exact stage-code match first. "
@@ -95,21 +96,31 @@ _DATA_STALE_ACTION = (
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     """One hit as a region-tagged locator (§V5: region travels on every row).
 
-    ``difficulty`` is the §V70/§V80 stage variant tag: two stages that share a
-    ``display_name`` + ``stage_code`` (a normal stage and its challenge / tough /
-    easy variant) carry distinct difficulty values, so a client can tell them apart
-    in one result set without parsing the game-data ``game_id`` suffix/prefix
-    (B59/B84). It is ``null`` for a non-stage locator or a plain stage with no
-    variant.
+    ``stage_code`` + ``difficulty`` are STAGE-domain fields: an operator / enemy /
+    item locator carries neither, so both keys are OMITTED (not emitted as an
+    ambiguous ``null``) on a non-stage row (§V67 null discipline / B90; omitting an
+    always-absent field is additive-safe, §V21). A stage locator always keys both --
+    ``stage_code`` is present, and ``difficulty`` is kept even when ``null`` (a plain
+    stage with no variant), because for a stage the tag is a domain-expected field a
+    client reads unconditionally, not an ambiguous absence. ``difficulty`` is the
+    §V70/§V80 stage variant tag: two stages that share a ``display_name`` +
+    ``stage_code`` (a normal stage and its challenge / tough / easy variant) carry
+    distinct difficulty values, so a client can tell them apart in one result set
+    without parsing the game-data ``game_id`` suffix/prefix (B59/B84).
     """
-    return {
+    out: dict[str, object] = {
         "entity_type": hit.entity_type,
         "server": hit.server,
         "game_id": hit.game_id,
         "display_name": hit.display_name,
-        "stage_code": hit.stage_code,
-        "difficulty": hit.difficulty,
     }
+    # §V67/B90: the stage-only locator fields ride only a stage row. A non-stage
+    # locator omits both keys instead of emitting a bare null; a stage keeps both
+    # (difficulty may be null there, a domain-expected tag, not an absence).
+    if hit.entity_type == "stage":
+        out["stage_code"] = hit.stage_code
+        out["difficulty"] = hit.difficulty
+    return out
 
 
 def _guarded_search(

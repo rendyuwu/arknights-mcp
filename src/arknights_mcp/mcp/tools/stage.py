@@ -74,6 +74,8 @@ _TOOL_DESCRIPTION = (
     "A checkpoint always carries type and position; its optional time, "
     "reach_distance, reach_offset and randomize_reach_offset fields are omitted "
     "when they sit at their zero/false default (omitted means at default). "
+    "A spawn's variant_id (an inline enemy variant) is present only when the "
+    "spawn is one; a base-enemy spawn omits the key. "
     "Spawn timeline values (spawn_time and interval) are in seconds. Set "
     "include_map_image for a rendered SVG map drawn from the stage's own grid data "
     "(a derived image, not game artwork); a very large map is omitted with a note. "
@@ -165,15 +167,17 @@ def _spawn_to_dict(spawn: SpawnFacts) -> dict[str, object]:
         "wave_index": spawn.wave_index,
         "enemy_game_id": spawn.enemy_game_id,
         "enemy_level_variant": spawn.enemy_level_variant,
-        "variant_id": spawn.variant_id,
         "route_index": spawn.route_index,
         "spawn_time": spawn.spawn_time,
         "count": spawn.count,
         "interval": spawn.interval,
         "hidden": spawn.hidden,
     }
-    # §V67: ``spawn_group`` is an always-optional scalar -- omit the key when the
-    # source carried none rather than emit an ambiguous null (additive-safe, §V21).
+    # §V67/B90: ``variant_id`` (inline ``useDb:false`` variant, §T80) and
+    # ``spawn_group`` are always-optional scalars -- omit the key when the source
+    # carried none rather than emit an ambiguous null (additive-safe, §V21).
+    if spawn.variant_id is not None:
+        out["variant_id"] = spawn.variant_id
     if spawn.spawn_group is not None:
         out["spawn_group"] = spawn.spawn_group
     return out
@@ -335,8 +339,10 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     + timing PLUS the §V47 per-enemy stat block (hp/atk/def/res/attack_interval/
     move_speed/weight). The stat block reads variant stats over base (§V46 COALESCE),
     so the description's "full per-enemy stat/timing context" is honoured, not just
-    advertised (B41). A stat is ``null`` when the source field is absent (§V26)."""
-    return {
+    advertised (B41). A stat is ``null`` when the source field is absent (§V26).
+    ``variant_id`` (the inline ``useDb:false`` variant id, §T80) is OMITTED rather
+    than emitted as a bare null for a base-enemy occurrence (§V67/B90)."""
+    out: dict[str, object] = {
         "game_id": occ.game_id,
         "display_name": occ.display_name,
         "enemy_class": occ.enemy_class,
@@ -345,7 +351,6 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         "motion_type": occ.motion_type,
         "attack_type": occ.attack_type,
         "level_variant": occ.level_variant,
-        "variant_id": occ.variant_id,
         "total_count": occ.total_count,
         "hp": occ.hp,
         "atk": occ.atk,
@@ -358,6 +363,11 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         "last_spawn_time": occ.last_spawn_time,
         "route_count": occ.route_count,
     }
+    # §V67/B90: inline-variant id present only for a ``useDb:false`` variant row;
+    # a base-enemy occurrence omits the key rather than carrying an ambiguous null.
+    if occ.variant_id is not None:
+        out["variant_id"] = occ.variant_id
+    return out
 
 
 def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> ResponseEnvelope:

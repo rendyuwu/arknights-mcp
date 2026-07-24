@@ -436,6 +436,15 @@ def test_spawn_group_omitted_when_absent() -> None:
     assert _spawn_to_dict(_spawn(spawn_group="g0"))["spawn_group"] == "g0"
 
 
+def test_spawn_variant_id_omitted_when_absent() -> None:
+    # §V67/B90: ``variant_id`` (inline useDb:false variant, §T80) is omitted for a
+    # base-enemy spawn and emitted only when the spawn is an inline variant.
+    assert "variant_id" not in _spawn_to_dict(_spawn(variant_id=None))
+    assert _spawn_to_dict(_spawn(variant_id="enemy_1007_slime_a"))["variant_id"] == (
+        "enemy_1007_slime_a"
+    )
+
+
 def test_spawn_group_present_on_fixture_spawns(conn: sqlite3.Connection) -> None:
     # The 4-4 spawns DO carry a spawn group -> the key is present (positive case).
     data = _handler(conn)(server="en", stage_code="4-4", include_spawns=True).to_dict()["data"]

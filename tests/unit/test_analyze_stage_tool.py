@@ -135,6 +135,16 @@ def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Conne
         assert not (stat_keys & set(occ))
 
 
+def test_detailed_occurrence_omits_variant_id_for_base_enemy(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V67/B90: the 4-4 occurrences are base enemies (no inline useDb:false variant),
+    # so a detailed occurrence omits ``variant_id`` rather than emitting a bare null.
+    data = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()["data"]
+    for occ in data["occurrences"]:  # type: ignore[index]
+        assert "variant_id" not in occ
+
+
 # --- §V6 evidence-backed observations -----------------------------------------
 
 
