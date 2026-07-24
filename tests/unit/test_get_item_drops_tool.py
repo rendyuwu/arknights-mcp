@@ -33,6 +33,7 @@ from tests.support.drops import (
     PAST_EXPIRY,
     StageDropSeed,
     seed_item_across_stages,
+    seed_item_without_drops,
 )
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
@@ -464,6 +465,32 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
     # §V73/B67: the pointer is honest -- search_entities now resolves item name -> id,
     # so the not_found action names it (no longer a dead-end pointer).
     assert "search_entities" in str(action)
+
+
+def test_resolved_item_with_no_drops_is_distinct_not_found(tmp_path: Path) -> None:
+    # §V60/B91: an item that RESOLVES but has zero stage-drop cache is a craft/synthesis-only
+    # material -- it will NEVER have a penguin drop row, so the not_found must NOT read like an
+    # unknown-item miss (which points at an admin re-sync). It gets a distinct message + a
+    # freshness self-check pointer (get_data_status), never the re-sync that would add nothing.
+    path = _candidate(tmp_path)
+    seed_item_without_drops(path, item_game_id="30155", item_display_name="Nucleic Crystal Sinter")
+    env = _handler(open_read_only(path))(server="en", game_id="30155")
+    assert env.status == "not_found"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    message = str(data["message"])
+    action = str(data["suggested_action"])
+    # The message says the item EXISTS (not an unknown-id miss).
+    assert "exists" in message.lower()
+    # §V60/B91: it points a freshness self-check, NOT the admin re-sync -- a synthesis-only
+    # material has no drop to fetch, so the sync action would mislead as "cache unsynced".
+    assert "get_data_status" in action
+    assert "arknights-mcp" not in action  # no admin re-sync command
+    assert "synthesis" in action.lower() or "workshop" in action.lower()
+    # §V24: still never a query-time download/scrape fallback.
+    assert "download" not in action.lower() and "scrape" not in action.lower()
+    # Distinct from the UNKNOWN-item action, which points at search_entities.
+    assert "search_entities" not in action
 
 
 # --- §V23 typed failures ------------------------------------------------------

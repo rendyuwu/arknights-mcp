@@ -28,7 +28,7 @@ import pytest
 from arknights_mcp.instructions import BLACKBOARD_KEY_GLOSSARY, SERVER_INSTRUCTIONS
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools._shared import BLACKBOARD_GLOSSARY_POINTER, DB_UNAVAILABLE_ACTION
-from arknights_mcp.mcp.tools.drops import _ITEM_NOT_FOUND_ACTION
+from arknights_mcp.mcp.tools.drops import _ITEM_NO_DROPS_ACTION, _ITEM_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.drops import _NOT_FOUND_ACTION as _DROPS_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.enemy import _NOT_FOUND_ACTION as _ENEMY_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.module_compare import _NOT_FOUND_ACTION as _MODULE_NOT_FOUND_ACTION
@@ -131,11 +131,22 @@ def test_admin_cli_action_is_phrased_as_ask_the_admin(action: str) -> None:
         (_OPERATOR_NOT_FOUND_ACTION, "search_entities"),
         (_MODULE_NOT_FOUND_ACTION, "search_entities"),
         (_DROPS_NOT_FOUND_ACTION, "search_stages"),
+        # §V60/B91: a resolved item with zero drop cache (craft/synthesis-only) points at
+        # get_data_status (a freshness self-check the client CAN call), not an admin re-sync.
+        (_ITEM_NO_DROPS_ACTION, "get_data_status"),
     ],
 )
 def test_entity_not_found_action_names_an_mcp_tool(action: str, tool: str) -> None:
     # §V71 (a): a not_found next step names an MCP-callable tool the client CAN invoke.
     assert tool in action
+
+
+def test_resolved_no_drops_action_is_not_a_cli_resync() -> None:
+    # §V60/B91: the craft/synthesis-only not_found must NOT hint an admin re-sync -- the
+    # item has no drop to fetch, so a sync would mislead as "the cache is unsynced".
+    action = _ITEM_NO_DROPS_ACTION
+    assert "arknights-mcp" not in action
+    assert "download" not in action.lower() and "scrape" not in action.lower()
 
 
 def test_no_cli_action_suggests_query_time_download() -> None:

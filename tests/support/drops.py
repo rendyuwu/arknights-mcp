@@ -94,6 +94,49 @@ def seed_stage_drop(
         conn.close()
 
 
+def seed_item_without_drops(
+    path: Path,
+    *,
+    item_game_id: str = "orphan",
+    item_display_name: str | None = "Orphan",
+    region: str = "en",
+) -> None:
+    """Seed one ``items`` row with NO ``stage_drops`` -- a craft/synthesis-only material.
+
+    The §T103/§V60 reverse comparison resolves the item but finds zero drop cache, the
+    not_found reason DISTINCT from an unknown game_id (§V60/B91): a Workshop-synthesis or
+    otherwise non-farmed material has no penguin drop row to fetch. Mirrors the penguin
+    snapshot + provenance shape the other seeders write so the item FK holds; opens a
+    read-write handle (the candidate is written before it is promoted + reopened
+    read-only). ``penguin_statistics`` is already in ``data_sources`` from
+    ``build_candidate`` so the snapshot FK holds.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        snapshot_id = f"pg:{region}"
+        conn.execute(
+            "INSERT INTO source_snapshots (snapshot_id, source_id, server, fetched_at, "
+            "imported_at, manifest_hash, status, field_policy_version) VALUES "
+            "(?, 'penguin_statistics', ?, '2026-07-19T00:00:00+00:00', "
+            "'2026-07-19T00:00:00+00:00', 'ph', 'imported', '1')",
+            (snapshot_id, region),
+        )
+        prov = conn.execute(
+            "INSERT INTO record_provenance (snapshot_id, source_path, source_record_key, "
+            "record_hash, transform_version, field_policy_version) VALUES "
+            "(?, 'items', ?, 'rh', '1', '1')",
+            (snapshot_id, item_game_id),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO items (server, game_id, display_name, rarity, item_type, provenance_id) "
+            "VALUES (?, ?, ?, '5', 'MATERIAL', ?)",
+            (region, item_game_id, item_display_name, prov),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @dataclass(frozen=True)
 class StageDropSeed:
     """One synthetic stage that drops the compared item (item->stage seed; §T103).

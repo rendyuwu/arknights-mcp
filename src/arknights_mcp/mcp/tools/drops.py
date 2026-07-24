@@ -275,6 +275,18 @@ _ITEM_NOT_FOUND_ACTION = (
     "ask the server admin to run `arknights-mcp sync --server all` to fetch the "
     "penguin drop cache"
 )
+# §V60/B91: a RESOLVED item with zero stage-drop cache is NOT an unknown-item miss -- it is
+# a craft/synthesis-only (Workshop) or otherwise non-farmed material that has no stage drop
+# to fetch, so an admin re-sync would add nothing. A DISTINCT message + a freshness
+# self-check pointer (get_data_status, MCP-callable, §V71(a)) rather than the sync action,
+# which would misread as "the cache is unsynced" for a row that will never exist.
+_ITEM_NO_DROPS_MESSAGE = "the item exists but the penguin cache lists no stage that drops it"
+_ITEM_NO_DROPS_ACTION = (
+    "this item is not farmed from a stage -- it is obtained by synthesis (workshop) or "
+    "another non-drop source, so there is no observed drop rate to report and a re-sync "
+    "would not add one; call get_data_status to confirm the penguin cache is fresh if you "
+    "expected a drop"
+)
 
 
 def _item_stage_drop_identity(stage: ItemStageDropFacts) -> dict[str, object]:
@@ -352,8 +364,13 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
 
     ``ok`` and ``data_stale`` both deliver the per-stage drop facts (an expired stage
     is flagged and downgraded, not dropped from the ranking, §V60); ``not_found``
-    (absent item or no drop cache in any stage) fails to a §V24 error envelope with a
-    suggested admin action. The ranked efficiency observations ride only when
+    fails to a §V24 error envelope whose message + suggested_action split the two
+    reasons (§V60/B91): an UNKNOWN item (``result.item is None``) points at
+    ``search_entities`` + an admin re-sync, while a RESOLVED item with zero stage-drop
+    cache (``result.item`` set -- a craft/synthesis-only material) gets a distinct
+    "exists but no observed drop" message pointing ``get_data_status`` (a freshness
+    self-check), never the re-sync that would add no drop. The ranked efficiency
+    observations ride only when
     ``include_efficiency`` produced them, each keeping its five §V6 fields (§V55),
     alongside the mandatory §V60 comparison caveats. Envelope provenance is the item's
     own region attribution (§V5), derived over the FULL comparison in the service
@@ -374,6 +391,13 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     ``stages_page``. Whichever list is emitted is paged (§V22/§V19, B21).
     """
     if result.status == "not_found" or result.item is None:
+        if result.item is not None:
+            # §V60/B91: the item RESOLVED but has no stage-drop cache -- a craft/synthesis-only
+            # material with no drop row to fetch. A distinct message + a freshness self-check
+            # pointer, never the admin re-sync action (which would read as "cache unsynced").
+            return error(
+                "not_found", _ITEM_NO_DROPS_MESSAGE, suggested_action=_ITEM_NO_DROPS_ACTION
+            )
         return error("not_found", _ITEM_NOT_FOUND_MESSAGE, suggested_action=_ITEM_NOT_FOUND_ACTION)
 
     shared_prov, deviations = hoist_drop_provenance(

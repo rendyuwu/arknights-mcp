@@ -371,11 +371,21 @@ def _item_stage_drop_facts(row: ItemStageDropRow, now: datetime) -> ItemStageDro
     )
 
 
-def _item_not_found(server: str) -> ItemDropsResult:
+def _item_not_found(server: str, item: ItemFacts | None = None) -> ItemDropsResult:
+    """A ``not_found`` item comparison (§V60/§V24).
+
+    ``item`` is ``None`` when the game_id resolves to no ``items`` row (an UNKNOWN
+    item); it carries the resolved identity when the item EXISTS but has 0 stage-drop
+    cache -- a craft/synthesis-only (Workshop) or otherwise non-farmed material that
+    will never have a penguin drop row. Both are ``not_found`` on the wire, but the
+    tool reads which reason from whether ``item`` is set, so it can point a resolved
+    zero-drop item at ``get_data_status`` (a freshness self-check) instead of an admin
+    re-sync that would add nothing (B91).
+    """
     return ItemDropsResult(
         status="not_found",
         server=server,
-        item=None,
+        item=item,
         stages=(),
         stages_page=None,
         observation=None,
@@ -427,8 +437,11 @@ def get_item_drops(
     Read-only; parameterized SQL only (§V2); never a query-time penguin fetch (§V52).
 
     An absent item, or an item with no drop cache in any stage, is a ``not_found``
-    (§V24) -- the tool maps it to a suggested admin action, never a query-time
-    download fallback. A stage drop served past its ``expires_at`` is still returned
+    (§V24), never a query-time download fallback. The two reasons are distinguished so
+    the tool can point the right next step (§V60/B91): an UNKNOWN item returns
+    ``item=None``; a RESOLVED item with 0 drop cache (a craft/synthesis-only material)
+    carries its resolved identity on the ``not_found`` result. A stage drop served past
+    its ``expires_at`` is still returned
     but flagged, and the status is ``data_stale`` (§V53) -- expired figures are
     downgraded, never dropped from the comparison (§V60). When ``include_efficiency``
     is set, the deterministic §T103 analyzer ranks the stages ascending by sanity per
@@ -459,10 +472,13 @@ def get_item_drops(
 
     drop_rows = repo.drops_for_item(item.item_pk, server)
     if not drop_rows:
-        # An item with no drop cache asserts no comparison -- report it absent with a
-        # suggested admin action (§V24), never an empty ``ok``. The tool maps this to
-        # a not_found envelope.
-        return _item_not_found(server)
+        # The item RESOLVED but has no drop cache -- a craft/synthesis-only or otherwise
+        # non-farmed material (§V60/B91). Report it not_found (never an empty ``ok`` that
+        # reads as "drops nothing"), but carry the resolved identity so the tool points a
+        # freshness self-check (`get_data_status`) rather than an admin re-sync that would
+        # add nothing -- a synthesis-only mat has no stage drop to fetch. Distinct from an
+        # UNKNOWN item (item is None above), which keeps the search_entities + sync action.
+        return _item_not_found(server, item=_item_facts(item))
 
     # The FULL set drives the stale verdict + provenance + (below) the ranking, so
     # neither ever depends on which page was requested (§V22/§V19, B21).

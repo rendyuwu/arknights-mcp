@@ -193,8 +193,11 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
 
 
 def test_item_with_no_drop_cache_is_not_found(tmp_path: Path) -> None:
-    # An item that exists but has no stage_drops rows still reports absent (§V24) --
-    # there is no comparison to rank.
+    # An item that exists but has no stage_drops rows still reports not_found (§V24) --
+    # there is no comparison to rank -- but the service CARRIES the resolved identity on
+    # the result (§V60/B91), distinct from an UNKNOWN item (which returns item=None), so
+    # the tool can point a craft/synthesis-only material at a freshness self-check rather
+    # than an admin re-sync that would add no drop.
     path = _candidate(tmp_path)
     conn0 = sqlite3.connect(str(path))
     try:
@@ -221,6 +224,10 @@ def test_item_with_no_drop_cache_is_not_found(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="orphan")
     assert result.status == "not_found"
     assert result.stages == ()
+    # §V60/B91: the resolved identity rides the not_found result (a craft-only material),
+    # so the tool can distinguish it from an UNKNOWN item (item=None).
+    assert result.item is not None
+    assert result.item.game_id == "orphan"
 
 
 # --- §V2: read-only ------------------------------------------------------------
