@@ -112,3 +112,20 @@ on T146 per ADR 0012 / B69). Each reshape is recorded here as it lands:
   `stages_page` are returned unchanged. The `efficiency_page` cursor pages the ranking;
   `stages_page` no longer applies in efficiency mode. Breaking response-shape change that
   folds into the still-unreleased v0.2 line, so `SCHEMA_VERSION` stays `"0.2"`.
+
+- **T168 — module effect dedup + token label (B88/§V83/§V66).** A module's per-level
+  `trait_changes` / `talent_changes` no longer emit N near-identical rows for one change,
+  no longer leave a `-1` summon/token change unlabelled, and no longer repeat a bundle
+  byte-identical across levels. Three shared (§V37) emit-shaping helpers route both
+  `get_operator(include_modules)` and `compare_operator_modules`:
+  (1) **dedup** — bundles sharing an identity `(talentIndex, requiredPotentialRank,
+  unlockCondition)` merge into one row carrying the union of their non-empty fields
+  (blackboard + description), byte-lossless (a genuine conflict — two distinct non-empty
+  blackboards under one gate — keeps the rows separate); (2) **token label** — a
+  `talentIndex == -1` change gains `applies_to: "token"` (it affects the operator's
+  summon/token, not the operator); (3) **cross-level hoist** — a change bundle
+  byte-identical across every present level rides the module once (new `trait_changes` /
+  `talent_changes` fields on the module, alongside the existing `trait_change_description`)
+  and is omitted from each level (§V67 omit-key, never null). The module analyzer still
+  reads the raw decode, so observation counts are unaffected. Breaking response-shape change
+  that folds into the still-unreleased v0.2 line, so `SCHEMA_VERSION` stays `"0.2"`.

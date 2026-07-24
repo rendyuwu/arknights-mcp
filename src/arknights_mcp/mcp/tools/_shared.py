@@ -118,6 +118,23 @@ IMAGE_REFS_LIMITATION = (
 )
 
 
+#: §V83/§V66 (T168, B88): the client-facing note describing how a module's trait/talent
+#: change bundles are deduped + labelled, folded into the description of both tools that emit
+#: modules (``get_operator`` include_modules + ``compare_operator_modules``). Duplicate/subset
+#: rows for one change are collapsed to a single row; a bundle identical at every level rides
+#: the module once (``trait_changes`` / ``talent_changes``) and is omitted from each level; a
+#: talent change tagged ``applies_to: "token"`` affects the operator's summon/token, not the
+#: operator. Shared: one wording, one home (§V37). Client-facing text, so no internal
+#: cites/jargon (§V71); short sentences (§V71 f).
+MODULE_CHANGE_DEDUP_NOTE = (
+    "For a module's trait_changes and talent_changes: repeated identical entries for one "
+    "change are collapsed into a single row. A bundle that is the same at every level is "
+    "listed once on the module (as trait_changes or talent_changes) and omitted from each "
+    'level. A talent change tagged applies_to "token" affects the operator\'s summon or '
+    "token rather than the operator."
+)
+
+
 def has_unnamed_cost_item(cost_lists: Iterable[object]) -> bool:
     """True when any emitted upgrade-cost entry carries an item id but no display name (§V69).
 

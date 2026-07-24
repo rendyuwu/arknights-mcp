@@ -19,6 +19,7 @@ transports share this exact function (§V14). No transport-specific logic lives 
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -172,13 +173,22 @@ class ModuleLevelFacts:
 
 @dataclass(frozen=True)
 class OperatorModuleFacts:
-    """One module: metadata + its ordered levels."""
+    """One module: metadata + its ordered levels.
+
+    ``trait_changes`` / ``talent_changes`` are the per-level change bundle hoisted once to
+    the module when it is byte-identical across every level (§V66.3/§V83) -- the client
+    reads it as "the same at every level" and each level then omits its copy; both are
+    ``None`` when the bundle varies by level (or is absent), in which case each level keeps
+    its own. The hoist is byte-lossless -- the bundle lives in exactly one place.
+    """
 
     game_id: str
     module_type: str | None
     display_name: str | None
     unlock_phase: int | None
     unlock_level: int | None
+    trait_changes: object | None
+    talent_changes: object | None
     levels: tuple[ModuleLevelFacts, ...]
 
 
@@ -271,6 +281,147 @@ def hoist_uniform_template(values: Iterable[str | None]) -> str | None:
         (only,) = distinct
         if isinstance(only, str):
             return only
+    return None
+
+
+#: The keys that IDENTIFY which talent/trait change a bundle is (§V83): two entries sharing
+#: these describe the same change (same talent, same potential gate, same unlock condition);
+#: every other key (``blackboard``, ``description``) is value-bearing and may be merged.
+_EFFECT_IDENTITY_KEYS: frozenset[str] = frozenset(
+    {"talentIndex", "requiredPotentialRank", "unlockCondition"}
+)
+
+
+def _canonical(value: object) -> str:
+    """A stable, order-independent string for byte-identity comparison of a decoded value."""
+    return json.dumps(value, sort_keys=True, ensure_ascii=True)
+
+
+def _empty_effect_value(value: object) -> bool:
+    """A value-bearing change field that carries nothing (absent, ``[]``, ``{}``, ``""``)."""
+    return value is None or value == [] or value == {} or value == ""
+
+
+def _effect_identity(entry: dict[str, object]) -> str:
+    """The identity key of one change bundle -- its (talentIndex, potential, unlock) triple."""
+    return _canonical(
+        [entry.get(k) for k in ("talentIndex", "requiredPotentialRank", "unlockCondition")]
+    )
+
+
+def _effect_conflict(a: dict[str, object], b: dict[str, object]) -> bool:
+    """True when two same-identity bundles carry DIFFERENT non-empty value fields (§V83).
+
+    A conflict means the entries are genuinely different data (e.g. two distinct
+    blackboards under the same talent/potential gate), so they must NOT be merged and
+    stay as separate rows -- the dedup is byte-lossless (§V66). An empty field never
+    conflicts (it is subsumed by the other's value).
+    """
+    for key in (set(a) | set(b)) - _EFFECT_IDENTITY_KEYS:
+        va, vb = a.get(key), b.get(key)
+        if not _empty_effect_value(va) and not _empty_effect_value(vb) and va != vb:
+            return True
+    return False
+
+
+def _merge_effect(target: dict[str, object], entry: dict[str, object]) -> None:
+    """Fold ``entry``'s non-empty value fields into ``target`` in place (§V83).
+
+    Only fills a field ``target`` lacks or left empty -- a conflicting field is never
+    reached (the caller checks :func:`_effect_conflict` first). The merged row is a
+    superset of both inputs, so no information is lost (§V66 byte-lossless).
+    """
+    for key, value in entry.items():
+        if key in _EFFECT_IDENTITY_KEYS:
+            continue
+        if _empty_effect_value(target.get(key)) and not _empty_effect_value(value):
+            target[key] = value
+
+
+def dedup_effect_changes(changes: object) -> object:
+    """Collapse duplicate/subset talent/trait change bundles into one row each (§V83/§V66).
+
+    Two bundles sharing an identity -- (``talentIndex``, ``requiredPotentialRank``,
+    ``unlockCondition``) -- describe the SAME change; the source sometimes emits it several
+    times split across parts (a prose-only copy, a blackboard-only copy, a blackboard+prose
+    copy). They are merged into one row carrying the union of their non-empty fields, so a
+    single talent no longer emits N near-identical rows (B88). The merge is byte-lossless:
+    only non-conflicting entries collapse (:func:`_effect_conflict`); a genuine conflict
+    (two distinct non-empty blackboards under one gate) keeps the rows separate. Group
+    order follows first appearance; a non-list value is returned unchanged. The single §V37
+    home shared by the operator + module-compare read services.
+    """
+    if not isinstance(changes, list):
+        return changes
+    groups: list[object] = []
+    identities: list[str | None] = []
+    for entry in changes:
+        if not isinstance(entry, dict):
+            groups.append(entry)
+            identities.append(None)
+            continue
+        identity = _effect_identity(entry)
+        for i, existing in enumerate(groups):
+            if (
+                identities[i] == identity
+                and isinstance(existing, dict)
+                and not _effect_conflict(existing, entry)
+            ):
+                _merge_effect(existing, entry)
+                break
+        else:
+            groups.append(dict(entry))
+            identities.append(identity)
+    return groups
+
+
+def label_token_effects(changes: object) -> object:
+    """Label a summon/token talent change (``talentIndex == -1``) with ``applies_to`` (§V83).
+
+    A ``talentIndex`` of ``-1`` is a game-data sentinel for an effect that applies to the
+    operator's summon/token rather than the operator itself; emitted bare it forces a client
+    to guess (B88), so an ``applies_to: "token"`` label is added (additive, §V21). Every
+    other bundle is passed through unchanged; a non-list value is returned as-is. The single
+    §V37 home shared by both read services (a trait change carries no ``talentIndex`` so it
+    is untouched).
+    """
+    if not isinstance(changes, list):
+        return changes
+    labelled: list[object] = []
+    for entry in changes:
+        if isinstance(entry, dict) and entry.get("talentIndex") == -1 and "applies_to" not in entry:
+            labelled.append({**entry, "applies_to": "token"})
+        else:
+            labelled.append(entry)
+    return labelled
+
+
+def dedup_and_label_changes(changes: object) -> object:
+    """Dedup subset/duplicate change rows then label token effects (§V83; §V37 home).
+
+    The emit-shaping pair applied to every per-level talent/trait change list by both read
+    services: :func:`dedup_effect_changes` collapses the redundant rows, then
+    :func:`label_token_effects` tags a ``-1`` summon/token change. Operates on an
+    already-``shape_blackboard``ed (and, for a hoisted trait template, description-stripped)
+    list so the two pipelines stay identical after their differing pre-steps.
+    """
+    return label_token_effects(dedup_effect_changes(changes))
+
+
+def hoist_uniform_changes(per_level: list[object | None]) -> object | None:
+    """The change bundle every present level shares byte-identically, else ``None`` (§V66.3/§V83).
+
+    Returns the bundle when there are at least two present levels and each carries a
+    non-empty, byte-identical change list -- the per-level repeat §V66.3 targets, where the
+    bundle is hoisted once to the module and dropped from every level. Returns ``None`` when
+    a level carries none or a differing bundle, so the caller keeps the per-level copies and
+    loses nothing (byte-lossless). The single §V37 home shared by both read services; sibling
+    to :func:`hoist_uniform_template` (which hoists a single description string).
+    """
+    if len(per_level) < 2 or any(_empty_effect_value(v) for v in per_level):
+        return None
+    if len({_canonical(v) for v in per_level}) == 1:
+        return per_level[0]
     return None
 
 
@@ -444,26 +595,47 @@ def _modules_facts(
             ids |= cost_item_ids(cost)
         decoded.append((module, levels))
     item_names = repo.item_display_names(server, ids)
-    return tuple(
-        OperatorModuleFacts(
-            game_id=module.game_id,
-            module_type=module.module_type,
-            display_name=module.display_name,
-            unlock_phase=module.unlock_phase,
-            unlock_level=module.unlock_level,
-            levels=tuple(
-                ModuleLevelFacts(
-                    level=lv.level,
-                    stat_bonus=shape_blackboard(json_load(lv.stat_bonus_json)),
-                    trait_changes=shape_blackboard(json_load(lv.trait_changes_json)),
-                    talent_changes=shape_blackboard(json_load(lv.talent_changes_json)),
-                    cost=pair_cost_item_names(cost, item_names),
-                )
-                for lv, cost in levels
-            ),
+
+    modules: list[OperatorModuleFacts] = []
+    for module, levels in decoded:
+        # §V83/§V67: shape each level's change lists, then collapse the redundant/subset rows
+        # and label a -1 summon/token change (B88) before emitting them.
+        shaped = [
+            (
+                lv,
+                shape_blackboard(json_load(lv.stat_bonus_json)),
+                dedup_and_label_changes(shape_blackboard(json_load(lv.trait_changes_json))),
+                dedup_and_label_changes(shape_blackboard(json_load(lv.talent_changes_json))),
+                pair_cost_item_names(cost, item_names),
+            )
+            for lv, cost in levels
+        ]
+        # §V66.3/§V83: a change bundle byte-identical across every level is hoisted once to
+        # the module (dropped from each level below); ``None`` keeps it per level.
+        trait_hoist = hoist_uniform_changes([trait for _lv, _s, trait, _tal, _c in shaped])
+        talent_hoist = hoist_uniform_changes([tal for _lv, _s, _t, tal, _c in shaped])
+        modules.append(
+            OperatorModuleFacts(
+                game_id=module.game_id,
+                module_type=module.module_type,
+                display_name=module.display_name,
+                unlock_phase=module.unlock_phase,
+                unlock_level=module.unlock_level,
+                trait_changes=trait_hoist,
+                talent_changes=talent_hoist,
+                levels=tuple(
+                    ModuleLevelFacts(
+                        level=lv.level,
+                        stat_bonus=stat,
+                        trait_changes=None if trait_hoist is not None else trait,
+                        talent_changes=None if talent_hoist is not None else talent,
+                        cost=cost,
+                    )
+                    for lv, stat, trait, talent, cost in shaped
+                ),
+            )
         )
-        for module, levels in decoded
-    )
+    return tuple(modules)
 
 
 def get_operator(

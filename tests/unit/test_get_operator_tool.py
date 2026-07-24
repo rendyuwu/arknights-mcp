@@ -32,6 +32,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_KEY_GLOSSARY,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
+    MODULE_CHANGE_DEDUP_NOTE,
 )
 from arknights_mcp.mcp.tools.operator import (
     _phase_to_dict,
@@ -268,6 +269,14 @@ def test_description_carries_blackboard_glossary(conn: sqlite3.Connection) -> No
     assert BLACKBOARD_KEY_GLOSSARY in desc
     for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
         assert key in desc, key
+
+
+def test_description_documents_change_dedup_and_token_label(conn: sqlite3.Connection) -> None:
+    # §V83/B88: the module trait/talent change dedup + the applies_to "token" label + the
+    # level-hoist semantics are documented in the description the client reads literally.
+    desc = build_get_operator_spec(lambda: conn).description
+    assert MODULE_CHANGE_DEDUP_NOTE in desc
+    assert 'applies_to "token"' in desc
 
 
 def test_client_facing_blackboard_text_has_no_internal_cites() -> None:

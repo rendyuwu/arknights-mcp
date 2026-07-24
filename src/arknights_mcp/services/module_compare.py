@@ -40,6 +40,8 @@ from arknights_mcp.db.repositories.operators import OperatorRepository
 from arknights_mcp.services.operators import (
     OperatorProvenance,
     cost_item_ids,
+    dedup_and_label_changes,
+    hoist_uniform_changes,
     hoist_uniform_template,
     pair_cost_item_names,
     shape_blackboard,
@@ -79,6 +81,12 @@ class ModuleComparison:
     ``None`` when the module carries no trait template or the templates differ across
     levels, in which case each level's ``trait_changes`` entry keeps its own. The hoist is
     byte-lossless -- the text lives in exactly one place.
+
+    ``trait_changes`` / ``talent_changes`` hoist a WHOLE change bundle to the module when it
+    is byte-identical across every present level (§V66.3/§V83) -- each present level then
+    omits its copy; both are ``None`` when the bundle varies by level (or is absent), in
+    which case each level keeps its own. (``trait_changes`` here carries no description: the
+    trait template rides ``trait_change_description`` separately.) Byte-lossless.
     """
 
     game_id: str
@@ -87,6 +95,8 @@ class ModuleComparison:
     unlock_phase: int | None
     unlock_level: int | None
     trait_change_description: str | None
+    trait_changes: object | None
+    talent_changes: object | None
     levels: tuple[ModuleLevelComparison, ...]
 
 
@@ -253,21 +263,16 @@ def compare_operator_modules(
             if (present_row := rows.get(level)) is not None
             for desc in _change_descriptions(json_load(present_row.trait_changes_json))
         )
-        comp_levels: list[ModuleLevelComparison] = []
+        # Shape each requested level once; a present level's trait/talent change lists are
+        # description-stripped (when the template was hoisted), then deduped + token-labelled
+        # (§V83/B88). The analyzer reads the RAW decode (key/value/talentIndex), so it is
+        # unaffected by this emit shaping.
+        shaped_levels: list[tuple[int, bool, object, object, object, object]] = []
         analyzer_levels: list[ModuleLevelInput] = []
         for level in requested:
             row = rows.get(level)
             if row is None:
-                comp_levels.append(
-                    ModuleLevelComparison(
-                        level=level,
-                        present=False,
-                        stat_bonus=None,
-                        trait_changes=None,
-                        talent_changes=None,
-                        cost=None,
-                    )
-                )
+                shaped_levels.append((level, False, None, None, None, None))
                 analyzer_levels.append(
                     ModuleLevelInput(
                         level=level,
@@ -281,24 +286,22 @@ def compare_operator_modules(
             stat_bonus = json_load(row.stat_bonus_json)
             trait_changes = json_load(row.trait_changes_json)
             talent_changes = json_load(row.talent_changes_json)
-            # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at emit (the
-            # analyzer inputs below read key/value/talentIndex from the raw decode, so they
-            # are unaffected by the shaping).
+            # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at emit.
             trait_shaped = shape_blackboard(trait_changes)
             # §V66.3: when the trait template was hoisted to the module, strip it from this
             # level's trait_changes so the text is emitted exactly once.
             if trait_change_description is not None:
                 trait_shaped = _strip_change_description(trait_shaped)
-            comp_levels.append(
-                ModuleLevelComparison(
-                    level=level,
-                    present=True,
-                    stat_bonus=shape_blackboard(stat_bonus),
-                    trait_changes=trait_shaped,
-                    talent_changes=shape_blackboard(talent_changes),
+            shaped_levels.append(
+                (
+                    level,
+                    True,
+                    shape_blackboard(stat_bonus),
+                    dedup_and_label_changes(trait_shaped),
+                    dedup_and_label_changes(shape_blackboard(talent_changes)),
                     # §T132/§V69: each {id,count,type} cost entry paired with its item
                     # display_name (additive, §V21); an un-named id is left as-is.
-                    cost=pair_cost_item_names(cost_by_key[(module.module_pk, level)], item_names),
+                    pair_cost_item_names(cost_by_key[(module.module_pk, level)], item_names),
                 )
             )
             analyzer_levels.append(
@@ -310,6 +313,21 @@ def compare_operator_modules(
                     talent_changes=_talent_changes(talent_changes),
                 )
             )
+        # §V66.3/§V83: a change bundle byte-identical across every PRESENT level is hoisted
+        # once to the module (dropped from each level below); ``None`` keeps it per level.
+        trait_hoist = hoist_uniform_changes([t for _l, p, _s, t, _tal, _c in shaped_levels if p])
+        talent_hoist = hoist_uniform_changes([tal for _l, p, _s, _t, tal, _c in shaped_levels if p])
+        comp_levels = [
+            ModuleLevelComparison(
+                level=lvl,
+                present=present,
+                stat_bonus=stat,
+                trait_changes=None if trait_hoist is not None else trait,
+                talent_changes=None if talent_hoist is not None else talent,
+                cost=cost,
+            )
+            for lvl, present, stat, trait, talent, cost in shaped_levels
+        ]
         comparisons.append(
             ModuleComparison(
                 game_id=module.game_id,
@@ -318,6 +336,8 @@ def compare_operator_modules(
                 unlock_phase=module.unlock_phase,
                 unlock_level=module.unlock_level,
                 trait_change_description=trait_change_description,
+                trait_changes=trait_hoist,
+                talent_changes=talent_hoist,
                 levels=tuple(comp_levels),
             )
         )

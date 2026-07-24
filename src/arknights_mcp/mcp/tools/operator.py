@@ -35,6 +35,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_LIMITATION,
+    MODULE_CHANGE_DEDUP_NOTE,
     ConnectionProvider,
     has_unnamed_cost_item,
     run_guarded,
@@ -43,6 +44,7 @@ from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
 from arknights_mcp.services.image_refs import image_ref_to_dict, operator_image_refs
 from arknights_mcp.services.operators import (
+    ModuleLevelFacts,
     OperatorDetailResult,
     OperatorFacts,
     OperatorModuleFacts,
@@ -69,9 +71,9 @@ _TOOL_DESCRIPTION = (
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A skill's template is emitted once as the "
     "skill's description when it is the same at every level; it appears on a level only "
-    "when the wording differs between levels. To compare one operator's modules across "
-    "their upgrade levels side by side, or for evidence-backed module observations, use "
-    "compare_operator_modules instead. " + BLACKBOARD_KEY_GLOSSARY
+    "when the wording differs between levels. " + MODULE_CHANGE_DEDUP_NOTE + " To compare "
+    "one operator's modules across their upgrade levels side by side, or for evidence-backed "
+    "module observations, use compare_operator_modules instead. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -175,24 +177,45 @@ def _talent_to_dict(talent: OperatorTalentFacts) -> dict[str, object]:
     }
 
 
+def _module_level_to_dict(
+    lv: ModuleLevelFacts, *, trait_hoisted: bool, talent_hoisted: bool
+) -> dict[str, object]:
+    out: dict[str, object] = {
+        "level": lv.level,
+        "stat_bonus": lv.stat_bonus,
+        "cost": lv.cost,
+    }
+    # §V66.3/§V83: when a change bundle is byte-identical at every level it is hoisted to the
+    # module (below) and omitted here; otherwise it stays per level. Omission = "see the
+    # module-level field" (§V67 omit-key discipline).
+    if not trait_hoisted:
+        out["trait_changes"] = lv.trait_changes
+    if not talent_hoisted:
+        out["talent_changes"] = lv.talent_changes
+    return out
+
+
 def _module_to_dict(module: OperatorModuleFacts) -> dict[str, object]:
-    return {
+    trait_hoisted = module.trait_changes is not None
+    talent_hoisted = module.talent_changes is not None
+    out: dict[str, object] = {
         "game_id": module.game_id,
         "module_type": module.module_type,
         "display_name": module.display_name,
         "unlock_phase": module.unlock_phase,
         "unlock_level": module.unlock_level,
         "levels": [
-            {
-                "level": lv.level,
-                "stat_bonus": lv.stat_bonus,
-                "trait_changes": lv.trait_changes,
-                "talent_changes": lv.talent_changes,
-                "cost": lv.cost,
-            }
+            _module_level_to_dict(lv, trait_hoisted=trait_hoisted, talent_hoisted=talent_hoisted)
             for lv in module.levels
         ],
     }
+    # §V66.3/§V83: a trait/talent change bundle identical at every level rides the module
+    # once here (dropped from each level); absent when it varies (§V67 omit-key, never null).
+    if trait_hoisted:
+        out["trait_changes"] = module.trait_changes
+    if talent_hoisted:
+        out["talent_changes"] = module.talent_changes
+    return out
 
 
 def _operator_to_dict(

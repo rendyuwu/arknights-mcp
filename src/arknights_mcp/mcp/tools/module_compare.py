@@ -31,6 +31,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_KEY_GLOSSARY,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
+    MODULE_CHANGE_DEDUP_NOTE,
     ConnectionProvider,
     has_unnamed_cost_item,
     observation_to_dict,
@@ -59,10 +60,11 @@ _TOOL_DESCRIPTION = (
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A module's trait template is emitted once as the "
     "module's trait_change_description when it is the same at every level; it appears on a "
-    "level's trait change only when the wording differs between levels. For an operator's "
-    "full kit (identity, phases, skills, talents, and modules), use get_operator with "
-    "include_modules. This tool instead compares modules level by level, and its "
-    "with_observations mode adds evidence-backed observations. " + BLACKBOARD_KEY_GLOSSARY
+    "level's trait change only when the wording differs between levels. "
+    + MODULE_CHANGE_DEDUP_NOTE
+    + " For an operator's full kit (identity, phases, skills, talents, and modules), use "
+    "get_operator with include_modules. This tool instead compares modules level by level, "
+    "and its with_observations mode adds evidence-backed observations. " + BLACKBOARD_KEY_GLOSSARY
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"
@@ -72,32 +74,50 @@ _NOT_FOUND_ACTION = (
 )
 
 
-def _level_to_dict(level: ModuleLevelComparison) -> dict[str, object]:
+def _level_to_dict(
+    level: ModuleLevelComparison, *, trait_hoisted: bool, talent_hoisted: bool
+) -> dict[str, object]:
     """One module level's change bundle (decoded structural JSON; §V16/§V18)."""
-    return {
+    out: dict[str, object] = {
         "level": level.level,
         "present": level.present,
         "stat_bonus": level.stat_bonus,
-        "trait_changes": level.trait_changes,
-        "talent_changes": level.talent_changes,
         "cost": level.cost,
     }
+    # §V66.3/§V83: when a change bundle is byte-identical at every level it is hoisted to the
+    # module (below) and omitted here; otherwise it stays per level (§V67 omit-key).
+    if not trait_hoisted:
+        out["trait_changes"] = level.trait_changes
+    if not talent_hoisted:
+        out["talent_changes"] = level.talent_changes
+    return out
 
 
 def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
+    trait_hoisted = module.trait_changes is not None
+    talent_hoisted = module.talent_changes is not None
     out: dict[str, object] = {
         "game_id": module.game_id,
         "module_type": module.module_type,
         "display_name": module.display_name,
         "unlock_phase": module.unlock_phase,
         "unlock_level": module.unlock_level,
-        "levels": [_level_to_dict(lv) for lv in module.levels],
+        "levels": [
+            _level_to_dict(lv, trait_hoisted=trait_hoisted, talent_hoisted=talent_hoisted)
+            for lv in module.levels
+        ],
     }
     # §V66.3: the trait effect TEMPLATE is emitted once here when it is identical at every
     # level (dropped from each level's trait_changes); omitted when it varies (each level
     # keeps its own) or absent. §V67: absent key, never a null.
     if module.trait_change_description is not None:
         out["trait_change_description"] = module.trait_change_description
+    # §V66.3/§V83: a whole trait/talent change bundle identical at every level rides the
+    # module once here (dropped from each level); absent when it varies (§V67, never null).
+    if trait_hoisted:
+        out["trait_changes"] = module.trait_changes
+    if talent_hoisted:
+        out["talent_changes"] = module.talent_changes
     return out
 
 

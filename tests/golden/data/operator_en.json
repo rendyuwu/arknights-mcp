@@ -98,6 +98,8 @@
           }
         ],
         "module_type": "CX-1",
+        "talent_changes": null,
+        "trait_changes": null,
         "unlock_level": 40,
         "unlock_phase": 2
       }

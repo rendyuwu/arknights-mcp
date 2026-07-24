@@ -105,7 +105,9 @@
         }
       ],
       "module_type": "CX-1",
+      "talent_changes": null,
       "trait_change_description": "Increases ATK to {atk_scale:0%} when attacking.",
+      "trait_changes": null,
       "unlock_level": 40,
       "unlock_phase": 2
     }
