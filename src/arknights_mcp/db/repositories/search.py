@@ -2,9 +2,10 @@
 
 The single parameterized SQL surface for the ``search_entities`` service: one FTS5
 ``MATCH`` query over ``entity_fts`` with optional region (``server``) and
-``entity_type`` filters, ranked best-first (bm25 ``rank``) and bounded by an
-already-clamped ``limit`` (§V19). Every runtime value -- the MATCH expression,
-the filters, the limit -- is bound through ``?`` placeholders; the FTS match
+``entity_type`` filters, ordered region-major (en before cn, B97) then best-first
+(bm25 ``rank``) and bounded by an already-clamped ``limit`` (§V19). Every runtime
+value -- the MATCH expression, the filters, the limit -- is bound through ``?``
+placeholders; the FTS match
 expression is built by the service from tokenized input so no FTS operator or SQL
 syntax can be smuggled in (§V2/§V18). Rows come back as flat typed hits carrying
 their region (§V5); the service shapes them.
@@ -40,8 +41,12 @@ class SearchHitRow:
 
 
 # The ``(? IS NULL OR col = ?)`` pairs make server / entity_type optional filters
-# while keeping every value bound (no interpolation, §V2). ``ORDER BY rank`` is
-# FTS5's bm25 ordering: best match first.
+# while keeping every value bound (no interpolation, §V2). Ordering is region-major
+# then bm25 ``rank``: an unfiltered search lists every en hit before any cn hit
+# (deterministic region order, B97 -- bm25 ties were previously broken by insert
+# order, so ``results[0]`` could be either region), and within a region bm25 keeps
+# best-match-first. The region CASE compares against the constant literal ``'en'``
+# only -- no runtime value is interpolated (§V2).
 #
 # The ``LEFT JOIN stages`` surfaces the §V70 stage variant tag: a stage hit
 # carries its ``stages.difficulty`` (``entity_pk`` == ``stage_pk`` for a stage
@@ -70,15 +75,17 @@ _SEARCH_SQL = (
     "WHERE entity_fts MATCH ? "
     "AND (? IS NULL OR entity_fts.server = ?) "
     "AND (? IS NULL OR entity_fts.entity_type = ?) "
-    "ORDER BY rank "
+    "ORDER BY (CASE WHEN entity_fts.server = 'en' THEN 0 ELSE 1 END), rank "
     "LIMIT ?"
 )
 
 # ``search_stages`` (§T33): stage-scoped FTS, but a stage whose ``stage_code``
 # equals the raw query (case-insensitive) is pulled to the top ahead of bm25
 # ``rank`` -- an exact code match ("4-4") beats a fuzzier name/game-id hit. The
-# exact-code candidate is bound (§V2), never interpolated, and ``rank`` breaks
-# ties within each group. The ``LEFT JOIN stages`` surfaces the §V70 difficulty
+# exact-code candidate is bound (§V2), never interpolated. Within each exact/non-
+# exact group, region orders deterministically (en before cn, constant literal
+# only -- B97: an unfiltered "1-7" must not surface the cn row first) and ``rank``
+# breaks ties within a region. The ``LEFT JOIN stages`` surfaces the §V70 difficulty
 # variant tag on every stage hit (see ``_SEARCH_SQL``); the WHERE already scopes to
 # ``entity_type = 'stage'`` so the join always resolves to the hit's own stage row.
 _STAGE_SEARCH_SQL = (
@@ -91,7 +98,8 @@ _STAGE_SEARCH_SQL = (
     "WHERE entity_fts MATCH ? "
     "AND entity_fts.entity_type = 'stage' "
     "AND (? IS NULL OR entity_fts.server = ?) "
-    "ORDER BY (CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), rank "
+    "ORDER BY (CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), "
+    "(CASE WHEN entity_fts.server = 'en' THEN 0 ELSE 1 END), rank "
     "LIMIT ?"
 )
 

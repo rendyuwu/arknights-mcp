@@ -345,3 +345,27 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     # The bounded model's §V19 limit + §V18 caps ride the wire in inputSchema.
     assert tool.inputSchema["properties"]["limit"]["maximum"] == MAX_LIMIT
     assert tool.inputSchema["additionalProperties"] is False
+
+
+# --- §V71/§V75 search coverage docs (B97) --------------------------------------
+
+
+def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) -> None:
+    # B97: same coverage + region-order statements as the search_entities sibling
+    # (§V75 -- both descriptions, no silent divergence; §V71 client-facing text).
+    desc = build_search_stages_spec(lambda: conn).description
+    assert "English and Chinese only" in desc
+    assert "Japanese or Korean" in desc
+    assert "fuzzy" in desc
+    assert "Zone and event names are not indexed" in desc
+    assert "en results are listed before cn" in desc
+    assert "pass server" in desc
+
+
+def test_not_found_action_states_encn_only(conn: sqlite3.Connection) -> None:
+    # B97: the not_found escape hatch carries the en/cn-names-only coverage note.
+    env = _handler(conn)(query="zzzznotastage")
+    assert env.status == "not_found"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert "English and Chinese only" in data["suggested_action"]  # type: ignore[operator]

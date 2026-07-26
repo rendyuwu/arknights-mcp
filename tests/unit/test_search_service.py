@@ -284,3 +284,53 @@ def test_item_locator_feeds_get_item_drops(tmp_path: Path) -> None:
         hit = next(h for h in search_entities(conn, query="Loxic").hits if h.entity_type == "item")
         resolved = DropRepository(conn).item_by_game_id(hit.server, hit.game_id)
         assert resolved is not None
+
+
+# --- deterministic region order (B97) ------------------------------------------
+
+
+@pytest.fixture
+def two_region_conn(tmp_path: Path) -> sqlite3.Connection:
+    """Both regions built from the same 4-4 fixture: identical FTS documents per
+    region, so every bm25 rank ties across en/cn and only the deterministic
+    region order (B97) decides who comes first."""
+    path = tmp_path / "cand2.sqlite"
+    build_candidate(
+        path,
+        [
+            ServerImport(
+                "en", LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot"), "local_snapshot"
+            ),
+            ServerImport(
+                "cn", LocalSnapshotAdapter(FIXTURE_ROOT, "cn", "local_snapshot"), "local_snapshot"
+            ),
+        ],
+        registry=load_source_registry(REGISTRY),
+    )
+    return open_read_only(path)
+
+
+def test_unfiltered_search_lists_en_before_cn(two_region_conn: sqlite3.Connection) -> None:
+    # B97: an unfiltered search previously broke bm25 ties by insert order, so
+    # results[0] could be either region. Order is now region-major: every en hit
+    # precedes every cn hit, deterministically.
+    hits = search_entities(two_region_conn, query="drone").hits
+    servers = [h.server for h in hits]
+    assert "en" in servers and "cn" in servers
+    assert servers == sorted(servers, key=lambda s: 0 if s == "en" else 1)
+
+
+def test_unfiltered_stage_search_ranks_en_exact_code_first(
+    two_region_conn: sqlite3.Connection,
+) -> None:
+    # B97: unfiltered "4-4" must surface the en exact-code row first, never the cn
+    # twin; the §T33 exact-code-first contract is preserved, region orders within
+    # the exact group.
+    hits = search_stages(two_region_conn, query="4-4").hits
+    assert hits[0].server == "en"
+    assert hits[0].stage_code == "4-4"
+    exact = [h for h in hits if (h.stage_code or "").lower() == "4-4"]
+    assert any(h.server == "cn" for h in exact)
+    assert [h.server for h in exact] == sorted(
+        (h.server for h in exact), key=lambda s: 0 if s == "en" else 1
+    )

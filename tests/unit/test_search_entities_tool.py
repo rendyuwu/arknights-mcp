@@ -261,3 +261,30 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     # The bounded model's §V19 limit + §V18 caps ride the wire in inputSchema.
     assert tool.inputSchema["properties"]["limit"]["maximum"] == MAX_LIMIT
     assert tool.inputSchema["additionalProperties"] is False
+
+
+# --- §V71/§V75 search coverage docs (B97) --------------------------------------
+
+
+def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) -> None:
+    # B97: coverage limits + region order are client contract, stated where the
+    # client reads them (§V71), in this sibling too (§V75).
+    desc = build_search_entities_spec(lambda: conn).description
+    assert "English and Chinese only" in desc
+    assert "Japanese or Korean" in desc
+    assert "fuzzy" in desc
+    assert "Zone and event names are not indexed" in desc
+    assert "en results are listed before cn" in desc
+    assert "pass server" in desc
+    # §V75: the exact-stage-code ranking divergence cross-ref stays.
+    assert "search_stages" in desc
+
+
+def test_ja_query_not_found_action_states_encn_only(conn: sqlite3.Connection) -> None:
+    # B97: a Japanese-name query dies as not_found; the suggested action must say
+    # names are indexed in English and Chinese only, not just "check the spelling".
+    env = _handler(conn)(query="シルバーアッシュ")
+    assert env.status == "not_found"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert "English and Chinese only" in data["suggested_action"]  # type: ignore[operator]

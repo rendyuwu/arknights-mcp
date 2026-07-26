@@ -45,6 +45,25 @@ from arknights_mcp.services.search import SearchHit, SearchResult, search_entiti
 #: bound-model parsing happens in the tool handler *before* this runs (§V18/§V19).
 SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 
+#: Search-coverage + region-order notes shared VERBATIM by both sibling search
+#: descriptions (§V75: same rule stated in both, one home §V37; short client-facing
+#: sentences, §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) and
+#: zone/event names are not indexed (B97) -- say so where the client reads, instead
+#: of letting a ja query or "Lone Trail" die as a bare not_found. Region order: the
+#: repository orders en before cn deterministically (B97), so the ``results[0]``
+#: grab is predictable and the escape hatch (server filter / per-row server field)
+#: is named.
+_COVERAGE_NOTE = (
+    "Names are indexed in English and Chinese only; Japanese or Korean names will "
+    "not match. Matching is exact-token with prefix support; typos and fuzzy "
+    "queries will not match. Zone and event names are not indexed; find stages by "
+    "stage code or stage name."
+)
+_REGION_ORDER_NOTE = (
+    "Without a server filter both regions are searched and en results are listed "
+    "before cn; pass server to scope one region and read each row's server field."
+)
+
 _ENTITIES_TOOL_NAME = "search_entities"
 _ENTITIES_TOOL_TITLE = "Search entities"
 _ENTITIES_TOOL_DESCRIPTION = (
@@ -57,7 +76,10 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "challenge, tough, or easy variant that share a code and name stay "
     "distinguishable. For a stage code like 4-4, prefer "
     "search_stages, which ranks an exact stage-code match first. "
-    "Results are bounded (default 10, max 50) and en/cn are never mixed."
+    "Results are bounded (default 10, max 50) and en/cn are never mixed. "
+    + _COVERAGE_NOTE
+    + " "
+    + _REGION_ORDER_NOTE
 )
 _STAGES_TOOL_NAME = "search_stages"
 _STAGES_TOOL_TITLE = "Search stages"
@@ -68,7 +90,7 @@ _STAGES_TOOL_DESCRIPTION = (
     "difficulty variant tag (NORMAL, FOUR_STAR challenge, TOUGH, or EASY), so a "
     "normal stage and its challenge, tough, or easy variant that share a code and "
     "name stay distinguishable. Results are bounded "
-    "(default 10, max 50) and en/cn are never mixed."
+    "(default 10, max 50) and en/cn are never mixed. " + _COVERAGE_NOTE + " " + _REGION_ORDER_NOTE
 )
 
 #: Fixed, safe copy for the typed ``not_found`` envelopes (§V23 -- no query echo,
@@ -76,10 +98,14 @@ _STAGES_TOOL_DESCRIPTION = (
 #: copy + guard live in ``_shared.run_guarded`` (one failure mode, one home §V37).
 _ENTITIES_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
 _ENTITIES_NOT_FOUND_ACTION = (
-    "broaden the query, drop the server/entity_type filter, or check the spelling"
+    "broaden the query, drop the server/entity_type filter, or check the spelling; "
+    "names are indexed in English and Chinese only"
 )
 _STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
-_STAGES_NOT_FOUND_ACTION = "broaden the query, drop the server filter, or check the stage code"
+_STAGES_NOT_FOUND_ACTION = (
+    "broaden the query, drop the server filter, or check the stage code; "
+    "names are indexed in English and Chinese only"
+)
 
 #: Fixed, safe copy for the §V50 region-availability verdicts, shared by both
 #: search tools (§V37): a region is gated *before* absence is asserted, so a client
