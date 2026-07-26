@@ -7,6 +7,7 @@
       "confidence": 0.9,
       "evidence": [
         {
+          "count": null,
           "field": "motion_type",
           "note": "total_count=2",
           "ref": "enemy_1105_drone",

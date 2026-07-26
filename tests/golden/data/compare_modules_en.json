@@ -119,12 +119,14 @@
       "confidence": 0.9,
       "evidence": [
         {
+          "count": null,
           "field": "stat_bonus.atk",
           "note": "module level 1 to 2",
           "ref": "uniequip_002_amiya",
           "value": 14.0
         },
         {
+          "count": null,
           "field": "stat_bonus.atk",
           "note": "module level 2 to 3",
           "ref": "uniequip_002_amiya",
@@ -143,6 +145,7 @@
       "confidence": 0.9,
       "evidence": [
         {
+          "count": null,
           "field": "trait_changes",
           "note": "module level 1",
           "ref": "uniequip_002_amiya",
@@ -161,6 +164,7 @@
       "confidence": 0.9,
       "evidence": [
         {
+          "count": null,
           "field": "talent_changes.talentIndex",
           "note": "module level 2",
           "ref": "uniequip_002_amiya",

@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from arknights_mcp.analyzers.base import ANALYZER_VERSION, EvidenceItem, Observation
+from arknights_mcp.analyzers.base import (
+    ANALYZER_VERSION,
+    EvidenceItem,
+    Observation,
+    dedupe_evidence,
+)
 
 _CATEGORY = "module"
 #: Direct typed structural fields (attributeBlackboard / override bundles) drive
@@ -157,13 +162,16 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
         summary=f"{_label(module)} module attribute bonus changes across levels -- "
         f"{_stat_diff_summary(by_key)}.",
         confidence=_CONFIDENCE,
-        evidence=tuple(evidence),
+        evidence=dedupe_evidence(evidence),
         limitations=(),
     )
 
 
 def _trait_observation(module: ModuleInput) -> Observation | None:
     """Observation of the levels at which a module alters the operator's trait (§V6)."""
+    altering = [level for level in module.levels if level.present and level.trait_change_count > 0]
+    if not altering:
+        return None
     evidence = [
         EvidenceItem(
             ref=module.game_id,
@@ -171,12 +179,11 @@ def _trait_observation(module: ModuleInput) -> Observation | None:
             value=level.trait_change_count,
             note=f"module level {level.level}",
         )
-        for level in module.levels
-        if level.present and level.trait_change_count > 0
+        for level in altering
     ]
-    if not evidence:
-        return None
-    levels = ", ".join(str(e.note).removeprefix("module level ") for e in evidence)
+    # The summary's level list comes from the typed levels, not the evidence notes:
+    # §V85 dedup may merge byte-identical rows into one note-joined row.
+    levels = ", ".join(str(level.level) for level in altering)
     return Observation(
         rule_id="module.trait_change",
         category=_CATEGORY,
@@ -184,7 +191,7 @@ def _trait_observation(module: ModuleInput) -> Observation | None:
         title="Module alters operator trait",
         summary=f"{_label(module)} module alters the operator's base trait at level(s) {levels}.",
         confidence=_CONFIDENCE,
-        evidence=tuple(evidence),
+        evidence=dedupe_evidence(evidence),
         limitations=(),
     )
 
@@ -243,7 +250,7 @@ def _talent_observation(module: ModuleInput) -> Observation | None:
         title="Module adds or overrides a talent",
         summary=f"{_label(module)} module adds or enhances {named}.",
         confidence=_CONFIDENCE,
-        evidence=tuple(evidence),
+        evidence=dedupe_evidence(evidence),
         limitations=(),
     )
 

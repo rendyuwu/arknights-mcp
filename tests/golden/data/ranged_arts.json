@@ -7,6 +7,7 @@
       "confidence": 0.9,
       "evidence": [
         {
+          "count": null,
           "field": "attack_range",
           "note": "arts damage at range (total_count=2)",
           "ref": "enemy_caster",

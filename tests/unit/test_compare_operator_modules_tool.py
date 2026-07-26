@@ -26,6 +26,7 @@ import pytest
 from pydantic import ValidationError
 from tests.support.items import seed_items
 
+from arknights_mcp.analyzers import EvidenceItem
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.instructions import BLACKBOARD_KEY_GLOSSARY, SERVER_INSTRUCTIONS
@@ -36,6 +37,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
+    evidence_to_dict,
 )
 from arknights_mcp.mcp.tools.module_compare import build_compare_operator_modules_spec
 from arknights_mcp.models.common import MAX_ID_LEN
@@ -156,6 +158,18 @@ def test_observations_are_conservative(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id=_AMIYA, mode="with_observations")
     blob = str(env.to_dict()["data"]["observations"]).lower()  # type: ignore[index]
     assert not any(word in blob for word in _PRESCRIPTIVE)
+
+
+def test_evidence_count_emitted_only_when_collapsed() -> None:
+    # §V85/§V21/§V67: `count` is the additive-optional collapsed-row tally on the
+    # evidence wire mapping -- an int when §V85 dedup collapsed byte-identical rows,
+    # an omitted key (never null) on a unique row.
+    unique = evidence_to_dict(EvidenceItem(ref="r", field="f", value=1))
+    assert "count" not in unique
+    collapsed = evidence_to_dict(
+        EvidenceItem(ref="r", field="f", value=1, note="module level 2; module level 3", count=12)
+    )
+    assert collapsed["count"] == 12
 
 
 # --- §V65/T126: blackboard grounding FLOOR ------------------------------------

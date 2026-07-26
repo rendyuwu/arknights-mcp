@@ -289,9 +289,19 @@ def evidence_to_dict(item: EvidenceItem) -> dict[str, object]:
 
     Shared §V37 home: both ``analyze_stage`` and ``compare_operator_modules``
     surface analyzer observations, so the evidence/observation wire mapping lives
-    here once rather than in each tool module.
+    here once rather than in each tool module. ``count`` (how many byte-identical
+    source rows a §V85-deduped row stands for) is additive-optional (§V21) and
+    omitted for a unique row rather than emitted as null (§V67).
     """
-    return {"ref": item.ref, "field": item.field, "value": item.value, "note": item.note}
+    out: dict[str, object] = {
+        "ref": item.ref,
+        "field": item.field,
+        "value": item.value,
+        "note": item.note,
+    }
+    if item.count is not None:
+        out["count"] = item.count
+    return out
 
 
 def observation_to_dict(obs: Observation) -> dict[str, object]:

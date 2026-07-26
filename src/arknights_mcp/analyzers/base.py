@@ -10,6 +10,7 @@ never from natural-language prose (§V26).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -86,6 +87,41 @@ class EvidenceItem:
     field: str  # the typed source field it came from
     value: Any  # the observed typed value
     note: str | None = None
+    #: How many byte-identical source rows this row stands for after §V85 dedup
+    #: (``None`` = the row was unique; the wire mapping omits the key then, §V67).
+    count: int | None = None
+
+
+def dedupe_evidence(evidence: Iterable[EvidenceItem]) -> tuple[EvidenceItem, ...]:
+    """Collapse byte-identical evidence rows into one attributed row (§V85, B92).
+
+    Identity is ``ref`` + ``field`` + ``value`` (keyed on ``repr`` so ``14`` and
+    ``14.0`` stay distinct). The collapsed row keeps first-seen order, joins its
+    distinct notes with ``"; "`` in first-seen order (per-level notes read as a
+    level list) and carries ``count`` = the number of source rows it stands for
+    -- N verbatim repeats never reach the client while the §V6 attribution
+    survives in the one row kept. A unique row passes through unchanged.
+    """
+    groups: dict[tuple[str, str, str], list[EvidenceItem]] = {}
+    for item in evidence:
+        groups.setdefault((item.ref, item.field, repr(item.value)), []).append(item)
+    out: list[EvidenceItem] = []
+    for items in groups.values():
+        first = items[0]
+        if len(items) == 1:
+            out.append(first)
+            continue
+        notes = list(dict.fromkeys(i.note for i in items if i.note is not None))
+        out.append(
+            EvidenceItem(
+                ref=first.ref,
+                field=first.field,
+                value=first.value,
+                note="; ".join(notes) if notes else None,
+                count=len(items),
+            )
+        )
+    return tuple(out)
 
 
 @dataclass(frozen=True)

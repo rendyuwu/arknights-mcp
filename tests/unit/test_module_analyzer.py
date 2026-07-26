@@ -232,6 +232,70 @@ def test_talent_observation_combines_numbered_and_token_effect() -> None:
     assert "-1" not in talent.summary  # type: ignore[attr-defined]
 
 
+# --- §V85: byte-identical evidence rows collapse (B92) --------------------------
+
+
+def test_byte_identical_talent_evidence_collapses_to_one_row() -> None:
+    # §V85/B92: one talent-change candidate per potential rank (6 per level, all the
+    # token effect) x2 levels = 12 byte-identical rows pre-dedup -> 1 attributed row
+    # carrying the collapsed count + the level list, never 12 verbatim repeats.
+    module = ModuleInput(
+        game_id="uniequip_002_kalts",
+        module_type="Y",
+        display_name=None,
+        levels=tuple(
+            ModuleLevelInput(
+                level=level,
+                present=True,
+                stats=(),
+                trait_change_count=0,
+                talent_changes=(ModuleTalentChange(talent_index=-1),) * 6,
+            )
+            for level in (2, 3)
+        ),
+    )
+    talent = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["talent_change"]
+    assert len(talent.evidence) == 1  # type: ignore[attr-defined]
+    row = talent.evidence[0]  # type: ignore[attr-defined]
+    assert row.count == 12
+    assert row.note == "module level 2; module level 3"
+    assert "token effect" in talent.summary  # type: ignore[attr-defined]
+
+
+def test_identical_trait_evidence_across_levels_collapses() -> None:
+    # §V85: the same trait_change_count at two levels is byte-identical evidence ->
+    # 1 row + count + level list; the summary still names both levels (derived from
+    # the typed levels, not parsed back out of the merged note).
+    module = _amiya_cx1(
+        (
+            ModuleLevelInput(
+                level=2, present=True, stats=(), trait_change_count=2, talent_changes=()
+            ),
+            ModuleLevelInput(
+                level=3, present=True, stats=(), trait_change_count=2, talent_changes=()
+            ),
+        )
+    )
+    trait = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["trait_change"]
+    assert len(trait.evidence) == 1  # type: ignore[attr-defined]
+    row = trait.evidence[0]  # type: ignore[attr-defined]
+    assert row.count == 2 and row.value == 2
+    assert row.note == "module level 2; module level 3"
+    assert "level(s) 2, 3" in trait.summary  # type: ignore[attr-defined]
+
+
+def test_distinct_evidence_values_stay_separate_rows() -> None:
+    # §V85 negative / §V6: distinct typed values are distinct evidence -- no collapse,
+    # and a unique row carries no count (the wire mapping then omits the key, §V67).
+    module = _token_module((ModuleTalentChange(talent_index=0), ModuleTalentChange(talent_index=1)))
+    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
+    assert [(ev.field, ev.value) for ev in talent.evidence] == [  # type: ignore[attr-defined]
+        ("talent_changes.talentIndex", 0),
+        ("talent_changes.talentIndex", 1),
+    ]
+    assert all(ev.count is None for ev in talent.evidence)  # type: ignore[attr-defined]
+
+
 # --- §V26: absent level -> warning, missing != zero ----------------------------
 
 
