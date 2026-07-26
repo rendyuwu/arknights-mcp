@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+import jwt
 import pytest
 from tests.support.oidc_issuer import LocalOidcIssuer
 from tests.support.remote_harness import remote_server
@@ -51,7 +52,12 @@ def test_protected_resource_metadata_served_without_bearer(
         doc = resp.json()
         # Advertises the issuer ONLY -- the client fetches AS metadata from it (§V1).
         assert doc["authorization_servers"] == [issuer.settings.issuer]
-        assert doc["scopes_supported"] == list(issuer.settings.required_scopes)
+        # §V45 scope split (B126): the ADVERTISE list on the wire -- a superset of the
+        # required scopes, carrying the flow-only `offline_access` so an interactive
+        # client asks for a refresh token instead of a bearer dead in ~24h.
+        assert doc["scopes_supported"] == list(issuer.settings.advertised_scopes)
+        assert set(issuer.settings.required_scopes) <= set(doc["scopes_supported"])
+        assert "offline_access" in doc["scopes_supported"]
         assert doc["bearer_methods_supported"] == ["header"]
         assert doc["resource"].endswith("/mcp")
         # §V12: the discovery document leaks no secret and never proxies AS metadata.
@@ -72,6 +78,40 @@ def test_mcp_still_requires_bearer_and_points_at_metadata(
     assert 'error="invalid_token"' in challenge
     assert "resource_metadata=" in challenge
     assert f"{_WELL_KNOWN}/mcp" in challenge
+
+
+def test_token_without_advertised_flow_scope_is_accepted(
+    secured_server: tuple[str, LocalOidcIssuer],
+) -> None:
+    # §V45/§V10 (B126): `offline_access` is ADVERTISED, never REQUIRED -- the AS turns
+    # it into a refresh token and never mints it into the access token. So a bearer
+    # granting only `arknights:read` must still be accepted over the wire; had the fix
+    # instead appended the scope to `required_scopes`, this exact token -- the only
+    # kind Auth0 issues -- would 403, turning fail-closed into a total outage.
+    url, issuer = secured_server
+    claims = jwt.decode(issuer.mint(), options={"verify_signature": False})
+    assert "offline_access" not in claims["scope"]
+    assert "offline_access" in issuer.settings.advertised_scopes
+
+    resp = httpx.post(
+        url,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "0"},
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {issuer.mint()}",
+            "Accept": "application/json, text/event-stream",
+        },
+        timeout=30,
+    )
+    assert resp.status_code == 200
 
 
 def test_discovery_isolated_per_server(tmp_path: Path) -> None:

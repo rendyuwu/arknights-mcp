@@ -12,7 +12,10 @@ socket, no uvicorn) and asserts:
   bearer gate still stands;
 * the composed :func:`wrap_remote_app` stack serves discovery unauthenticated while
   ``/mcp`` still yields a ``401`` whose challenge carries the ``resource_metadata``
-  hint (RFC 9728 §5.1).
+  hint (RFC 9728 §5.1);
+* the §V45 scope split (B126): ``scopes_supported`` is the ADVERTISE list -- a
+  superset of ``required_scopes`` carrying the flow-only ``offline_access`` -- while
+  the ``insufficient_scope`` challenge stays the required list.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from typing import Any
 
 import anyio
 
-from arknights_mcp.auth.oidc import OidcSettings
+from arknights_mcp.auth.oidc import AuthError, OidcSettings
 from arknights_mcp.auth.principal import Principal
 from arknights_mcp.config import AppConfig
 from arknights_mcp.transports.streamable_http import (
@@ -39,6 +42,7 @@ _SETTINGS = OidcSettings(
     audience="https://arknights-mcp.example.com/mcp",
     jwks_url="https://dev-tenant.us.auth0.com/.well-known/jwks.json",
     required_scopes=("arknights:read",),
+    advertised_scopes=("arknights:read", "offline_access"),
 )
 
 
@@ -101,12 +105,74 @@ def test_metadata_document_shape() -> None:
     assert doc["resource"] == remote.public_base_url.rstrip("/") + remote.path
     # Advertises the issuer ONLY -- the client fetches AS metadata from it (§V1).
     assert doc["authorization_servers"] == ["https://dev-tenant.us.auth0.com/"]
-    assert doc["scopes_supported"] == ["arknights:read"]
+    assert doc["scopes_supported"] == ["arknights:read", "offline_access"]
     assert doc["bearer_methods_supported"] == ["header"]
     # §V12: no secret ever appears in the discovery document.
     blob = json.dumps(doc)
     assert _SETTINGS.jwks_url not in blob  # jwks url is not advertised here
     assert "oauth-authorization-server" not in blob  # AS metadata never served/proxied
+
+
+def test_advertised_scopes_are_a_superset_of_required() -> None:
+    # §V45 scope split (B126): the client derives its authorize request from this
+    # document, so it must name every scope §V10 will demand -- plus the flow-only
+    # ones the AS consumes without minting (offline_access → refresh token).
+    doc = _protected_resource_metadata(AppConfig().mcp.remote, _SETTINGS)
+    advertised = doc["scopes_supported"]
+    assert isinstance(advertised, list)
+    assert set(_SETTINGS.required_scopes) <= set(advertised)
+    assert "offline_access" in advertised
+    # ...and the required list itself stays free of the flow-only scope: requiring a
+    # claim Auth0 never emits would 403 every token (the B126 outage trap).
+    assert "offline_access" not in _SETTINGS.required_scopes
+
+
+def test_shipped_config_default_advertises_offline_access() -> None:
+    # The default [auth] config -- what a deployment gets without touching scopes --
+    # already advertises the refresh-token scope, so interactive login survives past
+    # access-token expiry (B126).
+    auth = AppConfig().auth
+    assert auth.prm_scopes == ["arknights:read", "offline_access"]
+    assert auth.required_scopes == ["arknights:read"]
+    settings = OidcSettings.from_auth_config(
+        auth.model_copy(
+            update={
+                "issuer": "https://dev-tenant.us.auth0.com/",
+                "audience": "https://arknights-mcp.example.com/mcp",
+                "jwks_url": "https://dev-tenant.us.auth0.com/.well-known/jwks.json",
+            }
+        )
+    )
+    assert settings.advertised_scopes == ("arknights:read", "offline_access")
+    assert settings.required_scopes == ("arknights:read",)
+
+
+def test_prm_scopes_stay_a_superset_when_advertise_list_omits_required() -> None:
+    # §V37 one home for the ⊇ guarantee: a config that lists advertised_scopes without
+    # a required scope would otherwise publish metadata making clients request too
+    # little -- every resulting token then 403s at the §V10 check.
+    auth = AppConfig().auth.model_copy(update={"advertised_scopes": ["offline_access"]})
+    assert auth.prm_scopes == ["arknights:read", "offline_access"]
+    # Duplicates collapse and order is deterministic (byte-stable document).
+    dup = AppConfig().auth.model_copy(
+        update={"advertised_scopes": ["offline_access", "arknights:read", "offline_access"]}
+    )
+    assert dup.prm_scopes == ["arknights:read", "offline_access"]
+
+
+def test_advertise_list_does_not_gate_startup_validity() -> None:
+    # §V9/§V45: advertising drives bootstrap convenience, not authority -- an empty
+    # advertise list must not fail a deployment closed.
+    auth = AppConfig().auth.model_copy(
+        update={
+            "issuer": "https://dev-tenant.us.auth0.com/",
+            "audience": "https://arknights-mcp.example.com/mcp",
+            "jwks_url": "https://dev-tenant.us.auth0.com/.well-known/jwks.json",
+            "advertised_scopes": [],
+        }
+    )
+    assert auth.is_valid_oidc is True
+    assert OidcSettings.from_auth_config(auth).advertised_scopes == ("arknights:read",)
 
 
 def test_prm_paths_cover_root_and_suffix() -> None:
@@ -206,6 +272,25 @@ def test_stack_serves_discovery_but_gates_mcp() -> None:
     assert 'error="invalid_token"' in challenge
     assert "resource_metadata=" in challenge
     assert "/.well-known/oauth-protected-resource/mcp" in challenge
+
+
+class _InsufficientScopeVerifier:
+    """Verifier stub rejecting every token for missing scope (§V10 403 path)."""
+
+    def verify(self, token: str) -> Principal:
+        raise AuthError("insufficient_scope", 403, "required scope not granted")
+
+
+def test_scope_challenge_names_required_not_advertised() -> None:
+    # §V45 split (B126): the 403 challenge states what is MISSING for authorization
+    # (required_scopes), never what the login flow should request -- a client told to
+    # obtain `offline_access` would chase a scope no access token ever carries.
+    app = _BearerAuthASGIApp(_InnerApp(), _InsufficientScopeVerifier(), _SETTINGS)  # type: ignore[arg-type]
+    sent = _drive(app, path="/mcp", method="POST", headers=[(b"authorization", b"Bearer t")])
+    assert _status(sent) == 403
+    challenge = _www_authenticate(sent)
+    assert 'scope="arknights:read"' in challenge
+    assert "offline_access" not in challenge
 
 
 def test_bearer_challenge_carries_resource_metadata() -> None:

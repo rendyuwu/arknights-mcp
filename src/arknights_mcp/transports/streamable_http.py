@@ -189,6 +189,9 @@ class _BearerAuthASGIApp:
     ) -> None:
         self._app = app
         self._verifier = verifier
+        # REQUIRED, never advertised (§V45 scope split, B126): an insufficient_scope
+        # challenge states what is missing for authorization, not what the login flow
+        # should request -- a flow-only scope (offline_access) is never in a token.
         self._scope_challenge = " ".join(settings.required_scopes)
         # RFC 9728 §5.1: point the client at the protected-resource metadata so an MCP
         # OAuth client can discover the authorization server from a 401 (§V45). None
@@ -268,12 +271,21 @@ def _protected_resource_metadata(
     it (Auth0's own ``.well-known``), so this server neither serves nor proxies AS
     metadata and makes no query-time network call (§V1). No secret appears here: the
     document carries only public discovery descriptors.
+
+    ``scopes_supported`` is the ADVERTISE list, not the required list (§V45 scope
+    split, B126): a client derives its authorize request from this document, so it
+    must also name the flow-only scopes the AS consumes without minting them into the
+    access token (``offline_access`` → refresh token). Requiring those instead would
+    403 every token; advertising them is what keeps an interactive session alive past
+    access-token expiry. The advertise list is a superset of ``required_scopes``
+    (:attr:`~arknights_mcp.config.AuthConfig.prm_scopes`), so a client always asks for
+    everything §V10 will demand.
     """
     resource = remote.public_base_url.rstrip("/") + remote.path
     return {
         "resource": resource,
         "authorization_servers": [settings.issuer],
-        "scopes_supported": list(settings.required_scopes),
+        "scopes_supported": list(settings.advertised_scopes),
         "bearer_methods_supported": ["header"],
     }
 

@@ -5,8 +5,9 @@ enforces the §V9 startup rule: a non-loopback remote deployment without HTTPS
 assumptions and valid OAuth/OIDC settings must fail startup.
 
 Secrets are never read from TOML; non-secret OIDC descriptors (issuer,
-audience, jwks_url, required_scopes) may be supplied via TOML and overlaid from
-the environment.
+audience, jwks_url, required_scopes, advertised_scopes) may be supplied via TOML,
+and the three URL/id descriptors are overlaid from the environment (the two scope
+lists are TOML-only, §I.env).
 """
 
 from __future__ import annotations
@@ -180,15 +181,39 @@ class McpConfig(_Model):
 
 
 class AuthConfig(_Model):
+    """OIDC descriptors plus the two distinct scope lists (§V45 scope split, B126).
+
+    ``required_scopes`` is what a token must CARRY: the §V10 AND-check over the
+    granted set, and the ``scope=`` hint on an ``insufficient_scope`` challenge.
+    ``advertised_scopes`` is what an interactive client should REQUEST: the RFC 9728
+    protected-resource metadata ``scopes_supported`` (§V45). They differ because the
+    authorization server consumes some scopes without minting them into the access
+    token -- Auth0 turns ``offline_access`` into a refresh token and never puts it in
+    the ``scope`` claim. Advertising it is what makes ``claude mcp login`` ask for a
+    refresh token (without it the session dies at access-token expiry, ~24h); adding
+    it to ``required_scopes`` instead would 403 every token (B126).
+    """
+
     mode: str = "oidc"
     issuer: str | None = None
     audience: str | None = None
     jwks_url: str | None = None
     required_scopes: list[str] = Field(default_factory=lambda: ["arknights:read"])
+    # Additive optional field (§V21): absent config → this default, which advertises
+    # the required read scope plus the flow-only ``offline_access`` (refresh token).
+    advertised_scopes: list[str] = Field(
+        default_factory=lambda: ["arknights:read", "offline_access"]
+    )
 
     @property
     def is_valid_oidc(self) -> bool:
-        """True when OIDC descriptors are present and non-placeholder (§V9/§V10)."""
+        """True when OIDC descriptors are present and non-placeholder (§V9/§V10).
+
+        Deliberately does not consider ``advertised_scopes``: advertising drives the
+        client's authorize request, never token validation, so an empty or partial
+        advertise list must not fail a deployment closed (§V9 gates authority, §V45
+        gates bootstrap convenience).
+        """
         return (
             self.mode == "oidc"
             and not is_placeholder(self.issuer)
@@ -196,6 +221,25 @@ class AuthConfig(_Model):
             and not is_placeholder(self.jwks_url)
             and len(self.required_scopes) > 0
         )
+
+    @property
+    def prm_scopes(self) -> list[str]:
+        """``scopes_supported`` for the RFC 9728 metadata document (§V45).
+
+        Single home (§V37) for the ``advertised ⊇ required`` guarantee: every required
+        scope is emitted first (in config order), then any advertise-only extra
+        (``offline_access``). Union rather than assert -- a deployment that lists
+        ``advertised_scopes`` without a required scope would otherwise publish metadata
+        that makes clients request too little, and every resulting token 403s at the
+        §V10 check. Order is deterministic and duplicates collapse.
+        """
+        seen: set[str] = set()
+        scopes: list[str] = []
+        for scope in [*self.required_scopes, *self.advertised_scopes]:
+            if scope not in seen:
+                seen.add(scope)
+                scopes.append(scope)
+        return scopes
 
     def with_env_overrides(self, env: Mapping[str, str]) -> AuthConfig:
         """Overlay non-secret OIDC descriptors from the environment (env wins)."""

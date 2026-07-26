@@ -32,6 +32,9 @@ _DEFAULT_JWKS_URL = "https://issuer.test.local/.well-known/jwks.json"
 _DEFAULT_SUBJECT = "auth0|remote-tester"
 _DEFAULT_CLIENT_ID = "client-remote-test"
 _DEFAULT_SCOPE = "arknights:read"
+#: Advertised-only scope: the AS consumes it (refresh token) and never mints it into
+#: the access token, so it is advertised but never required (§V45 split, B126).
+_FLOW_ONLY_SCOPE = "offline_access"
 
 
 class LocalOidcIssuer:
@@ -41,6 +44,10 @@ class LocalOidcIssuer:
     :param audience: token ``aud`` (also the verifier's expected audience).
     :param required_scopes: scopes the verifier will require; the default minted
         token grants exactly these.
+    :param advertised_scopes: scopes the RFC 9728 metadata publishes (§V45); defaults
+        to the required scopes plus the flow-only ``offline_access``, mirroring the
+        shipped config default -- so the wire tests see the real split, where a token
+        granting only the required scopes is still accepted (B126).
     """
 
     def __init__(
@@ -50,11 +57,15 @@ class LocalOidcIssuer:
         audience: str = _DEFAULT_AUDIENCE,
         jwks_url: str = _DEFAULT_JWKS_URL,
         required_scopes: tuple[str, ...] = (_DEFAULT_SCOPE,),
+        advertised_scopes: tuple[str, ...] | None = None,
     ) -> None:
         self._issuer = issuer
         self._audience = audience
         self._jwks_url = jwks_url
         self._required_scopes = required_scopes
+        self._advertised_scopes = (
+            (*required_scopes, _FLOW_ONLY_SCOPE) if advertised_scopes is None else advertised_scopes
+        )
         self._private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self._public_key = self._private_key.public_key()
 
@@ -81,6 +92,7 @@ class LocalOidcIssuer:
             audience=self._audience,
             jwks_url=self._jwks_url,
             required_scopes=self._required_scopes,
+            advertised_scopes=self._advertised_scopes,
         )
 
     @property

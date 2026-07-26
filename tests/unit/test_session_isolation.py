@@ -39,6 +39,7 @@ _SETTINGS = OidcSettings(
     audience="arknights-mcp",
     jwks_url="https://issuer.example.com/jwks",
     required_scopes=("arknights:read",),
+    advertised_scopes=("arknights:read", "offline_access"),
 )
 
 

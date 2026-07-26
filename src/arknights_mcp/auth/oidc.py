@@ -67,18 +67,27 @@ class AuthError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class OidcSettings:
-    """Non-secret OIDC descriptors needed to validate a token (§V10).
+    """Non-secret OIDC descriptors needed to validate a token (§V10) and advertise
+    the OAuth bootstrap (§V45).
 
-    Built from ``[auth]`` config overlaid with env descriptors (§I.env). All four
-    fields must be concrete (non-placeholder) -- the §V9 startup gate guarantees
-    that before a verifier is constructed; :meth:`from_auth_config` re-checks and
-    fails closed.
+    Built from ``[auth]`` config overlaid with env descriptors (§I.env). The issuer,
+    audience, jwks_url and ``required_scopes`` must be concrete (non-placeholder) --
+    the §V9 startup gate guarantees that before a verifier is constructed;
+    :meth:`from_auth_config` re-checks and fails closed.
+
+    ``required_scopes`` and ``advertised_scopes`` are two different contracts on one
+    axis (§V45 scope split, B126): the first is what a token must CARRY (§V10 AND
+    check + ``insufficient_scope`` challenge), the second is what an interactive
+    client should REQUEST (RFC 9728 ``scopes_supported``). Only the advertise list
+    may carry a flow-only scope the AS consumes without minting -- ``offline_access``
+    -- so a verifier never demands a claim Auth0 does not emit.
     """
 
     issuer: str
     audience: str
     jwks_url: str
     required_scopes: tuple[str, ...]
+    advertised_scopes: tuple[str, ...]
 
     @classmethod
     def from_auth_config(cls, auth: AuthConfig) -> OidcSettings:
@@ -86,7 +95,10 @@ class OidcSettings:
 
         Raises :class:`ValueError` when a descriptor is missing or a ``<...>``
         placeholder, mirroring :attr:`~arknights_mcp.config.AuthConfig.is_valid_oidc`
-        so a verifier is never constructed from an unconfigured provider.
+        so a verifier is never constructed from an unconfigured provider. The
+        advertise list is not part of that gate (§V45): it drives bootstrap, not
+        authority, and arrives via ``prm_scopes`` already a superset of the required
+        scopes (§V37 one home for that guarantee).
         """
         if (
             auth.mode != "oidc"
@@ -103,6 +115,7 @@ class OidcSettings:
             audience=auth.audience,
             jwks_url=auth.jwks_url,
             required_scopes=tuple(auth.required_scopes),
+            advertised_scopes=tuple(auth.prm_scopes),
         )
 
 

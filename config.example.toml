@@ -101,7 +101,15 @@ mode = "oidc"
 issuer = "<OIDC issuer>"
 audience = "<MCP audience>"
 jwks_url = "<JWKS endpoint or discovery-derived value>"
+# Scopes a token must CARRY: validated per request (§V10), and named in the
+# `scope=` hint of an insufficient_scope challenge.
 required_scopes = ["arknights:read"]
+# Scopes an interactive client should REQUEST: published as RFC 9728
+# `scopes_supported` (§V45). Keep `offline_access` here (and enable it on the
+# provider side) so `claude mcp login` receives a refresh token instead of a bearer
+# that expires in ~24h. Never add a flow-only scope to required_scopes: the AS does
+# not mint it into the access token, so every request would 403.
+advertised_scopes = ["arknights:read", "offline_access"]
 
 [limits]
 requests_per_minute_per_principal = 60

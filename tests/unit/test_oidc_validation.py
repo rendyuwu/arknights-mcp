@@ -50,8 +50,14 @@ class _RaisingJWKS:
 
 
 def _settings(required: tuple[str, ...] = ("arknights:read",)) -> OidcSettings:
+    # The advertise list carries the flow-only scope the AS never mints into a token
+    # (§V45 split): validation must key on `required` alone (B126).
     return OidcSettings(
-        issuer=ISSUER, audience=AUDIENCE, jwks_url=JWKS_URL, required_scopes=required
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        jwks_url=JWKS_URL,
+        required_scopes=required,
+        advertised_scopes=(*required, "offline_access"),
     )
 
 
@@ -212,6 +218,19 @@ def test_required_scopes_are_anded_across_sources() -> None:
         verifier.verify(_token(scope="arknights:read"))  # missing arknights:stages
     principal = verifier.verify(_token(scope="arknights:read", permissions=["arknights:stages"]))
     assert {"arknights:read", "arknights:stages"} <= principal.scopes
+
+
+def test_advertised_only_scope_is_never_required() -> None:
+    # §V45 scope split (B126): the PRM advertises `offline_access` so an interactive
+    # client requests a refresh token, but the AS consumes it and never mints it into
+    # the access token -- validation keys on required_scopes alone, so a token that
+    # grants only `arknights:read` still verifies. Requiring the advertised list would
+    # invert fail-closed into a total outage: every token 403.
+    settings = _settings()
+    assert "offline_access" in settings.advertised_scopes
+    assert "offline_access" not in settings.required_scopes
+    principal = _verifier().verify(_token(scope="arknights:read"))
+    assert principal.scopes == frozenset({"arknights:read"})
 
 
 def test_missing_azp_yields_none_client_id() -> None:

@@ -86,7 +86,7 @@ a `401` without a hand-pasted token. The discovery document is reachable with **
 curl -sS https://mcp.example.com/.well-known/oauth-protected-resource
 # → 200 {"resource":"https://mcp.example.com/mcp",
 #        "authorization_servers":["https://YOUR_TENANT.us.auth0.com/"],
-#        "scopes_supported":["arknights:read"],
+#        "scopes_supported":["arknights:read","offline_access"],
 #        "bearer_methods_supported":["header"]}
 ```
 
@@ -96,6 +96,32 @@ authorization-server metadata straight from your OIDC provider (Auth0's own
 (§V1). The `401` on `/mcp` carries a `resource_metadata="…"` hint pointing back at
 this document (RFC 9728 §5.1). Only the two well-known paths bypass auth — `/mcp`
 itself stays bearer-gated (§V10).
+
+#### Two scope lists, two contracts (§V45)
+
+`scopes_supported` comes from `[auth].advertised_scopes` — what an interactive client
+should **request** — and is deliberately *not* `[auth].required_scopes`, which is what
+a token must **carry** (validated per request, §V10):
+
+| config key | drives | contains |
+|---|---|---|
+| `required_scopes` | token validation + the `scope=` hint on a `403` | `arknights:read` |
+| `advertised_scopes` | RFC 9728 `scopes_supported` | `arknights:read`, `offline_access` |
+
+A client derives its authorize request from the published metadata, so `offline_access`
+must be advertised — otherwise it is never requested, the provider mints no refresh
+token, and the login dies at access-token expiry (~24h), leaving you re-authenticating
+by hand. Never move a flow-only scope into `required_scopes`: the authorization server
+consumes `offline_access` and does not put it in the access token's `scope` claim, so
+requiring it would reject **every** token with a `403`. The server publishes
+`advertised_scopes` as a superset of `required_scopes`, so a client always asks for
+everything validation will demand.
+
+Two provider-side settings are the ops half of this (Auth0 dashboard, one-time — the
+server cannot check them, §V1):
+
+- the **API** (your audience) has **Allow Offline Access** enabled;
+- the **application** the client logs in through has the **Refresh Token** grant enabled.
 
 ## MCP Inspector
 
