@@ -99,6 +99,21 @@ class StageDropsResult:
     requested (§V55) and at least one drop is rankable, else ``None``;
     ``analyzer_version`` is then the analyzer that produced it. ``stale`` mirrors the
     ``data_stale`` status so a caller need not re-scan the drops.
+
+    The two modes carry DIFFERENT per-item shapes (§T176/B95, mirroring §T161/B82 --
+    the ranking subsumes the drop rows so the response never lists the same items
+    twice):
+
+    * ``include_efficiency`` OFF -- ``drops`` holds the raw per-item drop facts in
+      repository (item game_id) order; ``observation`` is ``None``.
+    * ``include_efficiency`` ON with a ranking -- the ranked ``observation`` is the
+      SINGLE per-item list, and ``drops`` carries the raw drop facts for exactly the
+      ranking rows, in the SAME order (1:1, so the shaper folds each fact + its derived
+      ``sanity_per_item`` into one row and emits no separate ``drops`` list). A drop
+      excluded from the ranking (absent/non-positive ``drop_rate``) is named in a §V26
+      warning. When no drop is rankable (or the stage has no ``sanity_cost``) the
+      analyzer emits no observation, so ``drops`` stays the raw facts + the warnings
+      keep the exclusions visible.
     """
 
     status: StageDropsStatus
@@ -326,6 +341,16 @@ def get_stage_drops(
         observation = analysis.observation
         warnings = analysis.warnings
         analyzer_version = analysis.analyzer_version
+        if observation is not None:
+            # §T176/B95 (mirrors §T161/B82): the ranking SUBSUMES the drop rows -- the
+            # shaper folds each raw fact + its derived sanity_per_item into ONE row, so
+            # the response never lists the same items twice (~2x payload, §V66).
+            # ``drops`` is realigned to the ranking (same order, 1:1); a drop excluded
+            # from the ranking is already named in a §V26 warning.
+            facts_by_id = {f.item_game_id: f for f in facts}
+            facts = tuple(facts_by_id[row.id] for row in observation.ranking)
+        # else: no drop was rankable -- keep the raw facts above so the drops stay
+        # visible (§V26 warnings name the exclusions); no observation to subsume them.
 
     return StageDropsResult(
         status="data_stale" if stale else "ok",

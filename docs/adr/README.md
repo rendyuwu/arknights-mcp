@@ -20,3 +20,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0011](0011-response-shape-v0.2.md) | Response-shape v0.2 — one coordinated `schema_version` bump for the M13 breaking wire changes | none (§V21-mandated) | §V21, §V66, §V67, §V71 |
 | [0012](0012-response-shape-v0.2-m14-fold.md) | Response-shape v0.2 (continued) — fold the M14 reshapes into the same bump, then flip `0.1`→`0.2` | none (§V21-mandated) | §V21, §V66, §V74, §V49 |
 | [0013](0013-locale-retire.md) | Retire the extra-locale (ja/ko) NAME-alias axis — EN+CN only | founder 2026-07-23 (EN+CN only) | §V57, §V50, §V21, §V37 |
+| [0014](0014-response-shape-v0.2-m16-fold.md) | Response-shape v0.2 (continued) — fold the M16 reshapes into the same unreleased bump | none (§V21-mandated) | §V66, §V22, §V21 |

@@ -186,7 +186,9 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
     env = _handler(fresh_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
-    assert "efficiency" in data
+    # §T176/B95: the ranking SUBSUMES the drops rows -- no separate ``drops`` list, so
+    # the same items are never listed twice (§V66/§V22).
+    assert set(data) == {"stage", "drop_provenance", "efficiency"}
     # §V66.1: ONE ranked observation, not a list of per-drop observations.
     ob = data["efficiency"]["observation"]  # type: ignore[index]
     assert isinstance(ob, dict)
@@ -194,19 +196,26 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
     assert set(ob) >= {"rule_id", "ranking", "confidence", "limitations", "analyzer_version"}
     assert ob["rule_id"] == "farming.sanity_per_item"
     assert ob["confidence"] >= 0.5  # fresh + well-sampled -> stable baseline
-    # §V66.1: per-entity data lives in ranking rows that reference the drops facts.
+    # §T176/B95: each ranking row FOLDS the raw drop facts + the derived figure.
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 1
     row = ranking[0]
-    assert row["id"] == "sugar"  # references the sibling drops list
+    assert row["id"] == "sugar"  # §V68: the unambiguous item game_id
+    assert row["name"] == "Sugar"  # §V69: display name paired alongside the id
     assert row["sanity_per_item"] == 72.0  # 18 / 0.25
+    assert row["quantity"] == 1250 and row["times"] == 5000
+    assert row["drop_rate"] == 0.25  # §V76: 4dp on the wire
+    # §V66/§V77: the stage-level sanity_cost rides the parent stage block once, never
+    # repeated per row (unlike the item view, where it varies per stage).
+    assert "sanity_cost" not in row
+    assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
+    # §V66.2: the shared penguin provenance is hoisted, not repeated on the row.
+    for hoisted in ("snapshot_id", "fetched_at", "expires_at"):
+        assert hoisted not in row
     # §V66.1/§V85: a non-deviating (fresh + well-sampled) row omits its own confidence
-    # and deviation markers, and the numbers already in the drops list are NOT
-    # re-copied onto it.
+    # and deviation markers.
     assert "confidence" not in row and "limitations" not in row
     assert "flags" not in row and "expired" not in row
-    for reinstated in ("drop_rate", "sanity_cost", "sample_size", "times"):
-        assert reinstated not in row
     # §V6: the analyzer version rides the envelope too.
     assert env.analyzer_version is not None
     # §V7/§V55: facts + observation only, never a prescriptive verdict.
@@ -215,8 +224,28 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
 
 def test_efficiency_omitted_without_the_flag(fresh_conn: sqlite3.Connection) -> None:
     env = _handler(fresh_conn)(server="en", stage_code="4-4")
-    assert "efficiency" not in env.to_dict()["data"]
+    data = env.to_dict()["data"]
+    assert "efficiency" not in data
+    # §T176/B95: without the flag the raw drops list is returned unchanged.
+    assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
     assert env.analyzer_version is None
+
+
+def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
+    # §T176/B95 fallback: a drop with no drop_rate is unrankable -> no observation to
+    # subsume the drops, so the raw drops list stays visible and the §V26 warnings name
+    # the exclusion (never a silently emptied payload).
+    path = _candidate(tmp_path)
+    seed_stage_drop(path, expires_at=FUTURE_EXPIRY, drop_rate=None, times=None)
+    conn = open_read_only(path)
+    env = _handler(conn)(server="en", stage_code="4-4", include_efficiency=True)
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency"}
+    assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
+    eff = data["efficiency"]
+    assert "observation" not in eff  # type: ignore[operator]
+    assert any("sugar" in w for w in eff["warnings"])  # type: ignore[index]
 
 
 def test_expired_efficiency_downgraded_below_recommendation(
@@ -225,7 +254,8 @@ def test_expired_efficiency_downgraded_below_recommendation(
     # §V53/§V55: an expired cache downgrades the figure below the §V8 threshold, so
     # the row reads as a limitation, never a fresh recommendation. §V85/B93: the row
     # carries the typed marker + its confidence; the sentence is hoisted ONCE onto the
-    # observation-level limitations, never repeated per row.
+    # observation-level limitations, never repeated per row. §T176/B95: the deviation
+    # markers stay visible on the FOLDED row.
     env = _handler(stale_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "data_stale"
     ob = env.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]

@@ -371,11 +371,11 @@ def ranked_observation_to_dict(
     §V66.1). Observation-level ``limitations`` are the caveats that apply to the whole
     ranking (e.g. the §V60 comparison caveats).
 
-    ``ranking`` overrides the default slim rows: ``get_item_drops`` in efficiency mode
-    folds each stage's raw drop facts INTO its ranking row and emits no separate stages
-    list (§T161/B82 -- the ranking subsumes the stage rows), so it passes the merged
-    rows here rather than the slim ``{id, name, sanity_per_item}`` default. When absent,
-    the slim rows are used (``get_stage_drops``, which keeps its sibling ``drops`` facts).
+    ``ranking`` overrides the default slim rows: both drop tools in efficiency mode
+    fold each entity's raw drop facts INTO its ranking row and emit no separate facts
+    list (§T161/B82 for ``get_item_drops``, §T176/B95 for ``get_stage_drops`` -- the
+    ranking subsumes the facts rows), so each passes its merged rows here rather than
+    the slim ``{id, name, sanity_per_item}`` default (used when ``ranking`` is absent).
     """
     return {
         "rule_id": obs.rule_id,

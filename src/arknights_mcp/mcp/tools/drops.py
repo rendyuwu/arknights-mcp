@@ -22,8 +22,9 @@ The load-bearing invariants for both:
 * **§V55/§V60/§V66.1** -- ``include_efficiency`` surfaces a SINGLE deterministic
   ranked farming observation (§T129): the §V6 fields (rule_id + confidence +
   analyzer_version) are stated once at the observation level and the per-entity data
-  lives in ``ranking`` rows ``{id, name, sanity_per_item}`` whose ``id`` references
-  the sibling drops/stages facts (evidence by reference, never re-copied numbers).
+  lives in ``ranking`` rows that FOLD the raw drop facts + the derived
+  ``sanity_per_item`` (§T161/§T176 -- the ranking subsumes the facts list, so the
+  same entities are never listed twice).
   ``get_item_drops`` ranks the rows ascending by sanity per item (§V60) with the
   mandatory availability/first-clear/byproduct caveats on the observation, an ordering
   + evidence never a best-farm/mandatory verdict (§V7). A per-row confidence + typed
@@ -76,7 +77,10 @@ _TOOL_DESCRIPTION = (
     "fetched/expires time) shared by every drop is hoisted to a single drop_provenance "
     "block. A drop repeats a provenance field only when it differs. A drop carries "
     "expired:true only when it is past its cache expiry. Set include_efficiency to add "
-    "deterministic farming observations (sanity spent per item). Those are facts and "
+    "deterministic farming observations (sanity spent per item). With that flag the "
+    "ranked observation is the single per-item list, each row folding the drop facts "
+    "and its sanity-per-item, so the drops are never listed twice. Without the flag the "
+    "raw drops list is returned. Those are facts and "
     "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
     "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
     "the cache. en/cn are never mixed."
@@ -137,6 +141,50 @@ def _drop_provenance_row(drop: DropFacts) -> dict[str, object]:
     }
 
 
+def _efficiency_row(
+    drop: DropFacts, deviation: dict[str, object], row: RankingRow
+) -> dict[str, object]:
+    """One ranking row that SUBSUMES the drop's raw facts (§T176/B95; §V66/§V55).
+
+    The stage-view mirror of :func:`_item_efficiency_row` (§T161/B82): in efficiency
+    mode the ranking is the SINGLE per-item list -- the raw drop facts are folded into
+    the ranking row rather than duplicated in a sibling ``drops`` list (which listed the
+    same items twice, B95). So this row carries the §V55 evidence (``drop_rate`` /
+    ``times`` -- the sample size) and identity (rarity/type) alongside the derived
+    ``sanity_per_item``, keyed by the unambiguous ``id`` = ``item_game_id`` with the
+    item's display name as ``name`` (§V68/§V69). The stage-level ``sanity_cost`` is NOT
+    repeated per row -- it rides the parent ``stage`` block once (§V66/§V77, unlike the
+    item view where it varies per stage). ``drop`` and ``row`` are the same item (the
+    service aligns them 1:1), so ``drop.item_game_id == row.id``.
+
+    §V66.2: the penguin provenance shared by every row is hoisted to ``drop_provenance``;
+    ``deviation`` carries only the fields where this row differs. §V67: ``name`` /
+    ``expired`` are omitted at their default (no imported name / fresh). §V66.1/§V85:
+    per-row ``confidence`` + the typed markers (``expired`` / ``flags``) appear only
+    where the row deviates (thin sample / expired cache); the explanatory sentence is
+    hoisted once onto the observation-level limitations, never repeated per row.
+    """
+    out: dict[str, object] = {
+        "id": drop.item_game_id,
+        "item_rarity": drop.item_rarity,
+        "item_type": drop.item_type,
+        "quantity": drop.quantity,
+        "times": drop.times,
+        "drop_rate": _round_drop_rate(drop.drop_rate),
+        "sanity_per_item": row.sanity_per_item,
+    }
+    if drop.item_display_name is not None:  # §V67: display name omitted when absent, never null
+        out["name"] = drop.item_display_name
+    out.update(deviation)  # §V66.2: only the provenance fields that deviate from the shared block
+    if drop.expired:
+        out["expired"] = True  # §V67: emitted only when true (default = fresh)
+    if row.confidence is not None:  # §V66.1: only where the row deviates from the baseline
+        out["confidence"] = row.confidence
+    if row.flags:
+        out["flags"] = list(row.flags)
+    return out
+
+
 def _shape(result: StageDropsResult) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 envelope (§V5 region + provenance).
 
@@ -152,18 +200,17 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     ``drop_provenance`` and a drop repeats a field only where it deviates; a drop
     carries ``expired:true`` only when past its expiry (a fresh drop omits it), so the
     stale drop stays visible instead of buried in identical repeats.
+
+    §T176/B95 (mirrors §T161/B82): the ranking SUBSUMES the drop rows. With
+    ``include_efficiency`` the single per-item list is the ranked ``observation`` (each
+    row folds the raw drop facts + its derived ``sanity_per_item``), so no separate
+    ``drops`` list is emitted -- the response never lists the same items twice (§V66).
+    Without the flag (or when nothing was rankable) the raw ``drops`` facts are emitted.
     """
     if result.status == "not_found" or result.stage is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     shared_prov, deviations = hoist_drop_provenance([_drop_provenance_row(d) for d in result.drops])
-    drops: list[dict[str, object]] = []
-    for drop, deviation in zip(result.drops, deviations, strict=True):
-        row = _drop_identity(drop)
-        row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
-        if drop.expired:
-            row["expired"] = True  # §V67: emitted only when true (default = fresh)
-        drops.append(row)
 
     data: dict[str, object] = {
         "stage": {
@@ -174,15 +221,39 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
             "sanity_cost": result.stage.sanity_cost,
         },
         "drop_provenance": shared_prov,
-        "drops": drops,
     }
+
+    # §T176/B95: when a ranking exists it subsumes the drop rows -- the service aligns
+    # ``result.drops`` (and thus ``deviations``) 1:1 with the ranking rows, so each raw
+    # fact folds into its ranking row and no separate ``drops`` list is emitted. Only
+    # without a ranking (flag off, or nothing rankable) are the raw ``drops`` emitted.
+    if result.observation is None:
+        drops: list[dict[str, object]] = []
+        for drop, deviation in zip(result.drops, deviations, strict=True):
+            row = _drop_identity(drop)
+            row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
+            if drop.expired:
+                row["expired"] = True  # §V67: emitted only when true (default = fresh)
+            drops.append(row)
+        data["drops"] = drops
+
     if result.analyzer_version is not None:
         # include_efficiency was requested: surface the §V66.1 single ranked
         # observation (§T129) + the analyzer's §V26 warnings (a missing sanity cost /
-        # absent drop rate). The observation is omitted when no drop was rankable.
+        # absent drop rate). When a ranking exists, its rows each fold the raw drop
+        # facts (§T176/B95). The observation is omitted only when no drop was rankable
+        # (then the raw ``drops`` above stay visible with the §V26 warnings).
         efficiency: dict[str, object] = {"warnings": list(result.warnings)}
         if result.observation is not None:
-            efficiency["observation"] = ranked_observation_to_dict(result.observation)
+            merged = [
+                _efficiency_row(drop, deviation, row)
+                for drop, deviation, row in zip(
+                    result.drops, deviations, result.observation.ranking, strict=True
+                )
+            ]
+            efficiency["observation"] = ranked_observation_to_dict(
+                result.observation, ranking=merged
+            )
         data["efficiency"] = efficiency
 
     # A stale result is a *delivered* fact flagged as aged, not a failed request, so
