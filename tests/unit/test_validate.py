@@ -170,10 +170,40 @@ def test_cross_region_skin_resolution_detected(tmp_path: Path) -> None:
         (prov,),
     ).lastrowid
     conn.execute(
-        "INSERT INTO operator_skins (server, skin_id, char_id, operator_pk, resolved, "
+        "INSERT INTO operator_skins (server, skin_id, char_id, operator_pk, "
         "portrait_id, region, provenance_id) "
-        "VALUES ('cn', 'char_x_test#1', 'char_x_test', ?, 1, 'char_x_test_1', 'cn', ?)",
+        "VALUES ('cn', 'char_x_test#1', 'char_x_test', ?, 'char_x_test_1', 'cn', ?)",
         (op_pk, prov),
+    )
+    conn.commit()
+    conn.close()
+    report = validate_database(path)
+    assert not report.passed
+    assert not _check(report, "orphans").passed
+
+
+def test_cross_region_banner_featured_op_detected(tmp_path: Path) -> None:
+    # §V5/§V62, B124 (B116 class, sibling domain): banner_featured_ops carries no server
+    # column, so its nullable operator_pk soft-resolve is only region-checkable through
+    # the parent banner. A cn banner featuring an en operator must fail the orphans gate.
+    path = _valid_candidate(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    prov = conn.execute("SELECT MIN(provenance_id) FROM record_provenance").fetchone()[0]
+    op_pk = conn.execute(
+        "INSERT INTO operators (server, game_id, display_name, provenance_id) "
+        "VALUES ('en', 'char_y_test', 'Y', ?)",
+        (prov,),
+    ).lastrowid
+    banner_pk = conn.execute(
+        "INSERT INTO banners (server, game_id, region, provenance_id) "
+        "VALUES ('cn', 'pool_y_test', 'cn', ?)",
+        (prov,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO banner_featured_ops (banner_pk, operator_pk, char_id, resolved) "
+        "VALUES (?, ?, 'char_y_test', 1)",
+        (banner_pk, op_pk),
     )
     conn.commit()
     conn.close()

@@ -17,9 +17,9 @@ source) into the metadata-only named skin gallery:
   alternate playable form, so ``tmpl_id != char_id`` is the discriminator --
   ``char_patch_table.json`` is NOT imported;
 * a SOFT-resolve of ``charId`` to an ``operator_pk`` when that operator is present in
-  the same snapshot, else the raw char id with ``resolved = 0`` -- an unresolvable
-  skin never fails the build (operators are optional-zero per B36, so a combat-only
-  snapshot yields raw char ids);
+  the same snapshot, else the raw char id with a NULL ``operator_pk`` -- an
+  unresolvable skin never fails the build (operators are optional-zero per B36, so a
+  combat-only snapshot yields raw char ids);
 * per-record provenance so a skin carries its provenance chain (§V17); region on
   every row (§V5), en and cn never mixed.
 
@@ -74,7 +74,7 @@ class ParsedSkin:
 @dataclass(frozen=True)
 class SkinImportResult:
     """Per-server outcome. ``skins_resolved`` counts skins soft-resolved to a present
-    operator; the rest carry the raw char id with ``resolved = 0``."""
+    operator; the rest carry the raw char id with a NULL ``operator_pk``."""
 
     skins_inserted: int = 0
     skins_resolved: int = 0
@@ -156,8 +156,10 @@ def insert_skins(
 
     Each skin's ``char_id`` SOFT-resolves to an ``operator_pk`` when that operator is
     present for ``server`` (via the shared :func:`operator_pk_by_game_id`, §V37),
-    else the row keeps the raw char id with ``resolved = 0`` -- an unresolvable skin
-    never fails the build. An alt-form skin resolves through its BASE ``charId``
+    else the row keeps the raw char id with a NULL ``operator_pk`` -- an unresolvable
+    skin never fails the build. The resolution state is exactly ``operator_pk IS
+    NULL``; there is no second ``resolved`` column re-encoding it (§V94/B123). An
+    alt-form skin resolves through its BASE ``charId``
     (ADR 0015), so the Amiya-family gallery attaches to base Amiya, labeled via
     ``tmpl_id``. A duplicate ``skinId`` (UNIQUE(server, skin_id)) collides on a
     constraint; that anomaly maps to a typed :class:`ImporterError` rather than an
@@ -175,23 +177,21 @@ def insert_skins(
             record=skin.provenance_record,
         )
         operator_pk = operator_pk_map.get(skin.char_id)
-        resolved = 1 if operator_pk is not None else 0
         with integrity_guard(
             f"skin {skin.skin_id!r} collides on a UNIQUE constraint (duplicate skin id)",
             ImporterError,
         ):
             conn.execute(
                 "INSERT INTO operator_skins "
-                "(server, skin_id, char_id, tmpl_id, operator_pk, resolved, display_name, "
+                "(server, skin_id, char_id, tmpl_id, operator_pk, display_name, "
                 "skin_group_id, skin_group_name, portrait_id, is_buy_skin, region, "
-                "provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     server,
                     skin.skin_id,
                     skin.char_id,
                     skin.tmpl_id,
                     operator_pk,
-                    resolved,
                     skin.display_name,
                     skin.skin_group_id,
                     skin.skin_group_name,
@@ -202,7 +202,7 @@ def insert_skins(
                 ),
             )
         inserted += 1
-        resolved_count += resolved
+        resolved_count += 1 if operator_pk is not None else 0
     return SkinImportResult(skins_inserted=inserted, skins_resolved=resolved_count)
 
 

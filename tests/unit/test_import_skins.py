@@ -228,22 +228,22 @@ def test_skin_soft_resolves_present_operator(tmp_path: Path) -> None:
         result = _insert(conn, snap, _OUTFIT)
         assert result.skins_inserted == 1
         assert result.skins_resolved == 1
-        row = conn.execute("SELECT operator_pk, resolved FROM operator_skins").fetchone()
-        assert row[0] is not None and row[1] == 1
+        row = conn.execute("SELECT operator_pk FROM operator_skins").fetchone()
+        assert row[0] is not None
     finally:
         conn.close()
 
 
 def test_skin_stays_raw_when_operator_absent(tmp_path: Path) -> None:
-    # B36: a combat-only snapshot (no operators) keeps the raw char id, resolved=0;
-    # the unresolvable skin never fails the build (§V3).
+    # B36: a combat-only snapshot (no operators) keeps the raw char id with a NULL
+    # operator_pk; the unresolvable skin never fails the build (§V3).
     conn, snap = _conn_with_operator(tmp_path, seed_operator=False)
     try:
         result = _insert(conn, snap, _OUTFIT)
         assert result.skins_inserted == 1
         assert result.skins_resolved == 0
-        row = conn.execute("SELECT operator_pk, char_id, resolved FROM operator_skins").fetchone()
-        assert row == (None, "char_002_amiya", 0)
+        row = conn.execute("SELECT operator_pk, char_id FROM operator_skins").fetchone()
+        assert row == (None, "char_002_amiya")
     finally:
         conn.close()
 
@@ -255,10 +255,10 @@ def test_alt_form_skin_resolves_to_base_operator(tmp_path: Path) -> None:
     try:
         _insert(conn, snap, _ALT_FORM)
         row = conn.execute(
-            "SELECT o.game_id, s.tmpl_id, s.resolved FROM operator_skins s "
+            "SELECT o.game_id, s.tmpl_id FROM operator_skins s "
             "JOIN operators o ON o.operator_pk = s.operator_pk"
         ).fetchone()
-        assert row == ("char_002_amiya", "char_1001_amiya2", 1)
+        assert row == ("char_002_amiya", "char_1001_amiya2")
     finally:
         conn.close()
 

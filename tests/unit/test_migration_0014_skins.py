@@ -35,7 +35,6 @@ _SKIN_COLUMNS = {
     "char_id",
     "tmpl_id",
     "operator_pk",
-    "resolved",
     "display_name",
     "skin_group_id",
     "skin_group_name",
@@ -90,8 +89,8 @@ def _insert_skin(
     server: str = "en",
 ) -> None:
     conn.execute(
-        "INSERT INTO operator_skins (server, skin_id, char_id, operator_pk, resolved, "
-        "portrait_id, region, provenance_id) VALUES (?, ?, 'char_002_amiya', NULL, 0, "
+        "INSERT INTO operator_skins (server, skin_id, char_id, operator_pk, "
+        "portrait_id, region, provenance_id) VALUES (?, ?, 'char_002_amiya', NULL, "
         "'char_002_amiya_1', ?, ?)",
         (server, skin_id, server, prov_id),
     )
@@ -108,7 +107,11 @@ def test_table_and_indexes_present(tmp_path: Path) -> None:
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
         }
         assert "idx_operator_skins_operator" in indexes
-        assert "idx_operator_skins_char" in indexes
+        # §V94/B122: no char_id index -- nothing reads skins by raw source char id
+        # (the importer resolves through operators, purge selects by provenance_id,
+        # the cross-region gate joins operator_pk). An index no query serves is pure
+        # write amplification, so its absence is pinned like its presence would be.
+        assert "idx_operator_skins_char" not in indexes
     finally:
         conn.close()
 
@@ -134,16 +137,14 @@ def test_operator_skins_not_in_critical_tables() -> None:
 
 def test_soft_resolve_operator_pk_nullable(tmp_path: Path) -> None:
     # B36 class: a combat-only snapshot has no operators; the skin row still inserts
-    # with operator_pk NULL + resolved = 0.
+    # with operator_pk NULL -- which IS the resolution state (§V94/B123: no second
+    # `resolved` column re-encoding it).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)
         _insert_skin(conn, prov)
         conn.commit()
-        assert conn.execute("SELECT operator_pk, resolved FROM operator_skins").fetchone() == (
-            None,
-            0,
-        )
+        assert conn.execute("SELECT operator_pk FROM operator_skins").fetchone() == (None,)
     finally:
         conn.close()
 

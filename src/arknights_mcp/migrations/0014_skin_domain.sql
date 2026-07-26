@@ -17,8 +17,11 @@
 -- tmpl_id != char_id is the alt-form discriminator (ADR 0015 -- char_patch_table is
 -- NOT imported; tmplId alone carries the link). operator_pk SOFT-resolves to an
 -- operators row when that operator is present in the SAME snapshot, else stays NULL
--- with resolved = 0 (operators are optional-zero per B36; an unresolvable skin never
--- fails the build). Token skins (charId not 'char_%') are filtered by the importer.
+-- (operators are optional-zero per B36; an unresolvable skin never fails the build).
+-- There is deliberately NO `resolved` flag column: `operator_pk IS NULL` already IS
+-- the resolution state, and nothing reads a second encoding of it (§V94, B123 --
+-- banner_featured_ops keeps its own `resolved` because get_banners emits it).
+-- Token skins (charId not 'char_%') are filtered by the importer.
 --
 -- Every row carries a provenance_id FK (§V17). region is NOT NULL and ∈ {en,cn}
 -- (§V5, enforced by the importer); en and cn skins are never silently mixed.
@@ -43,7 +46,6 @@ CREATE TABLE operator_skins (
     char_id         TEXT NOT NULL,
     tmpl_id         TEXT,
     operator_pk     INTEGER REFERENCES operators (operator_pk),
-    resolved        INTEGER CHECK (resolved IN (0, 1)),
     display_name    TEXT,
     skin_group_id   TEXT,
     skin_group_name TEXT,
@@ -54,8 +56,12 @@ CREATE TABLE operator_skins (
     UNIQUE (server, skin_id)
 );
 
--- Serves the get_operator gallery read: all skins soft-resolved to one operator.
+-- Serves the get_operator gallery read (OperatorRepository.skins):
+-- `WHERE server = ? AND operator_pk = ?` -- the query filters BOTH leading columns
+-- (§V94/B115: a WHERE skipping `server` would not use this index at all).
 CREATE INDEX idx_operator_skins_operator ON operator_skins (server, operator_pk);
 
--- Serves purge/debug lookups by raw source char id (incl. unresolved rows).
-CREATE INDEX idx_operator_skins_char ON operator_skins (server, char_id);
+-- No char_id index: nothing reads skins by raw source char id (§V94/B122). The
+-- importer resolves char_id -> operator_pk through the operators table, purge selects
+-- by provenance_id, and the cross-region gate joins operator_pk; an index here would
+-- only add write amplification. Add one WITH the query that needs it, never before.

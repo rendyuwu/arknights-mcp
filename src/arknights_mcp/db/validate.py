@@ -166,7 +166,17 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         if table_exists(conn, "operator_skins")
         else 0
     )
-    total = mismatched + spawn_mismatch + variant_mismatch + skin_mismatch
+    # Same class for the banner archive (§V5/§V62, B124): banner_featured_ops carries no
+    # server column of its own, so its nullable operator_pk soft-resolve can only be
+    # region-checked through the parent banner. Every nullable soft-resolve FK needs its
+    # own gate row here -- fixing one domain's instance does not close the class.
+    featured_mismatch = conn.execute(
+        "SELECT COUNT(*) FROM banner_featured_ops f "
+        "JOIN banners b ON b.banner_pk = f.banner_pk "
+        "JOIN operators o ON o.operator_pk = f.operator_pk "
+        "WHERE b.server <> o.server"
+    ).fetchone()[0]
+    total = mismatched + spawn_mismatch + variant_mismatch + skin_mismatch + featured_mismatch
     if total:
         return CheckResult("orphans", False, f"{total} cross-region reference(s)")
     return CheckResult("orphans", True, "no cross-region references")
