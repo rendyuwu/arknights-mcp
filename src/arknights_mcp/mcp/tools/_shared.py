@@ -20,7 +20,8 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable, Iterable, Mapping, Sequence
 
-from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation, RankingRow
+from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation
+from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
 from arknights_mcp.services.operators import cost_item_id
@@ -294,15 +295,19 @@ def hoist_drop_provenance(
     once to a shared block and leave each row carrying only the fields where it
     deviates (a different snapshot), so a deviant row stays *visible* instead of buried
     among identical repeats. The shared block is the most common provenance row (ties
-    broken by first appearance), so it is deterministic + reproducible even when a
-    minority of rows deviate; a row whose provenance matches the shared block yields an
-    empty deviation dict. An empty input yields an empty shared block + no rows. The
-    single §V37 home for the hoist shared by ``get_stage_drops`` + ``get_item_drops``.
+    broken by row CONTENT, never input position), so the hoist is deterministic and
+    identical no matter how the caller orders its rows -- ``get_stage_drops`` feeds
+    repository order while efficiency mode reorders the fold, and the two must never
+    disagree on which block is "shared"; a row whose provenance matches the shared
+    block yields an empty deviation dict. An empty input yields an empty shared block
+    + no rows. The single §V37 home for the hoist shared by ``get_stage_drops`` +
+    ``get_item_drops``.
     """
     if not prov_rows:
         return {}, []
-    # Tally identical provenance rows; keep first-seen order for a deterministic tie
-    # break (every value here is a provenance string, so the row is hashable/sortable).
+    # Tally identical provenance rows; every value here is a provenance string, so the
+    # sorted-items key is hashable AND totally ordered -- the content tie-break below
+    # needs that ordering.
     counts: dict[tuple[tuple[str, object], ...], int] = {}
     order: list[tuple[tuple[str, object], ...]] = []
     for row in prov_rows:
@@ -311,7 +316,7 @@ def hoist_drop_provenance(
             order.append(key)
             counts[key] = 0
         counts[key] += 1
-    shared_key = max(order, key=lambda k: counts[k])
+    shared_key = max(order, key=lambda k: (counts[k], k))
     shared = dict(shared_key)
     deviations = [{k: v for k, v in row.items() if v != shared.get(k)} for row in prov_rows]
     return shared, deviations
@@ -360,7 +365,11 @@ def observation_to_dict(obs: Observation) -> dict[str, object]:
     """One evidence-backed observation with every §V6 field intact (§V37 single home).
 
     A surfaced inference always carries its ``rule_id`` + evidence + confidence +
-    limitations + ``analyzer_version`` -- never a bare verdict (§V6).
+    limitations + ``analyzer_version`` -- never a bare verdict (§V6). The §V85
+    evidence dedup (byte-identical rows collapse to one attributed row + ``count``)
+    is applied HERE, at the one emit surface every analyzer's observations flow
+    through, so no rule has to remember to call it and a per-level-variant rule
+    (e.g. a flyer identical at two variants) can never ship N verbatim repeats.
     """
     return {
         "rule_id": obs.rule_id,
@@ -369,49 +378,16 @@ def observation_to_dict(obs: Observation) -> dict[str, object]:
         "title": obs.title,
         "summary": obs.summary,
         "confidence": obs.confidence,
-        "evidence": [evidence_to_dict(e) for e in obs.evidence],
+        "evidence": [evidence_to_dict(e) for e in dedupe_evidence(obs.evidence)],
         "limitations": list(obs.limitations),
         "analyzer_version": obs.analyzer_version,
     }
 
 
-def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
-    """One ranked entity in a compacted farming observation (§V66.1; §V37 single home).
-
-    Carries the entity ``id`` (a reference into the sibling drops/stages facts list, so
-    the shared ``sanity_cost`` / ``drop_rate`` / ``sample_size`` are not re-copied
-    here) + its display ``name`` + the derived ``sanity_per_item`` figure. ``id`` is
-    the unambiguous stable id that joins to the sibling facts (a drop's item game id in
-    the stage view, a stage's game id in the item comparison, §V68); ``name`` is the
-    display label shown alongside (the item's display name in the stage view, the
-    stage's ``stage_code`` in the item comparison) -- §V67: when it is absent it is
-    OMITTED, never emitted as ``null``, so a client need not decide "no name vs
-    unknown". ``confidence`` and the typed deviation markers (``expired`` / ``flags``)
-    are emitted ONLY when the row deviates from the observation-level baseline (a thin
-    sample / expired cache), so a non-deviating row stays a minimal object and the
-    deviant row stays visible; the sentence explaining each marker is hoisted once onto
-    the observation-level limitations (§V85/B93), never repeated per row.
-    """
-    out: dict[str, object] = {
-        "id": row.id,
-        "sanity_per_item": row.sanity_per_item,
-    }
-    # §V67: an always-null optional scalar is omitted rather than emitted as null.
-    if row.name is not None:
-        out["name"] = row.name
-    if row.confidence is not None:
-        out["confidence"] = row.confidence
-    if row.expired:
-        out["expired"] = True  # §V67: emitted only when true (default = fresh)
-    if row.flags:
-        out["flags"] = list(row.flags)
-    return out
-
-
 def ranked_observation_to_dict(
     obs: RankedObservation,
     *,
-    ranking: list[dict[str, object]] | None = None,
+    ranking: list[dict[str, object]],
 ) -> dict[str, object]:
     """A compacted ranked farming observation with the §V6 fields stated once (§V66.1/§V6).
 
@@ -423,11 +399,12 @@ def ranked_observation_to_dict(
     §V66.1). Observation-level ``limitations`` are the caveats that apply to the whole
     ranking (e.g. the §V60 comparison caveats).
 
-    ``ranking`` overrides the default slim rows: both drop tools in efficiency mode
-    fold each entity's raw drop facts INTO its ranking row and emit no separate facts
-    list (§T161/B82 for ``get_item_drops``, §T176/B95 for ``get_stage_drops`` -- the
-    ranking subsumes the facts rows), so each passes its merged rows here rather than
-    the slim ``{id, name, sanity_per_item}`` default (used when ``ranking`` is absent).
+    ``ranking`` is required: both drop tools fold each entity's raw drop facts INTO
+    its ranking row (§T161/B82 for ``get_item_drops``, §T176/B95 for
+    ``get_stage_drops`` -- the ranking subsumes the facts rows), so the caller always
+    builds the merged rows. There is no slim-row default -- the one this function
+    used to carry was dead in production and had drifted from the live emitters on
+    the ``expired`` marker semantics, so it was removed rather than left to diverge.
     """
     return {
         "rule_id": obs.rule_id,
@@ -436,9 +413,7 @@ def ranked_observation_to_dict(
         "title": obs.title,
         "summary": obs.summary,
         "confidence": obs.confidence,
-        "ranking": (
-            ranking if ranking is not None else [ranking_row_to_dict(r) for r in obs.ranking]
-        ),
+        "ranking": ranking,
         "limitations": list(obs.limitations),
         "analyzer_version": obs.analyzer_version,
     }

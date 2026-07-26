@@ -473,6 +473,47 @@ def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
 
 
+def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) -> None:
+    # §V85/B93 x B21: the hoisted deviation sentences are computed over the FULL
+    # ranking and ride the observation onto EVERY page -- a page whose rows carry no
+    # ``expired`` marker still states the posture (the marked row lives on a later
+    # page), and the marked row's own page carries both the marker and the sentence.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("a-1", drop_rate=0.25, expires_at=FUTURE_EXPIRY),  # ranks first
+            StageDropSeed("z-9", drop_rate=0.05, expires_at=PAST_EXPIRY),  # ranks second
+        ],
+    )
+    handler = _handler(open_read_only(path))
+    page1 = handler(
+        server="en",
+        game_id="sugar",
+        include_efficiency=True,
+        efficiency_page={"page": 1, "page_size": 1},
+    )
+    assert page1.status == "data_stale"
+    ob1 = page1.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
+    rows1 = ob1["ranking"]
+    assert [r["name"] for r in rows1] == ["a-1"]
+    # The fresh page-1 row carries no marker (item view keys expiry per row, §V60)...
+    assert "expired" not in rows1[0] and "confidence" not in rows1[0]
+    # ...but the full-set hoisted sentence still rides this page's observation.
+    assert any("expired" in lim for lim in ob1["limitations"])
+    page2 = handler(
+        server="en",
+        game_id="sugar",
+        include_efficiency=True,
+        efficiency_page={"page": 2, "page_size": 1},
+    )
+    ob2 = page2.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
+    rows2 = ob2["ranking"]
+    assert [r["name"] for r in rows2] == ["z-9"]
+    assert rows2[0]["expired"] is True and rows2[0]["confidence"] < 0.5
+    assert any("expired" in lim for lim in ob2["limitations"])
+
+
 def test_out_of_range_page_size_rejected(tmp_path: Path) -> None:
     # §V19: an out-of-range page_size is rejected at the model gate, never silently
     # widened -- one contract, both places (mirrors get_stage).

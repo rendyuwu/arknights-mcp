@@ -73,18 +73,21 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     # serializable for the tool envelope / CLI --json
     json.dumps(status.to_dict())
 
-    # §V66/B78 (T157): the extras view drops (snapshot_id, imported_at) -- carried by
-    # the envelope provenance -- and keeps the rest. §V67 (B96/T177): the local-import
-    # fixture has no commit/version, so those keys are OMITTED, never emitted null.
-    # §V87 (B96): include_server inlines the per-row join key for the multi-region
-    # tool; the region-scoped resource keeps the default server-less view (§V77).
-    # to_dict stays full for the CLI, which has no envelope provenance.
+    # §V66/B78 (T157): the extras view drops imported_at -- carried by the envelope
+    # provenance -- and keeps the rest, INCLUDING snapshot_id: one region can hold
+    # several active snapshots, so snapshot_id is the §V87 inline join key that ties
+    # a row to its provenance entry without a positional contract. §V67 (B96/T177):
+    # the local-import fixture has no commit/version, so those keys are OMITTED,
+    # never emitted null. §V87 (B96): include_server additionally inlines the region
+    # key for the multi-region tool; the region-scoped resource keeps the server-less
+    # view (§V77). to_dict stays full for the CLI, which has no envelope provenance.
     assert snap.commit_sha is None and snap.upstream_version is None
     extras = snap.to_provenance_extras()
-    assert extras.keys() == {"source_id", "age_days", "status"}
+    assert extras.keys() == {"source_id", "snapshot_id", "age_days", "status"}
     with_server = snap.to_provenance_extras(include_server=True)
-    assert with_server.keys() == {"server", "source_id", "age_days", "status"}
+    assert with_server.keys() == {"server", "source_id", "snapshot_id", "age_days", "status"}
     assert with_server["server"] == "en"
+    assert with_server["snapshot_id"] == snap.snapshot_id
     assert {"server", "snapshot_id", "imported_at"} <= snap.to_dict().keys()
 
 
@@ -105,7 +108,9 @@ def test_snapshot_extras_keep_known_commit_and_version() -> None:
     assert extras["commit_sha"] == "413a81a3ff3e"
     assert extras["upstream_version"] == "v1"
     assert extras["server"] == "en"
-    assert "snapshot_id" not in extras and "imported_at" not in extras
+    # snapshot_id stays on the row as the §V87 join key; imported_at is provenance-only.
+    assert extras["snapshot_id"] == "snap-1"
+    assert "imported_at" not in extras
 
 
 def test_data_status_empty_db_is_data_stale(tmp_path: Path) -> None:

@@ -57,26 +57,32 @@ class SnapshotStatus:
         }
 
     def to_provenance_extras(self, *, include_server: bool = False) -> dict[str, object]:
-        """Snapshot fields outside the (snapshot_id, imported_at) provenance pair.
+        """Snapshot fields for a ``data.snapshots`` row, keyed for the provenance join.
 
-        Those two travel with the envelope ``provenance`` entry (§V5), so an MCP
-        ``data.snapshots`` row emitting them too duplicates ~600B/response (B78).
-        ``include_server`` inlines the ``server`` join key per row (§V87/B96): the
-        multi-region ``get_data_status`` tool needs it so a row is region-attributed
-        without a "row N ↔ provenance N" order contract; the region-scoped
-        ``arknights://status/{server}`` resource carries the region once at the top
-        level (§V77) and leaves it off. ``commit_sha``/``upstream_version`` are
-        omitted when unknown rather than emitted null (§V67). ``to_dict`` keeps the
-        full row for the CLI ``status``/``--json``, which has no envelope provenance.
+        ``imported_at`` travels ONLY with the envelope ``provenance`` entry (§V5/B78 --
+        a row emitting it too would duplicate it per snapshot); ``snapshot_id`` is
+        kept ON the row as the inline join key §V87 sanctions: one region can hold
+        several active snapshots (game data + penguin + announcements all share
+        ``server``), so ``server`` alone cannot pick a row's provenance entry and
+        without ``snapshot_id`` the join would fall back to the "row N ↔ provenance N"
+        order contract §V87 forbids. ``include_server`` additionally inlines the
+        ``server`` region key (§V87/B96) for the multi-region ``get_data_status``
+        tool; the region-scoped ``arknights://status/{server}`` resource carries the
+        region once at the top level (§V77) and leaves it off.
+        ``commit_sha``/``upstream_version``/``age_days`` are omitted when unknown
+        rather than emitted null (§V67 -- ``age_days`` is None when ``imported_at``
+        does not parse). ``to_dict`` keeps the full row for the CLI
+        ``status``/``--json``, which has no envelope provenance.
         """
-        extras: dict[str, object] = {"source_id": self.source_id}
+        extras: dict[str, object] = {"source_id": self.source_id, "snapshot_id": self.snapshot_id}
         if include_server:
             extras = {"server": self.server, **extras}
         if self.commit_sha is not None:
             extras["commit_sha"] = self.commit_sha
         if self.upstream_version is not None:
             extras["upstream_version"] = self.upstream_version
-        extras["age_days"] = self.age_days
+        if self.age_days is not None:
+            extras["age_days"] = self.age_days
         extras["status"] = self.status
         return extras
 

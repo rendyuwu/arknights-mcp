@@ -77,9 +77,11 @@ _TOOL_DESCRIPTION = (
     "fetched/expires time) shared by every drop is hoisted to a single drop_provenance "
     "block. A drop repeats a provenance field only when it differs. A drop carries "
     "expired:true only when it is past its cache expiry. Set include_efficiency to add "
-    "deterministic farming observations (sanity spent per item). With that flag the "
-    "ranked observation is the single per-item list, each row folding the drop facts "
-    "and its sanity-per-item, so the drops are never listed twice. Without the flag the "
+    "deterministic farming observations (sanity spent per item). With that flag each "
+    "rankable drop's facts fold into its ranked observation row, so no item is listed "
+    "twice. A drop that cannot be ranked (missing drop rate) stays in the raw drops "
+    "list with a warning naming it. If nothing was rankable the full raw drops list "
+    "is returned with the warnings. Without the flag the "
     "raw drops list is returned. Those are facts and "
     "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
     "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
@@ -104,10 +106,19 @@ def _round_drop_rate(rate: float | None) -> float | None:
     Penguin ``quantity / times`` is a sample statistic whose 17-digit float ``repr``
     over-states its precision, so the raw float is never put on the wire; 4dp matches
     the sample's real significance (``sanity_per_item`` keeps its 2dp precedent,
-    rounded upstream in the analyzer). An absent rate (``None``) passes through
-    unchanged. Shared by both drop-tool emit sites so the rounding never diverges.
+    rounded upstream in the analyzer). A positive rate must stay positive: a rate
+    below the 4dp step (e.g. ``1 / 100_000``) would round to ``0.0`` -- a value the
+    analyzer treats as "does not drop" and excludes -- so it falls back to 4
+    significant figures instead of a falsified zero on a ranked row. An absent rate
+    (``None``) passes through unchanged. Shared by every drop-tool emit site so the
+    rounding never diverges.
     """
-    return round(rate, 4) if rate is not None else None
+    if rate is None:
+        return None
+    rounded = round(rate, 4)
+    if rounded == 0.0 and rate > 0:
+        return float(f"{rate:.4g}")
+    return rounded
 
 
 def _drop_identity(drop: DropFacts) -> dict[str, object]:
@@ -120,9 +131,12 @@ def _drop_identity(drop: DropFacts) -> dict[str, object]:
     §V77/§V66 (B79): no per-drop ``region`` -- the response is single-region (``server``
     is a required selector, §V5), so region is stated ONCE on the parent ``stage`` +
     envelope provenance, never repeated on every row.
+
+    §V67 (B98): an absent optional scalar is OMITTED, never emitted null -- the §V26
+    warning naming a missing rate is the sole absence signal.
     """
-    return {
-        "item_game_id": drop.item_game_id,
+    out: dict[str, object] = {"item_game_id": drop.item_game_id}
+    optional: dict[str, object | None] = {
         "item_display_name": drop.item_display_name,
         "item_rarity": drop.item_rarity,
         "item_type": drop.item_type,
@@ -130,6 +144,8 @@ def _drop_identity(drop: DropFacts) -> dict[str, object]:
         "times": drop.times,
         "drop_rate": _round_drop_rate(drop.drop_rate),
     }
+    out.update({k: v for k, v in optional.items() if v is not None})
+    return out
 
 
 def _drop_provenance_row(drop: DropFacts) -> dict[str, object]:
@@ -141,48 +157,58 @@ def _drop_provenance_row(drop: DropFacts) -> dict[str, object]:
     }
 
 
+def _apply_ranked_markers(
+    out: dict[str, object],
+    deviation: dict[str, object],
+    *,
+    expired: bool,
+    row: RankingRow,
+) -> dict[str, object]:
+    """Apply the shared per-row deviation trailer to a folded ranking row (§V37).
+
+    One home for the marker rules both fold emitters share: ``deviation`` carries only
+    the provenance fields that deviate from the shared ``drop_provenance`` block
+    (§V66.2); ``expired`` is emitted only when true (§V67, default = fresh) and doubles
+    as the row's expired marker (one signal per condition, §V66); ``confidence`` +
+    ``flags`` appear only where the row deviates from the observation-level baseline
+    (§V66.1), with the sentence explaining each marker hoisted once onto the
+    observation-level limitations (§V85/B93), never repeated per row.
+    """
+    out.update(deviation)
+    if expired:
+        out["expired"] = True
+    if row.confidence is not None:
+        out["confidence"] = row.confidence
+    if row.flags:
+        out["flags"] = list(row.flags)
+    return out
+
+
 def _efficiency_row(
     drop: DropFacts, deviation: dict[str, object], row: RankingRow
 ) -> dict[str, object]:
     """One ranking row that SUBSUMES the drop's raw facts (§T176/B95; §V66/§V55).
 
     The stage-view mirror of :func:`_item_efficiency_row` (§T161/B82): in efficiency
-    mode the ranking is the SINGLE per-item list -- the raw drop facts are folded into
-    the ranking row rather than duplicated in a sibling ``drops`` list (which listed the
-    same items twice, B95). So this row carries the §V55 evidence (``drop_rate`` /
-    ``times`` -- the sample size) and identity (rarity/type) alongside the derived
-    ``sanity_per_item``, keyed by the unambiguous ``id`` = ``item_game_id`` with the
-    item's display name as ``name`` (§V68/§V69). The stage-level ``sanity_cost`` is NOT
-    repeated per row -- it rides the parent ``stage`` block once (§V66/§V77, unlike the
-    item view where it varies per stage). ``drop`` and ``row`` are the same item (the
-    service aligns them 1:1), so ``drop.item_game_id == row.id``.
-
-    §V66.2: the penguin provenance shared by every row is hoisted to ``drop_provenance``;
-    ``deviation`` carries only the fields where this row differs. §V67: ``name`` /
-    ``expired`` are omitted at their default (no imported name / fresh). §V66.1/§V85:
-    per-row ``confidence`` + the typed markers (``expired`` / ``flags``) appear only
-    where the row deviates (thin sample / expired cache); the explanatory sentence is
-    hoisted once onto the observation-level limitations, never repeated per row.
+    mode the ranking is the SINGLE list for the RANKED items -- each ranked drop's raw
+    facts fold into its ranking row rather than being duplicated in the sibling
+    ``drops`` list (which listed the same items twice, B95). The row is the
+    :func:`_drop_identity` fields (the §V55 evidence -- ``drop_rate`` / ``times`` --
+    and rarity/type identity) re-keyed by the unambiguous ``id`` = ``item_game_id``
+    with the display name as ``name`` (§V68/§V69), plus the derived
+    ``sanity_per_item``. The stage-level ``sanity_cost`` is NOT repeated per row -- it
+    rides the parent ``stage`` block once (§V66/§V77, unlike the item view where it
+    varies per stage). ``drop`` is joined to ``row`` by id in :func:`_shape`, so the
+    pairing can never silently drift with ordering.
     """
-    out: dict[str, object] = {
-        "id": drop.item_game_id,
-        "item_rarity": drop.item_rarity,
-        "item_type": drop.item_type,
-        "quantity": drop.quantity,
-        "times": drop.times,
-        "drop_rate": _round_drop_rate(drop.drop_rate),
-        "sanity_per_item": row.sanity_per_item,
-    }
-    if drop.item_display_name is not None:  # §V67: display name omitted when absent, never null
-        out["name"] = drop.item_display_name
-    out.update(deviation)  # §V66.2: only the provenance fields that deviate from the shared block
-    if drop.expired:
-        out["expired"] = True  # §V67: emitted only when true (default = fresh)
-    if row.confidence is not None:  # §V66.1: only where the row deviates from the baseline
-        out["confidence"] = row.confidence
-    if row.flags:
-        out["flags"] = list(row.flags)
-    return out
+    identity = _drop_identity(drop)
+    out: dict[str, object] = {"id": identity.pop("item_game_id")}
+    name = identity.pop("item_display_name", None)
+    out.update(identity)
+    out["sanity_per_item"] = row.sanity_per_item
+    if name is not None:  # §V67: display name omitted when absent, never null
+        out["name"] = name
+    return _apply_ranked_markers(out, deviation, expired=drop.expired, row=row)
 
 
 def _shape(result: StageDropsResult) -> ResponseEnvelope:
@@ -201,11 +227,13 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     carries ``expired:true`` only when past its expiry (a fresh drop omits it), so the
     stale drop stays visible instead of buried in identical repeats.
 
-    §T176/B95 (mirrors §T161/B82): the ranking SUBSUMES the drop rows. With
-    ``include_efficiency`` the single per-item list is the ranked ``observation`` (each
-    row folds the raw drop facts + its derived ``sanity_per_item``), so no separate
-    ``drops`` list is emitted -- the response never lists the same items twice (§V66).
-    Without the flag (or when nothing was rankable) the raw ``drops`` facts are emitted.
+    §T176/B95 (mirrors §T161/B82): the ranking SUBSUMES the ranked drop rows. With
+    ``include_efficiency`` each RANKED drop's raw facts fold into its ranking row, so
+    the response never lists the same item twice (§V66). A drop the analyzer could not
+    rank (absent/non-positive ``drop_rate``) keeps its raw facts in the ``drops`` list
+    alongside the §V26 warning that names it -- an unrankable fact (including its
+    ``expired`` flag and provenance) is never silently withheld (§V53/§V47). Without
+    the flag (or when nothing was rankable) all raw ``drops`` facts are emitted.
     """
     if result.status == "not_found" or result.stage is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
@@ -223,34 +251,38 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
         "drop_provenance": shared_prov,
     }
 
-    # §T176/B95: when a ranking exists it subsumes the drop rows -- the service aligns
-    # ``result.drops`` (and thus ``deviations``) 1:1 with the ranking rows, so each raw
-    # fact folds into its ranking row and no separate ``drops`` list is emitted. Only
-    # without a ranking (flag off, or nothing rankable) are the raw ``drops`` emitted.
-    if result.observation is None:
-        drops: list[dict[str, object]] = []
-        for drop, deviation in zip(result.drops, deviations, strict=True):
-            row = _drop_identity(drop)
-            row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
-            if drop.expired:
-                row["expired"] = True  # §V67: emitted only when true (default = fresh)
-            drops.append(row)
+    # §T176/B95: a ranked drop folds into its ranking row (below); only the residual --
+    # every drop when there is no ranking, else just the unrankable ones -- is emitted
+    # raw here, so no item ever appears twice AND no fact ever disappears (§V53/§V47).
+    ranked_ids = (
+        {row.id for row in result.observation.ranking} if result.observation is not None else set()
+    )
+    drops: list[dict[str, object]] = []
+    for drop, deviation in zip(result.drops, deviations, strict=True):
+        if drop.item_game_id in ranked_ids:
+            continue
+        row = _drop_identity(drop)
+        row.update(deviation)  # §V66.2: only the fields that deviate from the shared block
+        if drop.expired:
+            row["expired"] = True  # §V67: emitted only when true (default = fresh)
+        drops.append(row)
+    if drops:
         data["drops"] = drops
 
     if result.analyzer_version is not None:
         # include_efficiency was requested: surface the §V66.1 single ranked
         # observation (§T129) + the analyzer's §V26 warnings (a missing sanity cost /
         # absent drop rate). When a ranking exists, its rows each fold the raw drop
-        # facts (§T176/B95). The observation is omitted only when no drop was rankable
+        # facts (§T176/B95), joined to the facts by id so the pairing never rides an
+        # ordering contract. The observation is omitted only when no drop was rankable
         # (then the raw ``drops`` above stay visible with the §V26 warnings).
         efficiency: dict[str, object] = {"warnings": list(result.warnings)}
         if result.observation is not None:
-            merged = [
-                _efficiency_row(drop, deviation, row)
-                for drop, deviation, row in zip(
-                    result.drops, deviations, result.observation.ranking, strict=True
-                )
-            ]
+            by_id = {
+                drop.item_game_id: (drop, deviation)
+                for drop, deviation in zip(result.drops, deviations, strict=True)
+            }
+            merged = [_efficiency_row(*by_id[row.id], row) for row in result.observation.ranking]
             efficiency["observation"] = ranked_observation_to_dict(
                 result.observation, ranking=merged
             )
@@ -330,7 +362,9 @@ _ITEM_TOOL_DESCRIPTION = (
     "Set include_efficiency to add deterministic farming observations, ranked ascending "
     "by sanity spent per item. With that flag the ranked observation is the single "
     "per-stage list, each row folding the stage facts and its sanity-per-item, so the "
-    "stages are never listed twice. Without the flag the raw stages list is returned and "
+    "stages are never listed twice. If nothing was rankable the raw stages list is "
+    "returned with warnings naming the exclusions. Without the flag the raw stages list "
+    "is returned and "
     "paged on its own. That ranking is an ordering and evidence, never a "
     "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
     "byproducts/synthesis are not modeled. A stage drop past its expiry is still "
@@ -372,15 +406,20 @@ def _item_stage_drop_identity(stage: ItemStageDropFacts) -> dict[str, object]:
     §V77/§V66 (B79): no per-stage ``region`` -- an item's comparison is single-region
     (resolved PER region, §V5), so region is stated ONCE on the parent ``item`` +
     envelope provenance, never repeated on every stage row.
+
+    §V67 (B98): an absent optional scalar is OMITTED, never emitted null -- the §V26
+    warning naming a missing rate/cost is the sole absence signal.
     """
-    return {
-        "stage_game_id": stage.stage_game_id,
+    out: dict[str, object] = {"stage_game_id": stage.stage_game_id}
+    optional: dict[str, object | None] = {
         "stage_code": stage.stage_code,
         "sanity_cost": stage.sanity_cost,
         "quantity": stage.quantity,
         "times": stage.times,
         "drop_rate": _round_drop_rate(stage.drop_rate),
     }
+    out.update({k: v for k, v in optional.items() if v is not None})
+    return out
 
 
 def _item_stage_provenance_row(stage: ItemStageDropFacts) -> dict[str, object]:
@@ -403,37 +442,20 @@ def _item_efficiency_row(
     doubled the payload, B82). So this row carries both the §V55 evidence (``sanity_cost``
     / ``drop_rate`` / ``times`` -- the sample size) and the derived ``sanity_per_item``,
     keyed by the unambiguous ``id`` = ``stage_game_id`` with the ``stage_code`` shown
-    alongside as ``name`` (§V68). ``stage`` and ``row`` are the same stage (the service
-    aligns them 1:1), so ``stage.stage_game_id == row.id``.
+    alongside as ``name`` (§V68). ``stage`` is joined to ``row`` by id in
+    :func:`_shape_item`, so the pairing can never silently drift with ordering.
 
-    §V66.2: the penguin provenance shared by every row is hoisted to ``drop_provenance``;
-    ``deviation`` carries only the fields where this row differs. §V67: ``name`` /
-    ``expired`` are omitted at their default (no code / fresh). §V66.1: per-row
-    ``confidence`` and the typed deviation markers appear only where the row deviates
-    from the observation-level baseline (a thin sample / an expired cache); the
-    sentence explaining each marker is hoisted once onto the observation-level
-    limitations (§V85/B93), never repeated per row. The ``expired`` fact key doubles
-    as the row's expired marker (one signal per condition, §V66); the sample markers
-    ride ``flags``.
+    The row is the :func:`_item_stage_drop_identity` fields re-keyed, plus the derived
+    figure and the shared :func:`_apply_ranked_markers` deviation trailer.
     """
-    out: dict[str, object] = {
-        "id": stage.stage_game_id,
-        "sanity_cost": stage.sanity_cost,
-        "quantity": stage.quantity,
-        "times": stage.times,
-        "drop_rate": _round_drop_rate(stage.drop_rate),
-        "sanity_per_item": row.sanity_per_item,
-    }
-    if stage.stage_code is not None:  # §V67: display name omitted when absent, never null
-        out["name"] = stage.stage_code
-    out.update(deviation)  # §V66.2: only the provenance fields that deviate from the shared block
-    if stage.expired:
-        out["expired"] = True  # §V67: emitted only when true (default = fresh)
-    if row.confidence is not None:  # §V66.1: only where the row deviates from the baseline
-        out["confidence"] = row.confidence
-    if row.flags:
-        out["flags"] = list(row.flags)
-    return out
+    identity = _item_stage_drop_identity(stage)
+    out: dict[str, object] = {"id": identity.pop("stage_game_id")}
+    name = identity.pop("stage_code", None)
+    out.update(identity)
+    out["sanity_per_item"] = row.sanity_per_item
+    if name is not None:  # §V67: display name omitted when absent, never null
+        out["name"] = name
+    return _apply_ranked_markers(out, deviation, expired=stage.expired, row=row)
 
 
 def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
@@ -518,11 +540,14 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
         # above stay visible with the §V26 warnings, §V60).
         efficiency: dict[str, object] = {"warnings": list(result.warnings)}
         if result.observation is not None:
+            # Joined by id (not position), so the fold can never silently mis-pair a
+            # fact with another stage's figure if an ordering ever diverges upstream.
+            by_id = {
+                stage.stage_game_id: (stage, deviation)
+                for stage, deviation in zip(result.stages, deviations, strict=True)
+            }
             merged = [
-                _item_efficiency_row(stage, deviation, row)
-                for stage, deviation, row in zip(
-                    result.stages, deviations, result.observation.ranking, strict=True
-                )
+                _item_efficiency_row(*by_id[row.id], row) for row in result.observation.ranking
             ]
             efficiency["observation"] = ranked_observation_to_dict(
                 result.observation, ranking=merged

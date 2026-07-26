@@ -361,8 +361,11 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     # description states the coverage instead of the retired "not indexed" caveat.
     assert "zone or event name" in desc
     assert "matches the stages belonging to that zone or event" in desc
-    assert "en results are listed before cn" in desc
-    assert "pass server" in desc
+    # The stages variant states the exact-code exception honestly: exact stage-code
+    # matches lead regardless of region, THEN the en-before-cn order applies.
+    assert "exact stage-code matches are listed first" in desc
+    assert "en before cn" in desc
+    assert "Pass server" in desc
 
 
 def test_not_found_action_states_encn_only(conn: sqlite3.Connection) -> None:

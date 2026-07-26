@@ -20,12 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from arknights_mcp.analyzers.base import (
-    ANALYZER_VERSION,
-    EvidenceItem,
-    Observation,
-    dedupe_evidence,
-)
+from arknights_mcp.analyzers.base import ANALYZER_VERSION, EvidenceItem, Observation
 
 _CATEGORY = "module"
 #: Direct typed structural fields (attributeBlackboard / override bundles) drive
@@ -162,7 +157,7 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
         summary=f"{_label(module)} module attribute bonus changes across levels -- "
         f"{_stat_diff_summary(by_key)}.",
         confidence=_CONFIDENCE,
-        evidence=dedupe_evidence(evidence),
+        evidence=tuple(evidence),
         limitations=(),
     )
 
@@ -191,7 +186,7 @@ def _trait_observation(module: ModuleInput) -> Observation | None:
         title="Module alters operator trait",
         summary=f"{_label(module)} module alters the operator's base trait at level(s) {levels}.",
         confidence=_CONFIDENCE,
-        evidence=dedupe_evidence(evidence),
+        evidence=tuple(evidence),
         limitations=(),
     )
 
@@ -250,7 +245,7 @@ def _talent_observation(module: ModuleInput) -> Observation | None:
         title="Module adds or overrides a talent",
         summary=f"{_label(module)} module adds or enhances {named}.",
         confidence=_CONFIDENCE,
-        evidence=dedupe_evidence(evidence),
+        evidence=tuple(evidence),
         limitations=(),
     )
 

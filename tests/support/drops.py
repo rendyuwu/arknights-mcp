@@ -45,7 +45,9 @@ def seed_stage_drop(
     §V53 fresh/stale verdict. Opens a read-write handle (the candidate is written
     before it is promoted + reopened read-only), mirroring the T89 importer's shape;
     ``penguin_statistics`` is already seeded into ``data_sources`` by
-    ``build_candidate`` (the full registry, so the snapshot FK holds).
+    ``build_candidate`` (the full registry, so the snapshot FK holds). Callable more
+    than once per region to seed several items onto one stage (the snapshot insert
+    is idempotent, mirroring the importer's one-snapshot-per-region shape).
     """
     conn = sqlite3.connect(str(path))
     try:
@@ -55,7 +57,7 @@ def seed_stage_drop(
         ).fetchone()[0]
         snapshot_id = f"pg:{region}"
         conn.execute(
-            "INSERT INTO source_snapshots (snapshot_id, source_id, server, fetched_at, "
+            "INSERT OR IGNORE INTO source_snapshots (snapshot_id, source_id, server, fetched_at, "
             "imported_at, manifest_hash, status, field_policy_version) VALUES "
             "(?, 'penguin_statistics', ?, '2026-07-19T00:00:00+00:00', "
             "'2026-07-19T00:00:00+00:00', 'ph', 'imported', '1')",

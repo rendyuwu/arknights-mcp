@@ -183,18 +183,22 @@ def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistr
     data = body["data"]
     assert data["server"] == "en"  # type: ignore[index]
     snaps = data["snapshots"]  # type: ignore[index]
-    # §V66/B78 (T157): region + the (snapshot_id, imported_at) pair live on the
-    # top-level ``server`` + envelope provenance -- the snapshot rows carry only the
-    # source/age extras. Rows stay server-less here (§V77: region stated once for a
-    # region-scoped resource), unlike the multi-region tool's inline join key
+    # §V66/B78 (T157): region + ``imported_at`` live on the top-level ``server`` +
+    # envelope provenance; each snapshot row keeps the source/age extras PLUS its
+    # ``snapshot_id`` -- the §V87 inline join key that ties the row to its
+    # provenance entry (one region holds several active snapshots, so position
+    # cannot). Rows stay server-less here (§V77: region stated once for a
+    # region-scoped resource), unlike the multi-region tool's inline region key
     # (§V87/B96); null commit/version keys are scrubbed (§V67/B96).
-    assert snaps
-    for s in snaps:
-        assert "server" not in s and "snapshot_id" not in s and "imported_at" not in s
-        assert s["source_id"]
-        assert "commit_sha" not in s and "upstream_version" not in s
     prov = body["provenance"]
     assert isinstance(prov, list) and prov and prov[0]["server"] == "en"
+    prov_ids = {p["snapshot_id"] for p in prov}
+    assert snaps
+    for s in snaps:
+        assert "server" not in s and "imported_at" not in s
+        assert s["source_id"]
+        assert s["snapshot_id"] in prov_ids
+        assert "commit_sha" not in s and "upstream_version" not in s
 
 
 def test_banners_read_is_region_scoped_ok_list(resources: ResourceRegistry) -> None:

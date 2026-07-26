@@ -16,6 +16,7 @@ database:
 from __future__ import annotations
 
 from arknights_mcp.analyzers import ANALYZER_VERSION
+from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.analyzers.module import (
     ModuleAnalysisContext,
     ModuleInput,
@@ -255,8 +256,12 @@ def test_byte_identical_talent_evidence_collapses_to_one_row() -> None:
         ),
     )
     talent = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["talent_change"]
-    assert len(talent.evidence) == 1  # type: ignore[attr-defined]
-    row = talent.evidence[0]  # type: ignore[attr-defined]
+    # The dedup home is the shared wire emit (observation_to_dict applies
+    # dedupe_evidence for every analyzer, §V37); asserting through the same helper
+    # pins the collapse without coupling this analyzer test to the MCP layer.
+    deduped = dedupe_evidence(talent.evidence)  # type: ignore[attr-defined]
+    assert len(deduped) == 1
+    row = deduped[0]
     assert row.count == 12
     assert row.note == "module level 2; module level 3"
     assert "token effect" in talent.summary  # type: ignore[attr-defined]
@@ -277,8 +282,9 @@ def test_identical_trait_evidence_across_levels_collapses() -> None:
         )
     )
     trait = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["trait_change"]
-    assert len(trait.evidence) == 1  # type: ignore[attr-defined]
-    row = trait.evidence[0]  # type: ignore[attr-defined]
+    deduped = dedupe_evidence(trait.evidence)  # type: ignore[attr-defined]
+    assert len(deduped) == 1
+    row = deduped[0]
     assert row.count == 2 and row.value == 2
     assert row.note == "module level 2; module level 3"
     assert "level(s) 2, 3" in trait.summary  # type: ignore[attr-defined]

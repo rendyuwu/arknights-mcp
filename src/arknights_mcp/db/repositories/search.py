@@ -2,10 +2,12 @@
 
 The single parameterized SQL surface for the ``search_entities`` service: one FTS5
 ``MATCH`` query over ``entity_fts`` with optional region (``server``) and
-``entity_type`` filters, ordered region-major (en before cn, B97) then best-first
-(bm25 ``rank``) and bounded by an already-clamped ``limit`` (§V19). Every runtime
-value -- the MATCH expression, the filters, the limit -- is bound through ``?``
-placeholders; the FTS match
+``entity_type`` filters, bounded by an already-clamped ``limit`` (§V19). Membership
+in the bounded set is best-match-first (bm25 ``rank``) so a strong hit in either
+region is never evicted by weaker matches from the other; the selected set is then
+displayed region-major (en before cn, B97) with deterministic tie-breaks. Every
+runtime value -- the MATCH expression, the filters, the limit -- is bound through
+``?`` placeholders; the FTS match
 expression is built by the service from tokenized input so no FTS operator or SQL
 syntax can be smuggled in (§V2/§V18). Rows come back as flat typed hits carrying
 their region (§V5); the service shapes them.
@@ -40,13 +42,25 @@ class SearchHitRow:
     difficulty: str | None
 
 
+# The B97 deterministic region order (en before cn), as a build-time SQL fragment
+# parameterized ONLY by a literal column reference we author -- one §V37 home so the
+# two queries below can never drift on region order. No runtime value is ever
+# interpolated (§V2).
+def _region_order(server_col: str) -> str:
+    return f"(CASE WHEN {server_col} = 'en' THEN 0 ELSE 1 END)"
+
+
 # The ``(? IS NULL OR col = ?)`` pairs make server / entity_type optional filters
-# while keeping every value bound (no interpolation, §V2). Ordering is region-major
-# then bm25 ``rank``: an unfiltered search lists every en hit before any cn hit
-# (deterministic region order, B97 -- bm25 ties were previously broken by insert
-# order, so ``results[0]`` could be either region), and within a region bm25 keeps
-# best-match-first. The region CASE compares against the constant literal ``'en'``
-# only -- no runtime value is interpolated (§V2).
+# while keeping every value bound (no interpolation, §V2).
+#
+# MEMBERSHIP vs DISPLAY (B97): the inner query selects the top-``limit`` hits by bm25
+# ``rank`` ALONE (ties broken by the region CASE then ``game_id``, so the boundary is
+# deterministic) -- a strong cn match is never evicted from the bounded result set by
+# a pile of weaker en matches. The outer query then DISPLAYS that set region-major
+# (every en hit before any cn hit, then rank, then ``game_id`` for stable ties), which
+# is the deterministic ``results[0]`` contract B97 wanted: twin en/cn documents have
+# equal bm25 rank, so the en twin deterministically leads. Both CASEs compare against
+# the constant literal ``'en'`` only (§V2).
 #
 # The ``LEFT JOIN stages`` surfaces the §V70 stage variant tag: a stage hit
 # carries its ``stages.difficulty`` (``entity_pk`` == ``stage_pk`` for a stage
@@ -65,8 +79,10 @@ class SearchHitRow:
 # query time. Aliases still feed the FTS ``name`` document at build time (operator
 # self-aliases, §T98), so an operator remains matchable by appellation.
 _SEARCH_SQL = (
+    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty FROM ("
     "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
-    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty "
+    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+    "rank AS score "
     "FROM entity_fts "
     "LEFT JOIN stages s "
     "ON entity_fts.entity_type = 'stage' "
@@ -75,22 +91,28 @@ _SEARCH_SQL = (
     "WHERE entity_fts MATCH ? "
     "AND (? IS NULL OR entity_fts.server = ?) "
     "AND (? IS NULL OR entity_fts.entity_type = ?) "
-    "ORDER BY (CASE WHEN entity_fts.server = 'en' THEN 0 ELSE 1 END), rank "
+    f"ORDER BY rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
     "LIMIT ?"
+    ") "
+    f"ORDER BY {_region_order('server')}, score, game_id"
 )
 
 # ``search_stages`` (§T33): stage-scoped FTS, but a stage whose ``stage_code``
 # equals the raw query (case-insensitive) is pulled to the top ahead of bm25
-# ``rank`` -- an exact code match ("4-4") beats a fuzzier name/game-id hit. The
-# exact-code candidate is bound (§V2), never interpolated. Within each exact/non-
-# exact group, region orders deterministically (en before cn, constant literal
-# only -- B97: an unfiltered "1-7" must not surface the cn row first) and ``rank``
-# breaks ties within a region. The ``LEFT JOIN stages`` surfaces the §V70 difficulty
-# variant tag on every stage hit (see ``_SEARCH_SQL``); the WHERE already scopes to
+# ``rank`` -- an exact code match ("4-4") beats a fuzzier name/game-id hit, in BOTH
+# the membership cut and the display order. The exact-code candidate is bound (§V2),
+# never interpolated. Membership within the exact/non-exact groups is bm25-first with
+# the deterministic region/game_id tie-break; display within each group is
+# region-major (en before cn) then rank (B97 -- an unfiltered "1-7" must not surface
+# the cn row first). The ``LEFT JOIN stages`` surfaces the §V70 difficulty variant
+# tag on every stage hit (see ``_SEARCH_SQL``); the WHERE already scopes to
 # ``entity_type = 'stage'`` so the join always resolves to the hit's own stage row.
 _STAGE_SEARCH_SQL = (
+    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty FROM ("
     "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
-    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty "
+    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+    "(CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END) AS exact_grp, "
+    "rank AS score "
     "FROM entity_fts "
     "LEFT JOIN stages s "
     "ON s.stage_pk = entity_fts.entity_pk "
@@ -98,9 +120,10 @@ _STAGE_SEARCH_SQL = (
     "WHERE entity_fts MATCH ? "
     "AND entity_fts.entity_type = 'stage' "
     "AND (? IS NULL OR entity_fts.server = ?) "
-    "ORDER BY (CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END), "
-    "(CASE WHEN entity_fts.server = 'en' THEN 0 ELSE 1 END), rank "
+    f"ORDER BY exact_grp, rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
     "LIMIT ?"
+    ") "
+    f"ORDER BY exact_grp, {_region_order('server')}, score, game_id"
 )
 
 
@@ -154,5 +177,5 @@ class SearchRepository(Repository):
         ``server`` is an optional region filter (§V5); ``limit`` is pre-clamped to
         the §V19 bound. Every value is bound (§V2).
         """
-        params = (match, server, server, exact_code, limit)
+        params = (exact_code, match, server, server, limit)
         return [_to_hit(r) for r in self._all(_STAGE_SEARCH_SQL, params)]

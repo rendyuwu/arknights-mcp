@@ -319,12 +319,15 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
             data = dict(status.to_dict())
             data["server"] = server
             data["status"] = env_status
-            # §V66/B78: the envelope ``provenance`` carries (snapshot_id, imported_at)
-            # here too -- snapshot rows keep only the source/commit/version/age extras.
-            # Unlike the multi-region tool, rows stay server-less: this resource is
-            # region-scoped and the top-level ``server`` states the region once
-            # (§V77); a per-row repeat would be the dup §V87 carves out. Null
-            # commit/version keys omitted by the shared extras view (§V67/§V37).
+            # §V66/B78: the envelope ``provenance`` carries ``imported_at`` here too;
+            # each snapshot row keeps the source/commit/version/age extras PLUS its
+            # ``snapshot_id`` join key (§V87 -- one region holds several active
+            # snapshots, so the id, not position, joins a row to its provenance
+            # entry). Unlike the multi-region tool, rows stay server-less: this
+            # resource is region-scoped and the top-level ``server`` states the
+            # region once (§V77); a per-row repeat would be the dup §V87 carves out.
+            # Null commit/version/age keys omitted by the shared extras view
+            # (§V67/§V37).
             data["snapshots"] = [s.to_provenance_extras() for s in snapshots]
             data["warnings"] = list(warnings)
             data["suggested_action"] = suggested_action
@@ -399,8 +402,8 @@ _STAGE_DESCRIPTION = (
 )
 _STATUS_DESCRIPTION = (
     "Active-build data status for one region: schema + analyzer version, active "
-    "snapshots (source, age, commit/version when known, import time in provenance), "
-    "and any staleness warnings."
+    "snapshots (source, snapshot id, age, commit/version when known; import time in "
+    "provenance, joined on snapshot id), and any staleness warnings."
 )
 _BANNERS_DESCRIPTION = (
     "Banner ARCHIVE metadata for one region: each pool's id, display name, open/end "

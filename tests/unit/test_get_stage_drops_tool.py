@@ -243,9 +243,62 @@ def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     assert set(data) == {"stage", "drop_provenance", "drops", "efficiency"}
     assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
+    # §V67: the absent quantity/times/drop_rate are OMITTED, never emitted null --
+    # the §V26 warning naming the missing rate is the sole absence signal.
+    raw = data["drops"][0]  # type: ignore[index]
+    assert "drop_rate" not in raw and "times" not in raw and "quantity" not in raw
     eff = data["efficiency"]
     assert "observation" not in eff  # type: ignore[operator]
     assert any("sugar" in w for w in eff["warnings"])  # type: ignore[index]
+
+
+def test_partial_ranking_keeps_unrankable_drop_raw(tmp_path: Path) -> None:
+    # B95 residual rule: when a ranking exists, a drop the analyzer could NOT rank
+    # (absent drop_rate) keeps its raw facts -- identity, sample, expired flag,
+    # provenance -- in the ``drops`` list next to the §V26 warning that names it.
+    # Turning ON the additive efficiency flag never deletes a fact (§V53/§V47), and
+    # no item appears in both lists.
+    path = _candidate(tmp_path)
+    seed_stage_drop(path, expires_at=FUTURE_EXPIRY)
+    seed_stage_drop(
+        path,
+        expires_at=PAST_EXPIRY,
+        item_game_id="zerodrop",
+        item_display_name="Zero Drop",
+        drop_rate=None,
+        times=5000,
+    )
+    conn = open_read_only(path)
+    env = _handler(conn)(server="en", stage_code="4-4", include_efficiency=True)
+    # The expired drop is the unrankable one -- the stale verdict must still hold AND
+    # stay verifiable from the visible residual row.
+    assert env.status == "data_stale"
+    data = env.to_dict()["data"]
+    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency"}
+    ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
+    assert [r["id"] for r in ranking] == ["sugar"]
+    drops = data["drops"]
+    assert isinstance(drops, list)
+    assert [d["item_game_id"] for d in drops] == ["zerodrop"]
+    residual = drops[0]
+    assert residual["expired"] is True  # the stale signal stays visible (§V53)
+    assert residual["times"] == 5000
+    assert "drop_rate" not in residual and "quantity" not in residual  # §V67
+    assert any("zerodrop" in w for w in data["efficiency"]["warnings"])  # type: ignore[index]
+
+
+def test_tiny_positive_drop_rate_never_rounds_to_zero(tmp_path: Path) -> None:
+    # §V76 underflow guard: a positive rate below the 4dp step keeps 4 significant
+    # figures on the wire -- a ranked row must never claim drop_rate 0.0 (the value
+    # the analyzer excludes as "does not drop") beside a finite sanity_per_item.
+    path = _candidate(tmp_path)
+    seed_stage_drop(path, drop_rate=1e-05, times=100_000)
+    conn = open_read_only(path)
+    env = _handler(conn)(server="en", stage_code="4-4", include_efficiency=True)
+    assert env.status == "ok"
+    row = env.to_dict()["data"]["efficiency"]["observation"]["ranking"][0]  # type: ignore[index]
+    assert row["drop_rate"] == 1e-05
+    assert row["sanity_per_item"] == 1_800_000.0  # 18 / 1e-05, derivable from the row
 
 
 def test_expired_efficiency_downgraded_below_recommendation(

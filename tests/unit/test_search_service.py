@@ -18,6 +18,7 @@ import pytest
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.db.migrations import build_database
+from arknights_mcp.db.repositories.search import SearchRepository
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.services.search import MAX_LIMIT, search_entities, search_stages
@@ -424,3 +425,92 @@ def test_unfiltered_stage_search_ranks_en_exact_code_first(
     assert [h.server for h in exact] == sorted(
         (h.server for h in exact), key=lambda s: 0 if s == "en" else 1
     )
+
+
+# --- membership vs display (B97): region order never evicts a better match ------
+
+
+@pytest.fixture
+def saturated_conn() -> sqlite3.Connection:
+    """A scratch index where >= limit weak en docs compete with one strong cn doc.
+
+    12 en documents carry the query token buried in a long name (weak bm25); the
+    single cn document IS the token (short doc, strongest bm25). Membership in the
+    bounded result set must be best-match-first, so the cn row survives; display is
+    then region-major (en before cn). The stub ``stages`` table satisfies the §V70
+    difficulty LEFT JOIN.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        """
+        CREATE VIRTUAL TABLE entity_fts USING fts5(
+            game_id, name, aliases, stage_code, tags,
+            entity_type UNINDEXED, server UNINDEXED, entity_pk UNINDEXED,
+            tokenize = 'unicode61'
+        );
+        CREATE TABLE stages (stage_pk INTEGER, server TEXT, difficulty TEXT);
+        """
+    )
+    for i in range(12):
+        conn.execute(
+            "INSERT INTO entity_fts (game_id, name, aliases, stage_code, tags, "
+            "entity_type, server, entity_pk) VALUES (?, ?, '', '', '', 'item', 'en', ?)",
+            (f"en_item_{i:02d}", f"chip catalyst pack alpha beta gamma delta {i:02d}", i + 1),
+        )
+    conn.execute(
+        "INSERT INTO entity_fts (game_id, name, aliases, stage_code, tags, "
+        "entity_type, server, entity_pk) VALUES "
+        "('cn_item_chip', 'chip', '', '', '', 'item', 'cn', 100)"
+    )
+    return conn
+
+
+def test_region_order_never_evicts_stronger_cn_match(saturated_conn: sqlite3.Connection) -> None:
+    # B97 asked for deterministic ORDER, not membership: with >= limit weak en
+    # matches, the strongest hit (cn) must stay IN the bounded set -- membership is
+    # bm25-first -- while the returned set still lists en before cn.
+    rows = SearchRepository(saturated_conn).search(
+        '"chip"', server=None, entity_type=None, limit=10
+    )
+    assert len(rows) == 10
+    servers = [r.server for r in rows]
+    assert "cn" in servers  # the strongest match is never displaced by weaker en hits
+    assert servers == sorted(servers, key=lambda s: 0 if s == "en" else 1)
+    assert rows[-1].game_id == "cn_item_chip"
+
+
+def test_stage_region_order_never_evicts_stronger_cn_match() -> None:
+    # Same membership rule for the stage query's non-exact group: the exact-code
+    # group leads, then bm25 decides membership and region only decides display.
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        """
+        CREATE VIRTUAL TABLE entity_fts USING fts5(
+            game_id, name, aliases, stage_code, tags,
+            entity_type UNINDEXED, server UNINDEXED, entity_pk UNINDEXED,
+            tokenize = 'unicode61'
+        );
+        CREATE TABLE stages (stage_pk INTEGER, server TEXT, difficulty TEXT);
+        """
+    )
+    for i in range(12):
+        conn.execute(
+            "INSERT INTO entity_fts (game_id, name, aliases, stage_code, tags, "
+            "entity_type, server, entity_pk) VALUES (?, ?, '', ?, '', 'stage', 'en', ?)",
+            (
+                f"en_stage_{i:02d}",
+                f"lone trail outskirts approach segment part {i:02d}",
+                f"LT-{i:02d}",
+                i + 1,
+            ),
+        )
+    conn.execute(
+        "INSERT INTO entity_fts (game_id, name, aliases, stage_code, tags, "
+        "entity_type, server, entity_pk) VALUES "
+        "('cn_stage_trail', 'trail', '', 'TR-1', '', 'stage', 'cn', 100)"
+    )
+    rows = SearchRepository(conn).search_stages(
+        '"trail"', exact_code="trail", server=None, limit=10
+    )
+    assert len(rows) == 10
+    assert any(r.game_id == "cn_stage_trail" for r in rows)

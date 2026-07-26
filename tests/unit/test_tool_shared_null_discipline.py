@@ -49,16 +49,20 @@ def test_hoist_surfaces_only_the_deviant_row() -> None:
     assert deviations == [{}, {}, {"snapshot_id": "pg:cn", "expires_at": "t9"}]
 
 
-def test_hoist_tie_breaks_by_first_seen() -> None:
-    # Two distinct rows, one each -> the tie breaks to the first-seen row (deterministic
-    # + reproducible, §V26), and the later row is the deviation.
+def test_hoist_tie_breaks_by_content_not_input_order() -> None:
+    # Two distinct rows, one each -> the tie breaks on row CONTENT, so the shared
+    # block is identical no matter how the caller orders its rows (deterministic +
+    # reproducible, §V26 -- efficiency mode reorders the fold input, and the two
+    # modes must never disagree on which block is "shared").
     rows = [
         {"snapshot_id": "a", "expires_at": "future"},
         {"snapshot_id": "b", "expires_at": "past"},
     ]
-    shared, deviations = hoist_drop_provenance(rows)
-    assert shared == {"snapshot_id": "a", "expires_at": "future"}
-    assert deviations == [{}, {"snapshot_id": "b", "expires_at": "past"}]
+    shared_fwd, dev_fwd = hoist_drop_provenance(rows)
+    shared_rev, dev_rev = hoist_drop_provenance(list(reversed(rows)))
+    assert shared_fwd == shared_rev == {"snapshot_id": "b", "expires_at": "past"}
+    assert dev_fwd == [{"snapshot_id": "a", "expires_at": "future"}, {}]
+    assert dev_rev == [{}, {"snapshot_id": "a", "expires_at": "future"}]
 
 
 def test_hoist_empty_input() -> None:

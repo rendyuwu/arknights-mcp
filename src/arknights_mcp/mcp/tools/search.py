@@ -45,23 +45,34 @@ from arknights_mcp.services.search import SearchHit, SearchResult, search_entiti
 #: bound-model parsing happens in the tool handler *before* this runs (§V18/§V19).
 SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 
-#: Search-coverage + region-order notes shared VERBATIM by both sibling search
-#: descriptions (§V75: same rule stated in both, one home §V37; short client-facing
-#: sentences, §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) --
-#: say so where the client reads, instead of letting a ja query die as a bare
-#: not_found; zone/event display names ARE indexed as stage aliases (T179), so
-#: "Lone Trail" surfaces that event's stages. Region order: the repository orders
-#: en before cn deterministically (B97), so the ``results[0]`` grab is predictable
-#: and the escape hatch (server filter / per-row server field) is named.
+#: Search-coverage + region-order notes shared by both sibling search descriptions
+#: (§V75: same rule stated in both, one home §V37; short client-facing sentences,
+#: §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) -- say so where
+#: the client reads, instead of letting a ja query die as a bare not_found;
+#: zone/event display names ARE indexed as stage aliases (T179), so "Lone Trail"
+#: surfaces that event's stages. Region order (B97): membership in the bounded
+#: result set is best-match-first across both regions; the returned set is then
+#: listed en before cn (search_stages lists exact stage-code matches ahead of the
+#: region order), so the ``results[0]`` grab is predictable and the escape hatch
+#: (server filter / per-row server field) is named. The en/cn-only clause is one
+#: constant because the not_found actions repeat it -- one home, three readers.
+_EN_CN_ONLY_CLAUSE = "names are indexed in English and Chinese only"
 _COVERAGE_NOTE = (
-    "Names are indexed in English and Chinese only; Japanese or Korean names will "
+    _EN_CN_ONLY_CLAUSE[:1].upper() + _EN_CN_ONLY_CLAUSE[1:] + "; Japanese or Korean names will "
     "not match. Matching is exact-token with prefix support; typos and fuzzy "
     "queries will not match. A zone or event name (for example Lone Trail) matches "
     "the stages belonging to that zone or event."
 )
 _REGION_ORDER_NOTE = (
-    "Without a server filter both regions are searched and en results are listed "
-    "before cn; pass server to scope one region and read each row's server field."
+    "Without a server filter both regions are searched, the strongest matches are "
+    "kept, and en results are listed before cn; pass server to scope one region and "
+    "read each row's server field."
+)
+_STAGES_REGION_ORDER_NOTE = (
+    "Without a server filter both regions are searched and the strongest matches are "
+    "kept; exact stage-code matches are listed first (en before cn among them), then "
+    "the remaining results en before cn. Pass server to scope one region and read "
+    "each row's server field."
 )
 
 _ENTITIES_TOOL_NAME = "search_entities"
@@ -90,7 +101,10 @@ _STAGES_TOOL_DESCRIPTION = (
     "difficulty variant tag (NORMAL, FOUR_STAR challenge, TOUGH, or EASY), so a "
     "normal stage and its challenge, tough, or easy variant that share a code and "
     "name stay distinguishable. Results are bounded "
-    "(default 10, max 50) and en/cn are never mixed. " + _COVERAGE_NOTE + " " + _REGION_ORDER_NOTE
+    "(default 10, max 50) and en/cn are never mixed. "
+    + _COVERAGE_NOTE
+    + " "
+    + _STAGES_REGION_ORDER_NOTE
 )
 
 #: Fixed, safe copy for the typed ``not_found`` envelopes (§V23 -- no query echo,
@@ -99,12 +113,11 @@ _STAGES_TOOL_DESCRIPTION = (
 _ENTITIES_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
 _ENTITIES_NOT_FOUND_ACTION = (
     "broaden the query, drop the server/entity_type filter, or check the spelling; "
-    "names are indexed in English and Chinese only"
+    + _EN_CN_ONLY_CLAUSE
 )
 _STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
 _STAGES_NOT_FOUND_ACTION = (
-    "broaden the query, drop the server filter, or check the stage code; "
-    "names are indexed in English and Chinese only"
+    "broaden the query, drop the server filter, or check the stage code; " + _EN_CN_ONLY_CLAUSE
 )
 
 #: Fixed, safe copy for the §V50 region-availability verdicts, shared by both

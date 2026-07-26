@@ -315,7 +315,10 @@ def _ranking_row(
         sample_size=sample_size,
         expired=expired,
     )
-    deviates = eff.confidence != _CONF_STABLE or bool(eff.flags)
+    # Confidence is the single deviation signal: every flag-appending branch in
+    # `_efficiency` also lowers confidence, and the module asserts pin the reduced
+    # constants strictly below `_CONF_STABLE`, so flags can never appear alone.
+    deviates = eff.confidence != _CONF_STABLE
     row = RankingRow(
         id=entity_id,
         name=name,
