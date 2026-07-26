@@ -47,17 +47,17 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 
 #: Search-coverage + region-order notes shared VERBATIM by both sibling search
 #: descriptions (§V75: same rule stated in both, one home §V37; short client-facing
-#: sentences, §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) and
-#: zone/event names are not indexed (B97) -- say so where the client reads, instead
-#: of letting a ja query or "Lone Trail" die as a bare not_found. Region order: the
-#: repository orders en before cn deterministically (B97), so the ``results[0]``
-#: grab is predictable and the escape hatch (server filter / per-row server field)
-#: is named.
+#: sentences, §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) --
+#: say so where the client reads, instead of letting a ja query die as a bare
+#: not_found; zone/event display names ARE indexed as stage aliases (T179), so
+#: "Lone Trail" surfaces that event's stages. Region order: the repository orders
+#: en before cn deterministically (B97), so the ``results[0]`` grab is predictable
+#: and the escape hatch (server filter / per-row server field) is named.
 _COVERAGE_NOTE = (
     "Names are indexed in English and Chinese only; Japanese or Korean names will "
     "not match. Matching is exact-token with prefix support; typos and fuzzy "
-    "queries will not match. Zone and event names are not indexed; find stages by "
-    "stage code or stage name."
+    "queries will not match. A zone or event name (for example Lone Trail) matches "
+    "the stages belonging to that zone or event."
 )
 _REGION_ORDER_NOTE = (
     "Without a server filter both regions are searched and en results are listed "

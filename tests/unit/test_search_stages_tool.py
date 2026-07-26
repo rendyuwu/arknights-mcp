@@ -357,7 +357,10 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "English and Chinese only" in desc
     assert "Japanese or Korean" in desc
     assert "fuzzy" in desc
-    assert "Zone and event names are not indexed" in desc
+    # T179: zone/event names now ride stage documents as aliases -- the
+    # description states the coverage instead of the retired "not indexed" caveat.
+    assert "zone or event name" in desc
+    assert "matches the stages belonging to that zone or event" in desc
     assert "en results are listed before cn" in desc
     assert "pass server" in desc
 

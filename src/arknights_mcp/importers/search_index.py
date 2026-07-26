@@ -10,7 +10,10 @@ columns (``game_id`` + ``name`` + ``aliases`` + ``stage_code`` + ``tags``).
 Sources per entity type:
 
 * enemy  -> ``enemies`` (name) + ``enemy_aliases`` (aliases);
-* stage  -> ``stages`` (name + ``stage_code``);
+* stage  -> ``stages`` (name + ``stage_code``) + its zone/event display name from
+  ``zones`` as the stage's alias (T179 -- "Lone Trail" finds the stages in that
+  event; the zone itself is not a queryable entity, so the name rides the stage
+  documents instead of a zone document, §V73);
 * operator -> ``operators`` (name + ``tag_json`` -> tags) + ``operator_aliases``;
 * item -> ``items`` (name; no alias/code/tag table -- T142/§V73).
 
@@ -43,7 +46,15 @@ _ENEMY_SQL = (
     "WHERE a.enemy_pk = e.enemy_pk) "
     "FROM enemies e"
 )
-_STAGE_SQL = "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code FROM stages s"
+# A stage's alias is its zone/event display name (T179): one zone per stage via
+# the zone_pk FK, so no GROUP_CONCAT and no B22 ordering concern -- the document
+# bytes stay deterministic. The join is region-guarded (z.server = s.server, §V5)
+# so a stage can never borrow a display name from the other region's zone row.
+_STAGE_SQL = (
+    "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code, z.display_name "
+    "FROM stages s "
+    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server"
+)
 _OPERATOR_SQL = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.tag_json, "
     "(SELECT GROUP_CONCAT(a.alias, ' ' ORDER BY a.alias) FROM operator_aliases a "
@@ -82,8 +93,8 @@ def build_search_index(conn: sqlite3.Connection) -> int:
     for enemy_pk, server, game_id, name, aliases in conn.execute(_ENEMY_SQL):
         rows.append(("enemy", server, enemy_pk, game_id, name, aliases, None, None))
 
-    for stage_pk, server, game_id, name, stage_code in conn.execute(_STAGE_SQL):
-        rows.append(("stage", server, stage_pk, game_id, name, None, stage_code, None))
+    for stage_pk, server, game_id, name, stage_code, zone_name in conn.execute(_STAGE_SQL):
+        rows.append(("stage", server, stage_pk, game_id, name, zone_name, stage_code, None))
 
     for operator_pk, server, game_id, name, tag_json, aliases in conn.execute(_OPERATOR_SQL):
         tags = _tags_from_json(tag_json)

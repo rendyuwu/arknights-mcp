@@ -286,6 +286,96 @@ def test_item_locator_feeds_get_item_drops(tmp_path: Path) -> None:
         assert resolved is not None
 
 
+# --- T179: zone/event display name as stage alias -------------------------------
+
+
+def test_zone_name_finds_stage_via_pipeline(conn: sqlite3.Connection) -> None:
+    # T179: the fixture stage's zone is "Chapter 4" (zone_table.json); the
+    # in-pipeline index build carries the zone name on the stage document, so a
+    # zone-name query surfaces the stage in both search tools.
+    hits = search_entities(conn, query="Chapter").hits
+    assert any(h.entity_type == "stage" and h.game_id == "main_04-04" for h in hits)
+    stage_hits = search_stages(conn, query="Chapter").hits
+    assert any(h.game_id == "main_04-04" for h in stage_hits)
+
+
+def _seed_zone_and_stage(
+    writer: sqlite3.Connection,
+    provenance_id: int,
+    *,
+    server: str,
+    zone_game_id: str,
+    zone_name: str | None,
+    stage_game_id: str,
+    stage_name: str,
+) -> None:
+    cur = writer.execute(
+        "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
+        (server, zone_game_id, zone_name, "ACTIVITY"),
+    )
+    writer.execute(
+        "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
+        "provenance_id) VALUES (?,?,?,?,?,?)",
+        (server, stage_game_id, "XX-1", stage_name, int(cur.lastrowid), provenance_id),
+    )
+
+
+def test_event_name_finds_only_its_stages(tmp_path: Path) -> None:
+    # T179: an event display name matches the stages in that zone -- and only
+    # those; a stage in a different zone stays out of the result set.
+    path = tmp_path / "zone.sqlite"
+    writer = build_database(path)
+    provenance_id = _seed_provenance(writer)
+    _seed_zone_and_stage(
+        writer,
+        provenance_id,
+        server="en",
+        zone_game_id="act33side",
+        zone_name="Lone Trail",
+        stage_game_id="act33side_01",
+        stage_name="Frontier",
+    )
+    _seed_zone_and_stage(
+        writer,
+        provenance_id,
+        server="en",
+        zone_game_id="act34side",
+        zone_name="Other Event",
+        stage_game_id="act34side_01",
+        stage_name="Elsewhere",
+    )
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="Lone Trail").hits
+        assert [h.game_id for h in hits] == ["act33side_01"]
+        assert hits[0].entity_type == "stage"
+
+
+def test_zone_alias_is_region_guarded(tmp_path: Path) -> None:
+    # §V5: the index join is guarded on z.server = s.server -- a stage whose
+    # zone_pk (wrongly) points at the other region's zone row must not borrow
+    # that region's zone name into its search document.
+    path = tmp_path / "zone_region.sqlite"
+    writer = build_database(path)
+    provenance_id = _seed_provenance(writer)
+    cur = writer.execute(
+        "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
+        ("cn", "act33side", "Lone Trail", "ACTIVITY"),
+    )
+    writer.execute(
+        "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
+        "provenance_id) VALUES (?,?,?,?,?,?)",
+        ("en", "act33side_01", "XX-1", "Frontier", int(cur.lastrowid), provenance_id),
+    )
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        assert search_entities(conn, query="Lone Trail", server="en").hits == ()
+
+
 # --- deterministic region order (B97) ------------------------------------------
 
 
