@@ -106,6 +106,25 @@ IMAGE_REFS_LIMITATION = (
 )
 
 
+#: §V88/§V26 (§T181, B99): the standing partial-gallery limitation attached whenever a
+#: response emits SKIN refs -- today only ``get_operator`` (banners carry portrait+avatar,
+#: enemies a sprite; neither emits the skin category). The derived ``_1b``/``_2b`` skin
+#: URLs are the BASE outfit's E0/E2 art ONLY: skin names and paid/event outfits live in
+#: ``skin_table.json`` (not imported; the real fix is the ADR-gated §T182 import), and
+#: alternate playable forms (``char_patch_table.json``, also not imported) are separate
+#: characters -- so the deferral must be VISIBLE, never a silently partial gallery a
+#: client would present as complete (the exact wrong hedge B99 reported). One shared
+#: block per envelope (§V66/§V72 pattern), never a per-ref repeat. Shared: one wording,
+#: one home (§V37). Client-facing text, so no internal cites/jargon (§V71) -- the cites
+#: live in this comment, never the string; short sentences (§V71 f).
+SKIN_GALLERY_PARTIAL_LIMITATION = (
+    "Skin image URLs cover only the base outfit's E0 and E2 art. The outfit list is "
+    "incomplete: skin names and paid or event outfits are not present in this build. "
+    "Alternate playable forms of an operator are separate characters and are also not "
+    "present in this build."
+)
+
+
 #: §V83/§V66 (T168, B88): the client-facing note describing how a module's trait/talent
 #: change bundles are deduped + labelled, folded into the description of both tools that emit
 #: modules (``get_operator`` include_modules + ``compare_operator_modules``). Duplicate/subset

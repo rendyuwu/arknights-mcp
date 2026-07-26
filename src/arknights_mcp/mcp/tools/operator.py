@@ -36,6 +36,7 @@ from arknights_mcp.mcp.tools._shared import (
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
+    SKIN_GALLERY_PARTIAL_LIMITATION,
     ConnectionProvider,
     has_unnamed_cost_item,
     run_guarded,
@@ -285,8 +286,12 @@ def _shape(
     # gate), the standing derived-unverified limitation rides along -- the URLs are
     # derived + never validated by the server (§V63), so a dead link is never presented
     # as a verified fact. Absent when the gate is off (no refs -> no caveat).
+    # §V88/§V26 (§T181, B99): the operator emit is the one surface carrying SKIN refs,
+    # and those cover the base outfit's E0/E2 art only -- the partial-gallery limitation
+    # rides the same gate so the deferral (skin names, paid outfits, alt forms) is
+    # visible, never a silently partial gallery.
     if image_refs_enabled:
-        limitations = (*limitations, IMAGE_REFS_LIMITATION)
+        limitations = (*limitations, IMAGE_REFS_LIMITATION, SKIN_GALLERY_PARTIAL_LIMITATION)
     return ok(
         {
             "operator": _operator_to_dict(

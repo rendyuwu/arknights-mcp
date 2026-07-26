@@ -164,7 +164,7 @@ T177|x|M16 `get_data_status` row join key + null scrub (B96): `server` inline pe
 T178|x|M16 search coverage docs (B97): both search descriptions state en/cn-names-only (⊥ ja/ko), ⊥ event/zone names, ⊥ fuzzy; deterministic region order \| server-filter hint|V71,V75
 T179|x|M16 zone/event display-name alias rows → `entity_fts` ("Lone Trail" finds its stages; additive)|V73,V37,V21
 T180|x|M16 absent-scalar omit (B98): drop null `attack_type`/`attack_range`/`block_behavior`/`recommended_level`/`max_life_points` keys; limitation sole signal|V67,V21
-T181|.|M16 skin-ref partial-gallery limitation floor (B99)|V88,V26
+T181|x|M16 skin-ref partial-gallery limitation floor (B99)|V88,V26
 T182|.|skin gallery real fix (ADR): import `skin_table.json` skin id+display name+char_id (allowlist + `FIELD_POLICY_VERSION` bump) → named complete skin refs; ? `char_patch_table.json` alt-form link (amiya2/amiya3)|V88,V18,V21
 T183|.|image_refs `base_url` hoist (breaking → ADR bundle): shared base + per-ref relative path|V66,V21
 

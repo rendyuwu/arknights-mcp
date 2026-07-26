@@ -32,7 +32,10 @@ from arknights_mcp.db.migrations import build_database
 from arknights_mcp.importers.banners import ParsedBanner, insert_banners
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.tools import build_tool_registry
-from arknights_mcp.mcp.tools._shared import IMAGE_REFS_LIMITATION
+from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_LIMITATION,
+    SKIN_GALLERY_PARTIAL_LIMITATION,
+)
 from arknights_mcp.mcp.tools.banners import build_get_banners_spec
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
 from arknights_mcp.mcp.tools.operator import build_get_operator_spec
@@ -319,6 +322,39 @@ def test_no_image_refs_limitation_when_banner_page_emits_no_ref(tmp_path: Path) 
     ops = env.to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
     assert all("image_refs" not in o for o in ops)
     assert IMAGE_REFS_LIMITATION not in env.limitations
+
+
+def test_skin_gallery_partial_limitation_rides_operator_emit(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    # §V88/§V26 (§T181, B99): the operator emit carries SKIN refs covering only the base
+    # outfit's E0/E2 art, so the partial-gallery limitation rides the same gate, exactly
+    # ONCE per envelope (§V66/§V72 pattern) -- the deferral (skin names, paid outfits,
+    # alt forms) is visible, never a silently partial gallery a client presents as
+    # complete.
+    op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_AMIYA
+    )
+    assert op_env.limitations.count(SKIN_GALLERY_PARTIAL_LIMITATION) == 1
+
+    # Surfaces that emit NO skin category (enemy sprite; banner portrait+avatar) never
+    # carry the skin-gallery caveat -- it tracks an actual skin ref.
+    enemy_env = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_SLIME
+    )
+    assert SKIN_GALLERY_PARTIAL_LIMITATION not in enemy_env.limitations
+    banner_conn = open_read_only(_seed_banner_db(tmp_path))
+    banner_env = build_get_banners_spec(lambda: banner_conn, image_refs_enabled=True).handler(
+        server="en"
+    )
+    assert SKIN_GALLERY_PARTIAL_LIMITATION not in banner_env.limitations
+
+
+def test_no_skin_gallery_limitation_when_gate_off(conn: sqlite3.Connection) -> None:
+    # §V88: gate OFF -> no skin ref emitted -> no partial-gallery caveat (it rides
+    # exactly when a skin link is present, like the §V72 derived-unverified caveat).
+    op_env = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
+    assert SKIN_GALLERY_PARTIAL_LIMITATION not in op_env.limitations
 
 
 def test_banner_avatar_survives_absent_portrait(tmp_path: Path) -> None:
