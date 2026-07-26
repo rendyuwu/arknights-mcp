@@ -55,7 +55,7 @@ class TileGridFacts:
 
     A stage grid was emitted as one object per tile (13x9 = 117 objects, ~3 page
     round-trips). The board is instead laid out as ``rows`` -- one string per grid
-    row, the top row (highest ``y``) first so it reads like the rendered map --
+    row, the top row (``y == 0``) first so it reads like the rendered map --
     where each character is a ``legend`` symbol (``absent_symbol`` where the source
     stored no tile for that cell). ``legend`` maps each symbol back to its typed
     tile fields. A whole board is now a handful of short strings plus a small
@@ -99,9 +99,10 @@ def build_tile_grid(
     right), then lays every grid position out as one character -- the tile's symbol,
     or ``_GRID_ABSENT_SYMBOL`` where the source stored no tile. A full board becomes
     a handful of short strings plus a small legend instead of N tile objects, so it
-    rides one response rather than three pages. Rows are emitted top row (highest
-    ``y``) first so the text grid reads the same way up as the rendered image
-    (:func:`~arknights_mcp.services.stage_map_render.render_stage_map`).
+    rides one response rather than three pages. Rows are emitted in ascending ``y``,
+    the top row (``y == 0``) first, so the text grid reads the same way up as the real
+    board and as the rendered image (§V95;
+    :func:`~arknights_mcp.services.stage_map_render.render_stage_map`).
 
     Returns ``None`` when there is nothing to lay out (no tiles / no extent), when the
     board extent exceeds :data:`MAX_MAP_CELLS` cells (extent-product guard, parity with
@@ -128,7 +129,12 @@ def build_tile_grid(
     symbols: dict[_TileTypeKey, str] = {}
     legend: list[TileLegendEntry] = []
     rows: list[str] = []
-    for y in range(eff_h - 1, -1, -1):
+    # §V95/B127: y is the source map's ROW INDEX and row 0 is the board's TOP row,
+    # so rows are emitted in ASCENDING y. The earlier descending loop assumed a y-up
+    # grid and shipped every board vertically mirrored -- 7-2's top-edge enemy spawns
+    # read as bottom-edge ones. Route rows are rebased into this same frame at import,
+    # so a position and a grid row index the same board.
+    for y in range(eff_h):
         chars: list[str] = []
         for x in range(eff_w):
             tile = by_xy.get((x, y))

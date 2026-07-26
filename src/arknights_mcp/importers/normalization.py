@@ -488,7 +488,12 @@ def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], int, int]:
-    """Grid ``map`` + flat ``tiles`` defs → normalized tiles with derived x/y."""
+    """Grid ``map`` + flat ``tiles`` defs → normalized tiles with derived x/y.
+
+    ``y`` is the ``map`` ROW INDEX, and ``map[0]`` is the board's TOP row on screen,
+    so the derived frame is y-DOWN: ``y == 0`` is the top, ``y == height - 1`` the
+    bottom (§V95). This is the canonical grid frame every consumer reads -- no
+    consumer may re-flip it, and the route frame is converted INTO it below."""
     grid = map_data.get("map")
     tile_defs = map_data.get("tiles")
     if not isinstance(grid, list) or not isinstance(tile_defs, list):
@@ -520,8 +525,44 @@ def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], in
     return tiles, width, height
 
 
-def _normalize_routes(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
-    """Real routes (no ``routeIndex``) → normalized routes with a positional index."""
+def _to_grid_frame(position: Any, height: int) -> Any:
+    """Convert one raw route ``{row, col}`` into the canonical tile frame (§V95/B127).
+
+    Upstream route positions count ``row`` from the BOTTOM of the board while the
+    tile ``y`` derived by :func:`_normalize_tiles` counts from the TOP, so storing the
+    raw value puts two opposite frames in one database: the rendered overlay then
+    draws route markers on the wrong tiles, and a client cross-referencing a position
+    against ``tile_grid`` reads a mirrored board. ``row`` is rebased to
+    ``height - 1 - row`` so a position indexes the same board as tile ``(x, y)``.
+
+    ``col`` is untouched (columns share an origin). A non-dict, a missing/non-int
+    ``row``, or a non-positive ``height`` passes through unchanged -- a malformed
+    position is preserved as-is rather than fabricated into a plausible one (§V26)."""
+    if height <= 0 or not isinstance(position, dict):
+        return position
+    row = position.get("row")
+    if not isinstance(row, int) or isinstance(row, bool):
+        return position
+    return {**position, "row": height - 1 - row}
+
+
+def _normalize_checkpoint(checkpoint: Any, height: int) -> Any:
+    """One raw checkpoint with its nested ``position`` rebased to the tile frame (§V95).
+
+    Only ``position`` is a grid coordinate. ``reachOffset`` is a sub-tile world offset,
+    not a board position, so it is left untouched (§V95) -- rebasing it would invent a
+    meaning the source does not carry."""
+    if not isinstance(checkpoint, dict) or "position" not in checkpoint:
+        return _to_grid_frame(checkpoint, height)  # bare {row, col} fallback shape
+    return {**checkpoint, "position": _to_grid_frame(checkpoint["position"], height)}
+
+
+def _normalize_routes(level_raw: dict[str, Any], height: int) -> list[dict[str, Any]]:
+    """Real routes (no ``routeIndex``) → normalized routes with a positional index.
+
+    Positions are rebased from the upstream bottom-origin ``row`` into the canonical
+    top-origin tile frame (:func:`_to_grid_frame`, §V95/B127) so routes and tiles index
+    one board."""
     routes: list[dict[str, Any]] = []
     raw_routes = level_raw.get("routes")
     if not isinstance(raw_routes, list):
@@ -530,12 +571,17 @@ def _normalize_routes(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(raw, dict):
             continue
         route_index = raw.get("routeIndex")
+        checkpoints = raw.get("checkpoints", [])
         routes.append(
             {
                 "routeIndex": route_index if isinstance(route_index, int) else i,
-                "startPosition": raw.get("startPosition"),
-                "endPosition": raw.get("endPosition"),
-                "checkpoints": raw.get("checkpoints", []),
+                "startPosition": _to_grid_frame(raw.get("startPosition"), height),
+                "endPosition": _to_grid_frame(raw.get("endPosition"), height),
+                "checkpoints": (
+                    [_normalize_checkpoint(c, height) for c in checkpoints]
+                    if isinstance(checkpoints, list)
+                    else checkpoints
+                ),
             }
         )
     return routes
@@ -629,7 +675,9 @@ def normalize_level(level_raw: Any) -> Any:
     Idempotent: a synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
     is returned unchanged. A real level (grid ``map``) is fully transformed —
     tiles gain derived x/y, ``passableMask``→``passable``, routes/waves gain
-    positional indices, and wave ``key`` actions resolve to enemy ids (§V29; B6 (c)).
+    positional indices, route positions are rebased from the upstream bottom-origin
+    ``row`` into the tiles' top-origin frame (§V95/B127), and wave ``key`` actions
+    resolve to enemy ids (§V29; B6 (c)).
     """
     if not _level_is_grid(level_raw):
         return level_raw
@@ -645,7 +693,7 @@ def normalize_level(level_raw: Any) -> Any:
             "environment": map_data.get("environment", {}),
             "tiles": tiles,
         },
-        "routes": _normalize_routes(level_raw),
+        "routes": _normalize_routes(level_raw, height),
         "waves": _normalize_waves(level_raw, ref_map),
         "variants": _collect_variants(level_raw),
     }

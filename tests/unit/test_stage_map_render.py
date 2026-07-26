@@ -13,6 +13,7 @@ Two layers:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -143,9 +144,10 @@ def test_render_draws_every_checkpoint_including_grid_corner() -> None:
     )
     assert res.image is not None
     svg = res.image.svg
-    # (0, 0) centre on a height-9 board is "20,212" -- it IS drawn as a real path point,
-    # in order, between the two other waypoints (no corner zig-zag: type-filtered upstream).
-    assert "points='44,188 20,212 188,164'" in svg
+    # (0, 0) is the board's TOP-LEFT cell in the y-down grid frame (§V95), centre
+    # "20,20" -- it IS drawn as a real path point, in order, between the two other
+    # waypoints (no corner zig-zag: type-filtered upstream).
+    assert "points='44,44 20,20 188,68'" in svg
 
 
 def test_render_dedups_identical_route_geometry() -> None:
@@ -294,6 +296,38 @@ def test_start_equals_end_with_checkpoints_is_a_real_loop_kept() -> None:
     assert res.image is not None
     assert "class='rs'" in res.image.svg
     assert "class='rp'" in res.image.svg
+
+
+# --- §V95/B127: tiles and route markers share ONE y-down grid frame -----------
+
+
+def test_tiles_and_route_markers_share_one_y_down_frame() -> None:
+    # §V95/B127: the grid frame is y-DOWN (y is the source map's row index, row 0 =
+    # the board's TOP row), the same direction SVG y grows. The render used to flip
+    # rows (eff_h - 1 - y), which drew the board upside-down; route positions were
+    # read in the raw bottom-origin route frame and so came out the other way up,
+    # putting start/end markers on the wrong tiles. Both now map straight through.
+    res = render_stage_map(
+        width=1,
+        height=3,
+        cells=[
+            MapCell(0, 0, "LOWLAND", "NONE", True, tile_key="tile_start"),
+            MapCell(0, 1, "LOWLAND", "MELEE", True, tile_key="tile_road"),
+            MapCell(0, 2, "LOWLAND", "NONE", True, tile_key="tile_end"),
+        ],
+        routes=[MapRoute(start=(0, 0), end=(0, 2))],
+    )
+    assert res.image is not None
+    svg = res.image.svg
+    # y grows downward: the y=0 tile rect sits above the y=2 one.
+    tops = [int(m) for m in re.findall(r"<rect class='[wmhpf]' x='8' y='(\d+)'", svg)]
+    assert tops == sorted(tops) and len(tops) == 3
+    # The start marker's centre falls inside the FIRST rect (y=0, the top row) and the
+    # end marker's inside the last -- a mirrored frame would swap them.
+    start_cy = int(re.search(r"class='rs'[^>]*cy='(\d+)'", svg).group(1))  # type: ignore[union-attr]
+    end_cy = int(re.search(r"class='re'[^>]*cy='(\d+)'", svg).group(1))  # type: ignore[union-attr]
+    assert tops[0] < start_cy < tops[0] + 24
+    assert tops[2] < end_cy < tops[2] + 24
 
 
 # --- B94/§V86: byte economy -- shared style, one grid path, marker dedup -------

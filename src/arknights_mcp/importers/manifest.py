@@ -19,7 +19,12 @@ from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.hashing import record_hash, sha256_hex
 
 #: Transform/normalization version stamped on provenance (§V17).
-TRANSFORM_VERSION = "1"
+#:
+#: ``2`` (B127/§V95): route positions are rebased from the upstream bottom-origin
+#: ``row`` into the tiles' top-origin grid frame at import, so an identical snapshot
+#: now imports different bytes. The bump is what makes a rebuild promote over an
+#: unchanged snapshot instead of no-opping as "content unchanged" (§V92).
+TRANSFORM_VERSION = "2"
 
 
 def _now_iso() -> str:

@@ -28,8 +28,9 @@ def _tile(x: int, y: int, key: str, passable: bool = True) -> StageTileRow:
 
 
 def test_build_tile_grid_encodes_rows_top_first_with_reused_symbols() -> None:
-    # §V74 (c): rows are laid out top row (highest y) first; two tiles of the SAME
-    # (tile_key, height_type, buildable_type, passable) type share ONE legend symbol.
+    # §V95/§V74 (c): the grid frame is y-DOWN -- y is the source map's row index and
+    # row 0 is the board's TOP row -- so rows are emitted in ASCENDING y. Two tiles of
+    # the SAME (tile_key, height_type, buildable_type, passable) type share ONE symbol.
     tiles = [
         _tile(0, 0, "tile_road"),
         _tile(1, 0, "tile_road"),
@@ -45,17 +46,34 @@ def test_build_tile_grid_encodes_rows_top_first_with_reused_symbols() -> None:
     grid = build_tile_grid(tiles, width=3, height=2)
     assert grid is not None
     assert grid.absent_symbol == "."
-    # Top row (y=1) carries only the wall at x=2; bottom row (y=0) the two roads.
+    # Top row (y=0) carries the two roads; bottom row (y=1) only the wall at x=2.
     assert len(grid.rows) == 2 and all(len(r) == 3 for r in grid.rows)
-    assert grid.rows[0][0] == "." and grid.rows[0][1] == "."  # absent cells
+    assert grid.rows[1][0] == "." and grid.rows[1][1] == "."  # absent cells
     # The two road cells reuse one symbol (identical tile type).
-    assert grid.rows[1][0] == grid.rows[1][1]
-    assert grid.rows[1][2] == "."
+    assert grid.rows[0][0] == grid.rows[0][1]
+    assert grid.rows[0][2] == "."
     by_symbol = {e.symbol: e for e in grid.legend}
-    assert by_symbol[grid.rows[1][0]].tile_key == "tile_road"
-    assert by_symbol[grid.rows[0][2]].tile_key == "tile_wall"
+    assert by_symbol[grid.rows[0][0]].tile_key == "tile_road"
+    assert by_symbol[grid.rows[1][2]].tile_key == "tile_wall"
     # Two distinct types -> two legend entries (road reused, not duplicated).
     assert len(grid.legend) == 2
+
+
+def test_build_tile_grid_row_index_equals_tile_y() -> None:
+    # §V95/B127: the emitted row index IS the tile's y. y comes from the source map's
+    # row index (map[0] = the board's TOP row), so any flip here ships the whole board
+    # vertically mirrored -- which is how 7-2's top-edge enemy spawns were reported as
+    # bottom-edge ones. Pinned on an asymmetric column so a mirror cannot pass.
+    tiles = [_tile(0, y, f"tile_{y}") for y in range(4)]
+    grid = build_tile_grid(tiles, width=1, height=4)
+    assert grid is not None
+    by_symbol = {e.symbol: e for e in grid.legend}
+    assert [by_symbol[row[0]].tile_key for row in grid.rows] == [
+        "tile_0",
+        "tile_1",
+        "tile_2",
+        "tile_3",
+    ]
 
 
 def test_build_tile_grid_none_when_no_tiles() -> None:

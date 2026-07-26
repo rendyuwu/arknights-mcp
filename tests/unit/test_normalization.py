@@ -289,6 +289,75 @@ def test_positional_route_and_wave_indices_injected() -> None:
     assert level["waves"][0]["maxTimeWaiting"] == 10.0  # from maxTimeWaitingForNextWave
 
 
+# --- route positions rebased into the tile frame (§V95, B127) -----------------
+
+_FRAME_LEVEL = {
+    "mapData": {
+        # 4 rows: map[0] is the board's TOP row, so tile y is top-origin.
+        "map": [[0], [1], [1], [2]],
+        "tiles": [
+            {"tileKey": "tile_start", "heightType": "LOWLAND", "passableMask": "ALL"},
+            {"tileKey": "tile_road", "heightType": "LOWLAND", "passableMask": "ALL"},
+            {"tileKey": "tile_end", "heightType": "LOWLAND", "passableMask": "ALL"},
+        ],
+    },
+    # Upstream route rows count from the BOTTOM: the spawn sits on map row 0 (the top
+    # tile) and is written as row 3; the exit sits on map row 3 and is written as row 0.
+    "routes": [
+        {
+            "startPosition": {"row": 3, "col": 0},
+            "endPosition": {"row": 0, "col": 0},
+            "checkpoints": [
+                {"type": "MOVE", "position": {"row": 2, "col": 0}},
+                {"type": "WAIT", "position": {"row": 0, "col": 0}, "time": 5},
+            ],
+        }
+    ],
+}
+
+
+def test_route_positions_rebased_into_tile_frame() -> None:
+    """§V95/B127: upstream route ``row`` is BOTTOM-origin while tile ``y`` is
+    TOP-origin. Storing the raw value puts two opposite frames in one database -- the
+    render then draws route markers on the wrong tiles and a client cross-referencing a
+    position against ``tile_grid`` reads a mirrored board. Rows are rebased to
+    ``height - 1 - row`` so a position indexes the same board as a tile's ``(x, y)``."""
+    level = normalize_level(_FRAME_LEVEL)
+    by_xy = {(t["x"], t["y"]): t for t in level["mapData"]["tiles"]}
+    route = level["routes"][0]
+    start, end = route["startPosition"], route["endPosition"]
+    assert (start["col"], start["row"]) == (0, 0)  # was row 3 upstream
+    assert (end["col"], end["row"]) == (0, 3)  # was row 0 upstream
+    # The rebased positions now land on the tiles they describe.
+    assert by_xy[(start["col"], start["row"])]["tileKey"] == "tile_start"
+    assert by_xy[(end["col"], end["row"])]["tileKey"] == "tile_end"
+
+
+def test_checkpoint_positions_rebased_and_siblings_untouched() -> None:
+    """§V95: a checkpoint's nested ``position`` is rebased like start/end; every other
+    checkpoint field (``type``, ``time``) rides through unchanged."""
+    checkpoints = normalize_level(_FRAME_LEVEL)["routes"][0]["checkpoints"]
+    assert [c["position"]["row"] for c in checkpoints] == [1, 3]  # was 2, 0
+    assert [c["position"]["col"] for c in checkpoints] == [0, 0]  # columns untouched
+    assert [c["type"] for c in checkpoints] == ["MOVE", "WAIT"]
+    assert checkpoints[1]["time"] == 5
+
+
+def test_malformed_route_position_passes_through_unrebased() -> None:
+    """§V26: a position without an integer ``row`` is preserved as-is, never
+    fabricated into a plausible coordinate."""
+    level = normalize_level(
+        {
+            "mapData": {"map": [[0]], "tiles": [{"tileKey": "t", "passableMask": "ALL"}]},
+            "routes": [{"startPosition": {"col": 0}, "endPosition": None, "checkpoints": {}}],
+        }
+    )
+    route = level["routes"][0]
+    assert route["startPosition"] == {"col": 0}
+    assert route["endPosition"] is None
+    assert route["checkpoints"] == {}
+
+
 def test_wave_action_key_resolves_to_enemy_and_variant() -> None:
     """§V29 (c): a wave action names its enemy under ``key`` (resolved via
     ``enemyDbRefs``), not ``enemyId``; non-spawn actions are dropped."""

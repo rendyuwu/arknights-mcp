@@ -353,21 +353,25 @@ def _effective_extent(
     return max(eff_w, 0), max(eff_h, 0)
 
 
-def _cell_center(x: int, y: int, eff_h: int) -> tuple[int, int]:
+def _cell_center(x: int, y: int) -> tuple[int, int]:
     """Pixel centre of grid cell ``(x, y)``.
 
-    The game grid has ``y`` growing upward while SVG ``y`` grows downward, so the
-    row is flipped (``eff_h - 1 - y``) to render the board right-way-up.
+    The grid frame is y-DOWN (``y`` is the source map's row index and row 0 is the
+    board's TOP row, §V95) -- the same direction SVG ``y`` grows -- so the row maps
+    straight through and the board extent is no longer needed here. The earlier
+    ``eff_h - 1 - y`` flip assumed a y-up grid: it rendered every board upside-down,
+    while route markers (read in the raw bottom-origin route frame) came out the other
+    way up and so landed on the wrong tiles (B127).
     """
     cx = _PAD_PX + x * _CELL_PX + _CELL_PX // 2
-    cy = _PAD_PX + (eff_h - 1 - y) * _CELL_PX + _CELL_PX // 2
+    cy = _PAD_PX + y * _CELL_PX + _CELL_PX // 2
     return cx, cy
 
 
-def _cell_origin(x: int, y: int, eff_h: int) -> tuple[int, int]:
-    """Top-left pixel of grid cell ``(x, y)`` (row flipped like :func:`_cell_center`)."""
+def _cell_origin(x: int, y: int) -> tuple[int, int]:
+    """Top-left pixel of grid cell ``(x, y)`` (same y-down frame as :func:`_cell_center`)."""
     px = _PAD_PX + x * _CELL_PX
-    py = _PAD_PX + (eff_h - 1 - y) * _CELL_PX
+    py = _PAD_PX + y * _CELL_PX
     return px, py
 
 
@@ -395,13 +399,13 @@ def _draw_board(eff_w: int, eff_h: int) -> list[str]:
     ]
 
 
-def _draw_tiles(cells: Sequence[MapCell], eff_h: int) -> list[str]:
+def _draw_tiles(cells: Sequence[MapCell]) -> list[str]:
     """One rect per stored tile, coloured by its typed category, in ``(y, x)`` order.
 
     The colour rides the tile's shared class (§V86/B94), never a per-rect ``fill=``."""
     parts: list[str] = []
     for cell in sorted(cells, key=lambda c: (c.y, c.x)):
-        px, py = _cell_origin(cell.x, cell.y, eff_h)
+        px, py = _cell_origin(cell.x, cell.y)
         parts.append(
             f"<rect class='{_TILE_CLASS[_tile_fill(cell)]}' x='{px}' y='{py}' "
             f"width='{_CELL_PX}' height='{_CELL_PX}'/>"
@@ -455,7 +459,7 @@ def _drawable_routes(routes: Sequence[MapRoute]) -> list[MapRoute]:
     return [route for route in _distinct_route_geometries(routes) if not _is_degenerate(route)]
 
 
-def _draw_route_markers(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
+def _draw_route_markers(routes: Sequence[MapRoute]) -> list[str]:
     """Start/end markers + a checkpoint polyline for each already-drawable route.
 
     ``routes`` is the :func:`_drawable_routes` list (distinct geometry, degenerate routes
@@ -480,16 +484,16 @@ def _draw_route_markers(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
     for route in routes:
         if len(route.checkpoints) >= 2:
             points = " ".join(
-                f"{cx},{cy}" for cx, cy in (_cell_center(x, y, eff_h) for x, y in route.checkpoints)
+                f"{cx},{cy}" for cx, cy in (_cell_center(x, y) for x, y in route.checkpoints)
             )
             _emit(f"<polyline class='{_MARKER_CLASS[_MARK_PATH]}' points='{points}'/>")
         if route.start is not None:
-            cx, cy = _cell_center(route.start[0], route.start[1], eff_h)
+            cx, cy = _cell_center(route.start[0], route.start[1])
             _emit(
                 f"<circle class='{_MARKER_CLASS[_MARK_START]}' cx='{cx}' cy='{cy}' r='{radius}'/>"
             )
         if route.end is not None:
-            cx, cy = _cell_center(route.end[0], route.end[1], eff_h)
+            cx, cy = _cell_center(route.end[0], route.end[1])
             _emit(f"<circle class='{_MARKER_CLASS[_MARK_END]}' cx='{cx}' cy='{cy}' r='{radius}'/>")
     return parts
 
@@ -546,8 +550,8 @@ def render_stage_map(
     drawable_routes = _drawable_routes(routes)
     present = _present_colors(cells, drawable_routes)
     body: list[str] = _draw_board(eff_w, eff_h)
-    body += _draw_tiles(cells, eff_h)
-    body += _draw_route_markers(drawable_routes, eff_h)
+    body += _draw_tiles(cells)
+    body += _draw_route_markers(drawable_routes)
 
     svg = (
         f"<svg xmlns='http://www.w3.org/2000/svg' width='{pixel_width}' "

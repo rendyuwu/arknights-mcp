@@ -124,13 +124,14 @@ def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connecti
     assert grid["absent_symbol"] == "."  # type: ignore[index]
     assert len(grid["rows"]) == 5  # one string per grid row (height)  # type: ignore[index]
     assert all(len(row) == 8 for row in grid["rows"])  # width chars each  # type: ignore[index]
-    # Decode the two fixture tiles via the legend: tile_end at (7,4) is top-right,
-    # tile_start at (0,0) is bottom-left (rows[0] is the top row, y == height - 1).
+    # §V95: rows are top-first in a y-DOWN frame -- rows[y] is the tile row y. Decode
+    # the two fixture tiles via the legend: tile_start at (0,0) is top-left,
+    # tile_end at (7,4) is bottom-right.
     by_symbol = {e["symbol"]: e for e in grid["legend"]}  # type: ignore[index]
-    top_right = by_symbol[grid["rows"][0][7]]  # type: ignore[index]
-    bottom_left = by_symbol[grid["rows"][4][0]]  # type: ignore[index]
-    assert top_right["tile_key"] == "tile_end"
-    assert bottom_left["tile_key"] == "tile_start"
+    top_left = by_symbol[grid["rows"][0][0]]  # type: ignore[index]
+    bottom_right = by_symbol[grid["rows"][4][7]]  # type: ignore[index]
+    assert top_left["tile_key"] == "tile_start"
+    assert bottom_right["tile_key"] == "tile_end"
     # Every legend entry carries the four typed tile fields (§V18 allowlisted), no more.
     for entry in grid["legend"]:  # type: ignore[index]
         assert set(entry) == {"symbol", "tile_key", "height_type", "buildable_type", "passable"}

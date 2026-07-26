@@ -58,8 +58,11 @@ class RouteFacts:
 def _point_xy(decoded: object | None) -> tuple[int, int] | None:
     """Normalise a stored ``{"col", "row"}`` position to an ``(x, y)`` grid point.
 
-    The route position fragments are stored as ``{col, row}`` (§T20); the render
-    keys on ``(x, y) == (col, row)``. Returns ``None`` for any other shape (a NULL
+    The route position fragments are stored as ``{col, row}`` (§T20), already rebased
+    into the canonical top-origin grid frame at import (§V95/B127), so
+    ``(x, y) == (col, row)`` indexes the same board as a tile's ``(x, y)`` and as a
+    ``tile_grid`` row -- which is what lets the render draw tiles and route markers in
+    ONE frame. Returns ``None`` for any other shape (a NULL
     column, an empty set serialized as ``{}``, or a non-integer coordinate) so a
     malformed position is skipped, not fabricated (§V26)."""
     if isinstance(decoded, dict):
