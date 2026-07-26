@@ -22,6 +22,7 @@ end against the production read-only path (§V2). One test group per cited invar
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -149,25 +150,29 @@ def _enabled_registry() -> SourceRegistry:
 
 def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) -> None:
     handler = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler
-    op = handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]  # type: ignore[index]
+    data = handler(server="en", game_id=_AMIYA).to_dict()["data"]
+    # §T183/§V66: the shared base is hoisted ONCE at the data level; each ref carries a
+    # RELATIVE path the client joins onto it.
+    assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    op = data["operator"]  # type: ignore[index]
     refs = op["image_refs"]  # type: ignore[index]
     assert all(r["source_id"] == SOURCE_ID for r in refs)
     by_cat: dict[str, list[str]] = {}
     for r in refs:
-        by_cat.setdefault(r["category"], []).append(r["url"])
+        by_cat.setdefault(r["category"], []).append(r["path"])
     # §V63 verified shape: portrait _1/_2, avatar base/_2.
     assert by_cat["portrait"] == [
-        f"{BASE}/portrait/{_AMIYA}_1.png",
-        f"{BASE}/portrait/{_AMIYA}_2.png",
+        f"portrait/{_AMIYA}_1.png",
+        f"portrait/{_AMIYA}_2.png",
     ]
-    assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
+    assert by_cat["avatar"] == [f"avatar/{_AMIYA}.png", f"avatar/{_AMIYA}_2.png"]
     # §T182/§V88: the fixture snapshot carries skin_table.json, so the skin category is
     # the NAMED gallery -- one ref per imported operator_skins row (skin/<portraitId>b),
     # ordered by (skin_group_id, skin_id) -- not the derived _1b/_2b fallback pair.
     assert by_cat["skin"] == [
-        f"{BASE}/skin/{_AMIYA}_epoque%234b.png",
-        f"{BASE}/skin/{_AMIYA}_1b.png",
-        f"{BASE}/skin/char_1001_amiya2_2b.png",
+        f"skin/{_AMIYA}_epoque%234b.png",
+        f"skin/{_AMIYA}_1b.png",
+        "skin/char_1001_amiya2_2b.png",
     ]
     # §V78/B80: each ref carries the E0/E1/E2/skin/base variant label on the wire; a
     # default-art skin row (ILLUST_0/2) maps to e0/e2, a named outfit stays "skin".
@@ -201,16 +206,18 @@ def test_named_gallery_ref_fields(conn: sqlite3.Connection) -> None:
 
     alt = skins["char_1001_amiya2#2"]
     assert alt["alt_form"] is True  # ADR 0015: labeled, never silently folded
-    assert alt["url"] == f"{BASE}/skin/char_1001_amiya2_2b.png"
+    assert alt["path"] == "skin/char_1001_amiya2_2b.png"
 
 
 def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> None:
     handler = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler
-    enemy = handler(server="en", game_id=_SLIME).to_dict()["data"]["enemy"]  # type: ignore[index]
+    data = handler(server="en", game_id=_SLIME).to_dict()["data"]
+    assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    enemy = data["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
         {
             "category": "enemy",
-            "url": f"{BASE}/enemy/{_SLIME}.png",
+            "path": f"enemy/{_SLIME}.png",
             "variant": "base",
             "source_id": SOURCE_ID,
         }
@@ -222,7 +229,11 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
 ) -> None:
     conn = open_read_only(_seed_banner_db(tmp_path))
     handler = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler
-    ops = handler(server="en").to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
+    data = handler(server="en").to_dict()["data"]
+    # §T183/§V66: the base is hoisted ONCE at the data level for the WHOLE page -- never
+    # repeated per featured op or per ref.
+    assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    ops = data["banners"][0]["featured_ops"]  # type: ignore[index]
     resolved = {o["char_id"]: o for o in ops}
     # §V72/§V63/§V62: the resolved featured op (char_id == operator game_id) carries BOTH
     # portrait (E0/E2) AND avatar (base/E2) -- the avatar rides ALONGSIDE the portrait so
@@ -230,25 +241,25 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
     assert resolved[_AMIYA]["image_refs"] == [
         {
             "category": "portrait",
-            "url": f"{BASE}/portrait/{_AMIYA}_1.png",
+            "path": f"portrait/{_AMIYA}_1.png",
             "variant": "e0",
             "source_id": SOURCE_ID,
         },
         {
             "category": "portrait",
-            "url": f"{BASE}/portrait/{_AMIYA}_2.png",
+            "path": f"portrait/{_AMIYA}_2.png",
             "variant": "e2",
             "source_id": SOURCE_ID,
         },
         {
             "category": "avatar",
-            "url": f"{BASE}/avatar/{_AMIYA}.png",
+            "path": f"avatar/{_AMIYA}.png",
             "variant": "base",
             "source_id": SOURCE_ID,
         },
         {
             "category": "avatar",
-            "url": f"{BASE}/avatar/{_AMIYA}_2.png",
+            "path": f"avatar/{_AMIYA}_2.png",
             "variant": "e2",
             "source_id": SOURCE_ID,
         },
@@ -258,11 +269,44 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
 
 
 def test_disabled_emits_no_refs_anywhere(conn: sqlite3.Connection) -> None:
-    # Default (gate off) -> the additive field is absent on every surface.
+    # Default (gate off) -> the additive field is absent on every surface, and so is the
+    # hoisted base (§V67: no refs -> no base key).
     op = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
     assert "image_refs" not in op.to_dict()["data"]["operator"]  # type: ignore[index]
+    assert "image_refs_base_url" not in op.to_dict()["data"]  # type: ignore[operator]
     enemy = build_get_enemy_spec(lambda: conn).handler(server="en", game_id=_SLIME)
     assert "image_refs" not in enemy.to_dict()["data"]["enemy"]  # type: ignore[index]
+    assert "image_refs_base_url" not in enemy.to_dict()["data"]  # type: ignore[operator]
+
+
+def test_base_url_hoisted_once_and_join_rebuilds_verified_urls(
+    conn: sqlite3.Connection,
+) -> None:
+    # §T183/§V66 (ADR 0014): ONE base key per response; every ref path is RELATIVE
+    # (scheme-free), and base + "/" + path reconstructs the exact §V63-verified absolute
+    # URL -- the hoist changes bytes, never the resolvable link.
+    env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_AMIYA
+    )
+    payload = env.to_dict()
+    data = payload["data"]
+    base = data["image_refs_base_url"]  # type: ignore[index]
+    refs = data["operator"]["image_refs"]  # type: ignore[index]
+    assert json.dumps(payload).count("raw.githubusercontent.com") == 1  # base appears ONCE
+    for r in refs:
+        assert "url" not in r  # the absolute-url field is gone (fold, not a dup)
+        assert "://" not in r["path"] and not r["path"].startswith("/")
+    joined = [f"{base}/{r['path']}" for r in refs]
+    assert joined[0] == f"{BASE}/portrait/{_AMIYA}_1.png"
+    assert f"{BASE}/skin/{_AMIYA}_epoque%234b.png" in joined
+
+
+def test_no_base_url_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
+    # §V67/§T183: a page that emits no image_refs list emits no base key either --
+    # the hoisted base tracks actual refs exactly like the §V72 caveat.
+    conn = open_read_only(_seed_banner_db(tmp_path, with_operator=False))
+    env = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler(server="en")
+    assert "image_refs_base_url" not in env.to_dict()["data"]  # type: ignore[operator]
 
 
 def test_refs_enabled_gate_needs_both_config_and_registry() -> None:
@@ -395,8 +439,8 @@ def test_fallback_path_keeps_partial_limitation(tmp_path: Path) -> None:
         server="en", game_id=_AMIYA
     )
     refs = op_env.to_dict()["data"]["operator"]["image_refs"]  # type: ignore[index]
-    skin_urls = [r["url"] for r in refs if r["category"] == "skin"]
-    assert skin_urls == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
+    skin_paths = [r["path"] for r in refs if r["category"] == "skin"]
+    assert skin_paths == [f"skin/{_AMIYA}_1b.png", f"skin/{_AMIYA}_2b.png"]
     assert op_env.limitations.count(SKIN_GALLERY_PARTIAL_LIMITATION) == 1
     assert SKIN_ALT_FORM_NOTE not in op_env.limitations
 

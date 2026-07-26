@@ -25,6 +25,7 @@ from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_LIMITATION,
+    IMAGE_REFS_PATH_NOTE,
     LIST_FIELD_CONVENTION,
     ConnectionProvider,
     absent_field_limitation,
@@ -38,7 +39,11 @@ from arknights_mcp.services.enemies import (
     EnemyLevelFacts,
     get_enemy,
 )
-from arknights_mcp.services.image_refs import enemy_image_refs, image_ref_to_dict
+from arknights_mcp.services.image_refs import (
+    IMAGE_REFS_BASE_URL,
+    enemy_image_refs,
+    image_ref_to_dict,
+)
 
 _TOOL_NAME = "get_enemy"
 _TOOL_TITLE = "Get enemy"
@@ -47,9 +52,9 @@ _TOOL_DESCRIPTION = (
     "flags, attack/motion type, and the per-level stat block (hp, atk, def, res, "
     "attack interval in seconds, attack range, move speed, weight, life-point "
     "reduction) with immunities and abilities. When the image-reference source is "
-    "enabled, an additional image_refs list with the derived enemy sprite URL is "
-    "included; each ref carries a variant label (the enemy sprite is variant base). "
-    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "enabled, an additional image_refs list with the derived enemy sprite reference is "
+    "included. " + IMAGE_REFS_PATH_NOTE + " Each ref carries a variant label (the enemy "
+    "sprite is variant base). en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no enemy matched the given region and game_id"
@@ -124,8 +129,9 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
     """The typed enemy facts + ordered level variants (no prose; §V16/§V18).
 
     When ``image_refs_enabled`` (the combined §T120 config + registry gate), an additive
-    ``image_refs`` list with the DERIVED enemy sprite URL rides along (§V21/§V63); when the
-    gate is off the field is absent entirely (backward-compatible default).
+    ``image_refs`` list with the DERIVED enemy sprite ref rides along (§V21/§V63) -- a
+    relative path under the ``data``-level ``image_refs_base_url`` the shaper hoists once
+    (§T183/§V66); when the gate is off the field is absent entirely.
     """
     data: dict[str, object] = {
         "server": enemy.server,
@@ -167,8 +173,15 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
     limitations = _enemy_absent_field_limitations(result.enemy)
     if image_refs_enabled:
         limitations = (*limitations, IMAGE_REFS_LIMITATION)
+    data: dict[str, object] = {
+        "enemy": _enemy_to_dict(result.enemy, image_refs_enabled=image_refs_enabled)
+    }
+    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE; the ref
+    # carries only its relative path, so the base never repeats per ref.
+    if image_refs_enabled:
+        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
     return ok(
-        {"enemy": _enemy_to_dict(result.enemy, image_refs_enabled=image_refs_enabled)},
+        data,
         provenance=[
             Provenance(
                 server=result.enemy.server,

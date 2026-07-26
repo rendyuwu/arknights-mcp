@@ -106,6 +106,19 @@ IMAGE_REFS_LIMITATION = (
 )
 
 
+#: §T183/§V66 (ADR 0014): the shared description sentence for the base-url hoist, folded
+#: into every image-ref-emitting tool description (``get_operator`` / ``get_enemy`` /
+#: ``get_banners``). Each ref carries a RELATIVE ``path``; the shared base rides the
+#: response ONCE as ``image_refs_base_url`` -- the client joins them for the full URL
+#: instead of reading a repeated absolute ``url`` per ref. Shared: one wording, one home
+#: (§V37/§V84). Client-facing text, so no internal cites/jargon (§V71); short sentences
+#: (§V71 f).
+IMAGE_REFS_PATH_NOTE = (
+    "Each ref carries a path relative to the response's shared image_refs_base_url "
+    "field. Join base_url, a slash, and path for the full image URL."
+)
+
+
 #: §V88/§V26 (§T181, B99): the standing partial-gallery limitation attached whenever a
 #: response emits SKIN refs -- today only ``get_operator`` (banners carry portrait+avatar,
 #: enemies a sprite; neither emits the skin category). The derived ``_1b``/``_2b`` skin

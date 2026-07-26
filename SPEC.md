@@ -166,7 +166,7 @@ T179|x|M16 zone/event display-name alias rows → `entity_fts` ("Lone Trail" fin
 T180|x|M16 absent-scalar omit (B98): drop null `attack_type`/`attack_range`/`block_behavior`/`recommended_level`/`max_life_points` keys; limitation sole signal|V67,V21
 T181|x|M16 skin-ref partial-gallery limitation floor (B99)|V88,V26
 T182|x|skin gallery real fix (ADR): import `skin_table.json` skin id+display name+char_id (allowlist + `FIELD_POLICY_VERSION` bump) → named complete skin refs; ? `char_patch_table.json` alt-form link (amiya2/amiya3)|V88,V18,V21
-T183|.|image_refs `base_url` hoist (breaking → ADR bundle): shared base + per-ref relative path|V66,V21
+T183|x|image_refs `base_url` hoist (breaking → ADR bundle): shared base + per-ref relative path|V66,V21
 
 ## §B BUGS
 

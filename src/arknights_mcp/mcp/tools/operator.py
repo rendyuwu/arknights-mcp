@@ -35,6 +35,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_LIMITATION,
+    IMAGE_REFS_PATH_NOTE,
     MODULE_CHANGE_DEDUP_NOTE,
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
@@ -45,6 +46,7 @@ from arknights_mcp.mcp.tools._shared import (
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
 from arknights_mcp.services.image_refs import (
+    IMAGE_REFS_BASE_URL,
     image_ref_to_dict,
     named_skin_ref_to_dict,
     operator_identity_refs,
@@ -72,7 +74,9 @@ _TOOL_DESCRIPTION = (
     "and how many phases/skills/talents/modules exist) + provenance; set "
     "include_phases / include_skills / include_talents / include_modules to add each "
     "(bounded) heavy section. When the image-reference source is enabled, an additional "
-    "image_refs list of derived portrait/avatar/skin art URLs is included. Each ref carries "
+    "image_refs list of derived portrait/avatar/skin art references is included. "
+    + IMAGE_REFS_PATH_NOTE
+    + " Each ref carries "
     "a variant label naming the art: e0 (elite-0), e1 (elite-1), e2 (elite-2), base "
     "(avatar), or skin (a named outfit). On builds carrying the imported skin gallery, "
     "each skin ref also carries skin_id, plus skin_name and skin_group when the outfit is "
@@ -240,8 +244,9 @@ def _operator_to_dict(
     set); ``include_provenance`` toggles an *extra* in-``data`` provenance echo -- the
     envelope always carries the §V5 region provenance regardless. When
     ``image_refs_enabled`` (the combined §T120 config + registry gate), an additive
-    ``image_refs`` list of DERIVED portrait/avatar/skin URLs rides along (§V21/§V63);
-    when the gate is off the field is absent entirely (backward-compatible default).
+    ``image_refs`` list of DERIVED portrait/avatar/skin refs rides along (§V21/§V63) --
+    relative paths under the ``data``-level ``image_refs_base_url`` the shaper hoists
+    once (§T183/§V66); when the gate is off the field is absent entirely.
     """
     data: dict[str, object] = {
         "server": operator.server,
@@ -332,14 +337,19 @@ def _shape(
             limitations = (*limitations, SKIN_GALLERY_PARTIAL_LIMITATION)
         elif any(s.is_alt_form for s in operator.skins):
             limitations = (*limitations, SKIN_ALT_FORM_NOTE)
+    data: dict[str, object] = {
+        "operator": _operator_to_dict(
+            operator,
+            include_provenance=include_provenance,
+            image_refs_enabled=image_refs_enabled,
+        )
+    }
+    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE; every ref
+    # carries only its relative path, so the base never repeats per ref.
+    if image_refs_enabled:
+        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
     return ok(
-        {
-            "operator": _operator_to_dict(
-                operator,
-                include_provenance=include_provenance,
-                image_refs_enabled=image_refs_enabled,
-            )
-        },
+        data,
         provenance=[
             Provenance(
                 server=operator.server,

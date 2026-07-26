@@ -45,6 +45,22 @@ stays `"0.2"`. Each reshape is recorded here as it lands:
   change that folds into the still-unreleased v0.2 line, so `SCHEMA_VERSION` stays
   `"0.2"`.
 
+- **T183 — `image_refs` base-url hoist (§V66/§V22).** Every emitted ref repeated the
+  full 66-char mirror base (`https://raw.githubusercontent.com/yuanyan3060/
+  ArknightsGameResource/main`) inside its absolute `url` — a full operator gallery
+  (portrait 2 + avatar 2 + N skins) restated it 7+ times, and a banner page once per
+  ref per resolved featured op. The §V66.2 hoist rule (identical per-row value → one
+  shared block) now applies: each ref carries a RELATIVE `path`
+  (`portrait/char_002_amiya_1.png`) and the response emits the shared base ONCE as a
+  `data`-level `image_refs_base_url` on all three ref-bearing tools
+  (`get_operator` / `get_enemy` / `get_banners`, one uniform lookup — the B28
+  same-shape rule); the client joins `base_url + "/" + path` for the full URL, and
+  each tool description says so. The base key is present exactly when the response
+  emits ≥1 ref (§V67 — absent otherwise, same predicate as the §V72 standing
+  limitation). §V63 is untouched: paths stay query-time DERIVED, never stored, never
+  fetched, percent-encoding unchanged. Breaking (per-ref `url` removed/renamed) →
+  folds into the still-unreleased v0.2 line, so `SCHEMA_VERSION` stays `"0.2"`.
+
 ## Consequences
 
 - One fold contract across both drop tools: a client reads the ranked observation as

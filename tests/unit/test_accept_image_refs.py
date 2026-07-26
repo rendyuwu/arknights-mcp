@@ -191,23 +191,24 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
     # the NAMED skin gallery -- one skin/<portraitId>b ref per imported row (§T182/§V88),
     # each attributed.
     tools = _tools(conn, _registry(image_source_enabled=True))
-    op = (
-        tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]
-    )  # type: ignore[index]
+    data = tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]
+    # §T183/§V66 (ADR 0014): the shared base is hoisted once; refs carry relative paths.
+    assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    op = data["operator"]  # type: ignore[index]
     refs = op["image_refs"]  # type: ignore[index]
     assert all(r["source_id"] == SOURCE_ID for r in refs)
     by_cat: dict[str, list[str]] = {}
     for r in refs:
-        by_cat.setdefault(r["category"], []).append(r["url"])
+        by_cat.setdefault(r["category"], []).append(r["path"])
     assert by_cat["portrait"] == [
-        f"{BASE}/portrait/{_AMIYA}_1.png",
-        f"{BASE}/portrait/{_AMIYA}_2.png",
+        f"portrait/{_AMIYA}_1.png",
+        f"portrait/{_AMIYA}_2.png",
     ]
-    assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
+    assert by_cat["avatar"] == [f"avatar/{_AMIYA}.png", f"avatar/{_AMIYA}_2.png"]
     assert by_cat["skin"] == [
-        f"{BASE}/skin/{_AMIYA}_epoque%234b.png",
-        f"{BASE}/skin/{_AMIYA}_1b.png",
-        f"{BASE}/skin/char_1001_amiya2_2b.png",
+        f"skin/{_AMIYA}_epoque%234b.png",
+        f"skin/{_AMIYA}_1b.png",
+        "skin/char_1001_amiya2_2b.png",
     ]
     # §V78/B80: the variant label rides through the full shared-registry tool path;
     # default-art skin rows (ILLUST_0/2) map to e0/e2, the named outfit stays "skin".
@@ -223,13 +224,16 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
 
 
 def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> None:
-    # §V63: get_enemy carries the single derived enemy-sprite URL + source_id attribution.
+    # §V63: get_enemy carries the single derived enemy-sprite ref + source_id attribution;
+    # the shared base is hoisted once at the data level (§T183/§V66).
     tools = _tools(conn, _registry(image_source_enabled=True))
-    enemy = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]["enemy"]  # type: ignore[index]
+    data = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]
+    assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    enemy = data["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
         {
             "category": "enemy",
-            "url": f"{BASE}/enemy/{_SLIME}.png",
+            "path": f"enemy/{_SLIME}.png",
             "variant": "base",
             "source_id": SOURCE_ID,
         }
@@ -288,14 +292,14 @@ def test_accept_percent_encode_on_hash_plus_skin_id(tmp_path: Path) -> None:
             .handler(server="en", game_id=dirty)
             .to_dict()["data"]["operator"]
         )  # type: ignore[index]
-        urls = [r["url"] for r in op["image_refs"]]  # type: ignore[index]
-        assert urls, "expected derived refs for the seeded operator"
-        for url in urls:
-            assert "#" not in url and "+" not in url
-        skin = sorted(r["url"] for r in op["image_refs"] if r["category"] == "skin")  # type: ignore[index]
+        paths = [r["path"] for r in op["image_refs"]]  # type: ignore[index]
+        assert paths, "expected derived refs for the seeded operator"
+        for path in paths:
+            assert "#" not in path and "+" not in path
+        skin = sorted(r["path"] for r in op["image_refs"] if r["category"] == "skin")  # type: ignore[index]
         assert skin == [
-            f"{BASE}/skin/char_x_epoque%234%2Balt_1b.png",
-            f"{BASE}/skin/char_x_epoque%234%2Balt_2b.png",
+            "skin/char_x_epoque%234%2Balt_1b.png",
+            "skin/char_x_epoque%234%2Balt_2b.png",
         ]
     finally:
         conn.close()
@@ -332,12 +336,12 @@ def test_accept_refs_scoped_to_region_never_mixed(conn: sqlite3.Connection) -> N
     # en operator: en-only provenance + refs derived from the en game_id.
     en = tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()
     assert [p["server"] for p in en["provenance"]] == ["en"]  # type: ignore[index]
-    assert en["data"]["operator"]["image_refs"][0]["url"] == f"{BASE}/portrait/{_AMIYA}_1.png"  # type: ignore[index]
+    assert en["data"]["operator"]["image_refs"][0]["path"] == f"portrait/{_AMIYA}_1.png"  # type: ignore[index]
 
     # cn operator: cn-only provenance + its OWN derived refs (never the en set).
     cn = tools.get("get_operator").handler(server="cn", game_id=_CHEN).to_dict()
     assert [p["server"] for p in cn["provenance"]] == ["cn"]  # type: ignore[index]
-    assert cn["data"]["operator"]["image_refs"][0]["url"] == f"{BASE}/portrait/{_CHEN}_1.png"  # type: ignore[index]
+    assert cn["data"]["operator"]["image_refs"][0]["path"] == f"portrait/{_CHEN}_1.png"  # type: ignore[index]
 
     # Cross-region lookups are not_found with no data + no ref leak (en/cn never mixed).
     miss_cn = tools.get("get_operator").handler(server="cn", game_id=_AMIYA)

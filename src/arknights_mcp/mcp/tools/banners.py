@@ -32,6 +32,7 @@ from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_LIMITATION,
+    IMAGE_REFS_PATH_NOTE,
     ConnectionProvider,
     page_to_dict,
     run_guarded,
@@ -44,7 +45,11 @@ from arknights_mcp.services.banners import (
     FeaturedOpFacts,
     get_banners,
 )
-from arknights_mcp.services.image_refs import image_ref_to_dict, operator_banner_refs
+from arknights_mcp.services.image_refs import (
+    IMAGE_REFS_BASE_URL,
+    image_ref_to_dict,
+    operator_banner_refs,
+)
 
 _TOOL_NAME = "get_banners"
 _TOOL_TITLE = "Get banners"
@@ -61,9 +66,9 @@ _TOOL_DESCRIPTION = (
     "contains that text (case-insensitive). Results are newest-first and paged (bounded "
     "page/page_size). When the "
     "image-reference source is enabled, a featured operator that resolved to a present "
-    "operator also carries an image_refs list with its derived portrait and avatar URLs. "
-    "Each ref carries a variant label (e0/e2 for portrait, base/e2 for avatar). "
-    "en/cn are never mixed."
+    "operator also carries an image_refs list with its derived portrait and avatar "
+    "references. " + IMAGE_REFS_PATH_NOTE + " Each ref carries a variant label (e0/e2 "
+    "for portrait, base/e2 for avatar). en/cn are never mixed."
 )
 
 
@@ -72,7 +77,8 @@ def _featured_op_to_dict(op: FeaturedOpFacts, *, image_refs_enabled: bool) -> di
 
     When ``image_refs_enabled`` (the combined §T120 config + registry gate) AND the
     featured op soft-resolved to a present operator (§V62), an additive ``image_refs``
-    list with its DERIVED portrait + avatar URLs rides along -- the resolved ``char_id``
+    list with its DERIVED portrait + avatar refs rides along (relative paths under the
+    ``data``-level ``image_refs_base_url``, §T183/§V66) -- the resolved ``char_id``
     IS that operator's ``game_id`` (§V63). The avatar rides ALONGSIDE the portrait (§V72):
     the mirror's portrait tree lags newer operators, so a portrait-only ref may be dead
     while the avatar returns 200 one category over. An unresolved featured op carries no
@@ -142,6 +148,10 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
         op.resolved for b in result.banners for op in b.featured_ops
     )
     limitations = (*result.limitations, IMAGE_REFS_LIMITATION) if emits_refs else result.limitations
+    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE (only when
+    # this page actually emits refs); every ref carries only its relative path.
+    if emits_refs:
+        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
     return ok(
         data,
         provenance=tuple(

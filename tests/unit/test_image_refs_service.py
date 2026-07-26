@@ -2,13 +2,16 @@
 
 One test per invariant the task cites (§V63/§V1/§V24/§V37/§C):
 
-* **§V63 derive shape** -- each pure function derives the exact mirror URL from a
+* **§V63 derive shape** -- each pure function derives the exact mirror path from a
   ``game_id`` (portrait ``_1``/``_2``, avatar base/``_2``, skin ``_1b``/``_2b``, enemy
-  base) off the pinned raw-GitHub base.
+  base). §T183/§V66: the derivation builds RELATIVE paths; the pinned raw-GitHub base
+  (:data:`IMAGE_REFS_BASE_URL`) is hoisted once per response by the tool shapers, never
+  repeated per ref.
 * **§V63 percent-encode** -- ``#``/``+`` are encoded to ``%23``/``%2B`` unconditionally.
-* **§V1 / §V24 no network** -- the module imports no network library and derives URLs
+* **§V1 / §V24 no network** -- the module imports no network library and derives paths
   with a socket-open guard tripped, proving it never fetches/HEADs/validates a link.
-* **§V37 single home** -- every derived URL is built from the one ``_RAW_BASE`` constant.
+* **§V37 single home** -- the base constant has one home and every derived path is
+  relative (scheme-free), so the base can never fork per ref.
 * **§V63 access-controlled gate (ADR 0009 / §T124)** -- ``[image_refs].enabled`` is ON by
   default and carries NO deployment-posture term: it emits on any *startable* posture (loopback dev
   OR an authenticated non-loopback / behind-proxy remote), because §V9 already fails startup
@@ -27,18 +30,19 @@ import pytest
 from arknights_mcp.config import AppConfig, ImageRefsConfig, load_config
 from arknights_mcp.services import image_refs
 from arknights_mcp.services.image_refs import (
+    IMAGE_REFS_BASE_URL,
     SOURCE_ID,
+    enemy_image_path,
     enemy_image_refs,
-    enemy_image_url,
     image_ref_to_dict,
     named_skin_ref_to_dict,
-    operator_avatar_urls,
+    operator_avatar_paths,
     operator_banner_refs,
     operator_identity_refs,
     operator_image_refs,
-    operator_portrait_urls,
-    operator_skin_urls,
-    skin_image_url,
+    operator_portrait_paths,
+    operator_skin_paths,
+    skin_image_path,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -59,29 +63,29 @@ def test_source_id_matches_registry() -> None:
     assert SOURCE_ID == "arknights_game_resource"
 
 
-def test_operator_portrait_urls_derive_e0_and_e2() -> None:
-    assert operator_portrait_urls(OPERATOR_ID) == (
-        f"{BASE}/portrait/{OPERATOR_ID}_1.png",
-        f"{BASE}/portrait/{OPERATOR_ID}_2.png",
+def test_operator_portrait_paths_derive_e0_and_e2() -> None:
+    assert operator_portrait_paths(OPERATOR_ID) == (
+        f"portrait/{OPERATOR_ID}_1.png",
+        f"portrait/{OPERATOR_ID}_2.png",
     )
 
 
-def test_operator_avatar_urls_derive_base_and_e2() -> None:
-    assert operator_avatar_urls(OPERATOR_ID) == (
-        f"{BASE}/avatar/{OPERATOR_ID}.png",
-        f"{BASE}/avatar/{OPERATOR_ID}_2.png",
+def test_operator_avatar_paths_derive_base_and_e2() -> None:
+    assert operator_avatar_paths(OPERATOR_ID) == (
+        f"avatar/{OPERATOR_ID}.png",
+        f"avatar/{OPERATOR_ID}_2.png",
     )
 
 
-def test_operator_skin_urls_derive_e0_and_e2() -> None:
-    assert operator_skin_urls(OPERATOR_ID) == (
-        f"{BASE}/skin/{OPERATOR_ID}_1b.png",
-        f"{BASE}/skin/{OPERATOR_ID}_2b.png",
+def test_operator_skin_paths_derive_e0_and_e2() -> None:
+    assert operator_skin_paths(OPERATOR_ID) == (
+        f"skin/{OPERATOR_ID}_1b.png",
+        f"skin/{OPERATOR_ID}_2b.png",
     )
 
 
-def test_enemy_image_url_derives_base() -> None:
-    assert enemy_image_url(ENEMY_ID) == f"{BASE}/enemy/{ENEMY_ID}.png"
+def test_enemy_image_path_derives_base() -> None:
+    assert enemy_image_path(ENEMY_ID) == f"enemy/{ENEMY_ID}.png"
 
 
 def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
@@ -90,11 +94,11 @@ def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
     # portrait so the mirror's lagging portrait tree never leaves a portrait-only
     # (possibly 100%-dead) ref while a working avatar exists one category over.
     refs = operator_banner_refs(OPERATOR_ID)
-    assert [(r.category, r.url) for r in refs] == [
-        ("portrait", f"{BASE}/portrait/{OPERATOR_ID}_1.png"),
-        ("portrait", f"{BASE}/portrait/{OPERATOR_ID}_2.png"),
-        ("avatar", f"{BASE}/avatar/{OPERATOR_ID}.png"),
-        ("avatar", f"{BASE}/avatar/{OPERATOR_ID}_2.png"),
+    assert [(r.category, r.path) for r in refs] == [
+        ("portrait", f"portrait/{OPERATOR_ID}_1.png"),
+        ("portrait", f"portrait/{OPERATOR_ID}_2.png"),
+        ("avatar", f"avatar/{OPERATOR_ID}.png"),
+        ("avatar", f"avatar/{OPERATOR_ID}_2.png"),
     ]
     assert all(r.source_id == SOURCE_ID for r in refs)
     # §V78/B80: portrait = E0/E2, avatar = base/E2.
@@ -125,11 +129,11 @@ def test_v78_enemy_ref_variant_is_base() -> None:
 
 
 def test_v78_wire_dict_carries_variant() -> None:
-    # §V21/§V78: the {category, url, variant, source_id} wire shape includes variant.
+    # §V21/§V78: the {category, path, variant, source_id} wire shape includes variant.
     (ref,) = enemy_image_refs(ENEMY_ID)
     assert image_ref_to_dict(ref) == {
         "category": "enemy",
-        "url": f"{BASE}/enemy/{ENEMY_ID}.png",
+        "path": f"enemy/{ENEMY_ID}.png",
         "variant": "base",
         "source_id": SOURCE_ID,
     }
@@ -140,39 +144,36 @@ def test_v78_wire_dict_carries_variant() -> None:
 
 def test_percent_encode_hash_and_plus_unconditionally() -> None:
     # Skin-variant filenames can carry ``#``/``+``; the encoder is applied uniformly
-    # so any derived URL is safe. A synthetic id proves the encoding on every function.
+    # so any derived path is safe. A synthetic id proves the encoding on every function.
     dirty = "char_x_epoque#1+alt"
-    urls = [
-        *operator_portrait_urls(dirty),
-        *operator_avatar_urls(dirty),
-        *operator_skin_urls(dirty),
-        enemy_image_url(dirty),
+    paths = [
+        *operator_portrait_paths(dirty),
+        *operator_avatar_paths(dirty),
+        *operator_skin_paths(dirty),
+        enemy_image_path(dirty),
     ]
-    for url in urls:
-        # Only the filename segment is checked for the raw characters; the base has none.
-        assert "#" not in url
-        assert "+" not in url
-        assert "%23" in url
-        assert "%2B" in url
+    for path in paths:
+        assert "#" not in path
+        assert "+" not in path
+        assert "%23" in path
+        assert "%2B" in path
 
 
 def test_clean_ids_are_left_intact() -> None:
-    # A base id has no ``#``/``+`` so encoding is a no-op -- the URL is exactly the id.
-    assert enemy_image_url(ENEMY_ID) == f"{BASE}/enemy/{ENEMY_ID}.png"
-    assert "%" not in enemy_image_url(ENEMY_ID)
+    # A base id has no ``#``/``+`` so encoding is a no-op -- the path is exactly the id.
+    assert enemy_image_path(ENEMY_ID) == f"enemy/{ENEMY_ID}.png"
+    assert "%" not in enemy_image_path(ENEMY_ID)
 
 
 # --- §T182/§V88: named skin gallery derivation -------------------------------------
 
 
-def test_skin_image_url_derives_from_portrait_id() -> None:
+def test_skin_image_path_derives_from_portrait_id() -> None:
     # ADR 0015 verified mirror rule: skin/<portraitId>b.png, shared encoder applied
     # (# -> %23, + -> %2B covers outfit and E1 stems alike).
-    assert skin_image_url("char_002_amiya_1") == f"{BASE}/skin/char_002_amiya_1b.png"
-    assert (
-        skin_image_url("char_002_amiya_epoque#4") == f"{BASE}/skin/char_002_amiya_epoque%234b.png"
-    )
-    assert skin_image_url("char_002_amiya_1+") == f"{BASE}/skin/char_002_amiya_1%2Bb.png"
+    assert skin_image_path("char_002_amiya_1") == "skin/char_002_amiya_1b.png"
+    assert skin_image_path("char_002_amiya_epoque#4") == "skin/char_002_amiya_epoque%234b.png"
+    assert skin_image_path("char_002_amiya_1+") == "skin/char_002_amiya_1%2Bb.png"
 
 
 def test_named_skin_ref_variant_maps_illust_groups() -> None:
@@ -209,7 +210,7 @@ def test_named_skin_ref_omit_discipline() -> None:
     assert full["skin_group"] == "Series"
     assert full["alt_form"] is True
     assert full["paid"] is True
-    assert full["url"] == f"{BASE}/skin/char_1001_amiya2_sale%2316b.png"
+    assert full["path"] == "skin/char_1001_amiya2_sale%2316b.png"
 
 
 def test_identity_refs_are_portrait_plus_avatar_only() -> None:
@@ -262,30 +263,37 @@ def test_derivation_opens_no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("image_refs derivation must not open a socket (§V1/§V24)")
 
     monkeypatch.setattr(socket, "socket", _boom)
-    assert operator_portrait_urls(OPERATOR_ID)[0].startswith(BASE)
-    assert operator_avatar_urls(OPERATOR_ID)[0].startswith(BASE)
-    assert operator_skin_urls(OPERATOR_ID)[0].startswith(BASE)
-    assert enemy_image_url(ENEMY_ID).startswith(BASE)
-    # §T135: the new banner-ref builder (portrait+avatar) is pure string derivation too --
+    assert operator_portrait_paths(OPERATOR_ID)[0].startswith("portrait/")
+    assert operator_avatar_paths(OPERATOR_ID)[0].startswith("avatar/")
+    assert operator_skin_paths(OPERATOR_ID)[0].startswith("skin/")
+    assert enemy_image_path(ENEMY_ID).startswith("enemy/")
+    # §T135: the banner-ref builder (portrait+avatar) is pure string derivation too --
     # §V63 never-fetch is UNCHANGED, so it derives with the socket booby-trap tripped.
-    assert operator_banner_refs(OPERATOR_ID)[0].url.startswith(BASE)
+    assert operator_banner_refs(OPERATOR_ID)[0].path.startswith("portrait/")
 
 
-# --- §V37: single home ------------------------------------------------------------
+# --- §V37 / §T183: single base home, paths relative --------------------------------
 
 
-def test_all_urls_derive_from_single_base_constant() -> None:
-    # DRY (§V37): every function routes through the one _RAW_BASE constant -- there is no
-    # divergent hardcoded base. Pinning the constant also fixes the §V63 base value.
-    assert image_refs._RAW_BASE == BASE
-    urls = [
-        *operator_portrait_urls(OPERATOR_ID),
-        *operator_avatar_urls(OPERATOR_ID),
-        *operator_skin_urls(OPERATOR_ID),
-        enemy_image_url(ENEMY_ID),
+def test_base_constant_pinned_and_paths_are_relative() -> None:
+    # DRY (§V37): the base literal has ONE home -- the pinned public constant the tool
+    # shapers hoist onto the wire (§T183/§V66). Every derived path is RELATIVE
+    # (scheme-free, no leading slash), so a ref can never re-embed a divergent base, and
+    # joining base + "/" + path reconstructs the §V63-verified absolute URL.
+    assert IMAGE_REFS_BASE_URL == BASE
+    paths = [
+        *operator_portrait_paths(OPERATOR_ID),
+        *operator_avatar_paths(OPERATOR_ID),
+        *operator_skin_paths(OPERATOR_ID),
+        enemy_image_path(ENEMY_ID),
     ]
-    for url in urls:
-        assert url.startswith(image_refs._RAW_BASE + "/")
+    for path in paths:
+        assert "://" not in path
+        assert not path.startswith("/")
+    assert (
+        f"{IMAGE_REFS_BASE_URL}/{operator_portrait_paths(OPERATOR_ID)[0]}"
+        == f"{BASE}/portrait/{OPERATOR_ID}_1.png"
+    )
 
 
 # --- §V63: access-controlled config gate (ADR 0009) -------------------------------
