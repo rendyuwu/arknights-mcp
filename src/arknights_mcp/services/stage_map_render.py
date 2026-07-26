@@ -23,7 +23,10 @@ Three invariants hold **by construction** here:
   :data:`MAX_MAP_IMAGE_BYTES`, is refused -- :func:`render_stage_map` returns no
   image and a limitation instead, so an oversized map degrades to a caption rather
   than an oversized payload. The envelope's own §V22 cap remains the final
-  backstop.
+  backstop. The markup itself is economical (§V86/B94): every colour lives once in
+  a shared ``<style>`` block (elements carry class + geometry only), the grid is a
+  single ``<path>``, identical same-coordinate markers collapse to one, and
+  attributes are single-quoted so JSON escaping barely inflates the wire size.
 * **§C (no new dependency).** The SVG is assembled as a pure-Python string; no
   raster/imaging library is imported. Output is deterministic (tiles are drawn in
   a fixed ``(y, x)`` order, colours are fixed literals), so the same grid always
@@ -54,12 +57,13 @@ MAX_MAP_ROUTES = 1_000
 #: §V22 byte budget for one rendered map image, measured on the image's *wire*
 #: size -- the JSON-escaped bytes it contributes to the envelope (see
 #: :func:`_wire_bytes`), the same ``ensure_ascii`` measure the envelope cap uses
-#: (``envelopes.serialized_size``). The SVG is emitted as a JSON string value, and
-#: its many attribute quotes each escape to ``\\"``, so its raw UTF-8 length
-#: understates its wire size by ~15-20%; budgeting on the wire size keeps the image
-#: truly below the 200 KB envelope cap. Set below that cap so an over-budget image is
-#: dropped *here* (with a limitation, the rest of the response intact) rather than
-#: tripping the envelope cap and withholding the whole payload. Single §V37 home.
+#: (``envelopes.serialized_size``). The SVG is emitted as a JSON string value; its
+#: attributes are single-quoted (§V86 economy) so JSON escaping adds little, but the
+#: wire measure stays the budget's truth either way (fail-closed: it can only
+#: over-count, never under-count, a markup change). Set below the envelope cap so an
+#: over-budget image is dropped *here* (with a limitation, the rest of the response
+#: intact) rather than tripping the envelope cap and withholding the whole payload.
+#: Single §V37 home.
 MAX_MAP_IMAGE_BYTES = 128_000
 
 #: SVG media type for the derived document (§T122). Inline ``image/svg+xml`` -- an
@@ -69,6 +73,10 @@ SVG_MEDIA_TYPE = "image/svg+xml"
 # Fixed layout constants (our own, deterministic). Pixels per grid cell + outer pad.
 _CELL_PX = 24
 _PAD_PX = 8
+
+# SVG attributes are single-quoted throughout: the document rides the envelope as a
+# JSON string value, where a double quote escapes to two bytes but a single quote
+# rides verbatim -- same markup, materially smaller wire size (§V22/§V86 economy).
 
 # Fixed fill palette keyed on TYPED tile fields only (§V16/§V26 discipline): no
 # imported string reaches the document, only these literals we author.
@@ -93,6 +101,55 @@ _ROAD_TILE_KEYS = frozenset(
     {"tile_road", "tile_start", "tile_end", "tile_flystart", "tile_telin", "tile_telout"}
 )
 
+#: §V86 (B94) byte economy: every colour is written ONCE, in a shared ``<style>``
+#: block; each drawn element carries a short class + geometry attributes only, never
+#: a repeated ``fill=``/``stroke=`` attribute. One class per fill/marker role.
+_CLASS_BOARD = "b"
+_CLASS_GRID = "g"
+_TILE_CLASS: dict[str, str] = {
+    _FILL_WALL: "w",
+    _FILL_MELEE: "m",
+    _FILL_RANGED: "h",
+    _FILL_ROAD: "p",
+    _FILL_FORBIDDEN: "f",
+}
+_MARKER_CLASS: dict[str, str] = {
+    _MARK_START: "rs",
+    _MARK_END: "re",
+    _MARK_PATH: "rp",
+}
+
+#: Fixed class -> CSS declaration table (single §V37 home for the style rules), in a
+#: fixed emission order (§C determinism). :func:`_style_block` emits only the rules a
+#: render actually uses, mirroring the present-colours legend discipline (§V82).
+_STYLE_RULES: tuple[tuple[str, str], ...] = (
+    (_CLASS_BOARD, f"fill:{_FILL_BACKDROP};stroke:{_STROKE_BOARD}"),
+    (_CLASS_GRID, f"fill:none;stroke:{_STROKE_GRID}"),
+    (_TILE_CLASS[_FILL_WALL], f"fill:{_FILL_WALL}"),
+    (_TILE_CLASS[_FILL_MELEE], f"fill:{_FILL_MELEE}"),
+    (_TILE_CLASS[_FILL_RANGED], f"fill:{_FILL_RANGED}"),
+    (_TILE_CLASS[_FILL_ROAD], f"fill:{_FILL_ROAD}"),
+    (_TILE_CLASS[_FILL_FORBIDDEN], f"fill:{_FILL_FORBIDDEN}"),
+    (_MARKER_CLASS[_MARK_PATH], f"fill:none;stroke:{_MARK_PATH}"),
+    (_MARKER_CLASS[_MARK_START], f"fill:{_MARK_START}"),
+    (_MARKER_CLASS[_MARK_END], f"fill:{_MARK_END}"),
+)
+
+
+def _style_block(colors: set[str]) -> str:
+    """The single shared ``<style>`` block for one render (§V86/B94).
+
+    Board + grid rules always ride (both are always drawn); a tile/marker colour rule
+    rides only when that colour is present in THIS render -- the same present-colours
+    discipline the legend follows (§V82), so the document never carries an unused
+    colour. Fixed rule order keeps the output deterministic (§C)."""
+    used = {_CLASS_BOARD, _CLASS_GRID}
+    used.update(cls for color, cls in _TILE_CLASS.items() if color in colors)
+    used.update(cls for color, cls in _MARKER_CLASS.items() if color in colors)
+    rules = "".join(f".{name}{{{decl}}}" for name, decl in _STYLE_RULES if name in used)
+    return f"<style>{rules}</style>"
+
+
 #: §T140 (B65)/§T166 (B86) canonical colour -> client-facing meaning for the derived
 #: map's fixed palette, so a client can decode the opaque hex fills/markers a rendered
 #: image carries. Keyed on the SAME typed tile_key/buildable/passable semantics the
@@ -103,7 +160,10 @@ _LEGEND_MEANINGS: dict[str, str] = {
     _FILL_WALL: "impassable -- blocked or void tile; not deployable and not on the enemy path",
     _FILL_MELEE: "buildable ground -- deploy melee (blocking) operators here",
     _FILL_RANGED: "buildable highland -- deploy ranged operators here",
-    _FILL_ROAD: "enemy path -- enemies advance along these tiles",
+    _FILL_ROAD: (
+        "enemy path -- enemies advance along these tiles, and plain road tiles are "
+        "also melee-deploy ground (spawn/exit/teleport tiles are not)"
+    ),
     _FILL_FORBIDDEN: "non-deployable tile -- cannot deploy here and not on the enemy path",
     _MARK_START: "route start -- where enemies spawn",
     _MARK_END: "route end -- the objective enemies march toward",
@@ -218,12 +278,13 @@ def _wire_bytes(svg: str) -> int:
     """Wire byte size the SVG contributes to the envelope (matches the §V22 cap).
 
     The SVG is serialized as a JSON string value in the response envelope, so its
-    on-the-wire size is the JSON-escaped, ``ensure_ascii`` byte length -- every
-    attribute quote becomes ``\\"`` (2 bytes), inflating the raw UTF-8 length by
-    ~15-20%. Measuring against this (rather than ``svg.encode("utf-8")``) is the
-    same measure ``envelopes.serialized_size`` applies to the whole envelope, so the
-    image budget stays a true fraction of the 200 KB cap. ``json.dumps`` wraps the
-    value in two extra quote bytes -- a negligible, fail-closed over-count.
+    on-the-wire size is the JSON-escaped, ``ensure_ascii`` byte length. The markup's
+    attributes are single-quoted (§V86 economy) so escaping now adds little, but
+    measuring the escaped length (rather than ``svg.encode("utf-8")``) remains the
+    same measure ``envelopes.serialized_size`` applies to the whole envelope -- the
+    budget stays a true fraction of the 200 KB cap regardless of future markup
+    changes. ``json.dumps`` wraps the value in two extra quote bytes -- a
+    negligible, fail-closed over-count.
     """
     return len(json.dumps(svg).encode("utf-8"))
 
@@ -310,37 +371,40 @@ def _cell_origin(x: int, y: int, eff_h: int) -> tuple[int, int]:
     return px, py
 
 
-def _draw_grid_lines(eff_w: int, eff_h: int) -> list[str]:
-    """The board backdrop + grid lines (cheap: ``eff_w + eff_h + 2`` lines)."""
+def _draw_board(eff_w: int, eff_h: int) -> list[str]:
+    """The board backdrop + all grid lines as ONE ``<path>`` (§V86/B94 economy).
+
+    The earlier per-line ``<line>`` elements repeated the stroke attribute
+    ``eff_w + eff_h + 2`` times; a single path of ``M..V``/``M..H`` segments carries
+    the same geometry in one element, styled by the shared grid class."""
     board_w = eff_w * _CELL_PX
     board_h = eff_h * _CELL_PX
-    parts: list[str] = [
-        f'<rect class="board" x="{_PAD_PX}" y="{_PAD_PX}" width="{board_w}" '
-        f'height="{board_h}" fill="{_FILL_BACKDROP}" stroke="{_STROKE_BOARD}"/>'
-    ]
+    x1 = _PAD_PX + board_w
+    y1 = _PAD_PX + board_h
+    segments: list[str] = []
     for i in range(eff_w + 1):
         px = _PAD_PX + i * _CELL_PX
-        parts.append(
-            f'<line class="grid" x1="{px}" y1="{_PAD_PX}" x2="{px}" '
-            f'y2="{_PAD_PX + board_h}" stroke="{_STROKE_GRID}"/>'
-        )
+        segments.append(f"M{px} {_PAD_PX}V{y1}")
     for j in range(eff_h + 1):
         py = _PAD_PX + j * _CELL_PX
-        parts.append(
-            f'<line class="grid" x1="{_PAD_PX}" y1="{py}" '
-            f'x2="{_PAD_PX + board_w}" y2="{py}" stroke="{_STROKE_GRID}"/>'
-        )
-    return parts
+        segments.append(f"M{_PAD_PX} {py}H{x1}")
+    return [
+        f"<rect class='{_CLASS_BOARD}' x='{_PAD_PX}' y='{_PAD_PX}' "
+        f"width='{board_w}' height='{board_h}'/>",
+        f"<path class='{_CLASS_GRID}' d='{''.join(segments)}'/>",
+    ]
 
 
 def _draw_tiles(cells: Sequence[MapCell], eff_h: int) -> list[str]:
-    """One rect per stored tile, coloured by its typed category, in ``(y, x)`` order."""
+    """One rect per stored tile, coloured by its typed category, in ``(y, x)`` order.
+
+    The colour rides the tile's shared class (§V86/B94), never a per-rect ``fill=``."""
     parts: list[str] = []
     for cell in sorted(cells, key=lambda c: (c.y, c.x)):
         px, py = _cell_origin(cell.x, cell.y, eff_h)
         parts.append(
-            f'<rect class="tile" x="{px}" y="{py}" width="{_CELL_PX}" '
-            f'height="{_CELL_PX}" fill="{_tile_fill(cell)}"/>'
+            f"<rect class='{_TILE_CLASS[_tile_fill(cell)]}' x='{px}' y='{py}' "
+            f"width='{_CELL_PX}' height='{_CELL_PX}'/>"
         )
     return parts
 
@@ -398,29 +462,35 @@ def _draw_route_markers(routes: Sequence[MapRoute], eff_h: int) -> list[str]:
     already dropped), so a stage's many duplicate route records do not over-plot the
     overlay (B65) and a start==end 0-checkpoint route draws no stacked circles (§V82/B86).
     WAIT placeholders were already filtered upstream by their typed ``type`` field
-    (§V74 (b)/B74) so the polyline follows real grid waypoints only."""
+    (§V74 (b)/B74) so the polyline follows real grid waypoints only.
+
+    §V86 (B94): distinct-geometry routes still converge -- four routes ending on one
+    exit cell drew four stacked, byte-identical end circles. An identical marker (same
+    kind, same coordinates, so same element text) is emitted ONCE; first-occurrence
+    order is kept so the render stays deterministic (§C)."""
     parts: list[str] = []
+    seen: set[str] = set()
     radius = max(_CELL_PX // 3, 2)
+
+    def _emit(element: str) -> None:
+        if element not in seen:
+            seen.add(element)
+            parts.append(element)
+
     for route in routes:
         if len(route.checkpoints) >= 2:
             points = " ".join(
                 f"{cx},{cy}" for cx, cy in (_cell_center(x, y, eff_h) for x, y in route.checkpoints)
             )
-            parts.append(
-                f'<polyline class="route-path" points="{points}" fill="none" '
-                f'stroke="{_MARK_PATH}"/>'
-            )
+            _emit(f"<polyline class='{_MARKER_CLASS[_MARK_PATH]}' points='{points}'/>")
         if route.start is not None:
             cx, cy = _cell_center(route.start[0], route.start[1], eff_h)
-            parts.append(
-                f'<circle class="route-start" cx="{cx}" cy="{cy}" r="{radius}" '
-                f'fill="{_MARK_START}"/>'
+            _emit(
+                f"<circle class='{_MARKER_CLASS[_MARK_START]}' cx='{cx}' cy='{cy}' r='{radius}'/>"
             )
         if route.end is not None:
             cx, cy = _cell_center(route.end[0], route.end[1], eff_h)
-            parts.append(
-                f'<circle class="route-end" cx="{cx}" cy="{cy}" r="{radius}" fill="{_MARK_END}"/>'
-            )
+            _emit(f"<circle class='{_MARKER_CLASS[_MARK_END]}' cx='{cx}' cy='{cy}' r='{radius}'/>")
     return parts
 
 
@@ -471,17 +541,22 @@ def render_stage_map(
     pixel_height = eff_h * _CELL_PX + 2 * _PAD_PX
 
     # Resolve the routes actually drawn ONCE (distinct geometry, degenerate dropped) so
-    # the overlay and the present-colours legend agree (§V37/§V82).
+    # the overlay, the shared style block, and the present-colours legend all agree
+    # (§V37/§V82/§V86).
     drawable_routes = _drawable_routes(routes)
-    body: list[str] = _draw_grid_lines(eff_w, eff_h)
+    present = _present_colors(cells, drawable_routes)
+    body: list[str] = _draw_board(eff_w, eff_h)
     body += _draw_tiles(cells, eff_h)
     body += _draw_route_markers(drawable_routes, eff_h)
 
     svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{pixel_width}" '
-        f'height="{pixel_height}" viewBox="0 0 {pixel_width} {pixel_height}" '
-        'role="img">'
-        "<title>Arknights stage map (derived render)</title>" + "".join(body) + "</svg>"
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{pixel_width}' "
+        f"height='{pixel_height}' viewBox='0 0 {pixel_width} {pixel_height}' "
+        "role='img'>"
+        "<title>Arknights stage map (derived render)</title>"
+        + _style_block(present)
+        + "".join(body)
+        + "</svg>"
     )
 
     # §V22 byte budget: an over-budget document is dropped here (with a caption) so
@@ -500,6 +575,6 @@ def render_stage_map(
             pixel_height=pixel_height,
             tile_count=len(cells),
             # §V82/B86: legend lists ONLY the colours this render actually drew.
-            legend=_legend_for(_present_colors(cells, drawable_routes)),
+            legend=_legend_for(present),
         )
     )

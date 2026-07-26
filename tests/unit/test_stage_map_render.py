@@ -108,12 +108,12 @@ def test_render_encodes_every_stored_tile_and_route_marker() -> None:
     )
     assert res.image is not None
     svg = res.image.svg
-    assert svg.count('class="tile"') == 2
+    assert svg.count("<rect class='f'") == 2  # two stored non-buildable tiles
     assert res.image.tile_count == 2
-    assert 'class="board"' in svg
-    assert 'class="grid"' in svg
-    assert 'class="route-start"' in svg
-    assert 'class="route-end"' in svg
+    assert "class='b'" in svg  # board backdrop
+    assert "class='g'" in svg  # grid path
+    assert "class='rs'" in svg  # route start
+    assert "class='re'" in svg  # route end
 
 
 def test_render_draws_checkpoint_polyline() -> None:
@@ -124,7 +124,7 @@ def test_render_draws_checkpoint_polyline() -> None:
         routes=[MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (2, 0)))],
     )
     assert res.image is not None
-    assert 'class="route-path"' in res.image.svg
+    assert "class='rp'" in res.image.svg
 
 
 # --- B74/B65: render draws real waypoints; WAIT filtered upstream by type ------
@@ -145,7 +145,7 @@ def test_render_draws_every_checkpoint_including_grid_corner() -> None:
     svg = res.image.svg
     # (0, 0) centre on a height-9 board is "20,212" -- it IS drawn as a real path point,
     # in order, between the two other waypoints (no corner zig-zag: type-filtered upstream).
-    assert 'points="44,188 20,212 188,164"' in svg
+    assert "points='44,188 20,212 188,164'" in svg
 
 
 def test_render_dedups_identical_route_geometry() -> None:
@@ -158,8 +158,8 @@ def test_render_dedups_identical_route_geometry() -> None:
     assert res.image is not None
     svg = res.image.svg
     # 5 identical + 1 distinct -> 2 start markers + 2 end markers, not 6 each.
-    assert svg.count('class="route-start"') == 2
-    assert svg.count('class="route-end"') == 2
+    assert svg.count("class='rs'") == 2
+    assert svg.count("class='re'") == 2
 
 
 def test_render_keeps_routes_distinct_when_a_real_corner_move_differs() -> None:
@@ -171,7 +171,7 @@ def test_render_keeps_routes_distinct_when_a_real_corner_move_differs() -> None:
     b = MapRoute(start=(0, 0), end=(2, 0), checkpoints=((1, 0), (0, 0), (2, 0)))
     res = render_stage_map(width=3, height=1, cells=[], routes=[a, b])
     assert res.image is not None
-    assert res.image.svg.count('class="route-path"') == 2
+    assert res.image.svg.count("class='rp'") == 2
 
 
 # --- B65/B86: colour legend carried alongside the image ------------------------
@@ -229,6 +229,19 @@ def test_road_tile_is_enemy_path_not_buildable_ground() -> None:
     assert "enemy path" in legend["#cfd8dc"]
 
 
+def test_road_legend_carries_both_enemy_path_and_melee_deploy() -> None:
+    # §V86 (B94): the road gloss must carry BOTH semantics -- enemy path AND
+    # melee-deploy (the compact tile-grid legend shows road tiles buildable MELEE;
+    # dropping either half misleads, §V82). T166 fixed the "buildable ground"
+    # direction; this pins the opposite one.
+    res = render_stage_map(
+        width=1, height=1, cells=[MapCell(0, 0, "LOWLAND", "MELEE", True, tile_key="tile_road")]
+    )
+    meaning = _legend_map(res)["#cfd8dc"]
+    assert "enemy path" in meaning
+    assert "melee" in meaning
+
+
 def test_forbidden_tile_is_not_a_walkable_path() -> None:
     # §V82/B86: a passable, non-buildable, non-path tile (tile_forbidden) is a
     # non-deployable tile, NOT glossed a "walkable path".
@@ -263,8 +276,8 @@ def test_degenerate_route_is_not_rendered() -> None:
     )
     assert res.image is not None
     svg = res.image.svg
-    assert 'class="route-start"' not in svg
-    assert 'class="route-end"' not in svg
+    assert "class='rs'" not in svg
+    assert "class='re'" not in svg
     legend = _legend_map(res)
     assert "#2e7d32" not in legend and "#c62828" not in legend
 
@@ -279,8 +292,80 @@ def test_start_equals_end_with_checkpoints_is_a_real_loop_kept() -> None:
         routes=[MapRoute(start=(0, 0), end=(0, 0), checkpoints=((1, 1), (2, 2)))],
     )
     assert res.image is not None
-    assert 'class="route-start"' in res.image.svg
-    assert 'class="route-path"' in res.image.svg
+    assert "class='rs'" in res.image.svg
+    assert "class='rp'" in res.image.svg
+
+
+# --- B94/§V86: byte economy -- shared style, one grid path, marker dedup -------
+
+
+def test_all_fills_and_strokes_live_in_one_shared_style_block() -> None:
+    # §V86 (B94): every colour is written ONCE in a shared <style> block; drawn
+    # elements carry class + geometry only -- no per-element fill=/stroke= attribute
+    # repeats (77 tile rects each restating a fill was ~half the document).
+    res = render_stage_map(
+        width=3,
+        height=2,
+        cells=[
+            MapCell(0, 0, "LOWLAND", "MELEE", True),
+            MapCell(1, 0, "LOWLAND", "MELEE", True, tile_key="tile_road"),
+            MapCell(2, 1, "HIGHLAND", "RANGED", True),
+        ],
+        routes=[MapRoute(start=(0, 0), end=(2, 1), checkpoints=((1, 0), (2, 1)))],
+    )
+    assert res.image is not None
+    svg = res.image.svg
+    assert svg.count("<style>") == 1
+    assert "fill=" not in svg and "stroke=" not in svg
+    # every colour the legend lists appears exactly once -- inside the style block.
+    for entry in res.image.legend:
+        assert svg.count(entry["color"]) == 1
+
+
+def test_style_block_lists_only_used_rules() -> None:
+    # §V86/§V82: like the legend, the style block carries only the rules this render
+    # uses -- a board with one melee tile and no routes styles no wall/road/marker.
+    res = render_stage_map(width=1, height=1, cells=[MapCell(0, 0, "LOWLAND", "MELEE", True)])
+    assert res.image is not None
+    svg = res.image.svg
+    assert "#90caf9" in svg  # the melee fill, in the style block
+    for absent in ("#546e7a", "#cfd8dc", "#2e7d32", "#c62828", "#ef6c00"):
+        assert absent not in svg
+
+
+def test_gridlines_are_a_single_path_not_line_elements() -> None:
+    # §V86 (B94): the 11x7 board carried 20 <line> elements each restating a stroke;
+    # gridlines are one <path> of M/V/H segments styled by the shared grid class.
+    res = render_stage_map(width=3, height=2, cells=[MapCell(0, 0, "LOWLAND", "MELEE", True)])
+    assert res.image is not None
+    svg = res.image.svg
+    assert "<line" not in svg
+    assert svg.count("<path class='g'") == 1
+    # (eff_w + 1) vertical + (eff_h + 1) horizontal segments in the one path.
+    assert svg.count("V") == 4 and svg.count("H") == 3
+
+
+def test_identical_markers_at_same_coords_collapse_to_one() -> None:
+    # §V86 (B94): distinct-geometry routes still converge -- four routes ending on one
+    # exit drew four stacked, byte-identical end circles. Same kind + same coords
+    # emits once; the distinct start markers all stay.
+    routes = [MapRoute(start=(0, y), end=(2, 1)) for y in range(3)]
+    res = render_stage_map(width=3, height=3, cells=[], routes=routes)
+    assert res.image is not None
+    svg = res.image.svg
+    assert svg.count("class='rs'") == 3  # three distinct spawn cells
+    assert svg.count("class='re'") == 1  # one shared exit cell, one circle
+
+
+def test_get_stage_description_says_map_image_is_display_only() -> None:
+    # §V86 (B94): the SVG is a display artifact, not a reasoning surface -- the tool
+    # description says so and points at include_map's tile_grid for reasoning.
+    def _no_conn():  # type: ignore[no-untyped-def]
+        raise RuntimeError("no connection needed for description inspection")
+
+    desc = build_get_stage_spec(_no_conn).description
+    assert "display only" in desc
+    assert "tile_grid" in desc
 
 
 # --- pure renderer: §V22 bounded, fail closed ---------------------------------
@@ -399,9 +484,10 @@ def test_include_map_image_renders_main_story_stage(conn: sqlite3.Connection) ->
     assert image["media_type"] == "image/svg+xml"  # type: ignore[index]
     svg = image["content"]  # type: ignore[index]
     assert isinstance(svg, str) and svg.startswith("<svg")
-    # The two stored tiles + the route start/end are drawn from the stage's own grid.
-    assert svg.count('class="tile"') == 2
-    assert 'class="route-start"' in svg and 'class="route-end"' in svg
+    # The two stored tiles + the route start/end are drawn from the stage's own grid:
+    # 3 rects = the board backdrop + one per stored tile.
+    assert svg.count("<rect") == 3
+    assert "class='rs'" in svg and "class='re'" in svg
     # §V16/§V63: a derived image, never third-party art or the URL-ref path.
     low = svg.lower()
     for marker in _ART_MARKERS:

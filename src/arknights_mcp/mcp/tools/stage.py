@@ -79,6 +79,8 @@ _TOOL_DESCRIPTION = (
     "Spawn timeline values (spawn_time and interval) are in seconds. Set "
     "include_map_image for a rendered SVG map drawn from the stage's own grid data "
     "(a derived image, not game artwork); a very large map is omitted with a note. "
+    "The SVG is for display only -- do not reason from the image; for tile-level "
+    "reasoning use include_map's tile_grid. "
     "The difficulty field is the stage variant tag (NORMAL, FOUR_STAR challenge, "
     "TOUGH, or EASY), so a stage and its variant that share a code stay distinct. "
     "en/cn are never mixed. " + LIST_FIELD_CONVENTION
