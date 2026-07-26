@@ -4,9 +4,10 @@ A stage stores many raw route records that share identical ``(start, end,
 checkpoints)`` geometry (4-4: 26 records, ~4 distinct); emitting every record is a
 raw dump that overstates the route count (§V49) and burns the §V22 budget. This
 module collapses records to distinct geometry, normalises the stored checkpoint
-shapes to the wire contract (snake_case keys §V71 (d); WAIT markers dropped by
-their typed ``type`` field §V74 (b)/B74; zero/false-default optional fields
-suppressed §V81/B85), and reports the read-cap truncation
+shapes to the wire contract (snake_case keys §V71 (d); non-spatial markers dropped
+by their typed ``type`` field against the real token set §V74 (b)/§V96/B74/B128;
+zero/false-default optional fields suppressed §V81/B85), and reports the read-cap
+truncation
 say-so (§V74 (a)/B73). It is a self-contained, pure transform over the typed route
 rows -- no SQL, no network, no imported prose reaches it (§V18) -- kept out of the
 stage service module so that module stays within the §V38 size cap (parallel to
@@ -40,8 +41,8 @@ class RouteFacts:
     ``route_indices`` that share it (so a spawn's ``route_index`` still joins) and
     an ``occurrence_count``.
 
-    ``checkpoints`` is always a list (§V51), with the non-spatial WAIT placeholder
-    positions dropped (§V74 (b)) and each checkpoint object's keys normalized to
+    ``checkpoints`` is always a list (§V51), with the typed non-spatial markers
+    dropped (§V74 (b)/§V96) and each checkpoint object's keys normalized to
     snake_case (§V71 (d)); an empty set is ``[]`` on the wire, never the source's
     ``{}``. Each checkpoint carries ``type`` + ``position`` always; its optional
     ``time`` / ``reach_distance`` / ``reach_offset`` / ``randomize_reach_offset``
@@ -88,15 +89,15 @@ def _checkpoint_points(decoded: object | None) -> tuple[tuple[int, int], ...]:
     that is already a bare ``{col, row}`` is accepted as a fallback. A malformed or
     positionless checkpoint is skipped, not fabricated (§V26).
 
-    A typed WAIT checkpoint (:func:`_is_wait_checkpoint`, §V74 (b)/B74) is dropped; a
-    real ``MOVE`` at grid corner ``(0, 0)`` survives (the render draws what this returns
-    and no longer position-cleans it)."""
+    A typed non-spatial checkpoint (:func:`_is_non_spatial_checkpoint`, §V74 (b)/B74)
+    is dropped; a real ``MOVE`` at grid corner ``(0, 0)`` survives (the render draws
+    what this returns and no longer position-cleans it)."""
     if not isinstance(decoded, list):
         return ()
     points: list[tuple[int, int]] = []
     for item in decoded:
-        if _is_wait_checkpoint(item):
-            continue  # §V74 (b)/B74: WAIT marker (typed), never a spatial path point
+        if _is_non_spatial_checkpoint(item):
+            continue  # §V74 (b)/B74: non-spatial marker (typed), never a path point
         point = _checkpoint_position(item)
         if point is not None:
             points.append(point)
@@ -105,7 +106,7 @@ def _checkpoint_points(decoded: object | None) -> tuple[tuple[int, int], ...]:
 
 #: The distinct-route key: ``(start_xy, end_xy, checkpoint_positions)``. Positions
 #: are ``_point_xy`` normalisations (``None`` for a malformed/absent coordinate);
-#: WAIT placeholders are dropped before the checkpoint sequence is built (§V74).
+#: non-spatial markers are dropped before the checkpoint sequence is built (§V74).
 _GeometryKey = tuple[
     tuple[int, int] | None,
     tuple[int, int] | None,
@@ -122,26 +123,81 @@ def _checkpoint_position(item: object) -> tuple[int, int] | None:
     return _point_xy(position)
 
 
-#: Typed checkpoint kind naming a non-spatial WAIT pause (§T20 ``{type, position}``).
-_WAIT_CHECKPOINT_TYPE = "WAIT"
+#: Typed checkpoint kinds that mark a non-spatial pause/despawn, NOT a path point
+#: (§V74 (b)/§V96). Enumerated from the real corpus -- the counted token census
+#: lives in §V29 (single evidence home); the earlier invented literal ``"WAIT"``
+#: matched no real record, so the filter never fired (B128).
+NON_SPATIAL_CHECKPOINT_TYPES = frozenset(
+    {
+        "WAIT_FOR_SECONDS",
+        "WAIT_CURRENT_FRAGMENT_TIME",
+        "WAIT_CURRENT_WAVE_TIME",
+        "WAIT_BOSSRUSH_WAVE",
+        "DISAPPEAR",
+    }
+)
 
-#: Placeholder position a WAIT carries upstream; corroboration ONLY (§V74 (b)/B74/§V26).
-PLACEHOLDER_POINT = (0, 0)
+#: Typed checkpoint kinds carrying a real board position (§V29 census; §V96). Kept
+#: separate from the non-spatial set so an UNRECOGNIZED token is detectable: it
+#: belongs to neither set and rides the conservative (spatial) side with a say-so
+#: (:func:`unknown_checkpoint_type_limitation`), never a silent bucket.
+SPATIAL_CHECKPOINT_TYPES = frozenset({"MOVE", "APPEAR_AT_POS", "PATROL_MOVE", "MAP_OFFSET_MOVE"})
 
 
-def _is_wait_checkpoint(item: object) -> bool:
-    """Is one stored checkpoint a non-spatial WAIT marker (§V74 (b)/B74)?
-
-    WAIT is read from the typed ``type`` field (§T20), NOT a ``(0, 0)`` position
-    coincidence: a real ``MOVE`` targeting grid corner ``(0, 0)`` is kept (the earlier
-    position-only heuristic dropped it + collapsed routes differing only there, B74).
-    Position ``(0, 0)`` corroborates ONLY when ``type`` is absent (malformed/legacy).
-    Single §V37 home for :func:`_digest_checkpoints` + :func:`_checkpoint_points`."""
+def _checkpoint_type(item: object) -> str | None:
+    """One stored checkpoint's normalized ``type`` token, or ``None`` when absent."""
     if isinstance(item, dict):
         raw_type = item.get("type")
         if raw_type is not None:
-            return str(raw_type).strip().upper() == _WAIT_CHECKPOINT_TYPE
-    return _checkpoint_position(item) == PLACEHOLDER_POINT
+            return str(raw_type).strip().upper()
+    return None
+
+
+def _is_non_spatial_checkpoint(item: object) -> bool:
+    """Is one stored checkpoint a non-spatial pause/despawn marker (§V74 (b)/B74)?
+
+    Keyed on the typed ``type`` field ONLY (§T20), against the real token set
+    (:data:`NON_SPATIAL_CHECKPOINT_TYPES`, §V96/B128) -- never a position
+    coincidence: a real ``MOVE`` targeting grid corner ``(0, 0)`` is kept (B74), and
+    7-23% of real non-spatial markers carry real coordinates while some ``MOVE``
+    records sit at the placeholder, so position corroboration is wrong in BOTH
+    directions (B128). A type-less or unrecognized-type checkpoint is treated as
+    spatial -- the conservative side: the fact stays visible on the wire (§V26).
+    Single §V37 home for :func:`_digest_checkpoints` + :func:`_checkpoint_points`."""
+    token = _checkpoint_type(item)
+    return token is not None and token in NON_SPATIAL_CHECKPOINT_TYPES
+
+
+def unknown_checkpoint_type_limitation(records: Sequence[StageRouteRow]) -> str | None:
+    """Say-so when a route carries a checkpoint ``type`` outside the known census (§V96).
+
+    A token in neither :data:`NON_SPATIAL_CHECKPOINT_TYPES` nor
+    :data:`SPATIAL_CHECKPOINT_TYPES` (a new upstream checkpoint kind) is kept on the
+    conservative spatial side, and this limitation names it so the classification
+    uncertainty is disclosed (§V26), never a silent bucket (§V96). Returns ``None``
+    when every typed checkpoint matches the census. Single §V37 home for both the
+    route digest and the map render read paths; no spec cite reaches the client
+    string (§V71 (b))."""
+    unknown: set[str] = set()
+    for record in records:
+        decoded = json_load(record.checkpoints_json)
+        if not isinstance(decoded, list):
+            continue
+        for item in decoded:
+            token = _checkpoint_type(item)
+            if (
+                token is not None
+                and token not in NON_SPATIAL_CHECKPOINT_TYPES
+                and token not in SPATIAL_CHECKPOINT_TYPES
+            ):
+                unknown.add(token)
+    if not unknown:
+        return None
+    return (
+        f"route checkpoint type(s) {', '.join(sorted(unknown))} not recognized; "
+        "treated as spatial path points, so route geometry and distinct-route "
+        "grouping may over-report"
+    )
 
 
 def _snake_case_keys(value: object) -> object:
@@ -214,20 +270,21 @@ def _digest_checkpoints(
 ) -> tuple[list[object], tuple[tuple[int, int] | None, ...]]:
     """Clean + snake_case a route's checkpoints and return its position sequence (§V74).
 
-    Returns ``(emit_objects, positions)``: typed WAIT checkpoints
-    (:func:`_is_wait_checkpoint`, by ``type`` -- NOT a ``(0, 0)`` coincidence, B74) are
-    dropped (§V74 (b)), surviving keys snake_cased (§V71 (d)) and their optional
-    fields default-suppressed (:func:`_suppress_default_checkpoint_fields`, §V81/B85);
-    ``positions`` is the surviving ``(x, y)`` sequence for the distinct-geometry key --
-    a real ``MOVE`` at corner ``(0, 0)`` is retained so routes differing only there stay
-    distinct (B74). A non-list fragment normalises to ``([], ())``."""
+    Returns ``(emit_objects, positions)``: typed non-spatial checkpoints
+    (:func:`_is_non_spatial_checkpoint`, by ``type`` -- NOT a position coincidence,
+    B74/B128) are dropped (§V74 (b)), surviving keys snake_cased (§V71 (d)) and their
+    optional fields default-suppressed (:func:`_suppress_default_checkpoint_fields`,
+    §V81/B85); ``positions`` is the surviving ``(x, y)`` sequence for the
+    distinct-geometry key -- a real ``MOVE`` at corner ``(0, 0)`` is retained so routes
+    differing only there stay distinct (B74). A non-list fragment normalises to
+    ``([], ())``."""
     if not isinstance(decoded, list):
         return [], ()
     emit: list[object] = []
     positions: list[tuple[int, int] | None] = []
     for item in decoded:
-        if _is_wait_checkpoint(item):
-            continue  # §V74 (b)/B74: non-spatial WAIT marker (typed), never geometry
+        if _is_non_spatial_checkpoint(item):
+            continue  # §V74 (b)/B74: non-spatial marker (typed), never geometry
         emit.append(_suppress_default_checkpoint_fields(_snake_case_keys(item)))
         positions.append(_checkpoint_position(item))
     return emit, tuple(positions)
@@ -247,7 +304,7 @@ def _distinct_routes(records: Sequence[StageRouteRow]) -> list[RouteFacts]:
     """Collapse raw route records to DISTINCT geometry (§V74 (a); the wire twin of B65).
 
     Records sharing an identical ``(start, end, checkpoint-positions)`` geometry --
-    WAIT placeholders already dropped (§V74 (b)) -- collapse to one
+    non-spatial markers already dropped (§V74 (b)) -- collapse to one
     :class:`RouteFacts` carrying every contributing ``route_index`` (so a spawn's
     ``route_index`` still joins) and an ``occurrence_count``. The first record's
     decoded start/end/checkpoint objects represent the group; insertion order (dict)

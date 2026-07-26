@@ -196,12 +196,17 @@ def test_checkpoint_digest_normalizes_every_source_shape() -> None:
 
 
 def test_checkpoint_digest_drops_wait_placeholder_and_snake_cases_keys() -> None:
-    # §V74 (b): a WAIT checkpoint carries the non-spatial (0,0) placeholder position
-    # and is dropped from the emitted geometry. §V71 (d): the surviving checkpoint's
-    # camelCase keys (reachOffset/randomizeReachOffset) are normalized to snake_case.
+    # §V74 (b)/§V96 (B128): a non-spatial marker (real token, not the invented
+    # "WAIT") is dropped from the emitted geometry. §V71 (d): the surviving
+    # checkpoint's camelCase keys (reachOffset/randomizeReachOffset) are normalized
+    # to snake_case.
     decoded = [
         {"type": "MOVE", "position": {"col": 3, "row": 2}, "reachOffset": {"x": 0, "y": 1}},
-        {"type": "WAIT", "position": {"col": 0, "row": 0}, "randomizeReachOffset": False},
+        {
+            "type": "WAIT_FOR_SECONDS",
+            "position": {"col": 0, "row": 7},
+            "randomizeReachOffset": False,
+        },
     ]
     emit, positions = _digest_checkpoints(decoded)
     assert positions == ((3, 2),)  # the WAIT placeholder position is gone
@@ -290,12 +295,13 @@ def test_distinct_routes_collapses_identical_geometry() -> None:
 
 
 def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> None:
-    # §V74 (a)+(b): two records with the same spatial path but one carrying an extra
-    # WAIT (0,0) placeholder collapse to one -- the placeholder is not geometry.
+    # §V74 (a)+(b)/B128: two records with the same spatial path but one carrying an
+    # extra WAIT_FOR_SECONDS marker collapse to one -- the marker is not geometry
+    # (the real 7-2 over-count: 7 groups where 6 are distinct).
     a = {"col": 0, "row": 0}
     b = {"col": 5, "row": 2}
     move = {"type": "MOVE", "position": {"col": 3, "row": 1}}
-    wait = {"type": "WAIT", "position": {"col": 0, "row": 0}}
+    wait = {"type": "WAIT_FOR_SECONDS", "position": {"col": 0, "row": 7}}
     records = [
         _route_row(0, a, b, [move]),
         _route_row(1, a, b, [move, wait]),  # same path + a WAIT marker
@@ -308,29 +314,19 @@ def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> 
 
 
 def test_checkpoint_digest_keeps_a_real_move_at_grid_corner() -> None:
-    # §V74 (b)/B74: WAIT is detected by the typed `type` field, NOT a (0,0) position
-    # coincidence. A real MOVE targeting grid corner (0,0) must be KEPT -- the earlier
-    # position-only heuristic dropped it as if it were a WAIT placeholder.
+    # §V74 (b)/B74/B128: a non-spatial marker is detected by the typed `type` field
+    # against the REAL token set (§V96), NOT a position coincidence. A real MOVE
+    # targeting grid corner (0,0) must be KEPT -- the earlier position-only
+    # heuristic dropped it as if it were a placeholder. (The type-less-checkpoint
+    # case is pinned in test_stage_route_digest: spatial, fallback dead.)
     decoded = [
         {"type": "MOVE", "position": {"col": 0, "row": 0}},  # real corner MOVE -> kept
-        {"type": "WAIT", "position": {"col": 0, "row": 0}},  # WAIT marker -> dropped
+        {"type": "WAIT_FOR_SECONDS", "position": {"col": 0, "row": 0}},  # marker -> dropped
     ]
     emit, positions = _digest_checkpoints(decoded)
-    assert positions == ((0, 0),)  # the corner MOVE survives; only the WAIT is gone
+    assert positions == ((0, 0),)  # the corner MOVE survives; only the marker is gone
     assert len(emit) == 1
     assert emit[0]["type"] == "MOVE"  # type: ignore[index,call-overload]
-
-
-def test_checkpoint_digest_falls_back_to_placeholder_only_when_type_absent() -> None:
-    # §V26/B74: position (0,0) is corroboration ONLY -- consulted when a checkpoint
-    # carries no typed `type` field. A typeless (0,0) is treated as a placeholder
-    # (dropped); a typeless non-corner point offers a real waypoint (kept).
-    decoded = [
-        {"position": {"col": 0, "row": 0}},  # typeless corner -> placeholder fallback
-        {"position": {"col": 2, "row": 3}},  # typeless real point -> kept
-    ]
-    _, positions = _digest_checkpoints(decoded)
-    assert positions == ((2, 3),)
 
 
 def test_distinct_routes_keep_routes_differing_only_by_a_corner_move() -> None:

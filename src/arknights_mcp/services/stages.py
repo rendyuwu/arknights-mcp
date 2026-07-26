@@ -36,6 +36,7 @@ from arknights_mcp.analyzers import (
 from arknights_mcp.db.repositories.stages import (
     StageMapRow,
     StageRepository,
+    StageRouteRow,
     StageRow,
 )
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX
@@ -53,6 +54,7 @@ from arknights_mcp.services.stage_route_digest import (
     _distinct_routes,
     _point_xy,
     _route_truncated_limitation,
+    unknown_checkpoint_type_limitation,
 )
 from arknights_mcp.services.stage_tile_grid import (
     TileGridFacts,
@@ -434,16 +436,20 @@ def _not_found_detail(server: str) -> StageDetailResult:
 
 
 def _build_map_image(
-    repo: StageRepository, stage_pk: int, raw_map: StageMapRow | None
+    repo: StageRepository,
+    stage_pk: int,
+    raw_map: StageMapRow | None,
+    route_rows: list[StageRouteRow],
 ) -> tuple[RenderedMap | None, str | None]:
     """Render the stage grid into a bounded SVG (§T122; §V16/§V22).
 
     Reads the full grid (each read bounded by the render cap so an oversized table
-    is never loaded whole, §V22), adapts the repository rows into the render's
-    plain value objects, and returns ``(image, limitation)``: an in-budget board
-    yields the image; an over-budget one yields no image + a §V22 caption. The
-    image is a DERIVED render from typed grid data -- no third-party art byte and
-    no imported source string reaches it (§V16/§V18)."""
+    is never loaded whole, §V22), adapts the repository rows + the caller's
+    already-read route rows (one bounded route read shared with the digest, §V37)
+    into the render's plain value objects, and returns ``(image, limitation)``: an
+    in-budget board yields the image; an over-budget one yields no image + a §V22
+    caption. The image is a DERIVED render from typed grid data -- no third-party
+    art byte and no imported source string reaches it (§V16/§V18)."""
     cells = [
         MapCell(
             x=t.x,
@@ -461,7 +467,7 @@ def _build_map_image(
             end=_point_xy(json_load(r.end_position_json)),
             checkpoints=_checkpoint_points(json_load(r.checkpoints_json)),
         )
-        for r in repo.all_routes(stage_pk, MAX_MAP_ROUTES)
+        for r in route_rows
     ]
     result = render_stage_map(
         width=raw_map.width if raw_map else None,
@@ -549,20 +555,29 @@ def get_stage(
             if grid_limitation is not None:
                 limitations.append(grid_limitation)
 
+    # §V96/B128: ONE bounded route read (§V22) shared by the digest and the render
+    # (§V37 -- and no double read when both flags are set); a checkpoint `type`
+    # outside the known census stays on the conservative spatial side with a say-so,
+    # never a silent bucket (§V26).
+    route_rows: list[StageRouteRow] = []
+    if include_routes or include_map_image:
+        route_rows = repo.all_routes(stage_pk, MAX_MAP_ROUTES)
+        unknown_limitation = unknown_checkpoint_type_limitation(route_rows)
+        if unknown_limitation is not None:
+            limitations.append(unknown_limitation)
+
     routes: tuple[RouteFacts, ...] = ()
     routes_page_info: SectionPage | None = None
     if include_routes:
         # §V74 (a)/B21: digest the FULL route set to distinct geometry BEFORE paging,
         # so page 1 is the first N distinct routes and the total is stable across
         # pages (a per-page dedup would split one geometry across a page boundary).
-        # The read is bounded by MAX_MAP_ROUTES (§V22), the same cap the render uses.
-        raw_routes = repo.all_routes(stage_pk, MAX_MAP_ROUTES)
         # §V74 (a)/B73: a raw count equal to the cap means records past it were dropped
         # BEFORE the dedup, so the distinct total may under-report -- say so rather than
         # silently undercount (§V26). Detection is raw-count == cap per §V74 (a).
-        if len(raw_routes) == MAX_MAP_ROUTES:
+        if len(route_rows) == MAX_MAP_ROUTES:
             limitations.append(_route_truncated_limitation())
-        distinct = _distinct_routes(raw_routes)
+        distinct = _distinct_routes(route_rows)
         offset = (rp - 1) * rsize
         routes = tuple(distinct[offset : offset + rsize])
         routes_page_info = _section_page(rp, rsize, len(distinct))
@@ -590,7 +605,7 @@ def get_stage(
 
     map_image: RenderedMap | None = None
     if include_map_image:
-        map_image, image_limitation = _build_map_image(repo, stage_pk, raw_map)
+        map_image, image_limitation = _build_map_image(repo, stage_pk, raw_map, route_rows)
         if image_limitation is not None:
             limitations.append(image_limitation)
 

@@ -422,12 +422,14 @@ def _distinct_route_geometries(routes: Sequence[MapRoute]) -> list[MapRoute]:
     routes). Records with identical ``(start, end, checkpoints)`` collapse to one;
     first-occurrence order is kept so the render stays deterministic (§C).
 
-    Non-spatial WAIT checkpoints are already filtered UPSTREAM by their typed ``type``
-    field (:func:`~arknights_mcp.services.stages._is_wait_checkpoint`, §V74 (b)/B74)
-    before a :class:`MapRoute` reaches the renderer, so the checkpoints here are real
-    grid waypoints only -- a ``MOVE`` legitimately targeting corner ``(0, 0)`` is NOT
-    discarded (the earlier render-layer position-cleaning dropped it, B74). This pure
-    renderer therefore draws whatever points it is given (§V37: one WAIT home, upstream).
+    Non-spatial checkpoints are already filtered UPSTREAM by their typed ``type``
+    field against the real token set
+    (:func:`~arknights_mcp.services.stage_route_digest._is_non_spatial_checkpoint`,
+    §V74 (b)/§V96/B74/B128) before a :class:`MapRoute` reaches the renderer, so the
+    checkpoints here are real grid waypoints only -- a ``MOVE`` legitimately targeting
+    corner ``(0, 0)`` is NOT discarded (the earlier render-layer position-cleaning
+    dropped it, B74). This pure renderer therefore draws whatever points it is given
+    (§V37: one classifier home, upstream).
     """
     seen: set[tuple[object, object, tuple[tuple[int, int], ...]]] = set()
     distinct: list[MapRoute] = []
@@ -465,8 +467,8 @@ def _draw_route_markers(routes: Sequence[MapRoute]) -> list[str]:
     ``routes`` is the :func:`_drawable_routes` list (distinct geometry, degenerate routes
     already dropped), so a stage's many duplicate route records do not over-plot the
     overlay (B65) and a start==end 0-checkpoint route draws no stacked circles (§V82/B86).
-    WAIT placeholders were already filtered upstream by their typed ``type`` field
-    (§V74 (b)/B74) so the polyline follows real grid waypoints only.
+    Non-spatial markers were already filtered upstream by their typed ``type`` field
+    (§V74 (b)/§V96/B74/B128) so the polyline follows real grid waypoints only.
 
     §V86 (B94): distinct-geometry routes still converge -- four routes ending on one
     exit cell drew four stacked, byte-identical end circles. An identical marker (same

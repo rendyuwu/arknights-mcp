@@ -128,12 +128,12 @@ def test_render_draws_checkpoint_polyline() -> None:
     assert "class='rp'" in res.image.svg
 
 
-# --- B74/B65: render draws real waypoints; WAIT filtered upstream by type ------
+# --- B74/B65: render draws real waypoints; non-spatial filtered upstream by type
 
 
 def test_render_draws_every_checkpoint_including_grid_corner() -> None:
-    # §V74(b)/B74: WAIT filtering now happens UPSTREAM by the typed `type` field
-    # (services.stages._is_wait_checkpoint), so the pure renderer draws every
+    # §V74(b)/B74: non-spatial filtering now happens UPSTREAM by the typed `type`
+    # field (stage_route_digest._is_non_spatial_checkpoint), so the renderer draws every
     # checkpoint it is given -- including a real MOVE targeting grid corner (0, 0). The
     # earlier render-layer (0, 0)-dropping discarded such a genuine waypoint (B74).
     res = render_stage_map(
@@ -468,11 +468,12 @@ def test_checkpoint_points_skips_a_positionless_checkpoint() -> None:
 
 
 def test_checkpoint_points_drops_wait_but_keeps_a_corner_move() -> None:
-    # §V74(b)/B74: the render point reducer drops a typed WAIT marker but KEEPS a real
-    # MOVE targeting grid corner (0, 0), so the renderer draws the genuine waypoint.
+    # §V74(b)/B74/B128: the render point reducer drops a typed non-spatial marker
+    # (real token, §V96) but KEEPS a real MOVE targeting grid corner (0, 0), so the
+    # renderer draws the genuine waypoint.
     decoded = [
         {"type": "MOVE", "position": {"col": 0, "row": 0}},  # real corner MOVE -> kept
-        {"type": "WAIT", "position": {"col": 0, "row": 0}},  # WAIT marker -> dropped
+        {"type": "WAIT_FOR_SECONDS", "position": {"col": 0, "row": 7}},  # marker -> dropped
         {"type": "MOVE", "position": {"col": 4, "row": 2}},
     ]
     assert _checkpoint_points(decoded) == ((0, 0), (4, 2))

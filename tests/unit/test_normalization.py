@@ -309,7 +309,7 @@ _FRAME_LEVEL = {
             "endPosition": {"row": 0, "col": 0},
             "checkpoints": [
                 {"type": "MOVE", "position": {"row": 2, "col": 0}},
-                {"type": "WAIT", "position": {"row": 0, "col": 0}, "time": 5},
+                {"type": "WAIT_FOR_SECONDS", "position": {"row": 0, "col": 0}, "time": 5},
             ],
         }
     ],
@@ -339,7 +339,7 @@ def test_checkpoint_positions_rebased_and_siblings_untouched() -> None:
     checkpoints = normalize_level(_FRAME_LEVEL)["routes"][0]["checkpoints"]
     assert [c["position"]["row"] for c in checkpoints] == [1, 3]  # was 2, 0
     assert [c["position"]["col"] for c in checkpoints] == [0, 0]  # columns untouched
-    assert [c["type"] for c in checkpoints] == ["MOVE", "WAIT"]
+    assert [c["type"] for c in checkpoints] == ["MOVE", "WAIT_FOR_SECONDS"]
     assert checkpoints[1]["time"] == 5
 
 
