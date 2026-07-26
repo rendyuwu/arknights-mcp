@@ -477,9 +477,13 @@ def test_stage_absent_field_limitation_helper() -> None:
 
 
 def test_4_4_stage_has_no_absent_field_limitation(conn: sqlite3.Connection) -> None:
-    # 4-4 carries recommendedLevel (45) + maxLifePoints (3), so no "not present" caveat.
+    # 4-4 carries recommendedLevel (45) + maxLifePoints (3), so no "not present" caveat
+    # and the present scalars still emit (§V67/B98 omits ABSENT ones only, §V21).
     env = _handler(conn)(server="en", stage_code="4-4")
     assert not any("not present" in lim.lower() for lim in env.limitations)
+    stage = env.to_dict()["data"]["stage"]  # type: ignore[index]
+    assert stage["recommended_level"] == 45  # type: ignore[index]
+    assert stage["max_life_points"] == 3  # type: ignore[index]
 
 
 # --- §V80/B84: get_stage difficulty is the truthful variant tag ---------------
@@ -573,6 +577,10 @@ def test_bare_stage_names_absent_scalars_on_the_wire(tmp_path: Path) -> None:
         server="en", game_id="bare_stage"
     )
     assert env.status == "ok"
+    # §V67/B98 (T180): the absent scalars' keys are OMITTED from the payload -- the
+    # limitation below is the sole absence signal, never a null+limitation duplicate.
+    stage = env.to_dict()["data"]["stage"]  # type: ignore[index]
+    assert "recommended_level" not in stage and "max_life_points" not in stage
     blob = " ".join(env.limitations).lower()
     assert "recommended_level" in blob and "max_life_points" in blob
     assert "not present" in blob

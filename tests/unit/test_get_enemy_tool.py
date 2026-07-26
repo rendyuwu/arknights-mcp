@@ -25,9 +25,18 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
-from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
+from arknights_mcp.mcp.tools.enemy import (
+    _enemy_absent_field_limitations,
+    _enemy_to_dict,
+    build_get_enemy_spec,
+)
 from arknights_mcp.models.common import MAX_ID_LEN
-from arknights_mcp.services.enemies import get_enemy
+from arknights_mcp.services.enemies import (
+    EnemyFacts,
+    EnemyLevelFacts,
+    EnemyProvenance,
+    get_enemy,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -120,9 +129,69 @@ def test_absent_expected_fields_named_in_limitation(conn: sqlite3.Connection) ->
     assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
 
 
+def test_present_scalars_still_emitted_on_the_wire(conn: sqlite3.Connection) -> None:
+    # §V67/B98 (T180): the omit rule touches ABSENT scalars only -- the fixture slug
+    # carries attack_type/attack_range/block_behavior, so all three emit unchanged
+    # (§V21; a genuine 0.0 is a present value, never dropped) and none is flagged in
+    # the absent-field limitation.
+    env = _handler(conn)(server="en", game_id="enemy_1007_slime")
+    enemy = env.to_dict()["data"]["enemy"]  # type: ignore[index]
+    lvl = enemy["levels"][0]  # type: ignore[index]
+    assert enemy["attack_type"] == "physical"
+    assert lvl["attack_range"] == 0.0  # present zero survives the omit rule
+    assert lvl["block_behavior"] == "blockable"
+    blob = " ".join(env.limitations).lower()
+    assert "attack_type" not in blob
+    assert "attack_range" not in blob
+    assert "block_behavior" not in blob
+
+
+def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
+    # §V67/B98 (T180): an enemy whose source omits attack_type + every per-level
+    # attack_range/block_behavior emits NONE of those keys; the absent-field
+    # limitation names all three (sole signal, no null+limitation duplicate).
+    lvl = EnemyLevelFacts(
+        level_variant=0,
+        hp=100,
+        atk=10,
+        def_=0,
+        res=0,
+        attack_interval=None,
+        attack_range=None,
+        move_speed=None,
+        weight=None,
+        life_point_reduction=None,
+        block_behavior=None,
+        targeting=None,
+        immunities=None,
+        abilities=None,
+    )
+    enemy = EnemyFacts(
+        server="en",
+        game_id="enemy_bare",
+        display_name="Bare",
+        enemy_class="NORMAL",
+        is_boss=False,
+        is_elite=False,
+        attack_type=None,
+        motion_type="WALK",
+        levels=(lvl,),
+        provenance=EnemyProvenance(snapshot_id="en:x", imported_at="t"),
+    )
+    data = _enemy_to_dict(enemy, image_refs_enabled=False)
+    assert "attack_type" not in data
+    level = data["levels"][0]  # type: ignore[index]
+    assert "attack_range" not in level and "block_behavior" not in level
+    lim = _enemy_absent_field_limitations(enemy)
+    assert len(lim) == 1
+    blob = lim[0].lower()
+    assert "attack_type" in blob and "attack_range" in blob and "block_behavior" in blob
+
+
 def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:
-    # §V67: the []-vs-absent convention is stated in the tool description.
+    # §V67: the []-vs-absent + absent-scalar convention is stated in the description.
     assert LIST_FIELD_CONVENTION in build_get_enemy_spec(lambda: conn).description
+    assert "scalar" in LIST_FIELD_CONVENTION
 
 
 # --- §V5 region + provenance --------------------------------------------------

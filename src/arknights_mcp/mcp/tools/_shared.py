@@ -229,7 +229,8 @@ def page_to_dict(page: SectionPage) -> dict[str, object]:
 #: string.
 LIST_FIELD_CONVENTION = (
     "Field conventions: a list field is [] when the source confirms none, and is "
-    "omitted entirely when the source carries no such data (never null). A field the "
+    "omitted entirely when the source carries no such data (never null). An optional "
+    "scalar the source omits is likewise absent, never null. A field the "
     "response would normally include but the source omits is named in limitations."
 )
 
@@ -271,7 +272,9 @@ def absent_field_limitation(absent: Sequence[str]) -> tuple[str, ...]:
     """§V67/§V26 (B58): one standing limitation naming the expected fields the source
     omitted for this entity, so a client can tell "the source carried no such data"
     apart from a confirmed-empty value -- the executable form of "absent field -> say
-    so". Returns an empty tuple when nothing expected is absent (no limitation
+    so". §V67 (B98): the named field's key is OMITTED from the payload, so this
+    limitation is the SOLE absence signal -- never a null+limitation duplicate.
+    Returns an empty tuple when nothing expected is absent (no limitation
     emitted). Shared §V37 home for ``get_enemy`` + ``get_stage``. Client-facing text,
     so no internal cites/jargon (§V71)."""
     if not absent:

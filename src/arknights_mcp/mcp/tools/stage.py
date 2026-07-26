@@ -105,8 +105,12 @@ _NOT_FOUND_ACTION = (
 
 
 def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
-    """The compact, always-present stage facts (no prose; §V16/§V18)."""
-    return {
+    """The compact, always-present stage facts (no prose; §V16/§V18).
+
+    §V67 (B98): ``recommended_level`` / ``max_life_points`` are omitted when the
+    source carried none, never emitted as null -- the standing absent-field
+    limitation is the sole absence signal."""
+    out: dict[str, object] = {
         "server": stage.server,
         "game_id": stage.game_id,
         "stage_code": stage.stage_code,
@@ -115,9 +119,12 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
         "stage_type": stage.stage_type,
         "difficulty": stage.difficulty,
         "sanity_cost": stage.sanity_cost,
-        "recommended_level": stage.recommended_level,
-        "max_life_points": stage.max_life_points,
     }
+    if stage.recommended_level is not None:
+        out["recommended_level"] = stage.recommended_level
+    if stage.max_life_points is not None:
+        out["max_life_points"] = stage.max_life_points
+    return out
 
 
 def _tile_grid_to_dict(grid: TileGridFacts) -> dict[str, object]:
@@ -343,7 +350,8 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     so the description's "full per-enemy stat/timing context" is honoured, not just
     advertised (B41). A stat is ``null`` when the source field is absent (§V26).
     ``variant_id`` (the inline ``useDb:false`` variant id, §T80) is OMITTED rather
-    than emitted as a bare null for a base-enemy occurrence (§V67/B90)."""
+    than emitted as a bare null for a base-enemy occurrence (§V67/B90); the
+    ``attack_type`` scalar is likewise omitted when absent in source (§V67/B98)."""
     out: dict[str, object] = {
         "game_id": occ.game_id,
         "display_name": occ.display_name,
@@ -351,7 +359,6 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         "is_boss": occ.is_boss,
         "is_elite": occ.is_elite,
         "motion_type": occ.motion_type,
-        "attack_type": occ.attack_type,
         "level_variant": occ.level_variant,
         "total_count": occ.total_count,
         "hp": occ.hp,
@@ -369,6 +376,9 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     # a base-enemy occurrence omits the key rather than carrying an ambiguous null.
     if occ.variant_id is not None:
         out["variant_id"] = occ.variant_id
+    # §V67/B98: absent-in-source scalar omitted, never null.
+    if occ.attack_type is not None:
+        out["attack_type"] = occ.attack_type
     return out
 
 
@@ -405,6 +415,10 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
                 imported_at=prov.imported_at,
             )
         ],
+        # §V67/B98: the shared stage shaper omits absent scalars (recommended_level /
+        # max_life_points), so this surface carries the same sole-signal limitation
+        # naming them as get_stage does.
+        limitations=_stage_absent_field_limitations(result.stage),
         analyzer_version=result.analyzer_version,
     )
 

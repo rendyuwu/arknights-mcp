@@ -29,8 +29,18 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools.stage import build_analyze_stage_spec
-from arknights_mcp.services.stages import analyze_stage
+from arknights_mcp.mcp.tools.stage import (
+    _occurrence_full,
+    _shape_analysis,
+    build_analyze_stage_spec,
+)
+from arknights_mcp.services.stages import (
+    EnemyOccurrenceFacts,
+    StageAnalysisResult,
+    StageFacts,
+    StageProvenance,
+    analyze_stage,
+)
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -133,6 +143,73 @@ def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Conne
     compact = _handler(conn)(server="en", stage_code="4-4", depth="standard").to_dict()["data"]
     for occ in compact["occurrences"]:  # type: ignore[index]
         assert not (stat_keys & set(occ))
+
+
+def _occurrence(attack_type: str | None) -> EnemyOccurrenceFacts:
+    return EnemyOccurrenceFacts(
+        game_id="enemy_bare",
+        display_name="Bare",
+        enemy_class="NORMAL",
+        is_boss=False,
+        is_elite=False,
+        motion_type="WALK",
+        attack_type=attack_type,
+        level_variant=0,
+        total_count=1,
+        first_spawn_time=None,
+        last_spawn_time=None,
+        route_count=None,
+        hp=100,
+        atk=10,
+        def_=0,
+        res=0,
+        attack_interval=None,
+        move_speed=None,
+        weight=None,
+        variant_id=None,
+    )
+
+
+def test_detailed_occurrence_omits_absent_attack_type() -> None:
+    # §V67/B98 (T180): an absent-in-source attack_type is OMITTED from the detailed
+    # occurrence, never emitted as null; a present one still emits (§V21).
+    assert "attack_type" not in _occurrence_full(_occurrence(None))
+    assert _occurrence_full(_occurrence("physical"))["attack_type"] == "physical"
+
+
+def test_analysis_envelope_names_absent_stage_scalars() -> None:
+    # §V67/B98 (T180): analyze_stage shares the stage shaper with get_stage, so a
+    # stage whose source omits recommended_level/max_life_points drops the keys AND
+    # carries the same sole-signal limitation naming them.
+    bare = StageFacts(
+        server="en",
+        game_id="bare_stage",
+        stage_code="B-1",
+        display_name="Bare",
+        zone_game_id=None,
+        stage_type=None,
+        difficulty=None,
+        sanity_cost=10,
+        recommended_level=None,
+        max_life_points=None,
+        provenance=StageProvenance(snapshot_id="en:x", imported_at="t"),
+    )
+    result = StageAnalysisResult(
+        status="ok",
+        server="en",
+        stage=bare,
+        occurrences=(),
+        observations=(),
+        warnings=(),
+        analyzer_version="test",
+    )
+    env = _shape_analysis("standard", result)
+    assert env.status == "ok"
+    stage = env.to_dict()["data"]["stage"]  # type: ignore[index]
+    assert "recommended_level" not in stage and "max_life_points" not in stage
+    blob = " ".join(env.limitations).lower()
+    assert "recommended_level" in blob and "max_life_points" in blob
+    assert "not present" in blob
 
 
 def test_detailed_occurrence_omits_variant_id_for_base_enemy(
