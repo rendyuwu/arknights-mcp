@@ -315,9 +315,40 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert expired_row["expired"] is True
     # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
     assert expired_row["confidence"] < 0.5
-    assert any("expired" in lim.lower() for lim in expired_row["limitations"])
+    # §V85/B93: the expiry sentence is hoisted ONCE onto the observation-level
+    # limitations; the row carries only the typed marker + its confidence.
+    assert "limitations" not in expired_row
+    assert any("expired" in lim.lower() for lim in obs["limitations"])
     # A staleness limitation names the refresh action; never presented as fresh.
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
+
+
+# --- §V85/B93: the thin-sample sentence is hoisted once; rows carry a flag -----
+
+
+def test_v85_thin_sample_sentence_hoisted_once_not_per_row(tmp_path: Path) -> None:
+    # §V85/B93: every stage here has a thin sample (< 100 runs). The identical
+    # "below the floor" sentence must appear EXACTLY ONCE at the observation level
+    # (in the live eval it repeated verbatim on ~20 ranked rows); each row keeps only
+    # the typed flag + its own reduced confidence (T174).
+    path = _candidate(tmp_path)
+    seed_item_across_stages(
+        path,
+        [
+            StageDropSeed("4-4", sanity_cost=18, drop_rate=0.25, times=40),
+            StageDropSeed("a-1", sanity_cost=6, drop_rate=0.5, times=55),
+            StageDropSeed("b-2", sanity_cost=30, drop_rate=0.25, times=10),
+        ],
+    )
+    env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
+    assert env.status == "ok"
+    ob = env.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
+    thin_sentences = [lim for lim in ob["limitations"] if "floor" in lim.lower()]
+    assert len(thin_sentences) == 1
+    for row in ob["ranking"]:
+        assert row["flags"] == ["thin_sample"]
+        assert row["confidence"] < 0.5  # per-row confidence stays (T174)
+        assert "limitations" not in row  # no per-row sentence repeats
 
 
 # --- §V66.2: provenance hoist -- shared block + only the deviant row carries its own -

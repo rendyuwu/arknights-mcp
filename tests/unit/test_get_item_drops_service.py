@@ -179,7 +179,10 @@ def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
     assert "a-1" in names
     expired_row = next(row for row in ranking if row.name == "a-1")
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
-    assert any("expired" in lim for lim in expired_row.limitations)
+    assert expired_row.expired is True
+    # §V85: the expiry sentence is hoisted once onto the observation, not per row.
+    assert result.observation is not None
+    assert any("expired" in lim for lim in result.observation.limitations)
 
 
 # --- §V24: absent item / no drop cache -> not_found, no fetch fallback ---------

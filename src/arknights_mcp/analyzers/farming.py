@@ -28,20 +28,29 @@ data lives in :class:`RankingRow` rows ``{id, name, sanity_per_item}`` ranked
 ascending. A row's ``id`` REFERENCES the sibling drops/stages facts list the tool
 already emits (which carries ``sanity_cost`` / ``drop_rate`` / ``sample_size``), so
 those numbers are never re-copied onto the observation (evidence by reference, §V66.1
-~85% token cut). Per-row ``confidence`` / ``limitations`` appear ONLY where a row
-deviates from the observation-level baseline -- a thin sample or an expired cache --
-so the deviant row stays visible without restating the shared fields on every row.
-The §V6 discipline is intact: the observation is fully attributed and every figure
-still carries its own conservatism caveat where it applies.
+~85% token cut). Per-row ``confidence`` appears ONLY where a row deviates from the
+observation-level baseline -- a thin sample or an expired cache -- so the deviant row
+stays visible without restating the shared fields on every row.
+
+Deviation caveats are stated once, not per row (§V85/B93): a deviating row carries a
+short typed marker -- ``flags`` (:data:`FLAG_THIN_SAMPLE` / :data:`FLAG_SAMPLE_UNREPORTED`)
+or ``expired`` -- and the SENTENCE explaining each condition present anywhere in the
+ranking is hoisted ONCE onto the observation-level ``limitations`` by
+:func:`_ranked_observation` (the §V37 single home shared by both views). Twenty thin
+rows no longer repeat the identical "below the floor" sentence twenty times; each
+carries ``flags=("thin_sample",)`` + its own reduced confidence, and the sentence
+appears once. The §V6 discipline is intact: the observation is fully attributed, the
+caveat content is complete at the observation level, and every deviating figure still
+carries its own reduced confidence.
 
 Conservatism (§V8/§V55):
 
 * a drop sample below :data:`SAMPLE_SIZE_FLOOR` runs -> the row's confidence is
-  reduced and a limitation records the thin sample (the rate is noisy, §V55 extends
-  §V8);
-* an expired drop cache (§V53) -> the row's figure is downgraded to a limitation and
-  its confidence forced below the §V8 recommendation threshold, never presented as a
-  fresh recommendation (§V55);
+  reduced, the row is flagged, and an observation-level limitation records the thin
+  sample once (the rate is noisy, §V55 extends §V8; §V85 hoist);
+* an expired drop cache (§V53) -> the row's figure is downgraded (marked ``expired``,
+  caveat hoisted once) and its confidence forced below the §V8 recommendation
+  threshold, never presented as a fresh recommendation (§V55);
 * a missing ``sanity_cost`` or an absent/zero ``drop_rate`` yields no row -- it is a
   §V26 warning, never a fabricated or divide-by-zero conclusion.
 """
@@ -86,6 +95,36 @@ _RECOMMENDATION_THRESHOLD = 0.5
 assert _CONF_THIN_SAMPLE < _RECOMMENDATION_THRESHOLD <= _CONF_STABLE
 assert _CONF_EXPIRED < _RECOMMENDATION_THRESHOLD
 
+#: Typed per-row deviation flags (§V85/B93). A deviating row carries the short flag;
+#: the sentence explaining the condition is hoisted ONCE onto the observation-level
+#: limitations (never repeated verbatim on every deviating row). The two sample flags
+#: are mutually exclusive (a sample is either reported-but-thin or unreported).
+FLAG_THIN_SAMPLE = "thin_sample"
+FLAG_SAMPLE_UNREPORTED = "sample_unreported"
+
+#: The §V85 hoisted sentences, one per deviation condition, in the deterministic order
+#: they are appended to the observation-level limitations when the condition is present
+#: anywhere in the ranking. Client-facing wording (§V71): each names the per-row marker
+#: (the ``expired`` field / the ``flags`` value) the client joins it back on.
+_HOISTED_LIMITATIONS: tuple[tuple[str, str], ...] = (
+    (
+        "expired",
+        "rows marked expired are past the drop cache expiry; their figures are "
+        "downgraded, never a fresh recommendation -- re-sync the penguin drop source "
+        "to refresh them",
+    ),
+    (
+        FLAG_THIN_SAMPLE,
+        f"rows flagged {FLAG_THIN_SAMPLE} rest on a drop sample below the "
+        f"{SAMPLE_SIZE_FLOOR}-run floor; the rate is noisy and the figure uncertain",
+    ),
+    (
+        FLAG_SAMPLE_UNREPORTED,
+        f"rows flagged {FLAG_SAMPLE_UNREPORTED} have no reported sample size; "
+        "rate stability is unverified",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class RankingRow:
@@ -100,17 +139,21 @@ class RankingRow:
     alongside the id: the item's display name in the stage view, the stage's
     ``stage_code`` in the item comparison (§V68 "display stage_code alongside").
     ``sanity_per_item`` is the derived ranking figure (not present in the sibling
-    list). ``confidence`` and ``limitations`` are populated ONLY when this row deviates
-    from the observation-level baseline (:data:`_CONF_STABLE`) -- a thin sample or an
-    expired cache -- so a non-deviating row stays the minimal fields and a deviant one
-    carries its own §V8/§V55 caveat.
+    list). ``confidence`` is populated ONLY when this row deviates from the
+    observation-level baseline (:data:`_CONF_STABLE`) -- a thin sample or an expired
+    cache -- so a non-deviating row stays the minimal fields and a deviant one carries
+    its own reduced §V8/§V55 confidence. The deviation CAUSE rides as a short typed
+    marker (§V85/B93): ``expired`` for a stale cache, ``flags`` for a
+    thin/unreported sample; the sentence explaining each condition is hoisted once
+    onto the observation-level limitations, never repeated per row.
     """
 
     id: str
     name: str | None
     sanity_per_item: float
     confidence: float | None = None
-    limitations: tuple[str, ...] = ()
+    expired: bool = False
+    flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,9 +167,11 @@ class RankedObservation:
     The ranking is ascending by ``sanity_per_item`` -- an ordering + evidence, never a
     "best farm" / mandatory verdict (§V7/§V55). ``confidence`` is the baseline for a
     fresh, well-sampled figure (:data:`_CONF_STABLE`); a row that deviates (thin sample
-    / expired) carries its OWN lower confidence + limitation. ``limitations`` here are
-    observation-level caveats that apply to the whole ranking (the §V60 comparison
-    caveats for the item view; empty for the stage view).
+    / expired) carries its OWN lower confidence + a typed marker. ``limitations`` here
+    are the caveats that apply to the ranking: the §V60 comparison caveats for the item
+    view, plus the §V85 hoisted sentence for each deviation condition present anywhere
+    in the ranking (stated once, joined back to rows via their ``expired``/``flags``
+    markers).
     """
 
     rule_id: str
@@ -191,57 +236,53 @@ class FarmingAnalysis:
 
 @dataclass(frozen=True)
 class _Efficiency:
-    """The computed sanity-per-item figure plus its §V8/§V55 confidence + limitations.
+    """The computed sanity-per-item figure plus its §V8/§V55 confidence + flags.
 
     The single §V37 home's output: the farming math and the conservatism ladder are
     computed once (:func:`_efficiency`) so the stage view (:func:`analyze_farming`) and
     the item comparison (:func:`analyze_item_farming`) can never diverge on the figure
-    or on how a thin/absent sample or an expired cache lowers confidence.
+    or on how a thin/absent sample or an expired cache lowers confidence. ``flags`` are
+    the typed sample markers (§V85); the explanatory sentences live once at the
+    observation level (:func:`_ranked_observation`), never here per figure.
     """
 
     sanity_per_item: float
     confidence: float
-    limitations: tuple[str, ...]
+    flags: tuple[str, ...]
 
 
 def _efficiency(
     *, sanity_cost: int, drop_rate: float, sample_size: int | None, expired: bool
 ) -> _Efficiency:
-    """Compute sanity per item + the §V8/§V55 confidence/limitations (§V37 single home).
+    """Compute sanity per item + the §V8/§V55 confidence/flags (§V37 single home).
 
     Caller guarantees a positive ``sanity_cost`` and a positive ``drop_rate`` (a
     missing/zero either is a §V26 warning handled upstream), so the ratio is always
     well-defined. Each conservatism condition INDEPENDENTLY lowers confidence (lowest
-    wins) and appends its own limitation, so a figure that is both expired AND
+    wins) and leaves its own typed marker, so a figure that is both expired AND
     thin-sampled carries BOTH caveats -- §V6 wants complete limitations, not a
-    dominant-cause-only note (§V8/§V53/§V55). A fresh, well-sampled rate keeps the
-    stable confidence.
+    dominant-cause-only note (§V8/§V53/§V55); the expired marker rides the row's
+    ``expired`` field, the sample marker its ``flags`` (§V85). A fresh, well-sampled
+    rate keeps the stable confidence.
     """
     sanity_per_item = sanity_cost / drop_rate
 
-    limitations: list[str] = []
+    flags: list[str] = []
     confidence = _CONF_STABLE
     if expired:
         confidence = min(confidence, _CONF_EXPIRED)
-        limitations.append(
-            "drop cache expired; farming efficiency downgraded to a limitation, "
-            "not a fresh recommendation -- re-sync the penguin drop source"
-        )
     if sample_size is not None and sample_size < SAMPLE_SIZE_FLOOR:
         confidence = min(confidence, _CONF_THIN_SAMPLE)
-        limitations.append(
-            f"drop sample of {sample_size} run(s) is below the "
-            f"{SAMPLE_SIZE_FLOOR}-run floor; the rate is noisy and the figure uncertain"
-        )
+        flags.append(FLAG_THIN_SAMPLE)
     if sample_size is None:
         # A rate with no reported sample size is unverifiable for stability (§V26).
         confidence = min(confidence, _CONF_THIN_SAMPLE)
-        limitations.append("drop sample size not reported; rate stability unverified")
+        flags.append(FLAG_SAMPLE_UNREPORTED)
 
     return _Efficiency(
         sanity_per_item=sanity_per_item,
         confidence=confidence,
-        limitations=tuple(limitations),
+        flags=tuple(flags),
     )
 
 
@@ -257,11 +298,13 @@ def _ranking_row(
     """Build one ranking row + its ascending sort key (§V66.1/§V6/§V37).
 
     Caller guarantees a positive ``sanity_cost`` and ``drop_rate``. The figure +
-    confidence + limitations come from the shared :func:`_efficiency` core (§V37); this
+    confidence + flags come from the shared :func:`_efficiency` core (§V37); this
     only shapes them into a :class:`RankingRow`. The row omits its ``confidence`` when
     it matches the observation-level baseline (:data:`_CONF_STABLE`) and carries it
     only where the row DEVIATES (thin sample / expired), so a non-deviating row stays
-    the minimal ``{id, name, sanity_per_item}`` (§V66.1). The sibling facts list holds
+    the minimal ``{id, name, sanity_per_item}`` (§V66.1). The deviation cause is the
+    row's typed ``expired``/``flags`` marker; its explanatory sentence is hoisted once
+    by :func:`_ranked_observation` (§V85). The sibling facts list holds
     ``sanity_cost`` / ``drop_rate`` / ``sample_size``; ``entity_id`` references them
     rather than re-copying (§V66.1). The returned float is the sanity-per-item used to
     rank ascending (§V60).
@@ -272,13 +315,14 @@ def _ranking_row(
         sample_size=sample_size,
         expired=expired,
     )
-    deviates = eff.confidence != _CONF_STABLE or bool(eff.limitations)
+    deviates = eff.confidence != _CONF_STABLE or bool(eff.flags)
     row = RankingRow(
         id=entity_id,
         name=name,
         sanity_per_item=round(eff.sanity_per_item, 2),
         confidence=eff.confidence if deviates else None,
-        limitations=eff.limitations,
+        expired=expired,
+        flags=eff.flags,
     )
     return eff.sanity_per_item, row
 
@@ -286,7 +330,19 @@ def _ranking_row(
 def _ranked_observation(
     *, summary: str, ranking: tuple[RankingRow, ...], limitations: tuple[str, ...]
 ) -> RankedObservation:
-    """Assemble the single ranked observation with the §V6 fields once (§V66.1/§V6)."""
+    """Assemble the single ranked observation with the §V6 fields once (§V66.1/§V6).
+
+    The §V85/B93 hoist lives here (§V37 single home for both views): each deviation
+    condition present anywhere in the ranking appends its explanatory sentence ONCE to
+    the observation-level ``limitations`` (after the caller's ranking-wide caveats), in
+    the fixed :data:`_HOISTED_LIMITATIONS` order so the output is deterministic. Rows
+    carry only the typed ``expired``/``flags`` markers + their own reduced confidence;
+    a condition absent from every row emits no sentence.
+    """
+    present = {flag for row in ranking for flag in row.flags}
+    if any(row.expired for row in ranking):
+        present.add("expired")
+    hoisted = tuple(sentence for marker, sentence in _HOISTED_LIMITATIONS if marker in present)
     return RankedObservation(
         rule_id=RULE_ID,
         category=_CATEGORY,
@@ -295,7 +351,7 @@ def _ranked_observation(
         summary=summary,
         confidence=_CONF_STABLE,
         ranking=ranking,
-        limitations=limitations,
+        limitations=limitations + hoisted,
     )
 
 
@@ -314,8 +370,9 @@ def analyze_farming(ctx: FarmingContext) -> FarmingAnalysis:
     output is deterministic, §V26/§V60). A stage with no ``sanity_cost`` warns once and
     produces no observation (§V26); a drop with an absent or non-positive ``drop_rate``
     warns per item, never fabricating a figure or dividing by zero. The §V6 fields are
-    stated once at the observation level; a row deviates (its own confidence +
-    limitation) only for a thin sample or an expired cache. The analyzer adds no
+    stated once at the observation level; a row deviates (its own confidence + typed
+    ``expired``/``flags`` marker) only for a thin sample or an expired cache, with the
+    explanatory sentence hoisted once onto the observation (§V85). The analyzer adds no
     prescriptive language (§V7).
     """
     warnings: list[str] = []
@@ -461,10 +518,10 @@ def analyze_item_farming(ctx: ItemFarmingContext) -> ItemFarmingAnalysis:
     stage with a missing ``sanity_cost`` or an absent/non-positive
     ``drop_rate`` is excluded with a §V26 warning (never a fabricated figure); the
     per-stage warnings are emitted in stage order so the output is deterministic
-    (§V26). An expired stage's figure is downgraded to a per-row limitation (via
-    ``_efficiency``) but KEPT in the ranking, not dropped (§V60/§V53). The mandatory
-    §V60 comparison caveats ride the observation's observation-level ``limitations``
-    whenever a ranking exists.
+    (§V26). An expired stage's figure is downgraded (marked ``expired``, confidence
+    reduced via ``_efficiency``, caveat hoisted once, §V85) but KEPT in the ranking,
+    not dropped (§V60/§V53). The mandatory §V60 comparison caveats ride the
+    observation's observation-level ``limitations`` whenever a ranking exists.
     """
     warnings: list[str] = []
     rows: list[tuple[float, str, str, RankingRow]] = []

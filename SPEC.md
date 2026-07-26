@@ -157,7 +157,7 @@ T87-T172 (M8-M15) ALL done → purged (M8-M14 2026-07-23; M15 2026-07-24; record
 
 id|status|task|cites
 T173|x|M16 module obs evidence dedup (B92): collapse byte-identical evidence rows → 1 + count/level list|V85,V66
-T174|.|M16 drops thin-sample limitation hoist (B93): 1 obs-level sentence + per-row flag; per-row `confidence` stays|V85,V66
+T174|x|M16 drops thin-sample limitation hoist (B93): 1 obs-level sentence + per-row flag; per-row `confidence` stays|V85,V66
 T175|.|M16 SVG economy + legend fix (B94): shared style classes, gridline path, same-coord marker dedup, road gloss = enemy path + MELEE-deploy, "display-only, reason from tile_grid" in description|V86,V82,V22
 T176|.|M16 `get_stage_drops` efficiency fold (B95): ranking subsumes `drops[]` rows, mirror T161; breaking → ADR bundle|V66,V22,V21
 T177|.|M16 `get_data_status` row join key + null scrub (B96): `server` inline per snapshot row; omit always-null `commit_sha`/`upstream_version`|V87,V77,V67

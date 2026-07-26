@@ -200,9 +200,11 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
     row = ranking[0]
     assert row["id"] == "sugar"  # references the sibling drops list
     assert row["sanity_per_item"] == 72.0  # 18 / 0.25
-    # §V66.1: a non-deviating (fresh + well-sampled) row omits its own confidence/
-    # limitation, and the numbers already in the drops list are NOT re-copied onto it.
+    # §V66.1/§V85: a non-deviating (fresh + well-sampled) row omits its own confidence
+    # and deviation markers, and the numbers already in the drops list are NOT
+    # re-copied onto it.
     assert "confidence" not in row and "limitations" not in row
+    assert "flags" not in row and "expired" not in row
     for reinstated in ("drop_rate", "sanity_cost", "sample_size", "times"):
         assert reinstated not in row
     # §V6: the analyzer version rides the envelope too.
@@ -221,13 +223,17 @@ def test_expired_efficiency_downgraded_below_recommendation(
     stale_conn: sqlite3.Connection,
 ) -> None:
     # §V53/§V55: an expired cache downgrades the figure below the §V8 threshold, so
-    # the row reads as a limitation, never a fresh recommendation.
+    # the row reads as a limitation, never a fresh recommendation. §V85/B93: the row
+    # carries the typed marker + its confidence; the sentence is hoisted ONCE onto the
+    # observation-level limitations, never repeated per row.
     env = _handler(stale_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "data_stale"
     ob = env.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
     row = ob["ranking"][0]
     assert row["confidence"] < 0.5
-    assert any("expired" in lim.lower() for lim in row["limitations"])
+    assert row["expired"] is True
+    assert "limitations" not in row
+    assert any("expired" in lim.lower() for lim in ob["limitations"])
 
 
 # --- §V23 typed failures ------------------------------------------------------

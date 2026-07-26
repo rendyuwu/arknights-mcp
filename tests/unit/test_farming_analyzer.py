@@ -9,17 +9,19 @@ these assert the deterministic contract without a database.
 Emission shape (§V66.1/§T129): each entry point emits a SINGLE ranked observation.
 The five §V6 fields are stated once at the observation level; per-entity data lives
 in ``ranking`` rows ``{id, name, sanity_per_item}`` ranked ascending; a row carries
-its own ``confidence`` / ``limitations`` ONLY where it deviates (thin sample /
-expired). These tests assert:
+its own ``confidence`` + a typed ``expired``/``flags`` marker ONLY where it deviates
+(thin sample / expired), and the sentence explaining each condition is hoisted ONCE
+onto the observation-level limitations (§V85/B93). These tests assert:
 
 * one observation with rule_id + confidence + analyzer_version once, and ranking
   rows whose ``id`` REFERENCES the sibling facts (no re-copied numbers, §V66.1/§V6);
-* a fresh, well-sampled row is non-deviating (omits its own confidence + limitation)
+* a fresh, well-sampled row is non-deviating (omits its own confidence + markers)
   and the observation baseline confidence is at/above the §V8 threshold;
 * a drop sample below the floor / an unreported sample -> that row deviates below the
-  §V8 threshold with a limitation (§V8/§V55);
-* an expired cache -> every row is downgraded below the §V8 threshold with a
-  limitation (§V53/§V55), both caveats fire together when a row is also thin;
+  §V8 threshold with a typed flag, the sentence hoisted once (§V8/§V55/§V85);
+* an expired cache -> every row is downgraded below the §V8 threshold and marked
+  expired (§V53/§V55), both caveats fire together when a row is also thin;
+* N deviating rows -> each hoisted sentence appears exactly once, never per row (§V85);
 * a missing sanity cost or absent/zero drop rate -> a §V26 warning + no observation,
   never a fabricated or divide-by-zero conclusion;
 * the ranking is ascending by sanity per item, tie-broken deterministically (§V60);
@@ -31,6 +33,8 @@ from __future__ import annotations
 
 from arknights_mcp.analyzers import ANALYZER_VERSION
 from arknights_mcp.analyzers.farming import (
+    FLAG_SAMPLE_UNREPORTED,
+    FLAG_THIN_SAMPLE,
     RULE_ID,
     SAMPLE_SIZE_FLOOR,
     DropFact,
@@ -126,50 +130,101 @@ def test_sanity_per_item_computed_from_typed_fields() -> None:
 def test_sufficient_sample_row_is_non_deviating() -> None:
     obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR))))
     # §V8: fresh + well-sampled -> the observation baseline is a recommendation-grade
-    # confidence and the row inherits it (its own confidence/limitations are omitted).
+    # confidence and the row inherits it (its own confidence/markers are omitted).
     assert obs.confidence >= 0.5
     row = obs.ranking[0]
     assert row.confidence is None
-    assert row.limitations == ()
+    assert row.flags == () and row.expired is False
+    # §V85: no deviating row -> no hoisted sentence at the observation level either.
+    assert obs.limitations == ()
 
 
 # --- §V8/§V55: a thin / unreported sample -> that row deviates below the floor ---
 
 
-def test_thin_sample_row_deviates_with_limitation() -> None:
-    row = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1)))).ranking[0]
+def test_thin_sample_row_deviates_with_flag_and_hoisted_sentence() -> None:
+    obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1))))
+    row = obs.ranking[0]
     # §V8: below the floor the figure is not a recommendation -- row confidence < 0.5.
     assert row.confidence is not None and row.confidence < 0.5
-    assert any("below the" in lim and "floor" in lim for lim in row.limitations)
+    # §V85: the row carries the typed flag; the sentence lives once on the observation.
+    assert FLAG_THIN_SAMPLE in row.flags
+    assert any("below the" in lim and "floor" in lim for lim in obs.limitations)
 
 
 def test_missing_sample_size_row_is_unverified_not_zero() -> None:
     # §V26: an absent sample size is not treated as a stable rate -- the row deviates
-    # with reduced confidence + a limitation, never silently accepted as well-sampled.
-    row = _obs(analyze_farming(_ctx(_drop(sample_size=None)))).ranking[0]
+    # with reduced confidence + a flag, never silently accepted as well-sampled.
+    obs = _obs(analyze_farming(_ctx(_drop(sample_size=None))))
+    row = obs.ranking[0]
     assert row.confidence is not None and row.confidence < 0.5
-    assert any("sample size not reported" in lim for lim in row.limitations)
+    assert FLAG_SAMPLE_UNREPORTED in row.flags
+    assert any("sample size" in lim and "unverified" in lim for lim in obs.limitations)
 
 
 # --- §V53/§V55: expired cache -> the row is downgraded, not fresh ---------------
 
 
 def test_expired_cache_row_downgraded_to_limitation() -> None:
-    row = _obs(analyze_farming(_ctx(_drop(), expired=True))).ranking[0]
+    obs = _obs(analyze_farming(_ctx(_drop(), expired=True)))
+    row = obs.ranking[0]
     # §V55: an expired figure is never a fresh recommendation.
     assert row.confidence is not None and row.confidence < 0.5
-    assert any("expired" in lim for lim in row.limitations)
+    assert row.expired is True
+    assert any("expired" in lim for lim in obs.limitations)
 
 
-def test_expired_and_thin_sample_row_carries_both_limitations() -> None:
+def test_expired_and_thin_sample_row_carries_both_caveats() -> None:
     # §V6/§V55: when a drop is BOTH expired and below the sample floor, neither cause
-    # masks the other -- the row records both caveats (stale AND noisy), not just one.
-    row = _obs(
-        analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1), expired=True))
-    ).ranking[0]
+    # masks the other -- the row records both markers (stale AND noisy), not just one,
+    # and both hoisted sentences ride the observation (§V85).
+    obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1), expired=True)))
+    row = obs.ranking[0]
     assert row.confidence is not None and row.confidence < 0.5
-    assert any("expired" in lim for lim in row.limitations)
-    assert any("below the" in lim and "floor" in lim for lim in row.limitations)
+    assert row.expired is True and FLAG_THIN_SAMPLE in row.flags
+    assert any("expired" in lim for lim in obs.limitations)
+    assert any("below the" in lim and "floor" in lim for lim in obs.limitations)
+
+
+# --- §V85/B93: the deviation sentence is hoisted ONCE, never repeated per row ----
+
+
+def test_v85_thin_sample_sentence_hoisted_once_across_many_rows() -> None:
+    # §V85/B93: N thin rows -> ONE observation-level sentence + a per-row flag, never
+    # the identical sentence verbatim on every row (~20 repeats in the live eval).
+    obs = _obs(
+        analyze_farming(
+            _ctx(*(_drop(f"item_{i}", sample_size=SAMPLE_SIZE_FLOOR - 1) for i in range(5)))
+        )
+    )
+    thin_sentences = [lim for lim in obs.limitations if "floor" in lim]
+    assert len(thin_sentences) == 1
+    for row in obs.ranking:
+        # per-row: the typed flag + the reduced confidence stay (T174); no sentence.
+        assert row.flags == (FLAG_THIN_SAMPLE,)
+        assert row.confidence is not None and row.confidence < 0.5
+        assert not hasattr(row, "limitations")
+
+
+def test_v85_hoisted_sentences_only_for_conditions_present() -> None:
+    # A mixed ranking hoists exactly the sentences for the conditions present, in a
+    # deterministic order (expired, thin, unreported), after the base caveats.
+    obs = _item_obs(
+        analyze_item_farming(
+            _item_ctx(
+                _stage_drop("a-1", expired=True),
+                _stage_drop("b-2", sample_size=None),
+                _stage_drop("c-3"),
+            )
+        )
+    )
+    lims = list(obs.limitations)
+    expired_idx = [i for i, lim in enumerate(lims) if "expired" in lim]
+    unreported_idx = [i for i, lim in enumerate(lims) if "unverified" in lim]
+    assert len(expired_idx) == 1 and len(unreported_idx) == 1
+    assert expired_idx[0] < unreported_idx[0]
+    # thin_sample absent from every row -> its sentence is NOT hoisted.
+    assert not any("floor" in lim for lim in lims)
 
 
 # --- §V26: missing inputs -> warning + no observation, never a fabrication -------
@@ -311,9 +366,12 @@ def test_item_comparison_expired_stage_kept_not_dropped() -> None:
     assert set(rows) == {"level_4-4", "level_a-1"}  # the expired stage is still present
     expired_row = rows["level_a-1"]
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
-    assert any("expired" in lim for lim in expired_row.limitations)
+    assert expired_row.expired is True
+    # §V85: the expiry sentence is hoisted once onto the observation, not on the row.
+    assert any("expired" in lim for lim in obs.limitations)
     # the fresh stage is non-deviating (inherits the baseline)
-    assert rows["level_4-4"].confidence is None and rows["level_4-4"].limitations == ()
+    fresh = rows["level_4-4"]
+    assert fresh.confidence is None and fresh.flags == () and fresh.expired is False
 
 
 def test_item_comparison_excludes_missing_inputs_with_warning() -> None:
@@ -415,5 +473,6 @@ def test_v37_stage_and_item_views_agree_on_figure_and_confidence() -> None:
         item_row = _item_obs(analyze_item_farming(_item_ctx(drop))).ranking[0]
         assert stage_row.sanity_per_item == item_row.sanity_per_item
         assert stage_row.confidence == item_row.confidence
-        # the same conservatism limitations (expiry / thin / unreported) fire in both
-        assert set(stage_row.limitations) == set(item_row.limitations)
+        # the same conservatism markers (expiry / thin / unreported) fire in both
+        assert stage_row.expired == item_row.expired
+        assert stage_row.flags == item_row.flags

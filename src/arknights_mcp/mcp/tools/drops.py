@@ -26,9 +26,11 @@ The load-bearing invariants for both:
   the sibling drops/stages facts (evidence by reference, never re-copied numbers).
   ``get_item_drops`` ranks the rows ascending by sanity per item (§V60) with the
   mandatory availability/first-clear/byproduct caveats on the observation, an ordering
-  + evidence never a best-farm/mandatory verdict (§V7). A per-row confidence +
-  limitation appears only where a row deviates (thin sample / expired); an expired
-  cache downgrades that row below the §V8 threshold, never a fresh recommendation.
+  + evidence never a best-farm/mandatory verdict (§V7). A per-row confidence + typed
+  deviation marker (``expired``/``flags``) appears only where a row deviates (thin
+  sample / expired), with the explanatory sentence hoisted once onto the observation
+  (§V85/B93); an expired cache downgrades that row below the §V8 threshold, never a
+  fresh recommendation.
 * **§V23** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the
   shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
@@ -336,8 +338,12 @@ def _item_efficiency_row(
     §V66.2: the penguin provenance shared by every row is hoisted to ``drop_provenance``;
     ``deviation`` carries only the fields where this row differs. §V67: ``name`` /
     ``expired`` are omitted at their default (no code / fresh). §V66.1: per-row
-    ``confidence`` / ``limitations`` appear only where the row deviates from the
-    observation-level baseline (a thin sample / an expired cache).
+    ``confidence`` and the typed deviation markers appear only where the row deviates
+    from the observation-level baseline (a thin sample / an expired cache); the
+    sentence explaining each marker is hoisted once onto the observation-level
+    limitations (§V85/B93), never repeated per row. The ``expired`` fact key doubles
+    as the row's expired marker (one signal per condition, §V66); the sample markers
+    ride ``flags``.
     """
     out: dict[str, object] = {
         "id": stage.stage_game_id,
@@ -354,8 +360,8 @@ def _item_efficiency_row(
         out["expired"] = True  # §V67: emitted only when true (default = fresh)
     if row.confidence is not None:  # §V66.1: only where the row deviates from the baseline
         out["confidence"] = row.confidence
-    if row.limitations:
-        out["limitations"] = list(row.limitations)
+    if row.flags:
+        out["flags"] = list(row.flags)
     return out
 
 

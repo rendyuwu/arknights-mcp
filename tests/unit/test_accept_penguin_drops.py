@@ -228,13 +228,15 @@ def test_accept_efficiency_confidence_and_limitation_fresh(conn: sqlite3.Connect
     rows = {row.id: row for row in obs.ranking}
     assert set(rows) == {"30012", "30013"}
     # A well-sampled drop (times=5000) is a stable figure -> a non-deviating row that
-    # inherits the baseline (omits its own confidence/limitation); a thin sample
-    # (times=40) deviates below the §V8 recommendation threshold with a limitation (§V55).
+    # inherits the baseline (omits its own confidence/markers); a thin sample
+    # (times=40) deviates below the §V8 recommendation threshold with a typed flag,
+    # its sentence hoisted ONCE onto the observation-level limitations (§V55/§V85).
     stable, thin = rows["30012"], rows["30013"]
     assert obs.confidence >= 0.5
-    assert stable.confidence is None and stable.limitations == ()
+    assert stable.confidence is None and stable.flags == ()
     assert thin.confidence is not None and thin.confidence < 0.5
-    assert any("floor" in lim.lower() or "noisy" in lim.lower() for lim in thin.limitations)
+    assert "thin_sample" in thin.flags
+    assert any("floor" in lim.lower() or "noisy" in lim.lower() for lim in obs.limitations)
 
 
 def test_accept_expired_efficiency_downgraded_below_recommendation(
@@ -249,7 +251,9 @@ def test_accept_expired_efficiency_downgraded_below_recommendation(
     assert result.observation is not None
     for row in result.observation.ranking:
         assert row.confidence is not None and row.confidence < 0.5
-        assert any("expired" in lim.lower() for lim in row.limitations)
+        assert row.expired is True
+    # §V85: the expiry sentence rides the observation once, not every row.
+    assert any("expired" in lim.lower() for lim in result.observation.limitations)
 
 
 # --- §V5 region separation ----------------------------------------------------
@@ -385,7 +389,9 @@ def test_accept_item_expired_stage_downgraded_but_still_ranked(
     assert [row.id for row in result.observation.ranking] == ["gs_drones", "gs_arts"]
     for row in result.observation.ranking:
         assert row.confidence is not None and row.confidence < 0.5
-        assert any("expired" in lim.lower() for lim in row.limitations)
+        assert row.expired is True
+    # §V85: the expiry sentence rides the observation once, not every row.
+    assert any("expired" in lim.lower() for lim in result.observation.limitations)
 
 
 def test_accept_absent_item_is_not_found_no_fetch_fallback(conn: sqlite3.Connection) -> None:

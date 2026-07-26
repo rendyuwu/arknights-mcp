@@ -334,9 +334,11 @@ def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
     display label shown alongside (the item's display name in the stage view, the
     stage's ``stage_code`` in the item comparison) -- §V67: when it is absent it is
     OMITTED, never emitted as ``null``, so a client need not decide "no name vs
-    unknown". ``confidence`` and ``limitations`` are emitted ONLY when the row deviates
-    from the observation-level baseline (a thin sample / expired cache), so a
-    non-deviating row stays a minimal object and the deviant row stays visible.
+    unknown". ``confidence`` and the typed deviation markers (``expired`` / ``flags``)
+    are emitted ONLY when the row deviates from the observation-level baseline (a thin
+    sample / expired cache), so a non-deviating row stays a minimal object and the
+    deviant row stays visible; the sentence explaining each marker is hoisted once onto
+    the observation-level limitations (§V85/B93), never repeated per row.
     """
     out: dict[str, object] = {
         "id": row.id,
@@ -347,8 +349,10 @@ def ranking_row_to_dict(row: RankingRow) -> dict[str, object]:
         out["name"] = row.name
     if row.confidence is not None:
         out["confidence"] = row.confidence
-    if row.limitations:
-        out["limitations"] = list(row.limitations)
+    if row.expired:
+        out["expired"] = True  # §V67: emitted only when true (default = fresh)
+    if row.flags:
+        out["flags"] = list(row.flags)
     return out
 
 
