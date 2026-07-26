@@ -268,14 +268,23 @@ def _access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]
 
 
 def _wait_for_access_records(
-    caplog: pytest.LogCaptureFixture, minimum: int, *, timeout: float = 5.0
+    caplog: pytest.LogCaptureFixture,
+    minimum: int,
+    *,
+    timeout: float = 5.0,
+    contains: str | None = None,
 ) -> list[logging.LogRecord]:
     # The access line is emitted in the outermost middleware's ``finally``, which can
     # run on the server thread just after the client has the response -- poll briefly.
+    # ``contains`` waits for a SPECIFIC line: a bare count is satisfiable by earlier
+    # traffic alone (the tool call emits several lines), which raced the last request's
+    # not-yet-flushed record under full-suite load.
     deadline = time.time() + timeout
     while time.time() < deadline:
         records = _access_records(caplog)
-        if len(records) >= minimum:
+        if len(records) >= minimum and (
+            contains is None or any(contains in r.getMessage() for r in records)
+        ):
             return records
         time.sleep(0.05)
     return _access_records(caplog)
@@ -302,7 +311,7 @@ def test_access_log_scrubbed_under_real_traffic(
             timeout=30,
         )
         assert rejected.status_code == 401
-        records = _wait_for_access_records(caplog, minimum=2)
+        records = _wait_for_access_records(caplog, minimum=2, contains="principal=anonymous")
 
     blob = "\n".join(r.getMessage() for r in records)
     # Identity is recorded (iss|sub), the outcome is recorded ...
