@@ -125,6 +125,23 @@ SKIN_GALLERY_PARTIAL_LIMITATION = (
 )
 
 
+#: §V88/§V26 (§T182, ADR 0015): the residual alt-form note for the NAMED gallery path.
+#: With ``skin_table`` imported the outfit list is complete and the partial-gallery
+#: limitation above no longer applies -- it stays only on the fallback (pre-0014 /
+#: skin-domain-empty) path. What remains partial is the alt-form axis: an alternate
+#: playable form's skins fold under the BASE operator's gallery (its skin rows carry the
+#: base charId) and are labeled ``alt_form``, but the alt form itself is not a separately
+#: fetchable/searchable operator in this build -- so the base emit must not read as "the
+#: base operator wears these" without that gloss (§V88 "never imply base covers them").
+#: Attached only when the emitted gallery actually carries an alt-form ref. One shared
+#: block per envelope (§V66/§V72 pattern). Client-facing text, so no internal cites/jargon
+#: (§V71) -- the cites live in this comment, never the string; short sentences (§V71 f).
+SKIN_ALT_FORM_NOTE = (
+    "Skins marked alt_form belong to an alternate playable form of this operator, not "
+    "the base form. Alternate forms are not separately searchable in this build."
+)
+
+
 #: §V83/§V66 (T168, B88): the client-facing note describing how a module's trait/talent
 #: change bundles are deduped + labelled, folded into the description of both tools that emit
 #: modules (``get_operator`` include_modules + ``compare_operator_modules``). Duplicate/subset

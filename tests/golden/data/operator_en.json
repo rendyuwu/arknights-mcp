@@ -134,7 +134,7 @@
     ],
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "en:c92f9f47b6b2"
+      "snapshot_id": "en:e80ea55539ad"
     },
     "server": "en",
     "skills": [
@@ -202,6 +202,7 @@
         "unlock_phase": 1
       }
     ],
+    "skins": [],
     "summary": {
       "module_count": 1,
       "obtainable": true,

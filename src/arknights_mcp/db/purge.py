@@ -105,6 +105,9 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     talent_pks = _select_ids(
         conn, "SELECT talent_pk FROM talents WHERE operator_pk IN (%s)", operator_pks
     )
+    skin_pks = _select_ids(
+        conn, "SELECT skin_pk FROM operator_skins WHERE provenance_id IN (%s)", prov_ids
+    )
 
     # stage domain: children -> parents. stage_spawns / stage_enemies are removed
     # only within the purged source's own waves/stages (by wave_pk / stage_pk),
@@ -132,6 +135,14 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     # a non-purged source's banners are untouched.
     _delete_in(conn, "banner_featured_ops", "banner_pk", banner_pks)
     _delete_in(conn, "banners", "banner_pk", banner_pks)
+
+    # skin domain (§V32/§V88, ADR 0015): before the operator domain below.
+    # operator_skins.operator_pk is a nullable FK into operators, so a non-purged
+    # skin still referencing a purged operator makes the operator delete below raise
+    # (fail-closed, §V20) -- the same shared-entity guard as a banner featured op.
+    # Skins are deleted by their own provenance (skin_pks), so a non-purged source's
+    # skins are untouched.
+    _delete_in(conn, "operator_skins", "skin_pk", skin_pks)
 
     # operator domain: children -> parents (each core row carries its own
     # provenance; sub-tables link through the parent, §12.3).
@@ -162,6 +173,7 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
         "enemies": len(enemy_pks),
         "stages": len(stage_pks),
         "operators": len(operator_pks),
+        "skins": len(skin_pks),
     }
 
 

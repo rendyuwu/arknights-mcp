@@ -31,11 +31,14 @@ from arknights_mcp.services.image_refs import (
     enemy_image_refs,
     enemy_image_url,
     image_ref_to_dict,
+    named_skin_ref_to_dict,
     operator_avatar_urls,
     operator_banner_refs,
+    operator_identity_refs,
     operator_image_refs,
     operator_portrait_urls,
     operator_skin_urls,
+    skin_image_url,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -157,6 +160,70 @@ def test_clean_ids_are_left_intact() -> None:
     # A base id has no ``#``/``+`` so encoding is a no-op -- the URL is exactly the id.
     assert enemy_image_url(ENEMY_ID) == f"{BASE}/enemy/{ENEMY_ID}.png"
     assert "%" not in enemy_image_url(ENEMY_ID)
+
+
+# --- §T182/§V88: named skin gallery derivation -------------------------------------
+
+
+def test_skin_image_url_derives_from_portrait_id() -> None:
+    # ADR 0015 verified mirror rule: skin/<portraitId>b.png, shared encoder applied
+    # (# -> %23, + -> %2B covers outfit and E1 stems alike).
+    assert skin_image_url("char_002_amiya_1") == f"{BASE}/skin/char_002_amiya_1b.png"
+    assert (
+        skin_image_url("char_002_amiya_epoque#4") == f"{BASE}/skin/char_002_amiya_epoque%234b.png"
+    )
+    assert skin_image_url("char_002_amiya_1+") == f"{BASE}/skin/char_002_amiya_1%2Bb.png"
+
+
+def test_named_skin_ref_variant_maps_illust_groups() -> None:
+    # §V78: default ILLUST_0/1/2 art -> e0/e1/e2; a named outfit series stays "skin".
+    for group, variant in (("ILLUST_0", "e0"), ("ILLUST_1", "e1"), ("ILLUST_2", "e2")):
+        ref = named_skin_ref_to_dict(skin_id="s", portrait_id="p", skin_group_id=group)
+        assert ref["variant"] == variant
+    outfit = named_skin_ref_to_dict(skin_id="s", portrait_id="p", skin_group_id="2020#sale")
+    assert outfit["variant"] == "skin"
+    unknown = named_skin_ref_to_dict(skin_id="s", portrait_id="p", skin_group_id=None)
+    assert unknown["variant"] == "skin"
+
+
+def test_named_skin_ref_omit_discipline() -> None:
+    # §V67: skin_name/skin_group only when imported; alt_form/paid only when TRUE --
+    # an absent key is the default, never a null the client must decode.
+    bare = named_skin_ref_to_dict(skin_id="char_002_amiya#1", portrait_id="char_002_amiya_1")
+    assert bare["category"] == "skin"
+    assert bare["skin_id"] == "char_002_amiya#1"
+    assert bare["source_id"] == SOURCE_ID
+    for absent in ("skin_name", "skin_group", "alt_form", "paid"):
+        assert absent not in bare
+
+    full = named_skin_ref_to_dict(
+        skin_id="char_1001_amiya2@sale#16",
+        portrait_id="char_1001_amiya2_sale#16",
+        skin_name="Name",
+        skin_group_id="2020#sale",
+        skin_group_name="Series",
+        alt_form=True,
+        paid=True,
+    )
+    assert full["skin_name"] == "Name"
+    assert full["skin_group"] == "Series"
+    assert full["alt_form"] is True
+    assert full["paid"] is True
+    assert full["url"] == f"{BASE}/skin/char_1001_amiya2_sale%2316b.png"
+
+
+def test_identity_refs_are_portrait_plus_avatar_only() -> None:
+    # §V37 shared home: identity refs = portrait E0/E2 + avatar base/E2 (no skin);
+    # operator_image_refs = identity + the derived base-skin FALLBACK pair;
+    # operator_banner_refs = exactly the identity refs.
+    identity = operator_identity_refs(OPERATOR_ID)
+    assert [r.category for r in identity] == ["portrait", "portrait", "avatar", "avatar"]
+    assert operator_banner_refs(OPERATOR_ID) == identity
+    assert operator_image_refs(OPERATOR_ID)[: len(identity)] == identity
+    assert [r.category for r in operator_image_refs(OPERATOR_ID)[len(identity) :]] == [
+        "skin",
+        "skin",
+    ]
 
 
 # --- §V1 / §V24: no network -------------------------------------------------------

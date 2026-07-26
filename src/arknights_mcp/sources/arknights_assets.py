@@ -83,12 +83,18 @@ STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 #: it too is fetched every sync yet tolerated-if-absent (404/410 skip+warn) rather
 #: than a mandatory :data:`CORE_FILES` entry (§V62; the §V41 introspection test still
 #: asserts the banner importer's default path is in this staged set).
+#:
+#: ``skin_table`` (§T182/§V88, ADR 0015) is the same class again: the skin-gallery
+#: importer reads its ``charSkins`` metadata from the SAME snapshot, a skin is
+#: cosmetic naming FACT (``operator_skins`` is outside CRITICAL_TABLES), and a
+#: combat-only snapshot legitimately lacks the table.
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/character_table.json",
     "gamedata/excel/skill_table.json",
     "gamedata/excel/uniequip_table.json",
     "gamedata/excel/battle_equip_table.json",
     "gamedata/excel/gacha_table.json",
+    "gamedata/excel/skin_table.json",
 )
 
 

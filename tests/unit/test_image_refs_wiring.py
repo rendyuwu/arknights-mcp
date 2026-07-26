@@ -34,6 +34,7 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_LIMITATION,
+    SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
 )
 from arknights_mcp.mcp.tools.banners import build_get_banners_spec
@@ -154,22 +155,53 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
     by_cat: dict[str, list[str]] = {}
     for r in refs:
         by_cat.setdefault(r["category"], []).append(r["url"])
-    # §V63 verified shape: portrait _1/_2, avatar base/_2, skin _1b/_2b.
+    # §V63 verified shape: portrait _1/_2, avatar base/_2.
     assert by_cat["portrait"] == [
         f"{BASE}/portrait/{_AMIYA}_1.png",
         f"{BASE}/portrait/{_AMIYA}_2.png",
     ]
     assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
-    assert by_cat["skin"] == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
-    # §V78/B80: each ref carries the E0/E2/skin/base variant label on the wire.
+    # §T182/§V88: the fixture snapshot carries skin_table.json, so the skin category is
+    # the NAMED gallery -- one ref per imported operator_skins row (skin/<portraitId>b),
+    # ordered by (skin_group_id, skin_id) -- not the derived _1b/_2b fallback pair.
+    assert by_cat["skin"] == [
+        f"{BASE}/skin/{_AMIYA}_epoque%234b.png",
+        f"{BASE}/skin/{_AMIYA}_1b.png",
+        f"{BASE}/skin/char_1001_amiya2_2b.png",
+    ]
+    # §V78/B80: each ref carries the E0/E1/E2/skin/base variant label on the wire; a
+    # default-art skin row (ILLUST_0/2) maps to e0/e2, a named outfit stays "skin".
     assert [(r["category"], r["variant"]) for r in refs] == [
         ("portrait", "e0"),
         ("portrait", "e2"),
         ("avatar", "base"),
         ("avatar", "e2"),
         ("skin", "skin"),
-        ("skin", "skin"),
+        ("skin", "e0"),
+        ("skin", "e2"),
     ]
+
+
+def test_named_gallery_ref_fields(conn: sqlite3.Connection) -> None:
+    # §T182/§V88/§V67: a named skin ref carries skin_id always; skin_name/skin_group only
+    # when imported; alt_form/paid only when TRUE (absent = default art / not applicable).
+    handler = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler
+    op = handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]  # type: ignore[index]
+    skins = {r["skin_id"]: r for r in op["image_refs"] if r["category"] == "skin"}  # type: ignore[index]
+
+    outfit = skins["char_002_amiya@epoque#4"]
+    assert outfit["skin_name"] == "Fresh Fastener"
+    assert outfit["skin_group"] == "Test Collection/II"
+    assert outfit["paid"] is True
+    assert "alt_form" not in outfit
+
+    default = skins["char_002_amiya#1"]
+    assert "skin_name" not in default  # default art has no outfit name (§V67 omit)
+    assert "paid" not in default and "alt_form" not in default
+
+    alt = skins["char_1001_amiya2#2"]
+    assert alt["alt_form"] is True  # ADR 0015: labeled, never silently folded
+    assert alt["url"] == f"{BASE}/skin/char_1001_amiya2_2b.png"
 
 
 def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> None:
@@ -288,7 +320,7 @@ def test_n_image_refs_yield_exactly_one_disclaimer(
         server="en", game_id=_AMIYA
     )
     op_refs = op_env.to_dict()["data"]["operator"]["image_refs"]  # type: ignore[index]
-    assert len(op_refs) == 6  # portrait 2 + avatar 2 + skin 2 -> more than one ref
+    assert len(op_refs) == 7  # portrait 2 + avatar 2 + named skins 3 -> more than one ref
     assert op_env.limitations.count(IMAGE_REFS_LIMITATION) == 1
 
     banner_conn = open_read_only(_seed_banner_db(tmp_path))
@@ -324,30 +356,49 @@ def test_no_image_refs_limitation_when_banner_page_emits_no_ref(tmp_path: Path) 
     assert IMAGE_REFS_LIMITATION not in env.limitations
 
 
-def test_skin_gallery_partial_limitation_rides_operator_emit(
+def test_named_gallery_drops_partial_limitation_and_notes_alt_form(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    # §V88/§V26 (§T181, B99): the operator emit carries SKIN refs covering only the base
-    # outfit's E0/E2 art, so the partial-gallery limitation rides the same gate, exactly
-    # ONCE per envelope (§V66/§V72 pattern) -- the deferral (skin names, paid outfits,
-    # alt forms) is visible, never a silently partial gallery a client presents as
-    # complete.
+    # §T182/§V88: with the skin domain imported the outfit list is complete, so the T181
+    # partial-gallery limitation is DROPPED; the emitted gallery here carries an alt-form
+    # ref, so the standing alt-form note rides instead, exactly ONCE per envelope
+    # (ADR 0015: labeled + disclosed, never silently folded into the base operator).
     op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
         server="en", game_id=_AMIYA
     )
-    assert op_env.limitations.count(SKIN_GALLERY_PARTIAL_LIMITATION) == 1
+    assert SKIN_GALLERY_PARTIAL_LIMITATION not in op_env.limitations
+    assert op_env.limitations.count(SKIN_ALT_FORM_NOTE) == 1
 
     # Surfaces that emit NO skin category (enemy sprite; banner portrait+avatar) never
-    # carry the skin-gallery caveat -- it tracks an actual skin ref.
+    # carry either skin caveat -- they track an actual skin ref.
     enemy_env = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler(
         server="en", game_id=_SLIME
     )
     assert SKIN_GALLERY_PARTIAL_LIMITATION not in enemy_env.limitations
+    assert SKIN_ALT_FORM_NOTE not in enemy_env.limitations
     banner_conn = open_read_only(_seed_banner_db(tmp_path))
     banner_env = build_get_banners_spec(lambda: banner_conn, image_refs_enabled=True).handler(
         server="en"
     )
     assert SKIN_GALLERY_PARTIAL_LIMITATION not in banner_env.limitations
+    assert SKIN_ALT_FORM_NOTE not in banner_env.limitations
+
+
+def test_fallback_path_keeps_partial_limitation(tmp_path: Path) -> None:
+    # §V88/§V26 (§T181->§T182, B99): a build WITHOUT imported skin rows (combat-only
+    # snapshot / pre-0014 active DB) emits the derived base `_1b`/`_2b` fallback pair and
+    # the partial-gallery limitation rides exactly ONCE -- the deferral stays visible,
+    # never a silently partial gallery a client presents as complete. The alt-form note
+    # never rides the fallback (no alt-form ref is emitted there).
+    conn = open_read_only(_seed_banner_db(tmp_path))  # operator seeded, no skin rows
+    op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+        server="en", game_id=_AMIYA
+    )
+    refs = op_env.to_dict()["data"]["operator"]["image_refs"]  # type: ignore[index]
+    skin_urls = [r["url"] for r in refs if r["category"] == "skin"]
+    assert skin_urls == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
+    assert op_env.limitations.count(SKIN_GALLERY_PARTIAL_LIMITATION) == 1
+    assert SKIN_ALT_FORM_NOTE not in op_env.limitations
 
 
 def test_no_skin_gallery_limitation_when_gate_off(conn: sqlite3.Connection) -> None:
@@ -429,7 +480,8 @@ def test_refs_are_bounded_single_entity_attach(conn: sqlite3.Connection) -> None
     handler = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler
     data = handler(server="en", game_id=_AMIYA).to_dict()["data"]
     op = data["operator"]  # type: ignore[index]
-    # A small fixed list (portrait 2 + avatar 2 + skin 2), attached to the one entity --
-    # never a catalog list/page/search key (§V19 no bulk/enum).
-    assert len(op["image_refs"]) == 6
+    # A small bounded list (portrait 2 + avatar 2 + one ref per imported skin row),
+    # attached to the one entity -- never a catalog list/page/search key (§V19 no
+    # bulk/enum; the skin rows are the operator's OWN gallery, not an art index).
+    assert len(op["image_refs"]) == 7
     assert "page" not in data and "results" not in data  # type: ignore[operator]

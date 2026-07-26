@@ -144,10 +144,18 @@ def test_core_files_cover_every_importer_table() -> None:
     from arknights_mcp.importers.enemies import import_enemies
     from arknights_mcp.importers.modules import import_modules
     from arknights_mcp.importers.operators import import_operators
+    from arknights_mcp.importers.skins import import_skins
     from arknights_mcp.importers.stages import import_stages
 
     required: set[str] = set()
-    for fn in (import_enemies, import_stages, import_operators, import_modules, import_banners):
+    for fn in (
+        import_enemies,
+        import_stages,
+        import_operators,
+        import_modules,
+        import_banners,
+        import_skins,
+    ):
         for param in inspect.signature(fn).parameters.values():
             default = param.default
             if (

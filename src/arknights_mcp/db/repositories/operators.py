@@ -149,6 +149,24 @@ class ModuleLevelRow:
     cost_json: str | None
 
 
+@dataclass(frozen=True)
+class OperatorSkinRow:
+    """One named skin of an operator (``operator_skins``, §T182/§V88).
+
+    ``tmpl_id != char_id`` marks an alt-form skin (Amiya family, ADR 0015);
+    ``portrait_id`` is the stem the §V63 mirror URL derives from at response time.
+    """
+
+    skin_id: str
+    char_id: str
+    tmpl_id: str | None
+    display_name: str | None
+    skin_group_id: str | None
+    skin_group_name: str | None
+    portrait_id: str
+    is_buy_skin: bool | None
+
+
 _OPERATOR_SQL = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.rarity, o.profession, "
     "o.subclass_id, o.position, o.tag_json, o.obtainable, p.snapshot_id, ss.imported_at "
@@ -208,6 +226,18 @@ _MODULES_SQL = (
 _MODULE_LEVELS_SQL = (
     "SELECT level, stat_bonus_json, trait_changes_json, talent_changes_json, cost_json "
     "FROM module_levels WHERE module_pk = ? ORDER BY level"
+)
+
+# Skins ordered by (skin_group_id, skin_id) so default E0/E1/E2 art (ILLUST_*) groups
+# ahead of outfit series and the emitted list is deterministic.
+_SKINS_SQL = (
+    "SELECT skin_id, char_id, tmpl_id, display_name, skin_group_id, skin_group_name, "
+    "portrait_id, is_buy_skin "
+    "FROM operator_skins WHERE operator_pk = ? ORDER BY skin_group_id, skin_id"
+)
+
+_SKINS_TABLE_EXISTS_SQL = (
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'operator_skins'"
 )
 
 # Batched item display-name lookup for the module/skill upgrade-cost name pairing
@@ -363,6 +393,31 @@ class OperatorRepository(Repository):
                 cost_json=r[4],
             )
             for r in self._all(_MODULE_LEVELS_SQL, (module_pk,))
+        ]
+
+    def skins(self, operator_pk: int) -> list[OperatorSkinRow]:
+        """Every named skin soft-resolved to the operator (§T182/§V88), ordered.
+
+        Guarded on table existence: an active database built before migration 0014
+        has no ``operator_skins`` table, and this read must degrade to an empty list
+        (the tool then falls back to the derived base-outfit refs + the partial-gallery
+        limitation, §V21 backward compatibility) rather than surface
+        ``no such table`` as an ``internal_error`` on every ``get_operator`` call.
+        """
+        if self._one(_SKINS_TABLE_EXISTS_SQL) is None:
+            return []
+        return [
+            OperatorSkinRow(
+                skin_id=r[0],
+                char_id=r[1],
+                tmpl_id=r[2],
+                display_name=r[3],
+                skin_group_id=r[4],
+                skin_group_name=r[5],
+                portrait_id=r[6],
+                is_buy_skin=None if r[7] is None else bool(r[7]),
+            )
+            for r in self._all(_SKINS_SQL, (operator_pk,))
         ]
 
     def item_display_names(self, server: str, game_ids: Collection[str]) -> dict[str, str]:

@@ -187,7 +187,9 @@ def _seed_operator_db(tmp_path: Path, game_id: str) -> Path:
 
 def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) -> None:
     # §V63: through the shared registry + real gate, get_operator carries the exact
-    # verified shape (portrait _1/_2, avatar base/_2, skin _1b/_2b), each attributed.
+    # verified shape (portrait _1/_2, avatar base/_2) plus, on this skin-domain build,
+    # the NAMED skin gallery -- one skin/<portraitId>b ref per imported row (§T182/§V88),
+    # each attributed.
     tools = _tools(conn, _registry(image_source_enabled=True))
     op = (
         tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]
@@ -202,15 +204,21 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
         f"{BASE}/portrait/{_AMIYA}_2.png",
     ]
     assert by_cat["avatar"] == [f"{BASE}/avatar/{_AMIYA}.png", f"{BASE}/avatar/{_AMIYA}_2.png"]
-    assert by_cat["skin"] == [f"{BASE}/skin/{_AMIYA}_1b.png", f"{BASE}/skin/{_AMIYA}_2b.png"]
-    # §V78/B80: the variant label rides through the full shared-registry tool path.
+    assert by_cat["skin"] == [
+        f"{BASE}/skin/{_AMIYA}_epoque%234b.png",
+        f"{BASE}/skin/{_AMIYA}_1b.png",
+        f"{BASE}/skin/char_1001_amiya2_2b.png",
+    ]
+    # §V78/B80: the variant label rides through the full shared-registry tool path;
+    # default-art skin rows (ILLUST_0/2) map to e0/e2, the named outfit stays "skin".
     assert [(r["category"], r["variant"]) for r in refs] == [
         ("portrait", "e0"),
         ("portrait", "e2"),
         ("avatar", "base"),
         ("avatar", "e2"),
         ("skin", "skin"),
-        ("skin", "skin"),
+        ("skin", "e0"),
+        ("skin", "e2"),
     ]
 
 

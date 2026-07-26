@@ -38,6 +38,7 @@ from arknights_mcp.importers.manifest import build_manifest, make_snapshot_recor
 from arknights_mcp.importers.modules import import_modules
 from arknights_mcp.importers.operators import import_operators
 from arknights_mcp.importers.search_index import build_search_index
+from arknights_mcp.importers.skins import SkinImportResult, import_skins
 from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.sources.registry import SourceRegistry, SourceRegistryEntry
@@ -81,6 +82,7 @@ class SnapshotSummary:
     skills: int = 0
     modules: int = 0
     banners: int = 0
+    skins: int = 0
 
 
 @dataclass(frozen=True)
@@ -197,6 +199,22 @@ def _import_one(
             exc,
         )
         banners = BannerImportResult()
+    # Skins are the same optional fail-open class as banners (§V88/§V58, ADR 0015):
+    # they soft-resolve char ids to an operator_pk so they import after operators, and
+    # a skin ImporterError (§V30 non-empty charSkins -> 0 skins, or a §V33 dup skinId)
+    # rolls back only THIS region's partial skin + provenance rows; the combat build
+    # continues (operator_skins is outside CRITICAL_TABLES, so an empty gallery is
+    # legitimate; §V3 combat fail-closed unchanged).
+    try:
+        with savepoint(conn, "skins"):
+            skins = import_skins(conn, job.adapter, record.snapshot_id)
+    except ImporterError as exc:
+        _LOG.warning(
+            "%s: skin gallery unavailable, skipped; continuing combat build (§V88/§V58): %s",
+            job.server,
+            exc,
+        )
+        skins = SkinImportResult()
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
@@ -215,6 +233,7 @@ def _import_one(
         skills=operators.skills_inserted,
         modules=modules.modules_inserted,
         banners=banners.banners_inserted,
+        skins=skins.skins_inserted,
     )
 
 

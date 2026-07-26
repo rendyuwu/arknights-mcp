@@ -24,7 +24,9 @@ def test_field_policy_version_present() -> None:
     # 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists.
     # 6: T127/§V65 added `description` (effect TEMPLATE) to SKILL_LEVEL_ALLOWLIST +
     #    TALENT_CANDIDATE_ALLOWLIST (ADR 0010 ceiling: mechanic text in, lore out).
-    assert FIELD_POLICY_VERSION == "6"
+    # 7: T182/§V88 added SKIN_ALLOWLIST + DISPLAY_SKIN sub-allowlist (ADR 0015: named
+    #    skin gallery ids/labels in, displaySkin prose/credit out).
+    assert FIELD_POLICY_VERSION == "7"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

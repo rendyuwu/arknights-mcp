@@ -69,9 +69,15 @@ CATEGORY_ENEMY = "enemy"
 #: it so picking E0-vs-E2 art needs no filename-convention knowledge. Single §T159 home for
 #: the label stamped on each ref; ``_1``→E0, ``_2``→E2, ``_1b``/``_2b``→skin, no-suffix→base.
 VARIANT_E0 = "e0"
+VARIANT_E1 = "e1"
 VARIANT_E2 = "e2"
 VARIANT_BASE = "base"
 VARIANT_SKIN = "skin"
+
+#: A named-gallery skin ref's variant derives from the imported ``skin_group_id``
+#: (§T182/§V88): the ``ILLUST_0/1/2`` groups are the operator's default E0/E1/E2 art,
+#: anything else is a named outfit series and stays labelled ``skin`` (§V78).
+_SKIN_GROUP_VARIANTS = {"ILLUST_0": VARIANT_E0, "ILLUST_1": VARIANT_E1, "ILLUST_2": VARIANT_E2}
 
 #: The variant sequence each ordered ``*_urls`` tuple carries, zipped onto the derived URLs
 #: in :func:`_refs` (§V37 single home, no parallel-list drift -- ``zip(strict=True)`` guards
@@ -146,6 +152,57 @@ def operator_skin_urls(game_id: str) -> tuple[str, str]:
     )
 
 
+def skin_image_url(portrait_id: str) -> str:
+    """Derive one named-gallery skin URL from an imported ``portrait_id`` (§T182/§V63).
+
+    The mirror stores every skin illustration -- default E0/E1/E2 art, paid/event
+    outfits, and alt-form (Amiya-family) art alike -- as ``skin/<portraitId>b.png``
+    (rule verified against the live mirror 2026-07-26, ADR 0015). ``portrait_id``
+    comes from the imported ``operator_skins`` row; the URL itself stays query-time
+    DERIVED, never stored (§V63). ``#``/``+`` in outfit stems (``…_epoque#4``,
+    ``…_1+``) ride the shared unconditional encoder. Pure derivation -- no network
+    (§V1/§V24).
+    """
+    return _png_url("skin", f"{portrait_id}b")
+
+
+def named_skin_ref_to_dict(
+    *,
+    skin_id: str,
+    portrait_id: str,
+    skin_name: str | None = None,
+    skin_group_id: str | None = None,
+    skin_group_name: str | None = None,
+    alt_form: bool = False,
+    paid: bool = False,
+) -> dict[str, object]:
+    """One named-gallery skin ref for the wire (§T182/§V88): the §V37 single home.
+
+    Extends the ``{category, url, variant, source_id}`` shape with additive fields
+    (§V21): ``skin_id`` always; ``skin_name``/``skin_group`` only when imported
+    (absent = default art with no outfit name, §V67 omit-discipline); ``alt_form``/
+    ``paid`` only when true (§V67 -- an absent flag is the default, never ``null``).
+    ``variant`` derives from the imported ``skin_group_id``: default ``ILLUST_0/1/2``
+    art maps to ``e0``/``e1``/``e2``, a named outfit series stays ``skin`` (§V78).
+    """
+    ref: dict[str, object] = {
+        "category": CATEGORY_SKIN,
+        "url": skin_image_url(portrait_id),
+        "variant": _SKIN_GROUP_VARIANTS.get(skin_group_id or "", VARIANT_SKIN),
+        "skin_id": skin_id,
+    }
+    if skin_name:
+        ref["skin_name"] = skin_name
+    if skin_group_name:
+        ref["skin_group"] = skin_group_name
+    if alt_form:
+        ref["alt_form"] = True
+    if paid:
+        ref["paid"] = True
+    ref["source_id"] = SOURCE_ID
+    return ref
+
+
 def enemy_image_url(game_id: str) -> str:
     """Derive an enemy's sprite URL (base) from its ``game_id`` (§V63).
 
@@ -203,16 +260,31 @@ def _refs(category: str, urls: tuple[str, ...], variants: tuple[str, ...]) -> li
     ]
 
 
-def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
-    """Derive an operator's portrait + avatar + skin refs from its ``game_id`` (§T120/§V63).
+def operator_identity_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive an operator's portrait + avatar refs from its ``game_id`` (§T120/§V63).
 
-    A small, fixed set (portrait ``_1``/``_2``, avatar base/``_2``, skin ``_1b``/``_2b``)
-    that attaches to the single already-fetched operator entity -- never a catalog list or
-    enumeration (§V19). Pure derivation; whether it is *emitted* is decided by the wiring
-    gate (:func:`refs_enabled`). No network (§V1/§V24).
+    The shared §V37 home for the two identity categories every operator-ref surface
+    carries (portrait ``_1``/``_2``, avatar base/``_2``);
+    :func:`operator_image_refs` and :func:`operator_banner_refs` both build on it.
+    Pure derivation -- no network (§V1/§V24).
     """
     refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id), _PORTRAIT_VARIANTS)
     refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id), _AVATAR_VARIANTS)
+    return tuple(refs)
+
+
+def operator_image_refs(game_id: str) -> tuple[ImageRef, ...]:
+    """Derive an operator's portrait + avatar + FALLBACK skin refs (§T120/§V63).
+
+    A small, fixed set (portrait ``_1``/``_2``, avatar base/``_2``, skin ``_1b``/``_2b``)
+    that attaches to the single already-fetched operator entity -- never a catalog list or
+    enumeration (§V19). The two skin refs here are the derived BASE-outfit fallback: on a
+    build carrying the imported skin domain the wiring emits the NAMED gallery instead
+    (:func:`operator_identity_refs` + one :func:`named_skin_ref_to_dict` per row,
+    §T182/§V88). Pure derivation; whether it is *emitted* is decided by the wiring gate
+    (:func:`refs_enabled`). No network (§V1/§V24).
+    """
+    refs = list(operator_identity_refs(game_id))
     refs += _refs(CATEGORY_SKIN, operator_skin_urls(game_id), _SKIN_VARIANTS)
     return tuple(refs)
 
@@ -227,9 +299,7 @@ def operator_banner_refs(game_id: str) -> tuple[ImageRef, ...]:
     avatar returns 200 one category over -- emitting the avatar alongside keeps a working
     reference. Pure derivation -- no network (§V1/§V24).
     """
-    refs = _refs(CATEGORY_PORTRAIT, operator_portrait_urls(game_id), _PORTRAIT_VARIANTS)
-    refs += _refs(CATEGORY_AVATAR, operator_avatar_urls(game_id), _AVATAR_VARIANTS)
-    return tuple(refs)
+    return operator_identity_refs(game_id)
 
 
 def enemy_image_refs(game_id: str) -> tuple[ImageRef, ...]:

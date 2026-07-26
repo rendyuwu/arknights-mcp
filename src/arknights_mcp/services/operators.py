@@ -33,6 +33,7 @@ from arknights_mcp.db.repositories.operators import (
     OperatorRow,
     OperatorSectionCounts,
     OperatorSkillRow,
+    OperatorSkinRow,
     SkillLevelRow,
     TalentLevelRow,
     TalentRow,
@@ -193,13 +194,35 @@ class OperatorModuleFacts:
 
 
 @dataclass(frozen=True)
+class OperatorSkinFacts:
+    """One imported named skin (§T182/§V88; ADR 0015).
+
+    ``is_alt_form`` is True when the skin's art belongs to an alternate playable
+    form of the operator (Amiya family): the imported ``tmpl_id`` names that form
+    while ``char_id`` stays the base operator's id, so the discriminator is
+    ``tmpl_id != char_id``. ``portrait_id`` is the stem the §V63 mirror URL is
+    derived from at emit time (never stored as a URL).
+    """
+
+    skin_id: str
+    portrait_id: str
+    display_name: str | None
+    skin_group_id: str | None
+    skin_group_name: str | None
+    is_buy_skin: bool | None
+    is_alt_form: bool
+
+
+@dataclass(frozen=True)
 class OperatorFacts:
     """Typed, allowlisted facts about one operator (no prose; §V16/§V18).
 
     Carries region (``server``) + provenance (§V5). ``summary`` and the heavy
     sections are populated per the include flags (an omitted section is an empty
     tuple; an omitted summary is ``None``); ``provenance`` is always present so a
-    fact always carries its region attribution (§V5).
+    fact always carries its region attribution (§V5). ``skins`` is loaded only for
+    the image-ref-emitting wiring (``load_skins``, §T182) and is empty on a build
+    without the skin domain.
     """
 
     server: str
@@ -210,6 +233,7 @@ class OperatorFacts:
     skills: tuple[OperatorSkillFacts, ...]
     talents: tuple[OperatorTalentFacts, ...]
     modules: tuple[OperatorModuleFacts, ...]
+    skins: tuple[OperatorSkinFacts, ...]
     provenance: OperatorProvenance
 
 
@@ -638,6 +662,19 @@ def _modules_facts(
     return tuple(modules)
 
 
+def _skin_facts(row: OperatorSkinRow) -> OperatorSkinFacts:
+    """Map one ``operator_skins`` row to facts; alt-form = ``tmpl_id != char_id`` (ADR 0015)."""
+    return OperatorSkinFacts(
+        skin_id=row.skin_id,
+        portrait_id=row.portrait_id,
+        display_name=row.display_name,
+        skin_group_id=row.skin_group_id,
+        skin_group_name=row.skin_group_name,
+        is_buy_skin=row.is_buy_skin,
+        is_alt_form=row.tmpl_id is not None and row.tmpl_id != row.char_id,
+    )
+
+
 def get_operator(
     conn: sqlite3.Connection,
     *,
@@ -648,6 +685,7 @@ def get_operator(
     include_skills: bool = False,
     include_talents: bool = False,
     include_modules: bool = False,
+    load_skins: bool = False,
 ) -> OperatorDetailResult:
     """Fetch one operator's facts + opt-in heavy sections for ``server`` (§T44; §V5/§V23).
 
@@ -657,6 +695,11 @@ def get_operator(
     it to the typed §V23 envelope). Heavy sections load only when their include flag
     is set, keeping the default response small (§V22). Both transports call this
     function (§V14).
+
+    ``load_skins`` is wiring-driven, not a client include flag (§T182): the
+    image-ref-emitting tool sets it iff the emission gate is on, so the named
+    gallery is queried only when it will actually be emitted. Empty on a build
+    without the skin domain (the repository degrades table-absent to no rows).
     """
     repo = OperatorRepository(conn)
     operator = repo.operator_by_game_id(server, game_id)
@@ -680,6 +723,7 @@ def get_operator(
         else ()
     )
     modules = _modules_facts(repo, operator.server, operator.operator_pk) if include_modules else ()
+    skins = tuple(_skin_facts(s) for s in repo.skins(operator.operator_pk)) if load_skins else ()
     facts = OperatorFacts(
         server=operator.server,
         game_id=operator.game_id,
@@ -689,6 +733,7 @@ def get_operator(
         skills=skills,
         talents=talents,
         modules=modules,
+        skins=skins,
         provenance=OperatorProvenance(
             snapshot_id=operator.snapshot_id, imported_at=operator.imported_at
         ),

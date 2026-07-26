@@ -36,6 +36,7 @@ from arknights_mcp.mcp.tools._shared import (
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
+    SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
     ConnectionProvider,
     has_unnamed_cost_item,
@@ -43,7 +44,12 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
-from arknights_mcp.services.image_refs import image_ref_to_dict, operator_image_refs
+from arknights_mcp.services.image_refs import (
+    image_ref_to_dict,
+    named_skin_ref_to_dict,
+    operator_identity_refs,
+    operator_image_refs,
+)
 from arknights_mcp.services.operators import (
     ModuleLevelFacts,
     OperatorDetailResult,
@@ -51,6 +57,7 @@ from arknights_mcp.services.operators import (
     OperatorModuleFacts,
     OperatorPhaseFacts,
     OperatorSkillFacts,
+    OperatorSkinFacts,
     OperatorSummary,
     OperatorTalentFacts,
     SkillLevelFacts,
@@ -66,8 +73,13 @@ _TOOL_DESCRIPTION = (
     "include_phases / include_skills / include_talents / include_modules to add each "
     "(bounded) heavy section. When the image-reference source is enabled, an additional "
     "image_refs list of derived portrait/avatar/skin art URLs is included. Each ref carries "
-    "a variant label naming the art: e0 (base elite-0), e2 (elite-2), base (avatar), or "
-    "skin. en/cn are never mixed. Skill, talent, and module effects include the in-game effect "
+    "a variant label naming the art: e0 (elite-0), e1 (elite-1), e2 (elite-2), base "
+    "(avatar), or skin (a named outfit). On builds carrying the imported skin gallery, "
+    "each skin ref also carries skin_id, plus skin_name and skin_group when the outfit is "
+    "named; paid marks a purchasable outfit and alt_form marks art belonging to an "
+    "alternate playable form of the operator. Absent optional ref fields mean default "
+    "art / not applicable. en/cn are never mixed. Skill, talent, and module effects "
+    "include the in-game effect "
     "description template (when present in the source) alongside raw blackboard "
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A skill's template is emitted once as the "
@@ -252,12 +264,34 @@ def _operator_to_dict(
             "imported_at": operator.provenance.imported_at,
         }
     if image_refs_enabled:
-        # §V63: DERIVED from the operator's already-stored game_id -- no byte, no url
-        # stored, no fetch. §V5: rides this operator's OWN region envelope (game_id is
-        # region-scoped) so en/cn never mix. §V19: a bounded per-entity attach, never a
-        # catalog list/page/search.
-        data["image_refs"] = [image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
+        # §V63: DERIVED from the operator's already-stored game_id / imported portrait_id
+        # -- no byte, no url stored, no fetch. §V5: rides this operator's OWN region
+        # envelope (game_id and skin rows are region-scoped) so en/cn never mix. §V19: a
+        # bounded per-entity attach, never a catalog list/page/search.
+        # §T182/§V88: with the imported skin domain present the NAMED gallery replaces the
+        # derived base-outfit fallback -- one ref per operator_skins row (complete,
+        # named, alt-form-labeled); without it (pre-0014 build / combat-only snapshot)
+        # the base `_1b`/`_2b` fallback + the partial-gallery limitation stay (§V21).
+        if operator.skins:
+            refs = [image_ref_to_dict(r) for r in operator_identity_refs(operator.game_id)]
+            refs += [_named_skin_ref(s) for s in operator.skins]
+        else:
+            refs = [image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
+        data["image_refs"] = refs
     return data
+
+
+def _named_skin_ref(skin: OperatorSkinFacts) -> dict[str, object]:
+    """One named-gallery skin ref (§T182/§V88); shaping lives in the §V37 service home."""
+    return named_skin_ref_to_dict(
+        skin_id=skin.skin_id,
+        portrait_id=skin.portrait_id,
+        skin_name=skin.display_name,
+        skin_group_id=skin.skin_group_id,
+        skin_group_name=skin.skin_group_name,
+        alt_form=skin.is_alt_form,
+        paid=bool(skin.is_buy_skin),
+    )
 
 
 def _shape(
@@ -286,12 +320,18 @@ def _shape(
     # gate), the standing derived-unverified limitation rides along -- the URLs are
     # derived + never validated by the server (§V63), so a dead link is never presented
     # as a verified fact. Absent when the gate is off (no refs -> no caveat).
-    # §V88/§V26 (§T181, B99): the operator emit is the one surface carrying SKIN refs,
-    # and those cover the base outfit's E0/E2 art only -- the partial-gallery limitation
-    # rides the same gate so the deferral (skin names, paid outfits, alt forms) is
-    # visible, never a silently partial gallery.
+    # §V88/§V26 (§T181->§T182, B99): the partial-gallery limitation now rides ONLY the
+    # fallback path -- no imported skin rows means the emitted skin refs are the derived
+    # base-outfit art alone, and that deferral stays visible. On the named-gallery path
+    # the outfit list is complete; what remains partial is the alt-form axis, disclosed
+    # (only when an alt-form ref is actually emitted) by the standing alt-form note
+    # (ADR 0015: labeled, never silently folded into the base operator).
     if image_refs_enabled:
-        limitations = (*limitations, IMAGE_REFS_LIMITATION, SKIN_GALLERY_PARTIAL_LIMITATION)
+        limitations = (*limitations, IMAGE_REFS_LIMITATION)
+        if not operator.skins:
+            limitations = (*limitations, SKIN_GALLERY_PARTIAL_LIMITATION)
+        elif any(s.is_alt_form for s in operator.skins):
+            limitations = (*limitations, SKIN_ALT_FORM_NOTE)
     return ok(
         {
             "operator": _operator_to_dict(
@@ -343,6 +383,9 @@ def build_get_operator_spec(
                 include_skills=parsed.include_skills,
                 include_talents=parsed.include_talents,
                 include_modules=parsed.include_modules,
+                # §T182: wiring-driven, not a client flag -- the named gallery is
+                # queried only when the emission gate will actually emit it.
+                load_skins=image_refs_enabled,
             ),
             lambda result: _shape(
                 result,

@@ -27,7 +27,11 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    operator/module lore, story, voice, and wiki/community prose stay excluded, §V16).
 #:    Module trait/talent-change templates ride the field-by-field module parser
 #:    (modules.py ``_trait_change``/``_talent_change``), not a new frozenset here.
-FIELD_POLICY_VERSION = "6"
+#: 7: T182/§V88 added SKIN_ALLOWLIST + DISPLAY_SKIN sub-allowlist (ADR 0015: named
+#:    skin gallery -- skin/char/tmpl/portrait ids + short outfit labels only; the
+#:    displaySkin prose leaves content/dialog/usage/description/drawerList stay
+#:    excluded, §V16/§V18 metadata-only ceiling).
+FIELD_POLICY_VERSION = "7"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -274,6 +278,31 @@ LIMIT_PARAM_ALLOWLIST: frozenset[str] = frozenset({"limitedCharId"})
 #: prose/html/image (``gachaPoolSummary``-style rate-up copy), so it is NEVER kept
 #: whole -- only this one typed array survives (§V18/§V16 metadata-only; §V62).
 DYN_META_ALLOWLIST: frozenset[str] = frozenset({"attainRare6CharList"})
+
+#: Scalar skin-gallery fields from a ``skin_table.json`` ``charSkins`` entry (§V18;
+#: §T182; §V88 named gallery, ADR 0015). All structural: ``skinId`` is the skin's
+#: stable game id (identity, §V17 record key), ``charId`` the owning operator's char
+#: id (BASE operator for alt-form skins -- the soft-resolve key), ``tmplId`` the
+#: alt-form discriminator (equals ``charId`` except on alternate playable forms, e.g.
+#: the Amiya family), ``portraitId`` the art-asset stem the §V63 mirror URL derives
+#: from (skin/<portraitId>b.png -- derived at query time, never stored), and
+#: ``isBuySkin`` the paid-outfit flag. ``displaySkin`` is NOT kept whole (it carries
+#: the §V18-forbidden prose leaves ``content``/``dialog``/``usage``/``description``/
+#: ``drawerList``); only DISPLAY_SKIN_ALLOWLIST below survives via sub-extraction,
+#: the same nested-parent pattern as ``limitParam``/``dynMeta``/``overwrittenData``.
+SKIN_ALLOWLIST: frozenset[str] = frozenset(
+    {"skinId", "charId", "tmplId", "portraitId", "displaySkin", "isBuySkin"}
+)
+
+#: The ``displaySkin`` sub-block of a ``charSkins`` entry. ``skinName`` is the outfit's
+#: short display name (NULL on default E0/E1/E2 art; kept + sanitized + length-capped
+#: like an operator/banner name), ``skinGroupId`` the structural group enum
+#: (``ILLUST_0/1/2`` = default E0/E1/E2 art vs an outfit-series id), ``skinGroupName``
+#: the short series display label ("Default Outfit" / a collection name). Everything
+#: else -- outfit flavor ``content``/``dialog``/``usage``/``description``, artist
+#: ``drawerList``, ``modelName`` -- is prose/credit and deliberately ABSENT (§V16/§V18
+#: metadata-only ceiling; ADR 0015).
+DISPLAY_SKIN_ALLOWLIST: frozenset[str] = frozenset({"skinName", "skinGroupId", "skinGroupName"})
 
 
 @dataclass(frozen=True)

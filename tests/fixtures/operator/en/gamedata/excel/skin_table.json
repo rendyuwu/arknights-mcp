@@ -1,0 +1,57 @@
+{
+  "charSkins": {
+    "char_002_amiya#1": {
+      "skinId": "char_002_amiya#1",
+      "charId": "char_002_amiya",
+      "tmplId": "char_002_amiya",
+      "avatarId": "char_002_amiya",
+      "portraitId": "char_002_amiya_1",
+      "isBuySkin": false,
+      "displaySkin": {
+        "skinName": null,
+        "skinGroupId": "ILLUST_0",
+        "skinGroupName": "Default Outfit",
+        "content": "outfit flavor prose that must never be imported",
+        "dialog": "outfit dialog prose that must never be imported",
+        "usage": "outfit usage prose that must never be imported",
+        "description": "outfit description prose that must never be imported",
+        "drawerList": ["artist credit"],
+        "modelName": "Amiya"
+      }
+    },
+    "char_002_amiya@epoque#4": {
+      "skinId": "char_002_amiya@epoque#4",
+      "charId": "char_002_amiya",
+      "tmplId": "char_002_amiya",
+      "portraitId": "char_002_amiya_epoque#4",
+      "isBuySkin": true,
+      "displaySkin": {
+        "skinName": "Fresh Fastener",
+        "skinGroupId": "2020#sale",
+        "skinGroupName": "Test Collection/II",
+        "content": "outfit flavor prose that must never be imported",
+        "obtainApproach": "Event Reward"
+      }
+    },
+    "char_1001_amiya2#2": {
+      "skinId": "char_1001_amiya2#2",
+      "charId": "char_002_amiya",
+      "tmplId": "char_1001_amiya2",
+      "portraitId": "char_1001_amiya2_2",
+      "isBuySkin": false,
+      "displaySkin": {
+        "skinName": null,
+        "skinGroupId": "ILLUST_2",
+        "skinGroupName": "Default Outfit"
+      }
+    },
+    "token_10012_shield#1": {
+      "skinId": "token_10012_shield#1",
+      "charId": "token_10012_shield",
+      "portraitId": null,
+      "displaySkin": { "skinName": null, "skinGroupId": "ILLUST_0" }
+    }
+  },
+  "buildinEvolveMap": {},
+  "buildinPatchMap": {}
+}
