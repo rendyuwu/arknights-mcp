@@ -56,23 +56,29 @@ class SnapshotStatus:
             "status": self.status,
         }
 
-    def to_provenance_extras(self) -> dict[str, object]:
-        """Snapshot fields *outside* the (server, snapshot_id, imported_at) triple.
+    def to_provenance_extras(self, *, include_server: bool = False) -> dict[str, object]:
+        """Snapshot fields outside the (snapshot_id, imported_at) provenance pair.
 
-        The triple travels with the envelope ``provenance`` entry (§V5), so an MCP
-        ``data.snapshots`` row emitting it too duplicates ~600B/response (B78). The
-        MCP surfaces (tool + ``arknights://status`` resource) build their per-row
-        body from this extras-only view so the envelope stays the sole triple carrier
-        (§V66). ``to_dict`` keeps the full row for the CLI ``status``/``--json``,
-        which has no envelope provenance to carry the triple.
+        Those two travel with the envelope ``provenance`` entry (§V5), so an MCP
+        ``data.snapshots`` row emitting them too duplicates ~600B/response (B78).
+        ``include_server`` inlines the ``server`` join key per row (§V87/B96): the
+        multi-region ``get_data_status`` tool needs it so a row is region-attributed
+        without a "row N ↔ provenance N" order contract; the region-scoped
+        ``arknights://status/{server}`` resource carries the region once at the top
+        level (§V77) and leaves it off. ``commit_sha``/``upstream_version`` are
+        omitted when unknown rather than emitted null (§V67). ``to_dict`` keeps the
+        full row for the CLI ``status``/``--json``, which has no envelope provenance.
         """
-        return {
-            "source_id": self.source_id,
-            "commit_sha": self.commit_sha,
-            "upstream_version": self.upstream_version,
-            "age_days": self.age_days,
-            "status": self.status,
-        }
+        extras: dict[str, object] = {"source_id": self.source_id}
+        if include_server:
+            extras = {"server": self.server, **extras}
+        if self.commit_sha is not None:
+            extras["commit_sha"] = self.commit_sha
+        if self.upstream_version is not None:
+            extras["upstream_version"] = self.upstream_version
+        extras["age_days"] = self.age_days
+        extras["status"] = self.status
+        return extras
 
 
 @dataclass(frozen=True)

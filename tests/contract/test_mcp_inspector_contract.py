@@ -214,19 +214,25 @@ def test_data_status_carries_per_snapshot_provenance(registry: ToolRegistry) -> 
 
 def test_data_status_provenance_single_carrier(registry: ToolRegistry) -> None:
     # §V66 (B78/T157): the envelope provenance is the SOLE carrier of the
-    # (server, snapshot_id, imported_at) triple -- the data.snapshots rows must not
-    # re-emit it (~600B dup/response), but keep the source/commit/version/age extras.
+    # (snapshot_id, imported_at) pair -- the data.snapshots rows must not re-emit
+    # it (~600B dup/response), but keep the source/commit/version/age extras.
+    # §V87 (B96/T177): each row DOES inline its ``server`` join key -- region
+    # attribution must not hang on a "row N ↔ provenance N" order contract.
+    # §V67 (B96/T177): the local-import fixture has no commit/version, so those
+    # keys are omitted, never emitted null.
     env = _call(registry, "get_data_status", **_VALID_CALLS["get_data_status"])
     snapshots = env.to_dict()["data"]["snapshots"]  # type: ignore[index]
     assert isinstance(snapshots, list) and snapshots
     for snap in snapshots:
-        # Triple lives only in the envelope provenance, never in the row.
-        assert "server" not in snap
+        # The pair lives only in the envelope provenance, never in the row.
         assert "snapshot_id" not in snap
         assert "imported_at" not in snap
-        # Extras stay on the row.
+        # The join key is inline per row (§V87).
+        assert snap["server"] == "en"
+        # Extras stay on the row; null commit/version keys are scrubbed (§V67).
         assert snap["source_id"]
         assert "age_days" in snap and "status" in snap
+        assert "commit_sha" not in snap and "upstream_version" not in snap
 
 
 # --- not_found -> typed status, safe copy -------------------------------------

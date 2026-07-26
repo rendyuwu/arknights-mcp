@@ -17,7 +17,7 @@ from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate, seed_data_sources
 from arknights_mcp.services.source_status import get_data_sources
-from arknights_mcp.services.status import get_data_status
+from arknights_mcp.services.status import SnapshotStatus, get_data_status
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -73,12 +73,39 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     # serializable for the tool envelope / CLI --json
     json.dumps(status.to_dict())
 
-    # §V66/B78 (T157): the extras view drops the (server, snapshot_id, imported_at)
-    # triple -- carried by the envelope provenance -- and keeps the rest. to_dict
-    # stays full for the CLI, which has no envelope provenance to carry the triple.
+    # §V66/B78 (T157): the extras view drops (snapshot_id, imported_at) -- carried by
+    # the envelope provenance -- and keeps the rest. §V67 (B96/T177): the local-import
+    # fixture has no commit/version, so those keys are OMITTED, never emitted null.
+    # §V87 (B96): include_server inlines the per-row join key for the multi-region
+    # tool; the region-scoped resource keeps the default server-less view (§V77).
+    # to_dict stays full for the CLI, which has no envelope provenance.
+    assert snap.commit_sha is None and snap.upstream_version is None
     extras = snap.to_provenance_extras()
-    assert extras.keys() == {"source_id", "commit_sha", "upstream_version", "age_days", "status"}
+    assert extras.keys() == {"source_id", "age_days", "status"}
+    with_server = snap.to_provenance_extras(include_server=True)
+    assert with_server.keys() == {"server", "source_id", "age_days", "status"}
+    assert with_server["server"] == "en"
     assert {"server", "snapshot_id", "imported_at"} <= snap.to_dict().keys()
+
+
+def test_snapshot_extras_keep_known_commit_and_version() -> None:
+    # §V67 (B96/T177): omission is a null scrub, not a field drop -- a synced build
+    # that stamped a commit/version still emits both keys.
+    snap = SnapshotStatus(
+        server="en",
+        source_id="arknights_assets_gamedata",
+        snapshot_id="snap-1",
+        commit_sha="413a81a3ff3e",
+        upstream_version="v1",
+        imported_at=IMPORTED_AT,
+        age_days=7,
+        status="active",
+    )
+    extras = snap.to_provenance_extras(include_server=True)
+    assert extras["commit_sha"] == "413a81a3ff3e"
+    assert extras["upstream_version"] == "v1"
+    assert extras["server"] == "en"
+    assert "snapshot_id" not in extras and "imported_at" not in extras
 
 
 def test_data_status_empty_db_is_data_stale(tmp_path: Path) -> None:

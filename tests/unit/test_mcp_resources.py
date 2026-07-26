@@ -183,13 +183,16 @@ def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistr
     data = body["data"]
     assert data["server"] == "en"  # type: ignore[index]
     snaps = data["snapshots"]  # type: ignore[index]
-    # §V66/B78 (T157): region + the (snapshot_id, imported_at) triple live on the
+    # §V66/B78 (T157): region + the (snapshot_id, imported_at) pair live on the
     # top-level ``server`` + envelope provenance -- the snapshot rows carry only the
-    # source/age extras, never re-emitting the triple.
+    # source/age extras. Rows stay server-less here (§V77: region stated once for a
+    # region-scoped resource), unlike the multi-region tool's inline join key
+    # (§V87/B96); null commit/version keys are scrubbed (§V67/B96).
     assert snaps
     for s in snaps:
         assert "server" not in s and "snapshot_id" not in s and "imported_at" not in s
         assert s["source_id"]
+        assert "commit_sha" not in s and "upstream_version" not in s
     prov = body["provenance"]
     assert isinstance(prov, list) and prov and prov[0]["server"] == "en"
 
