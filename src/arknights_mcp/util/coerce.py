@@ -31,6 +31,16 @@ def as_float(value: Any) -> float | None:
     return float(value) if isinstance(value, bool | int | float) else None
 
 
+def as_dict(value: Any) -> dict[str, Any]:
+    """Return ``value`` if it is a dict, else an empty dict (narrowing).
+
+    The single home (§V37) for the nested-parent narrowing previously copied
+    privately into the banner and skin importers (``limitParam``/``dynMeta``/
+    ``displaySkin`` sub-extraction reads).
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def as_str(value: Any, *, sanitize: bool = False) -> str | None:
     """Return ``value`` if it is a ``str`` else ``None``.
 

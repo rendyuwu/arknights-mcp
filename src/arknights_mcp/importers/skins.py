@@ -36,6 +36,7 @@ tolerant-absent per §V41/B36).
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -49,8 +50,10 @@ from arknights_mcp.importers.field_policy import (
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
-from arknights_mcp.util.coerce import as_str
+from arknights_mcp.util.coerce import as_dict, as_str
 from arknights_mcp.util.sqlite import integrity_guard
+
+_LOG = logging.getLogger(__name__)
 
 _OPERATOR_CHAR_PREFIX = "char_"
 
@@ -75,11 +78,6 @@ class SkinImportResult:
 
     skins_inserted: int = 0
     skins_resolved: int = 0
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Return ``value`` if it is a dict, else an empty dict (narrowing)."""
-    return value if isinstance(value, dict) else {}
 
 
 def _is_operator_entry(entry: Any) -> bool:
@@ -118,7 +116,7 @@ def parse_skins(skin_raw: Any) -> list[ParsedSkin]:
             continue
         kept = apply_allowlist(entry, SKIN_ALLOWLIST).kept
         display_skin = apply_allowlist(
-            _as_dict(entry.get("displaySkin")), DISPLAY_SKIN_ALLOWLIST
+            as_dict(entry.get("displaySkin")), DISPLAY_SKIN_ALLOWLIST
         ).kept
         skin_id = as_str(kept.get("skinId"))
         char_id = as_str(kept.get("charId"))
@@ -233,7 +231,9 @@ def import_skins(
     ``operator_pk`` (§V88). A non-empty operator ``charSkins`` set that resolves to
     zero skins fails closed (§V30) so a shape/id mismatch is never promoted as a
     silent empty gallery; the candidate is discarded and the active DB stays
-    untouched (§V3).
+    untouched (§V3). A PARTIAL skip (some entries missing an id/stem while others
+    parse) is warned so a truncated gallery is at least visible in the sync log --
+    the §V30 guard alone only catches the all-zero case.
     """
     if not adapter.exists(skin_table_path):
         return SkinImportResult()
@@ -244,6 +244,14 @@ def import_skins(
         raise ImporterError(
             f"{adapter.server}: skin_table had {candidate_count} operator skin entr(y|ies) "
             "but none resolved to a skin row; refusing a silent empty skin gallery (§V30)"
+        )
+    skipped = candidate_count - len(parsed)
+    if skipped > 0:
+        _LOG.warning(
+            "%s: %d operator skin entr(y|ies) skipped (missing/blank skinId, charId, or "
+            "portraitId); the imported gallery may be partially truncated",
+            adapter.server,
+            skipped,
         )
     return insert_skins(
         conn,

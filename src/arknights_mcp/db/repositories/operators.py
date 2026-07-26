@@ -16,6 +16,7 @@ method accepts caller SQL and nothing is interpolated into a query string.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
@@ -228,16 +229,18 @@ _MODULE_LEVELS_SQL = (
     "FROM module_levels WHERE module_pk = ? ORDER BY level"
 )
 
-# Skins ordered by (skin_group_id, skin_id) so default E0/E1/E2 art (ILLUST_*) groups
-# ahead of outfit series and the emitted list is deterministic.
+# Skins ordered by (skin_group_id, skin_id) purely for a DETERMINISTIC emit order.
+# The order is lexicographic (BINARY collation): NULL groups sort first, then
+# digit-leading outfit-series ids ("2020#sale"), then the ILLUST_* default-art
+# groups -- there is deliberately NO defaults-first contract on the wire; clients
+# pick refs by variant/flags, never by position. The ``server`` predicate is
+# belt-and-braces §V5 (operator_pk is globally unique) AND lets the lookup use
+# ``idx_operator_skins_operator (server, operator_pk)`` instead of a full scan.
 _SKINS_SQL = (
     "SELECT skin_id, char_id, tmpl_id, display_name, skin_group_id, skin_group_name, "
     "portrait_id, is_buy_skin "
-    "FROM operator_skins WHERE operator_pk = ? ORDER BY skin_group_id, skin_id"
-)
-
-_SKINS_TABLE_EXISTS_SQL = (
-    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'operator_skins'"
+    "FROM operator_skins WHERE server = ? AND operator_pk = ? "
+    "ORDER BY skin_group_id, skin_id"
 )
 
 # Batched item display-name lookup for the module/skill upgrade-cost name pairing
@@ -395,17 +398,23 @@ class OperatorRepository(Repository):
             for r in self._all(_MODULE_LEVELS_SQL, (module_pk,))
         ]
 
-    def skins(self, operator_pk: int) -> list[OperatorSkinRow]:
+    def skins(self, server: str, operator_pk: int) -> list[OperatorSkinRow]:
         """Every named skin soft-resolved to the operator (§T182/§V88), ordered.
 
-        Guarded on table existence: an active database built before migration 0014
-        has no ``operator_skins`` table, and this read must degrade to an empty list
+        Degrades on table absence: an active database built before migration 0014
+        has no ``operator_skins`` table, and this read must return an empty list
         (the tool then falls back to the derived base-outfit refs + the partial-gallery
         limitation, §V21 backward compatibility) rather than surface
         ``no such table`` as an ``internal_error`` on every ``get_operator`` call.
+        The degrade is a catch on the query itself, not a per-call ``sqlite_master``
+        probe -- the common (table-present) path pays zero extra queries.
         """
-        if self._one(_SKINS_TABLE_EXISTS_SQL) is None:
-            return []
+        try:
+            rows = self._all(_SKINS_SQL, (server, operator_pk))
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return []
+            raise
         return [
             OperatorSkinRow(
                 skin_id=r[0],
@@ -417,7 +426,7 @@ class OperatorRepository(Repository):
                 portrait_id=r[6],
                 is_buy_skin=None if r[7] is None else bool(r[7]),
             )
-            for r in self._all(_SKINS_SQL, (operator_pk,))
+            for r in rows
         ]
 
     def item_display_names(self, server: str, game_ids: Collection[str]) -> dict[str, str]:

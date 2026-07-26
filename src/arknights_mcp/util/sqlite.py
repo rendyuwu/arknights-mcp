@@ -59,6 +59,22 @@ def savepoint(conn: sqlite3.Connection, name: str) -> Iterator[None]:
         conn.execute(f"RELEASE SAVEPOINT {name}")
 
 
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    """True when ``name`` exists as a table (§V37 single home for the probe).
+
+    The shared ``sqlite_master`` presence check used wherever a code path must
+    tolerate a database built before the migration that adds an optional table
+    (e.g. ``operator_skins``, migration 0014): the migration runner, purge, and
+    any repository degrade path all ask the same question, so it lives once here
+    rather than as scattered per-module copies.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
 @contextmanager
 def integrity_guard(
     message: str | Callable[[sqlite3.IntegrityError], str],

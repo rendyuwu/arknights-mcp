@@ -48,7 +48,7 @@
     "token_10012_shield#1": {
       "skinId": "token_10012_shield#1",
       "charId": "token_10012_shield",
-      "portraitId": null,
+      "portraitId": "token_10012_shield_1",
       "displaySkin": { "skinName": null, "skinGroupId": "ILLUST_0" }
     }
   },

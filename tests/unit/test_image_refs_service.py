@@ -165,6 +165,14 @@ def test_clean_ids_are_left_intact() -> None:
     assert "%" not in enemy_image_path(ENEMY_ID)
 
 
+def test_percent_itself_is_escaped_first_so_encoding_is_injective() -> None:
+    # ``portrait_id`` is imported external data (§T182): a stem carrying a literal
+    # ``%`` must not collide with an encoded ``#`` -- ``%`` is escaped FIRST.
+    assert skin_image_path("char_x_50%off") == "skin/char_x_50%25offb.png"
+    assert skin_image_path("char_x_%23") != skin_image_path("char_x_#")
+    assert skin_image_path("char_x_%23") == "skin/char_x_%2523b.png"
+
+
 # --- §T182/§V88: named skin gallery derivation -------------------------------------
 
 

@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
+from arknights_mcp.util.sqlite import table_exists
 
 #: Tables that must exist for a build to be usable (the M1 domains + metadata).
 CRITICAL_TABLES: tuple[str, ...] = (
@@ -152,9 +153,22 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         "JOIN enemies e ON e.enemy_pk = v.prefab_base_enemy_pk "
         "WHERE s.server <> e.server"
     ).fetchone()[0]
-    total = mismatched + spawn_mismatch + variant_mismatch
+    # A skin row soft-resolved to an operator must resolve within its OWN region
+    # (§V5/§T182): the nullable operator_pk FK cannot express this, so the gate does.
+    # Table-guarded: purge validates a copy of the active build, which may predate
+    # migration 0014 (§V21 backward compatibility).
+    skin_mismatch = (
+        conn.execute(
+            "SELECT COUNT(*) FROM operator_skins k "
+            "JOIN operators o ON o.operator_pk = k.operator_pk "
+            "WHERE k.server <> o.server"
+        ).fetchone()[0]
+        if table_exists(conn, "operator_skins")
+        else 0
+    )
+    total = mismatched + spawn_mismatch + variant_mismatch + skin_mismatch
     if total:
-        return CheckResult("orphans", False, f"{total} cross-region enemy reference(s)")
+        return CheckResult("orphans", False, f"{total} cross-region reference(s)")
     return CheckResult("orphans", True, "no cross-region references")
 
 

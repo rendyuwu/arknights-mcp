@@ -723,7 +723,11 @@ def get_operator(
         else ()
     )
     modules = _modules_facts(repo, operator.server, operator.operator_pk) if include_modules else ()
-    skins = tuple(_skin_facts(s) for s in repo.skins(operator.operator_pk)) if load_skins else ()
+    skins = (
+        tuple(_skin_facts(s) for s in repo.skins(operator.server, operator.operator_pk))
+        if load_skins
+        else ()
+    )
     facts = OperatorFacts(
         server=operator.server,
         game_id=operator.game_id,

@@ -292,12 +292,16 @@ DYN_META_ALLOWLIST: frozenset[str] = frozenset({"attainRare6CharList"})
 #: alt-form discriminator (equals ``charId`` except on alternate playable forms, e.g.
 #: the Amiya family), ``portraitId`` the art-asset stem the §V63 mirror URL derives
 #: from (skin/<portraitId>b.png -- derived at query time, never stored), and
-#: ``isBuySkin`` the paid-outfit flag. ``displaySkin`` is NOT kept whole (it carries
-#: the §V18-forbidden prose leaves ``content``/``dialog``/``usage``/``description``/
-#: ``drawerList``); only DISPLAY_SKIN_ALLOWLIST below survives via sub-extraction,
-#: the same nested-parent pattern as ``limitParam``/``dynMeta``/``overwrittenData``.
+#: ``isBuySkin`` the paid-outfit flag. ``displaySkin`` is deliberately ABSENT here
+#: (it carries the §V18-forbidden prose leaves ``content``/``dialog``/``usage``/
+#: ``description``/``drawerList``, so the allowlist itself must fail closed on it);
+#: the importer reads it separately through DISPLAY_SKIN_ALLOWLIST below via
+#: sub-extraction, the same nested-parent pattern as ``limitParam``/``dynMeta`` --
+#: which are likewise absent from BANNER_ALLOWLIST. (No policy-version bump: the
+#: stored record bytes are unchanged -- the importer already replaced the parent
+#: with its sub-allowlisted block before writing provenance.)
 SKIN_ALLOWLIST: frozenset[str] = frozenset(
-    {"skinId", "charId", "tmplId", "portraitId", "displaySkin", "isBuySkin"}
+    {"skinId", "charId", "tmplId", "portraitId", "isBuySkin"}
 )
 
 #: The ``displaySkin`` sub-block of a ``charSkins`` entry. ``skinName`` is the outfit's

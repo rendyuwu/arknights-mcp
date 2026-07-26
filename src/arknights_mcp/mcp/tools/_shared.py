@@ -24,6 +24,7 @@ from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation
 from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
+from arknights_mcp.services.image_refs import IMAGE_REFS_BASE_URL
 from arknights_mcp.services.operators import cost_item_id
 from arknights_mcp.services.stages import SectionPage
 
@@ -90,20 +91,22 @@ COST_ITEM_NAME_LIMITATION = (
 #: §V72/§V26 (§T135, B61): the ONE standing limitation attached to EVERY response that
 #: emits an ``image_refs`` list -- ``get_operator`` / ``get_enemy`` / ``get_banners``. It
 #: rides the envelope a SINGLE time no matter how many refs the response carries (a full
-#: operator emits 6, a banner page many; §V66 economy -- never a per-ref repeat of a
-#: ~300-char disclaimer), and its PRESENCE stays mandatory whenever any ref is emitted.
-#: Each URL is DERIVED at response-build time from a stored game id and is never fetched
-#: or validated by the server (§V63 never-fetch), so a link can be dead when the upstream
-#: mirror lacks that asset -- the disclosure keeps a derived link from being presented as
-#: a verified fact (§V26 "uncertain -> say so", the exact fabrication B61 flagged). The
-#: mirror's portrait tree lags newer operators, so the avatar category has the widest
-#: coverage and is the most reliable fallback when a portrait/skin URL 404s. Shortened
-#: for §V66 economy (T149). Shared: one wording, one home (§V37). Client-facing text, so
-#: no internal cites/jargon (§V71) -- the cites live in this comment, never the string.
+#: operator emits 4 identity refs + one per imported skin row, a banner page many; §V66
+#: economy -- never a per-ref repeat of a ~300-char disclaimer), and its PRESENCE stays
+#: mandatory whenever any ref is emitted. Each link is DERIVED at response-build time
+#: from a stored identifier (the entity's game id; a skin ref's imported portrait id,
+#: §T182) and is never fetched or validated by the server (§V63 never-fetch), so a link
+#: can be dead when the upstream mirror lacks that asset -- the disclosure keeps a
+#: derived link from being presented as a verified fact (§V26 "uncertain -> say so",
+#: the exact fabrication B61 flagged). The mirror's portrait tree lags newer operators,
+#: so the avatar category has the widest coverage and is the most reliable fallback
+#: when a portrait/skin URL 404s. Shortened for §V66 economy (T149). Shared: one
+#: wording, one home (§V37). Client-facing text, so no internal cites/jargon (§V71) --
+#: the cites live in this comment, never the string.
 IMAGE_REFS_LIMITATION = (
-    "Image URLs are derived from a stored game id and are never fetched or validated by "
-    "the server, so a URL may 404 if the mirror lacks that asset. The avatar category "
-    "has the widest mirror coverage and is the most reliable fallback."
+    "Image links are derived from stored identifiers and are never fetched or validated "
+    "by the server, so a link may 404 if the mirror lacks that asset. The avatar "
+    "category has the widest mirror coverage and is the most reliable fallback."
 )
 
 
@@ -118,6 +121,26 @@ IMAGE_REFS_PATH_NOTE = (
     "Each ref carries a path relative to the response's shared image_refs_base_url "
     "field. Join base_url, a slash, and path for the full image URL."
 )
+
+
+def attach_image_ref_disclosures(
+    data: dict[str, object], limitations: tuple[str, ...], *, emits_refs: bool
+) -> tuple[str, ...]:
+    """Attach the two coupled image-ref envelope fields atomically (§T183/§V66, §V72).
+
+    Every ref-emitting tool (``get_operator`` / ``get_enemy`` / ``get_banners``) must,
+    exactly when the response actually emits refs, BOTH hoist the shared mirror base
+    onto ``data`` as ``image_refs_base_url`` (once -- each ref carries only its
+    relative path) AND append :data:`IMAGE_REFS_LIMITATION`. The two are one predicate
+    (§V63: "0 refs emitted -> base key absent", §V67), so they live in one §V37 home:
+    a surface can never ship un-joinable relative paths (base forgotten) or an
+    undisclosed derived link (limitation forgotten). Mutates ``data`` in place and
+    returns the extended limitations tuple; a no-op when ``emits_refs`` is False.
+    """
+    if not emits_refs:
+        return limitations
+    data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
+    return (*limitations, IMAGE_REFS_LIMITATION)
 
 
 #: §V88/§V26 (§T181 floor, scoped by §T182): the standing partial-gallery limitation
@@ -153,7 +176,8 @@ SKIN_GALLERY_PARTIAL_LIMITATION = (
 #: (§V71) -- the cites live in this comment, never the string; short sentences (§V71 f).
 SKIN_ALT_FORM_NOTE = (
     "Skins marked alt_form belong to an alternate playable form of this operator, not "
-    "the base form. Alternate forms are not separately searchable in this build."
+    "the base form. On those refs the e0/e1/e2 variant labels name the alternate "
+    "form's art. Alternate forms are not separately searchable in this build."
 )
 
 

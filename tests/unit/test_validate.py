@@ -156,6 +156,32 @@ def test_cross_region_reference_detected(tmp_path: Path) -> None:
     assert not _check(report, "orphans").passed
 
 
+def test_cross_region_skin_resolution_detected(tmp_path: Path) -> None:
+    # §V5/§T182: a skin row soft-resolved to an operator of ANOTHER region must fail
+    # the orphans gate -- the nullable operator_pk FK cannot express same-region, so
+    # the gate does (the importer resolves per server; this catches a regression).
+    path = _valid_candidate(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    prov = conn.execute("SELECT MIN(provenance_id) FROM record_provenance").fetchone()[0]
+    op_pk = conn.execute(
+        "INSERT INTO operators (server, game_id, display_name, provenance_id) "
+        "VALUES ('en', 'char_x_test', 'X', ?)",
+        (prov,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO operator_skins (server, skin_id, char_id, operator_pk, resolved, "
+        "portrait_id, region, provenance_id) "
+        "VALUES ('cn', 'char_x_test#1', 'char_x_test', ?, 1, 'char_x_test_1', 'cn', ?)",
+        (op_pk, prov),
+    )
+    conn.commit()
+    conn.close()
+    report = validate_database(path)
+    assert not report.passed
+    assert not _check(report, "orphans").passed
+
+
 # --- golden invariants --------------------------------------------------------
 
 

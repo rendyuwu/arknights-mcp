@@ -28,7 +28,7 @@ from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_event
 from arknights_mcp.db.promotion import PromotionResult, promote_candidate
 from arknights_mcp.db.validate import ValidationReport, validate_database
 from arknights_mcp.importers.search_index import rebuild_search_index
-from arknights_mcp.util.sqlite import integrity_guard
+from arknights_mcp.util.sqlite import integrity_guard, table_exists
 
 
 class PurgeError(RuntimeError):
@@ -105,8 +105,17 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     talent_pks = _select_ids(
         conn, "SELECT talent_pk FROM talents WHERE operator_pk IN (%s)", operator_pks
     )
-    skin_pks = _select_ids(
-        conn, "SELECT skin_pk FROM operator_skins WHERE provenance_id IN (%s)", prov_ids
+    # Guarded on table existence (§V21 backward compatibility, same degrade as
+    # OperatorRepository.skins): the purge candidate is a plain copy of the ACTIVE
+    # build, which may predate migration 0014 -- purging (a takedown path, §V20)
+    # must not crash with ``no such table: operator_skins`` on such a copy.
+    has_skins_table = table_exists(conn, "operator_skins")
+    skin_pks = (
+        _select_ids(
+            conn, "SELECT skin_pk FROM operator_skins WHERE provenance_id IN (%s)", prov_ids
+        )
+        if has_skins_table
+        else []
     )
 
     # stage domain: children -> parents. stage_spawns / stage_enemies are removed

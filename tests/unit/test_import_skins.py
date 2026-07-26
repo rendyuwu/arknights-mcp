@@ -83,7 +83,10 @@ _ALT_FORM = {
 _TOKEN = {
     "skinId": "token_10000_silent_healrb#1",
     "charId": "token_10000_silent_healrb",
-    "portraitId": None,
+    # A REAL token entry can carry a portraitId, so the token filter must be the
+    # guard that drops it -- a null portraitId here would let the missing-stem skip
+    # mask a broken charId-prefix filter (two guards, one visible).
+    "portraitId": "token_10000_silent_healrb_1",
     "displaySkin": {"skinName": None, "skinGroupId": "ILLUST_0"},
 }
 
@@ -411,7 +414,23 @@ def test_repo_skins_degrades_when_table_absent(tmp_path: Path) -> None:
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         conn.execute("DROP TABLE operator_skins")
-        assert OperatorRepository(conn).skins(1) == []
+        assert OperatorRepository(conn).skins("en", 1) == []
+    finally:
+        conn.close()
+
+
+def test_purge_tolerates_pre_0014_database(tmp_path: Path) -> None:
+    # §V21/§V20: the purge candidate is a plain copy of the ACTIVE build, which may
+    # predate migration 0014 -- the takedown path must degrade (0 skins) instead of
+    # crashing with `no such table: operator_skins`.
+    conn, _snap = _conn_with_operator(tmp_path, seed_operator=True)
+    try:
+        conn.execute("DROP TABLE operator_skins")
+        conn.commit()
+        affected = _purge_source_rows(conn, _SOURCE_ID)
+        conn.commit()
+        assert affected["skins"] == 0
+        assert affected["operators"] == 1
     finally:
         conn.close()
 

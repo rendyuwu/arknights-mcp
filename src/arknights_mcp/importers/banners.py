@@ -49,7 +49,7 @@ from arknights_mcp.importers.field_policy import (
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
-from arknights_mcp.util.coerce import as_int, as_str
+from arknights_mcp.util.coerce import as_dict, as_int, as_str
 from arknights_mcp.util.sqlite import integrity_guard
 
 _LOG = logging.getLogger(__name__)
@@ -88,11 +88,6 @@ class BannerImportResult:
     featured_ops_resolved: int = 0
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Return ``value`` if it is a dict, else an empty dict (narrowing)."""
-    return value if isinstance(value, dict) else {}
-
-
 def _epoch_to_iso(value: Any) -> str | None:
     """Normalize a unix-epoch int to an ISO UTC timestamp, or ``None`` (§V62).
 
@@ -121,12 +116,12 @@ def _featured_char_ids(
     featured-op -> empty.
     """
     if rule_type == _LIMITED_RULE_TYPE:
-        limit_param = apply_allowlist(_as_dict(entry.get("limitParam")), LIMIT_PARAM_ALLOWLIST).kept
+        limit_param = apply_allowlist(as_dict(entry.get("limitParam")), LIMIT_PARAM_ALLOWLIST).kept
         char_id = as_str(limit_param.get("limitedCharId"))
         ids = [char_id] if char_id else []
         return ids, ({"limitParam": limit_param} if limit_param else {})
     if rule_type in _CLASSIC_FAMILY_RULE_TYPES:
-        dyn_meta = apply_allowlist(_as_dict(entry.get("dynMeta")), DYN_META_ALLOWLIST).kept
+        dyn_meta = apply_allowlist(as_dict(entry.get("dynMeta")), DYN_META_ALLOWLIST).kept
         raw_list = dyn_meta.get("attainRare6CharList")
         ids = (
             [c for c in raw_list if isinstance(c, str) and c] if isinstance(raw_list, list) else []

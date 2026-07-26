@@ -34,19 +34,18 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
-    IMAGE_REFS_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     MODULE_CHANGE_DEDUP_NOTE,
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
     ConnectionProvider,
+    attach_image_ref_disclosures,
     has_unnamed_cost_item,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
 from arknights_mcp.services.image_refs import (
-    IMAGE_REFS_BASE_URL,
     image_ref_to_dict,
     named_skin_ref_to_dict,
     operator_identity_refs,
@@ -78,11 +77,13 @@ _TOOL_DESCRIPTION = (
     + IMAGE_REFS_PATH_NOTE
     + " Each ref carries "
     "a variant label naming the art: e0 (elite-0), e1 (elite-1), e2 (elite-2), base "
-    "(avatar), or skin (a named outfit). On builds carrying the imported skin gallery, "
-    "each skin ref also carries skin_id, plus skin_name and skin_group when the outfit is "
-    "named; paid marks a purchasable outfit and alt_form marks art belonging to an "
-    "alternate playable form of the operator. Absent optional ref fields mean default "
-    "art / not applicable. en/cn are never mixed. Skill, talent, and module effects "
+    "(avatar), or skin (outfit art). On builds carrying the imported skin gallery, "
+    "each skin ref also carries skin_id, plus skin_name and skin_group when the source "
+    "names them; paid marks an outfit the source flags as purchasable, and alt_form "
+    "marks art belonging to an alternate playable form of the operator (its e0/e1/e2 "
+    "variants name that form's art). An absent optional ref field means default art, "
+    "not applicable, or not stated by the source. en/cn are never mixed. Skill, talent, "
+    "and module effects "
     "include the in-game effect "
     "description template (when present in the source) alongside raw blackboard "
     "key-value data; read the template to interpret the values, and do not infer "
@@ -287,7 +288,13 @@ def _operator_to_dict(
 
 
 def _named_skin_ref(skin: OperatorSkinFacts) -> dict[str, object]:
-    """One named-gallery skin ref (§T182/§V88); shaping lives in the §V37 service home."""
+    """One named-gallery skin ref (§T182/§V88); shaping lives in the §V37 service home.
+
+    ``is_buy_skin`` is tri-state (§V67): only an explicit source ``True`` emits the
+    ``paid`` flag -- ``None`` (source did not state it) stays absent exactly like
+    ``False``, and the tool description says an absent field may mean "not stated by
+    the source" (never a fabricated not-paid claim).
+    """
     return named_skin_ref_to_dict(
         skin_id=skin.skin_id,
         portrait_id=skin.portrait_id,
@@ -295,7 +302,7 @@ def _named_skin_ref(skin: OperatorSkinFacts) -> dict[str, object]:
         skin_group_id=skin.skin_group_id,
         skin_group_name=skin.skin_group_name,
         alt_form=skin.is_alt_form,
-        paid=bool(skin.is_buy_skin),
+        paid=skin.is_buy_skin is True,
     )
 
 
@@ -321,22 +328,6 @@ def _shape(
     # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.
     if has_unnamed_cost_item(lv.cost for m in operator.modules for lv in m.levels):
         limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
-    # §V72/§V26 (§T135, B61): when the image_refs list is emitted (the combined §T120
-    # gate), the standing derived-unverified limitation rides along -- the URLs are
-    # derived + never validated by the server (§V63), so a dead link is never presented
-    # as a verified fact. Absent when the gate is off (no refs -> no caveat).
-    # §V88/§V26 (§T181->§T182, B99): the partial-gallery limitation now rides ONLY the
-    # fallback path -- no imported skin rows means the emitted skin refs are the derived
-    # base-outfit art alone, and that deferral stays visible. On the named-gallery path
-    # the outfit list is complete; what remains partial is the alt-form axis, disclosed
-    # (only when an alt-form ref is actually emitted) by the standing alt-form note
-    # (ADR 0015: labeled, never silently folded into the base operator).
-    if image_refs_enabled:
-        limitations = (*limitations, IMAGE_REFS_LIMITATION)
-        if not operator.skins:
-            limitations = (*limitations, SKIN_GALLERY_PARTIAL_LIMITATION)
-        elif any(s.is_alt_form for s in operator.skins):
-            limitations = (*limitations, SKIN_ALT_FORM_NOTE)
     data: dict[str, object] = {
         "operator": _operator_to_dict(
             operator,
@@ -344,10 +335,21 @@ def _shape(
             image_refs_enabled=image_refs_enabled,
         )
     }
-    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE; every ref
-    # carries only its relative path, so the base never repeats per ref.
+    # §T183/§V66 + §V72/§V26 (§T135, B61): the shared attach (one §V37 home) hoists the
+    # mirror base ONCE onto data and appends the derived-unverified limitation, exactly
+    # when refs are emitted (get_operator always emits refs when the gate is on).
+    limitations = attach_image_ref_disclosures(data, limitations, emits_refs=image_refs_enabled)
+    # §V88/§V26 (§T181->§T182, B99): the partial-gallery limitation now rides ONLY the
+    # fallback path -- no imported skin rows means the emitted skin refs are the derived
+    # base-outfit art alone, and that deferral stays visible. On the named-gallery path
+    # the outfit list is complete; what remains partial is the alt-form axis, disclosed
+    # (only when an alt-form ref is actually emitted) by the standing alt-form note
+    # (ADR 0015: labeled, never silently folded into the base operator).
     if image_refs_enabled:
-        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
+        if not operator.skins:
+            limitations = (*limitations, SKIN_GALLERY_PARTIAL_LIMITATION)
+        elif any(s.is_alt_form for s in operator.skins):
+            limitations = (*limitations, SKIN_ALT_FORM_NOTE)
     return ok(
         data,
         provenance=[

@@ -38,9 +38,10 @@ RELATIVE ``path`` (``<folder>/<file>.png``) and the response emits
 full URL. The derivation functions therefore build paths, not absolute URLs -- the base
 never repeats per ref.
 
-Base ids never contain ``#``/``+``, but skin-variant filenames can, so the derivation
-percent-encodes ``#``→``%23`` and ``+``→``%2B`` **unconditionally** (§V63) -- one
-encoder, applied the same way to every derived path.
+Base ids never contain ``%``/``#``/``+``, but skin-variant filenames can, so the
+derivation percent-encodes ``%``→``%25`` (first, so encoding stays injective for
+externally-imported ``portrait_id`` stems), ``#``→``%23`` and ``+``→``%2B``
+**unconditionally** (§V63) -- one encoder, applied the same way to every derived path.
 
 Each emitted ref also carries a ``variant`` label (§V78/B80/§T159) naming the art the
 mirror's ``_1``/``_2``/``_1b``/``_2b`` suffix encodes -- ``_1``→``e0``, ``_2``→``e2``,
@@ -102,15 +103,18 @@ IMAGE_REFS_BASE_URL = "https://raw.githubusercontent.com/yuanyan3060/ArknightsGa
 
 
 def _encode(filename: str) -> str:
-    """Percent-encode the ``#``/``+`` a skin-variant filename may carry (§V63).
+    """Percent-encode the ``%``/``#``/``+`` a skin-variant filename may carry (§V63).
 
     Applied unconditionally to every filename: base operator/enemy ids do not contain
     these characters, but the encoder is uniform so a skin id that does is always safe.
-    Only these two characters are touched -- the ``game_id`` is otherwise URL-safe
-    (``[a-z0-9_]``), so no general-purpose quoting is needed (and none is applied, which
-    would wrongly escape the ``/`` path separators callers never pass in here anyway).
+    ``%`` is escaped FIRST so the encoding is injective (a literal ``%23`` in an
+    imported ``portrait_id`` -- external data since §T182 -- can never collide with an
+    encoded ``#``). Only these three characters are touched -- the stems are otherwise
+    URL-safe (``[a-z0-9_@]``), so no general-purpose quoting is needed (and none is
+    applied, which would wrongly escape the ``/`` path separators callers never pass
+    in here anyway).
     """
-    return filename.replace("#", "%23").replace("+", "%2B")
+    return filename.replace("%", "%25").replace("#", "%23").replace("+", "%2B")
 
 
 def _png_path(folder: str, filename: str) -> str:
@@ -193,14 +197,21 @@ def named_skin_ref_to_dict(
     ``paid`` only when true (§V67 -- an absent flag is the default, never ``null``).
     ``variant`` derives from the imported ``skin_group_id``: default ``ILLUST_0/1/2``
     art maps to ``e0``/``e1``/``e2``, a named outfit series stays ``skin`` (§V78).
+    On an ``alt_form`` ref that variant names the ALTERNATE form's elite art, not the
+    base operator's -- clients must read the flag beside the variant.
     ``path`` is relative to the response's hoisted ``image_refs_base_url`` (§T183/§V66).
+    The base four keys route through :class:`ImageRef` + :func:`image_ref_to_dict` so
+    the shared wire shape keeps exactly one constructor (§V37); only the additive
+    named-gallery fields are assembled here.
     """
-    ref: dict[str, object] = {
-        "category": CATEGORY_SKIN,
-        "path": skin_image_path(portrait_id),
-        "variant": _SKIN_GROUP_VARIANTS.get(skin_group_id or "", VARIANT_SKIN),
-        "skin_id": skin_id,
-    }
+    ref = image_ref_to_dict(
+        ImageRef(
+            category=CATEGORY_SKIN,
+            path=skin_image_path(portrait_id),
+            variant=_SKIN_GROUP_VARIANTS.get(skin_group_id or "", VARIANT_SKIN),
+        )
+    )
+    ref["skin_id"] = skin_id
     if skin_name:
         ref["skin_name"] = skin_name
     if skin_group_name:
@@ -209,7 +220,6 @@ def named_skin_ref_to_dict(
         ref["alt_form"] = True
     if paid:
         ref["paid"] = True
-    ref["source_id"] = SOURCE_ID
     return ref
 
 

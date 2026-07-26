@@ -16,6 +16,7 @@ from importlib import resources
 from pathlib import Path
 
 from arknights_mcp.util.hashing import sha256_hex
+from arknights_mcp.util.sqlite import table_exists
 
 # Packaged migrations directory (``src/arknights_mcp/migrations``). Living inside
 # the package means the ``.sql`` files ship in the wheel, so a non-editable install
@@ -36,16 +37,8 @@ def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
-def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (name,),
-    ).fetchone()
-    return row is not None
-
-
 def _applied_versions(conn: sqlite3.Connection) -> dict[str, str]:
-    if not _table_exists(conn, "schema_migrations"):
+    if not table_exists(conn, "schema_migrations"):
         return {}
     return {
         version: checksum

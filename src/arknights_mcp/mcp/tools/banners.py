@@ -31,9 +31,9 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
-    IMAGE_REFS_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     ConnectionProvider,
+    attach_image_ref_disclosures,
     page_to_dict,
     run_guarded,
 )
@@ -45,11 +45,7 @@ from arknights_mcp.services.banners import (
     FeaturedOpFacts,
     get_banners,
 )
-from arknights_mcp.services.image_refs import (
-    IMAGE_REFS_BASE_URL,
-    image_ref_to_dict,
-    operator_banner_refs,
-)
+from arknights_mcp.services.image_refs import image_ref_to_dict, operator_banner_refs
 
 _TOOL_NAME = "get_banners"
 _TOOL_TITLE = "Get banners"
@@ -147,11 +143,10 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
     emits_refs = image_refs_enabled and any(
         op.resolved for b in result.banners for op in b.featured_ops
     )
-    limitations = (*result.limitations, IMAGE_REFS_LIMITATION) if emits_refs else result.limitations
-    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE (only when
-    # this page actually emits refs); every ref carries only its relative path.
-    if emits_refs:
-        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
+    # §T183/§V66 + §V72 (ADR 0014): the shared attach (one §V37 home) hoists the mirror
+    # base ONCE onto data and appends the derived-unverified limitation, exactly when
+    # this page actually emits refs; every ref carries only its relative path.
+    limitations = attach_image_ref_disclosures(data, result.limitations, emits_refs=emits_refs)
     return ok(
         data,
         provenance=tuple(

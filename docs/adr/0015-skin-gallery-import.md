@@ -72,10 +72,12 @@ and the live mirror (`yuanyan3060/ArknightsGameResource`) on 2026-07-26:
    at response time from the imported `portrait_id` through the single shared
    encoder; no URL and no byte stored; the server never fetches.
 6. **Wire shape additive** (§V21, no `schema_version` bump): each named skin
-   ref extends `{category, url, variant, source_id}` with `skin_id` always and
-   `skin_name`/`skin_group` when named; `alt_form`/`paid` only when true (§V67
-   omit-discipline). `variant` maps `ILLUST_0/1/2` → `e0`/`e1`/`e2`, named
-   outfits → `skin` (§V78).
+   ref extends `{category, path, variant, source_id}` (the T183/ADR 0014 hoist
+   shape — the former per-ref `url` is a relative `path` under the response's
+   `image_refs_base_url`) with `skin_id` always and `skin_name`/`skin_group`
+   when named; `alt_form`/`paid` only when true (§V67 omit-discipline).
+   `variant` maps `ILLUST_0/1/2` → `e0`/`e1`/`e2`, named outfits → `skin`
+   (§V78); on an `alt_form` ref those labels name the alternate form's art.
 7. **Fallback preserved** (§V21): a build without the skin domain (pre-0014
    active DB, combat-only snapshot) keeps the derived base `_1b`/`_2b` refs and
    the T181 partial-gallery limitation; the repository degrades a missing

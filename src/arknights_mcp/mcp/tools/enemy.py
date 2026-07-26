@@ -24,11 +24,11 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
-    IMAGE_REFS_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     LIST_FIELD_CONVENTION,
     ConnectionProvider,
     absent_field_limitation,
+    attach_image_ref_disclosures,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -39,11 +39,7 @@ from arknights_mcp.services.enemies import (
     EnemyLevelFacts,
     get_enemy,
 )
-from arknights_mcp.services.image_refs import (
-    IMAGE_REFS_BASE_URL,
-    enemy_image_refs,
-    image_ref_to_dict,
-)
+from arknights_mcp.services.image_refs import enemy_image_refs, image_ref_to_dict
 
 _TOOL_NAME = "get_enemy"
 _TOOL_TITLE = "Get enemy"
@@ -178,15 +174,13 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
     # derived-unverified limitation rides along too -- the sprite URL is derived + never
     # validated by the server (§V63), so a dead link is never presented as a fact.
     limitations = _enemy_absent_field_limitations(result.enemy)
-    if image_refs_enabled:
-        limitations = (*limitations, IMAGE_REFS_LIMITATION)
     data: dict[str, object] = {
         "enemy": _enemy_to_dict(result.enemy, image_refs_enabled=image_refs_enabled)
     }
-    # §T183/§V66 (ADR 0014): the shared mirror base rides the response ONCE; the ref
-    # carries only its relative path, so the base never repeats per ref.
-    if image_refs_enabled:
-        data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
+    # §T183/§V66 + §V72 (ADR 0014): the shared attach (one §V37 home) hoists the mirror
+    # base ONCE onto data and appends the derived-unverified limitation, exactly when
+    # the sprite ref is emitted (get_enemy always emits one when the gate is on).
+    limitations = attach_image_ref_disclosures(data, limitations, emits_refs=image_refs_enabled)
     return ok(
         data,
         provenance=[
