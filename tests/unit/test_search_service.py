@@ -309,10 +309,13 @@ def _seed_zone_and_stage(
     zone_name: str | None,
     stage_game_id: str,
     stage_name: str,
+    zone_server: str | None = None,
 ) -> None:
+    # ``zone_server`` (default: the stage's server) lets the region-guard test seed
+    # the corrupt cross-region FK state without duplicating these INSERTs.
     cur = writer.execute(
         "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
-        (server, zone_game_id, zone_name, "ACTIVITY"),
+        (zone_server or server, zone_game_id, zone_name, "ACTIVITY"),
     )
     writer.execute(
         "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
@@ -361,14 +364,15 @@ def test_zone_alias_is_region_guarded(tmp_path: Path) -> None:
     path = tmp_path / "zone_region.sqlite"
     writer = build_database(path)
     provenance_id = _seed_provenance(writer)
-    cur = writer.execute(
-        "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
-        ("cn", "act33side", "Lone Trail", "ACTIVITY"),
-    )
-    writer.execute(
-        "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
-        "provenance_id) VALUES (?,?,?,?,?,?)",
-        ("en", "act33side_01", "XX-1", "Frontier", int(cur.lastrowid), provenance_id),
+    _seed_zone_and_stage(
+        writer,
+        provenance_id,
+        server="en",
+        zone_game_id="act33side",
+        zone_name="Lone Trail",
+        stage_game_id="act33side_01",
+        stage_name="Frontier",
+        zone_server="cn",
     )
     build_search_index(writer)
     writer.commit()

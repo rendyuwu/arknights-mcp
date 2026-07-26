@@ -11,9 +11,13 @@ SQLite file, or carries no applied schema migrations is refused and
 ``current.json`` is left untouched, so the current database stays active.
 
 "Unchanged → no-op" compares *logical content identity* (schema version,
-analyzer version, and the imported snapshot manifest hashes), not the raw SQLite
-bytes -- two candidates built from the same snapshots at different times are byte
--different yet logically identical, and must not churn a fresh promotion.
+analyzer version, field-policy + transform versions, and the imported snapshot
+manifest hashes), not the raw SQLite bytes -- two candidates built from the same
+snapshots at different times are byte-different yet logically identical, and must
+not churn a fresh promotion. The pipeline versions are part of the identity
+(§V92/B112): an import pipeline bump (e.g. a new allowlisted field) over an
+*identical* snapshot produces a logically NEW build that must promote, or the
+bumped code's output could never reach the active database.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ from pathlib import Path
 
 from arknights_mcp.analyzers.base import ANALYZER_VERSION
 from arknights_mcp.db.connection import DatabaseUnavailable, read_only_connection
+from arknights_mcp.importers.field_policy import FIELD_POLICY_VERSION
+from arknights_mcp.importers.manifest import TRANSFORM_VERSION
 from arknights_mcp.util.atomic import atomic_write_bytes, atomic_write_text
 from arknights_mcp.util.hashing import record_hash, sha256_file
 
@@ -125,7 +131,14 @@ def _read_snapshots(conn: sqlite3.Connection) -> list[dict[str, str]]:
 def _content_hash(
     schema_version: str, analyzer_version: str, snapshots: list[dict[str, str]]
 ) -> str:
-    """Logical content identity for no-op detection (excludes raw SQLite bytes)."""
+    """Logical content identity for no-op detection (excludes raw SQLite bytes).
+
+    Includes the import-pipeline versions (§V92/B112): a ``FIELD_POLICY_VERSION``
+    or ``TRANSFORM_VERSION`` bump changes what an identical snapshot imports, so a
+    re-import after the bump is a NEW logical build -- without them here, the
+    unchanged-snapshot no-op would discard it and the bumped pipeline's output
+    could never reach the active database.
+    """
     snapshot_keys = sorted(
         f"{s['source_id']}|{s['server']}|{s['manifest_hash']}" for s in snapshots
     )
@@ -133,6 +146,8 @@ def _content_hash(
         {
             "schema_version": schema_version,
             "analyzer_version": analyzer_version,
+            "field_policy_version": FIELD_POLICY_VERSION,
+            "transform_version": TRANSFORM_VERSION,
             "snapshots": snapshot_keys,
         }
     )

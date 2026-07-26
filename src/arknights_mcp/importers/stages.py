@@ -76,10 +76,16 @@ def parse_zones(zone_raw: Any) -> list[ParsedZone]:
         if not isinstance(entry, dict):
             continue
         kept = apply_allowlist(entry, ZONE_ALLOWLIST).kept
+        # T179 review-fix: the REAL zone_table names a zone via ``zoneNameSecond``
+        # (no ``zoneName`` key -- see tests/fixtures/stage_4_4_real); reading only
+        # ``zoneName`` left display_name NULL on real builds, which nulled the §T179
+        # stage search alias ("Lone Trail" -> its stages) the tool descriptions
+        # promise. Prefer ``zoneName`` (synthetic/back-compat), fall back to the
+        # real-shape key.
         out.append(
             ParsedZone(
                 game_id=game_id,
-                display_name=as_str(kept.get("zoneName")),
+                display_name=as_str(kept.get("zoneName")) or as_str(kept.get("zoneNameSecond")),
                 zone_type=as_str(kept.get("type")),
                 provenance_record=kept,
             )

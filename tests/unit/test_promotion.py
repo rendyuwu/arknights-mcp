@@ -150,6 +150,28 @@ def test_identical_content_is_noop(tmp_path: Path) -> None:
     assert (data_dir / CURRENT_MANIFEST_NAME).read_text(encoding="utf-8") == manifest_before
 
 
+@pytest.mark.parametrize("version_name", ["FIELD_POLICY_VERSION", "TRANSFORM_VERSION"])
+def test_pipeline_version_bump_defeats_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version_name: str
+) -> None:
+    """§V92 (B112): a field-policy/transform bump over an identical snapshot must
+    promote -- the bumped pipeline imports different content from the same bytes,
+    so the unchanged-snapshot no-op would otherwise strand the new output forever."""
+    import arknights_mcp.db.promotion as promotion_module
+
+    data_dir = tmp_path / "data"
+    first = _make_candidate(tmp_path / "first.sqlite")
+    promote_candidate(first, data_dir=data_dir, validation_passed=True, timestamp=_ts(10))
+
+    monkeypatch.setattr(promotion_module, version_name, "bumped-for-test")
+    second = _make_candidate(tmp_path / "second.sqlite")
+    r2 = promote_candidate(second, data_dir=data_dir, validation_passed=True, timestamp=_ts(11))
+
+    assert r2.status == "promoted"
+    builds = list((data_dir / BUILDS_DIRNAME).glob("*.sqlite"))
+    assert len(builds) == 2
+
+
 def test_changed_content_promotes_new_build(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     first = _make_candidate(tmp_path / "first.sqlite")

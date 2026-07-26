@@ -64,6 +64,20 @@ _NOT_FOUND_ACTION = (
 )
 
 
+#: §V67 (B58/B98): the per-level optional fields (scalars + lists), keyed exactly as
+#: emitted (wire key == ``EnemyLevelFacts`` attribute). ONE table drives BOTH the
+#: per-level key omission (:func:`_level_to_dict`) and the absent-field limitation
+#: (:func:`_enemy_absent_field_limitations`), so the omit set and the naming set can
+#: never drift apart.
+_LEVEL_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "attack_range",
+    "block_behavior",
+    "targeting",
+    "immunities",
+    "abilities",
+)
+
+
 def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
     """One level variant's typed stat block (structural JSON already vetted; §V18).
 
@@ -71,8 +85,11 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
     ``[]`` when the source confirms none and OMITTED when the source carried no such
     data (decoded ``None``) -- never ``null``, so a client need not decide "none vs
     unknown" (B58). §V67 (B98): the absent-in-source scalars ``attack_range`` /
-    ``block_behavior`` follow the same rule -- key omitted, never null. The absence of
-    an expected one is named in the response limitations (the sole absence signal).
+    ``block_behavior`` follow the same rule -- key omitted, never null. A field absent
+    from EVERY level variant is named in the response limitations (the sole absence
+    signal); a mixed case -- present on one variant, decoded ``None`` on another --
+    omits the key on the absent variants only, with no limitation (matching the
+    pre-existing B58 list convention).
     """
     out: dict[str, object] = {
         "level_variant": level.level_variant,
@@ -85,13 +102,8 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
         "weight": level.weight,
         "life_point_reduction": level.life_point_reduction,
     }
-    for key, value in (
-        ("attack_range", level.attack_range),
-        ("block_behavior", level.block_behavior),
-        ("targeting", level.targeting),
-        ("immunities", level.immunities),
-        ("abilities", level.abilities),
-    ):
+    for key in _LEVEL_OPTIONAL_FIELDS:
+        value = getattr(level, key)
         if value is not None:
             out[key] = value
     return out
@@ -103,25 +115,20 @@ def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
     """§V67/§V26 (B58): name the expected enemy fields absent from the source.
 
     ``attack_type`` is absent when the enemy-level scalar is ``None``; a per-level
-    field (attack_range/block_behavior scalars, immunities/abilities/targeting lists)
-    is absent when NO level variant carries a value (every variant decoded ``None``)
-    -- a variant with ``[]`` is present-but-empty (confirmed none), not absent.
-    §V67 (B98): every named field's key is omitted from the payload, so the returned
-    limitation is the sole absence signal. Returns the single standing limitation
-    naming them (empty when nothing expected is absent)."""
+    field (the :data:`_LEVEL_OPTIONAL_FIELDS` scalars + lists) is absent when NO
+    level variant carries a value (every variant decoded ``None``) -- a variant with
+    ``[]`` is present-but-empty (confirmed none), not absent, and a MIXED enemy
+    (present on one variant only) is not named here (its absent variants just omit
+    the key, the B58 convention). §V67 (B98): every named field's key is omitted
+    from the payload, so the returned limitation is the sole absence signal. Returns
+    the single standing limitation naming them (empty when nothing expected is
+    absent)."""
     absent: list[str] = []
     if enemy.attack_type is None:
         absent.append("attack_type")
-    if all(lv.attack_range is None for lv in enemy.levels):
-        absent.append("attack_range")
-    if all(lv.block_behavior is None for lv in enemy.levels):
-        absent.append("block_behavior")
-    if all(lv.immunities is None for lv in enemy.levels):
-        absent.append("immunities")
-    if all(lv.abilities is None for lv in enemy.levels):
-        absent.append("abilities")
-    if all(lv.targeting is None for lv in enemy.levels):
-        absent.append("targeting")
+    for name in _LEVEL_OPTIONAL_FIELDS:
+        if all(getattr(lv, name) is None for lv in enemy.levels):
+            absent.append(name)
     return absent_field_limitation(absent)
 
 
@@ -158,9 +165,9 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
 def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 envelope (§V5 region + provenance).
 
-    §V67/§V26 (B58): a standing limitation names any expected field (attack_type,
-    immunities, abilities, targeting) the source omitted, so an absent field is called
-    out rather than left as an ambiguous null.
+    §V67/§V26 (B58/B98): a standing limitation names any expected field
+    (``attack_type`` + the :data:`_LEVEL_OPTIONAL_FIELDS`) the source omitted, so an
+    absent field is called out rather than silently dropped.
     """
     if result.status == "not_found" or result.enemy is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)

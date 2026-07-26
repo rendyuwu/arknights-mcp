@@ -328,7 +328,16 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
     "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
     "context, with attack_interval and spawn times in seconds). en/cn are never "
-    "mixed."
+    "mixed. " + LIST_FIELD_CONVENTION
+)
+
+#: §V67/§V26 (B98 follow-through): the detailed occurrence rows omit an
+#: absent-in-source ``attack_type`` key, so the envelope must still carry the
+#: absence signal (limitation = sole signal, mirroring ``get_enemy``). Client-facing
+#: text, so no internal cites/jargon (§V71) -- the cites live in this comment.
+_OCCURRENCE_ATTACK_TYPE_LIMITATION = (
+    "attack_type is not present in the source data for one or more enemies in this "
+    "stage; those occurrence rows omit the key."
 )
 
 
@@ -405,6 +414,14 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
         data["occurrences"] = [shaper(o) for o in result.occurrences]
         data["warnings"] = list(result.warnings)
 
+    # §V67/B98: the shared stage shaper omits absent scalars (recommended_level /
+    # max_life_points), so this surface carries the same sole-signal limitation
+    # naming them as get_stage does; a detailed occurrence row likewise omits an
+    # absent attack_type, so that omission is named too (sole signal, never silent).
+    limitations = _stage_absent_field_limitations(result.stage)
+    if depth == "detailed" and any(o.attack_type is None for o in result.occurrences):
+        limitations = (*limitations, _OCCURRENCE_ATTACK_TYPE_LIMITATION)
+
     prov = result.stage.provenance
     return ok(
         data,
@@ -415,10 +432,7 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
                 imported_at=prov.imported_at,
             )
         ],
-        # §V67/B98: the shared stage shaper omits absent scalars (recommended_level /
-        # max_life_points), so this surface carries the same sole-signal limitation
-        # naming them as get_stage does.
-        limitations=_stage_absent_field_limitations(result.stage),
+        limitations=limitations,
         analyzer_version=result.analyzer_version,
     )
 

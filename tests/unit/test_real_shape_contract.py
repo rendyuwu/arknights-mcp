@@ -86,6 +86,12 @@ def _assert_full_combat(data_dir: Path) -> None:
         assert "4-4" in {
             r[0] for r in conn.execute("SELECT stage_code FROM stages WHERE server = 'en'")
         }
+        # T179 review-fix: the real shape names a zone via zoneNameSecond -- the zone
+        # display name (the stage search alias) must survive a real-shape import.
+        zone_name = conn.execute(
+            "SELECT display_name FROM zones WHERE server = 'en' AND game_id = 'main_4'"
+        ).fetchone()[0]
+        assert zone_name == "Chapter 4"
 
 
 # --- import + sync over the real shapes (§V29, §V30) --------------------------

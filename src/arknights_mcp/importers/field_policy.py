@@ -31,7 +31,11 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    skin gallery -- skin/char/tmpl/portrait ids + short outfit labels only; the
 #:    displaySkin prose leaves content/dialog/usage/description/drawerList stay
 #:    excluded, §V16/§V18 metadata-only ceiling).
-FIELD_POLICY_VERSION = "7"
+#: 8: T179 review-fix added ``zoneNameSecond`` to ZONE_ALLOWLIST: the REAL zone_table
+#:    shape (tests/fixtures/stage_4_4_real) carries ``zoneID``+``zoneNameSecond`` and
+#:    no ``zoneName``, so the zone display name -- the §T179 stage search alias --
+#:    imported NULL from a real snapshot. Name-only metadata, same §V18 ceiling.
+FIELD_POLICY_VERSION = "8"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -72,7 +76,9 @@ ENEMY_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
-ZONE_ALLOWLIST: frozenset[str] = frozenset({"zoneId", "zoneName", "type"})
+# ``zoneName`` is the synthetic-fixture key; the real zone_table names a zone via
+# ``zoneNameSecond`` (see FIELD_POLICY_VERSION note 8). Both are NAME-only (§V18).
+ZONE_ALLOWLIST: frozenset[str] = frozenset({"zoneId", "zoneName", "zoneNameSecond", "type"})
 
 STAGE_ALLOWLIST: frozenset[str] = frozenset(
     {

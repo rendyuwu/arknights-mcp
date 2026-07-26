@@ -26,7 +26,10 @@ def test_field_policy_version_present() -> None:
     #    TALENT_CANDIDATE_ALLOWLIST (ADR 0010 ceiling: mechanic text in, lore out).
     # 7: T182/§V88 added SKIN_ALLOWLIST + DISPLAY_SKIN sub-allowlist (ADR 0015: named
     #    skin gallery ids/labels in, displaySkin prose/credit out).
-    assert FIELD_POLICY_VERSION == "7"
+    # 8: T179 review-fix added zoneNameSecond to ZONE_ALLOWLIST (real zone_table
+    #    carries zoneID/zoneNameSecond, no zoneName -> zone name imported NULL and
+    #    the §T179 stage search alias was dead on real builds).
+    assert FIELD_POLICY_VERSION == "8"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

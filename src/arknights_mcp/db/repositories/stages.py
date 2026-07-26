@@ -138,7 +138,9 @@ _STAGE_SELECT = (
     "FROM stages s "
     "JOIN record_provenance p ON p.provenance_id = s.provenance_id "
     "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
-    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk "
+    # §V5 parity with the T179 search-index zones join: region-guarded, so a stage
+    # can never surface the other region's zone game_id even from a corrupt FK.
+    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
     "WHERE s.server = ? AND "
 )
 _STAGE_BY_CODE_SQL = _STAGE_SELECT + "s.stage_code = ? ORDER BY s.stage_pk LIMIT 1"

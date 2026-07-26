@@ -29,6 +29,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
 from arknights_mcp.mcp.tools.stage import (
     _occurrence_full,
     _shape_analysis,
@@ -175,6 +176,47 @@ def test_detailed_occurrence_omits_absent_attack_type() -> None:
     # occurrence, never emitted as null; a present one still emits (§V21).
     assert "attack_type" not in _occurrence_full(_occurrence(None))
     assert _occurrence_full(_occurrence("physical"))["attack_type"] == "physical"
+
+
+def test_detailed_envelope_names_absent_occurrence_attack_type() -> None:
+    # §V67/B98 follow-through (review-fix): when a detailed occurrence omits an
+    # absent-in-source attack_type, the envelope must NAME the omission (limitation
+    # = sole signal, mirroring get_enemy) -- never a silent key drop. standard depth
+    # emits no per-occurrence attack_type at all, so it carries no such caveat.
+    stage = StageFacts(
+        server="en",
+        game_id="bare_stage",
+        stage_code="B-1",
+        display_name="Bare",
+        zone_game_id=None,
+        stage_type=None,
+        difficulty=None,
+        sanity_cost=10,
+        recommended_level=45,
+        max_life_points=3,
+        provenance=StageProvenance(snapshot_id="en:x", imported_at="t"),
+    )
+    result = StageAnalysisResult(
+        status="ok",
+        server="en",
+        stage=stage,
+        occurrences=(_occurrence(None), _occurrence("physical")),
+        observations=(),
+        warnings=(),
+        analyzer_version="test",
+    )
+    detailed = _shape_analysis("detailed", result)
+    assert any("attack_type" in lim.lower() for lim in detailed.limitations)
+    standard = _shape_analysis("standard", result)
+    assert not any("attack_type" in lim.lower() for lim in standard.limitations)
+
+
+def test_analyze_description_states_field_convention() -> None:
+    # §V67 "convention stated in tool descriptions": analyze_stage omits absent
+    # scalars (attack_type / variant_id / recommended_level / max_life_points), so
+    # its description carries the same shared convention get_stage/get_enemy state.
+    conn = sqlite3.connect(":memory:")
+    assert LIST_FIELD_CONVENTION in build_analyze_stage_spec(lambda: conn).description
 
 
 def test_analysis_envelope_names_absent_stage_scalars() -> None:

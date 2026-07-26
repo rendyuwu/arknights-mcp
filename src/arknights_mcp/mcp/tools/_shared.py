@@ -120,17 +120,18 @@ IMAGE_REFS_PATH_NOTE = (
 )
 
 
-#: §V88/§V26 (§T181, B99): the standing partial-gallery limitation attached whenever a
-#: response emits SKIN refs -- today only ``get_operator`` (banners carry portrait+avatar,
-#: enemies a sprite; neither emits the skin category). The derived ``_1b``/``_2b`` skin
-#: URLs are the BASE outfit's E0/E2 art ONLY: skin names and paid/event outfits live in
-#: ``skin_table.json`` (not imported; the real fix is the ADR-gated §T182 import), and
-#: alternate playable forms (``char_patch_table.json``, also not imported) are separate
-#: characters -- so the deferral must be VISIBLE, never a silently partial gallery a
-#: client would present as complete (the exact wrong hedge B99 reported). One shared
-#: block per envelope (§V66/§V72 pattern), never a per-ref repeat. Shared: one wording,
-#: one home (§V37). Client-facing text, so no internal cites/jargon (§V71) -- the cites
-#: live in this comment, never the string; short sentences (§V71 f).
+#: §V88/§V26 (§T181 floor, scoped by §T182): the standing partial-gallery limitation
+#: for the FALLBACK skin path only -- an operator emit with NO imported skin rows
+#: (pre-0014 build / combat-only snapshot), where the derived ``_1b``/``_2b`` refs
+#: are the whole gallery and cover just the BASE outfit's E0/E2 art. On the §T182
+#: named-gallery path (``operator_skins`` imported from ``skin_table.json``) the
+#: outfit list is complete and this limitation must NOT ride; what stays partial
+#: there is the alt-form axis, disclosed by :data:`SKIN_ALT_FORM_NOTE` below. The
+#: deferral must be VISIBLE, never a silently partial gallery a client would present
+#: as complete (the exact wrong hedge B99 reported). One shared block per envelope
+#: (§V66/§V72 pattern), never a per-ref repeat. Shared: one wording, one home (§V37).
+#: Client-facing text, so no internal cites/jargon (§V71) -- the cites live in this
+#: comment, never the string; short sentences (§V71 f).
 SKIN_GALLERY_PARTIAL_LIMITATION = (
     "Skin image URLs cover only the base outfit's E0 and E2 art. The outfit list is "
     "incomplete: skin names and paid or event outfits are not present in this build. "
@@ -279,8 +280,9 @@ def page_to_dict(page: SectionPage) -> dict[str, object]:
 #: string.
 LIST_FIELD_CONVENTION = (
     "Field conventions: a list field is [] when the source confirms none, and is "
-    "omitted entirely when the source carries no such data (never null). An optional "
-    "scalar the source omits is likewise absent, never null. A field the "
+    "omitted entirely when the source carries no such data (never null). Some "
+    "optional scalar fields are likewise omitted when the source carries no value; "
+    "a numeric stat the source lacks may instead be null. A field the "
     "response would normally include but the source omits is named in limitations."
 )
 

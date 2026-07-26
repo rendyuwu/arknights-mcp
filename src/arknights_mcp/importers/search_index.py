@@ -50,10 +50,14 @@ _ENEMY_SQL = (
 # the zone_pk FK, so no GROUP_CONCAT and no B22 ordering concern -- the document
 # bytes stay deterministic. The join is region-guarded (z.server = s.server, §V5)
 # so a stage can never borrow a display name from the other region's zone row.
+# ORDER BY pins the stage enumeration (and thus FTS document insert order /
+# rowids) to the table's own key rather than a query-planner scan artifact, so
+# two builds of byte-identical source stay byte-identical (T24/B22 class).
 _STAGE_SQL = (
     "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code, z.display_name "
     "FROM stages s "
-    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server"
+    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
+    "ORDER BY s.stage_pk"
 )
 _OPERATOR_SQL = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.tag_json, "

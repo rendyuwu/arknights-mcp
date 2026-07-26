@@ -394,11 +394,13 @@ def _make_sources_handler(
 #: PRD §13.11 resource descriptions (short, no game prose; §V16/§V18).
 _ENEMY_DESCRIPTION = (
     "One Arknights enemy's facts by region + game_id: class/flags, attack + motion "
-    "type, and the per-level stat block, with region + provenance. en/cn never mixed."
+    "type, and the per-level stat block, with region + provenance. en/cn never mixed. "
+    "A field absent in the source is omitted and named in limitations."
 )
 _STAGE_DESCRIPTION = (
     "One Arknights stage's facts by region + game stage id, with region + provenance. "
-    "Heavy map/routes/spawns stay opt-in on the get_stage tool (bounded); en/cn never mixed."
+    "Heavy map/routes/spawns stay opt-in on the get_stage tool (bounded); en/cn never mixed. "
+    "A field absent in the source is omitted and named in limitations."
 )
 _STATUS_DESCRIPTION = (
     "Active-build data status for one region: schema + analyzer version, active "

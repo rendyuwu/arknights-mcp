@@ -15,7 +15,7 @@ import pytest
 
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.importers.enemies import ImporterError, import_enemies
-from arknights_mcp.importers.stages import import_stages, parse_stages
+from arknights_mcp.importers.stages import import_stages, parse_stages, parse_zones
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 STAGE_PROSE = "Flavorful stage lore that must never be imported."
@@ -195,6 +195,21 @@ def test_parse_stages_drops_prose() -> None:
     assert stage.sanity_cost == 18
     assert "description" not in stage.provenance_record
     assert STAGE_PROSE not in str(stage.provenance_record)
+
+
+def test_parse_zones_reads_real_shape_zone_name() -> None:
+    # T179 review-fix: the REAL zone_table (tests/fixtures/stage_4_4_real) names a
+    # zone via ``zoneNameSecond`` and carries no ``zoneName`` key; without the
+    # fallback every real build imports display_name NULL and the §T179 stage
+    # search alias ("Lone Trail" -> its stages) is dead on arrival.
+    real_shape = {"zoneID": "main_4", "type": "MAINLINE", "zoneNameSecond": "Chapter 4"}
+    parsed = parse_zones({"zones": {"main_4": real_shape}})
+    assert parsed[0].display_name == "Chapter 4"
+    # The synthetic ``zoneName`` key still wins when both are present (back-compat).
+    parsed = parse_zones(
+        {"zones": {"z": {"zoneName": "Primary", "zoneNameSecond": "Secondary", "type": "MAINLINE"}}}
+    )
+    assert parsed[0].display_name == "Primary"
 
 
 def test_stage_and_zone_imported(tmp_path: Path) -> None:
