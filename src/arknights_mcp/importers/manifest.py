@@ -29,7 +29,12 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: with a space instead of deleting it in place, so every imported effect TEMPLATE and
 #: announcement title that carried an upstream ``\n`` imports different bytes. Same
 #: reason for the bump: without it the repaired sanitize never reaches an active build.
-TRANSFORM_VERSION = "3"
+#:
+#: ``4`` (B154/§V109): the §V65 (a) effect template is now tag-stripped before it is
+#: length-capped, and capped at ``MAX_TEMPLATE_LENGTH`` rather than the name-class 512,
+#: so the 349 EN skill/talent templates (and 1 module template) the old order cut
+#: mid-sentence import whole. Same reason for the bump.
+TRANSFORM_VERSION = "4"
 
 
 def _now_iso() -> str:

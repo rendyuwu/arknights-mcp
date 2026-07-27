@@ -32,7 +32,11 @@ def test_field_policy_version_present() -> None:
     # 9: T193/§V97 (B130) no allowlist change -- the sanitize TRANSFORM changed, so the
     #    same allowlisted fields store different bytes (a removed control char now
     #    leaves a space instead of welding the words either side).
-    assert FIELD_POLICY_VERSION == "9"
+    # 10: T204/§V109 (B154) no allowlist change either -- §V65 (a) templates now bypass
+    #    this module's cap and go through util.text.clean_template_text (tags stripped
+    #    BEFORE a 1024-char cap), so templates this allowlist silently cut mid-sentence
+    #    at 512 store whole.
+    assert FIELD_POLICY_VERSION == "10"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

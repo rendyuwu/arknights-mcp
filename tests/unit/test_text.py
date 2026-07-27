@@ -21,7 +21,9 @@ import arknights_mcp.cli as cli
 import arknights_mcp.config as config
 from arknights_mcp.util.text import (
     DEFAULT_MAX_TEXT_LENGTH,
+    MAX_TEMPLATE_LENGTH,
     camel_to_snake,
+    clean_template_text,
     is_placeholder,
     sanitize_text,
     strip_richtext_tags,
@@ -95,6 +97,35 @@ def test_sanitize_text_collapses_before_capping() -> None:
     assert len(sanitize_text(value)) == DEFAULT_MAX_TEXT_LENGTH
     # The three-control seam became exactly one space, not three.
     assert sanitize_text("a\n\n\nb") == "a b"
+
+
+def test_clean_template_text_strips_tags_before_capping() -> None:
+    """§V109/B154: the tag strip runs BEFORE the cap, so markup cannot evict grounding.
+
+    Shaped like the real ``skchr_amiya2_2`` failure: prose long enough that the cap bites
+    only once the rich-text markup is counted. The old order (cap, then strip) cut the
+    template mid-sentence AND left the result under the cap, so nothing downstream could
+    tell it had been truncated.
+    """
+    # 1200 raw chars, 480 of them cosmetic markup -> 742 of actual grounding text, which
+    # is about where the real EN corpus peaks (740).
+    value = "deals <@ba.vup>10%</> damage. " * 40 + "{atk_scale:0%} of ATK."
+    cleaned = clean_template_text(value)
+    assert cleaned.endswith("{atk_scale:0%} of ATK."), "the tail survived the cap intact"
+    assert "<@ba.vup>" not in cleaned and "</>" not in cleaned
+    assert len(cleaned) > DEFAULT_MAX_TEXT_LENGTH  # not silently cut at the label cap
+    # Cap-then-strip is what B154 was: the markup eats the budget, the tail is lost, and
+    # the strip then hides the evidence by pulling the length back UNDER the cap, so no
+    # `len == cap` check downstream can tell the template was truncated.
+    old_order = strip_richtext_tags(sanitize_text(value))
+    assert not old_order.endswith("{atk_scale:0%} of ATK.")
+    assert len(old_order) < DEFAULT_MAX_TEXT_LENGTH
+
+
+def test_clean_template_text_caps_at_the_template_ceiling() -> None:
+    """§V109: templates get their own ceiling, not the name-class one -- but still one."""
+    assert MAX_TEMPLATE_LENGTH > DEFAULT_MAX_TEXT_LENGTH
+    assert len(clean_template_text("x" * (MAX_TEMPLATE_LENGTH + 50))) == MAX_TEMPLATE_LENGTH
 
 
 @pytest.mark.parametrize(

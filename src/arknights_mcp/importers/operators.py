@@ -45,7 +45,7 @@ from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
-from arknights_mcp.util.text import strip_richtext_tags
+from arknights_mcp.util.text import clean_template_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -185,18 +185,20 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _template_text(value: Any) -> str | None:
-    """Effect-description TEMPLATE as clean grounding text (§V18/§V65 (a)).
+    """Effect-description TEMPLATE as clean grounding text (§V18/§V65 (a)/§V109).
 
-    Read from an already-allowlisted ``kept`` dict, so ``apply_allowlist`` has
-    control-stripped + length-capped it; here strip the in-game rich-text tags
-    (``<@ba.vup>{atk_scale:0%}</>`` -> ``{atk_scale:0%}``) so only the
-    ``{blackboard-key}`` grounding placeholders remain. A blank-after-strip or
-    non-string value yields ``None`` -- never an empty template.
+    Read from the RAW source level/candidate, **not** the ``apply_allowlist`` output:
+    the allowlist caps at ``DEFAULT_MAX_TEXT_LENGTH`` with the rich-text tags still in
+    place, so the budget goes to markup and the template is cut mid-sentence (B154).
+    ``clean_template_text`` strips the tags first (``<@ba.vup>{atk_scale:0%}</>`` ->
+    ``{atk_scale:0%}``, keeping the ``{blackboard-key}`` grounding placeholders), then
+    sanitizes and caps at the template ceiling (§V109). The key is still on the
+    allowlist -- reading it directly only bypasses the cap, never the policy. A
+    blank-after-clean or non-string value yields ``None`` -- never an empty template.
     """
-    text = as_str(value)
-    if text is None:
+    if not isinstance(value, str):
         return None
-    return strip_richtext_tags(text) or None
+    return clean_template_text(value) or None
 
 
 def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
@@ -246,11 +248,11 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                     duration=as_float(kept.get("duration")),
                     range_id=as_str(kept.get("rangeId")),
                     blackboard=blackboard,
-                    # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
-                    # by apply_allowlist above; here strip its rich-text tags so only
-                    # the {blackboard-key} placeholders remain (§V18), carried alongside
-                    # the blackboard.
-                    description=_template_text(kept.get("description")),
+                    # §V65 (a)/ADR 0010: the effect template rides the blackboard as its
+                    # grounding. Read from the RAW level, not `kept`: the allowlist cap
+                    # lands before the tag strip and cuts the template mid-sentence
+                    # (§V109/B154). `description` is on SKILL_LEVEL_ALLOWLIST either way.
+                    description=_template_text(raw_level.get("description")),
                 )
             )
         first = kept_levels[0] if kept_levels else {}
@@ -410,11 +412,10 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
                     unlock_level=as_int(cond.get("level")),
                     potential_rank=as_int(kept.get("requiredPotentialRank")),
                     blackboard=blackboard,
-                    # §V65 (a)/ADR 0010: the effect template is allowlisted + sanitized
-                    # by apply_allowlist above; here strip its rich-text tags so only
-                    # the {blackboard-key} placeholders remain (§V18), carried alongside
-                    # the blackboard.
-                    description=_template_text(kept.get("description")),
+                    # §V65 (a)/ADR 0010: as for skill levels above -- read the template
+                    # from the RAW candidate so the tag strip precedes the cap
+                    # (§V109/B154). `description` is on TALENT_CANDIDATE_ALLOWLIST.
+                    description=_template_text(cand.get("description")),
                 )
             )
         talents.append(ParsedTalent(talent_index=ti, display_name=display_name, variants=variants))

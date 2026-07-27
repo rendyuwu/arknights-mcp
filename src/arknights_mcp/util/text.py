@@ -1,10 +1,12 @@
-"""Untrusted-string sanitization (SPEC §V18/§V97; PRD 17.6).
+"""Untrusted-string sanitization (SPEC §V18/§V97/§V109; PRD 17.6).
 
 Imported strings are untrusted data. Before storage we remove control and format
 characters (which can carry prompt-injection payloads such as bidi overrides) and
 cap length. Removal preserves the TOKEN BOUNDARY (§V97): a control char stood
 between two words in the source, so it leaves a space behind rather than welding
-them. Sanitized text is still only ever returned as structured data, never
+them. §V65 (a) effect templates additionally have their rich-text markup stripped
+BEFORE the cap, and are capped at their own ceiling (:func:`clean_template_text`,
+§V109). Sanitized text is still only ever returned as structured data, never
 concatenated into server instructions or tool descriptions.
 """
 
@@ -13,8 +15,15 @@ from __future__ import annotations
 import re
 import unicodedata
 
-#: Default maximum length for an imported string field.
+#: Default maximum length for an imported string field -- the name/label class.
 DEFAULT_MAX_TEXT_LENGTH = 512
+
+#: Maximum length for a §V65 (a) effect-description TEMPLATE (§V109). A template is
+#: the grounding path, not a label, so it gets its own ceiling: the real EN corpus at
+#: the pinned commit peaks at 740 chars post-strip (skill/talent) and 547 (module
+#: trait/talent changes), so 1024 clears it with headroom. Under the old 512 the cap
+#: cut 349 of 12057 EN templates mid-sentence (B154).
+MAX_TEMPLATE_LENGTH = 1024
 
 #: Arknights in-game rich-text tags that wrap effect-template text: an opening
 #: color/keyword tag carrying a sigil + dotted key (``<@ba.vup>`` / ``<$ba.kw>``) and
@@ -92,6 +101,25 @@ def strip_richtext_tags(value: str) -> str:
     # A standalone tag can leave a two-space seam; collapse only runs of literal
     # spaces (never newlines) and trim, matching sanitize_text's posture.
     return re.sub(r" {2,}", " ", stripped).strip()
+
+
+def clean_template_text(value: str) -> str:
+    """A §V65 (a) effect-description TEMPLATE as clean grounding text (§V109).
+
+    The single §V37 home for the template pipeline shared by the skill, talent, and
+    module-change imports, and the one place the ORDER is fixed: the rich-text tags go
+    **first**, the length cap **second**. Capping first spends the budget on
+    ``<@ba.vup>``/``</>`` markup the client never sees, and -- because the strip then
+    shortens the result back under the cap -- the truncation leaves no ``len == cap``
+    fingerprint to detect it by. That silently cut 349 of 12057 real EN templates
+    mid-sentence (B154); a halved mechanic reads as a complete sentence, which is worse
+    than the bare blackboard keys §V65 (a) exists to replace.
+
+    Caller passes the RAW source string, never an ``apply_allowlist`` output: a value
+    that already went through the allowlist has been capped at
+    ``DEFAULT_MAX_TEXT_LENGTH`` with its tags still in place, which is the bug.
+    """
+    return sanitize_text(strip_richtext_tags(value), max_length=MAX_TEMPLATE_LENGTH)
 
 
 #: Boundary between a lowercase/digit and an uppercase letter in a lowerCamelCase

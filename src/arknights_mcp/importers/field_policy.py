@@ -41,7 +41,11 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    (`"...additional target\nUnlimited duration"` no longer stores as
 #:    `"...targetUnlimited duration"`). Bumped beside TRANSFORM_VERSION so the repaired
 #:    bytes actually promote over an unchanged snapshot (§V92).
-FIELD_POLICY_VERSION = "9"
+#: 10: T204/§V109 (B154) -- no allowlist change either; §V65 (a) effect TEMPLATES now
+#:    bypass this module's cap entirely and go through ``util.text.clean_template_text``
+#:    (tags stripped BEFORE a 1024-char cap), so 349 EN templates that this allowlist
+#:    silently cut mid-sentence at 512 now import whole. Same §V92 reasoning as 9.
+FIELD_POLICY_VERSION = "10"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale

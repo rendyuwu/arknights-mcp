@@ -46,7 +46,7 @@ from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_int, as_str, json_or_none, suffix_int
 from arknights_mcp.util.sqlite import integrity_guard
-from arknights_mcp.util.text import strip_richtext_tags
+from arknights_mcp.util.text import clean_template_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -143,15 +143,16 @@ def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | Non
     ``overrideDescripton``; talent: ``upgradeDescription`` then ``description``). The
     template is mechanic text that references the sibling ``blackboard`` keys, so it is
     imported + emitted alongside the blackboard for grounding (§V65 path (a), ADR 0010).
-    Read from the raw candidate (not the allowlist), so it is sanitized + control-
-    stripped + length-capped, then its in-game rich-text tags are stripped so only the
-    ``{blackboard-key}`` grounding placeholders remain -- untrusted data, targeted strip
-    (§V18/§V65 (a)). A blank-after-sanitize/strip or absent value yields ``None`` --
-    never an empty template.
+    Read from the raw candidate (not the allowlist) and run through the shared
+    ``clean_template_text``: the in-game rich-text tags go first so only the
+    ``{blackboard-key}`` grounding placeholders remain, then the untrusted string is
+    control-stripped and capped at the template ceiling (§V18/§V109). Capping before the
+    strip spends the budget on markup and cuts the template mid-sentence (B154). A
+    blank-after-clean or absent value yields ``None`` -- never an empty template.
     """
     for key in keys:
-        text = as_str(source.get(key), sanitize=True)
-        cleaned = strip_richtext_tags(text) if text else None
+        raw = source.get(key)
+        cleaned = clean_template_text(raw) if isinstance(raw, str) else None
         if cleaned:
             return cleaned
     return None

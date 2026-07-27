@@ -78,7 +78,9 @@ def _has_control_char(value: str) -> bool:
     return any(ord(ch) < 32 for ch in value)
 
 
-def _assert_boundary_preserved(raw: str, actual: str | None, where: str) -> None:
+def _assert_boundary_preserved(
+    raw: str, actual: str | None, where: str, *, cap: int | None = None
+) -> None:
     """The imported text must carry the same WORD SEQUENCE as the source (§V97).
 
     ``strip_richtext_tags`` is applied to the raw side because the importer strips
@@ -86,13 +88,18 @@ def _assert_boundary_preserved(raw: str, actual: str | None, where: str) -> None
     tokens; the whitespace tokenization itself is ``str.split()``, which is
     independent of anything under test and splits on ``\\n``/``\\r``/``\\t``.
 
-    A source longer than the §V18 cap is truncated mid-text, and truncation can cut a
-    rich-text tag in half; a tag contains no whitespace, so the damage is confined to
-    the final token. Those texts are compared as a prefix with that token dropped.
+    ``cap=None`` (templates, §V109) compares the WHOLE sequence: a template must never
+    be truncated at all. The earlier version of this helper branched on
+    ``len(sanitize_text(raw)) >= DEFAULT_MAX_TEXT_LENGTH`` and compared a prefix with
+    the last token dropped -- it looked straight at all 349 real mid-sentence
+    truncations and normalized them (B154). A guard that excuses its own bug class is
+    not a guard. The prefix comparison survives only for the announcement-title leg,
+    which passes ``cap`` explicitly: titles are capped at the name-class 512 by design
+    and are not a §V65 (a) grounding surface.
     """
     expected = strip_richtext_tags(raw).split()
     got = (actual or "").split()
-    if len(sanitize_text(raw)) >= DEFAULT_MAX_TEXT_LENGTH:  # §V18 cap -> prefix compare
+    if cap is not None and len(sanitize_text(raw, max_length=cap)) >= cap:
         got = got[:-1]
         expected = expected[: len(got)]
     assert got == expected, (
@@ -203,5 +210,8 @@ def test_real_announcement_titles_preserve_token_boundary() -> None:
         if not isinstance(raw, str) or not raw:
             continue
         _assert_boundary_preserved(
-            raw, announcement.title, f"announcement {announcement.announce_id}"
+            raw,
+            announcement.title,
+            f"announcement {announcement.announce_id}",
+            cap=DEFAULT_MAX_TEXT_LENGTH,
         )
