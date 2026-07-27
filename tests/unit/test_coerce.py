@@ -18,9 +18,12 @@ from arknights_mcp.importers import enemies, levels, stages
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH
 
-# A control (Cc) char and a bidi-override format (Cf) char sanitize_text strips.
+# A control (Cc) char and a bidi-override format (Cf) char sanitize_text removes.
+# §V97/B130: the two categories are removed DIFFERENTLY. Cc stood between two words
+# in the source, so it leaves a space behind -- deleting it welded "safe"+"te" into a
+# junk token. Cf is zero-width by construction, so deleting it opens no gap.
 _INJECTION = "safe\x00te‮xt"
-_SANITIZED = "safetext"
+_SANITIZED = "safe text"
 
 
 @pytest.mark.parametrize(

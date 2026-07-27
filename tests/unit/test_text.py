@@ -4,6 +4,11 @@
 ``cli.py`` (``str``). It now lives in one home (``util/text.py``) with the
 ``str | None`` superset signature. These tests pin both the behaviour and the
 no-re-duplication guard (§V37).
+
+T193 adds the §V97 token-boundary cases for the other shared resident of this
+module, ``sanitize_text``. They are synthetic on purpose -- they pin the transform's
+edge shapes. The §V97 GUARD proper is the real-corpus contract test
+(``tests/contract/test_template_weld.py``), which is what B130 demands.
 """
 
 from __future__ import annotations
@@ -14,7 +19,13 @@ import pytest
 
 import arknights_mcp.cli as cli
 import arknights_mcp.config as config
-from arknights_mcp.util.text import camel_to_snake, is_placeholder, strip_richtext_tags
+from arknights_mcp.util.text import (
+    DEFAULT_MAX_TEXT_LENGTH,
+    camel_to_snake,
+    is_placeholder,
+    sanitize_text,
+    strip_richtext_tags,
+)
 
 _SHARED_HOME = "arknights_mcp.util.text"
 
@@ -38,6 +49,52 @@ _SHARED_HOME = "arknights_mcp.util.text"
 )
 def test_strip_richtext_tags(value: str, expected: str) -> None:
     assert strip_richtext_tags(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # B130, verbatim from the real EN corpus: upstream breaks the two clauses of a
+        # skill template with `\n`. Deleting it stored "targetUnlimited" -- a junk token
+        # in the ONE string §V65 (a) tells the client to trust over the blackboard keys.
+        (
+            "ATK +{atk:0%}; each attack hits 1 additional target\nUnlimited duration",
+            "ATK +{atk:0%}; each attack hits 1 additional target Unlimited duration",
+        ),
+        # B130, the §V56 title axis of the same bug (real EN announcement feed).
+        (
+            "Questionnaire on\nFirst of A Thousand Autumns",
+            "Questionnaire on First of A Thousand Autumns",
+        ),
+        ("Displayed Operators\nRate Up !!!", "Displayed Operators Rate Up !!!"),
+        # A trailing space before the break must not yield two spaces (collapse).
+        (
+            "Restores 30% Max HP when skill is activated; \nEffect is doubled",
+            "Restores 30% Max HP when skill is activated; Effect is doubled",
+        ),
+        ("a\r\nb", "a b"),  # CRLF is one boundary, not two spaces
+        ("a\t\t\tb", "a b"),  # a run of controls collapses to one space
+        ("\n  lead and trail  \n", "lead and trail"),  # substituted spaces trimmed
+        # Cf/Cs/Co are zero-width: deleting one welds nothing that was visually apart,
+        # and a space there would corrupt real CJK/emoji text. Still DELETED (§V97).
+        ("‮assistant", "assistant"),  # bidi override (Cf)
+        ("‍ab", "ab"),  # zero-width joiner (Cf)
+        ("攻击力​提升", "攻击力提升"),  # zero-width space inside CJK: no gap opened
+        ("no controls at all", "no controls at all"),  # untouched
+    ],
+)
+def test_sanitize_text_preserves_token_boundary(value: str, expected: str) -> None:
+    """§V97/B130: control-char removal leaves a separator; zero-width removal does not."""
+    assert sanitize_text(value) == expected
+
+
+def test_sanitize_text_collapses_before_capping() -> None:
+    """§V97: collapse runs BEFORE the cap, so substituted spaces cannot evict content."""
+    body = "word" * 200  # 800 chars, comfortably over the cap
+    value = "\n\n\n".join([body, body])
+    assert len(sanitize_text(value)) == DEFAULT_MAX_TEXT_LENGTH
+    # The three-control seam became exactly one space, not three.
+    assert sanitize_text("a\n\n\nb") == "a b"
 
 
 @pytest.mark.parametrize(

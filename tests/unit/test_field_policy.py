@@ -29,7 +29,10 @@ def test_field_policy_version_present() -> None:
     # 8: T179 review-fix added zoneNameSecond to ZONE_ALLOWLIST (real zone_table
     #    carries zoneID/zoneNameSecond, no zoneName -> zone name imported NULL and
     #    the §T179 stage search alias was dead on real builds).
-    assert FIELD_POLICY_VERSION == "8"
+    # 9: T193/§V97 (B130) no allowlist change -- the sanitize TRANSFORM changed, so the
+    #    same allowlisted fields store different bytes (a removed control char now
+    #    leaves a space instead of welding the words either side).
+    assert FIELD_POLICY_VERSION == "9"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:
@@ -192,5 +195,6 @@ def test_sanitize_caps_length() -> None:
 
 
 def test_strip_control_chars_removes_controls_keeps_spaces() -> None:
-    assert strip_control_chars("a\x00b\tc\nd") == "abcd"
+    # §V97/B130: a removed control char leaves a SPACE, never welds its neighbours.
+    assert strip_control_chars("a\x00b\tc\nd") == "a b c d"
     assert strip_control_chars("keep spaces") == "keep spaces"

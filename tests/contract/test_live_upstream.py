@@ -27,33 +27,28 @@ needs its own normalization bridge before it can be driven through the pipeline.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support import (
+    LIVE_UPSTREAM_SKIP_REASON,
+    arknights_assets_base_url,
+    fetch_upstream_bytes,
+    live_upstream_disabled,
+)
 
 from arknights_mcp.cli import main
 from arknights_mcp.db.connection import read_only_connection
 from arknights_mcp.db.promotion import resolve_active_database
-from arknights_mcp.sources.http_fetch import HttpsFetcher
 
-_LIVE_ENV = os.environ.get("ARKMCP_LIVE_UPSTREAM", "")
-pytestmark = pytest.mark.skipif(
-    _LIVE_ENV in ("", "0", "false", "False"),
-    reason="live-upstream test (needs network); set ARKMCP_LIVE_UPSTREAM=1 (CI only)",
-)
+pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_SKIP_REASON)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: Pinned upstream commit (B6 verified the real schema against this tree). Pinning
-#: keeps the assertions deterministic; bump only alongside a re-review of §V29.
-ARKNIGHTS_ASSETS_COMMIT = "413a81a3ff3e968089b1d6d302473f7b38c36dda"
-BASE_URL = (
-    "https://raw.githubusercontent.com/ArknightsAssets/ArknightsGamedata/"
-    f"{ARKNIGHTS_ASSETS_COMMIT}/en"
-)
+#: Pinned upstream tree (the commit + per-file cap live in ``tests.support``, §V37).
+BASE_URL = arknights_assets_base_url("en")
 
 #: The minimum real files needed to import + validate stage 4-4. The full ``sync``
 #: path would additionally discover every stage's level file (thousands of
@@ -68,20 +63,16 @@ LIVE_FILES: tuple[str, ...] = (
     "gamedata/levels/obt/main/level_main_04-04.json",
 )
 
-#: stage_table.json is ~23 MiB at the pinned commit; the per-file cap must clear it.
-MAX_FILE_BYTES = 64 * 1024 * 1024
-
 
 def _stage_live_snapshot(dest: Path) -> None:
     """Fetch the pinned real files into ``dest`` via the production HTTPS fetcher.
 
-    Uses the same :class:`HttpsFetcher` the CLI ``sync`` path uses (HTTPS-only,
-    redirect-capped), so this exercises the real network adapter. ``dest`` is a
-    tmp directory; nothing lands in the repo (§V16).
+    Uses the same :class:`~arknights_mcp.sources.http_fetch.HttpsFetcher` the CLI
+    ``sync`` path uses (HTTPS-only, redirect-capped), so this exercises the real
+    network adapter. ``dest`` is a tmp directory; nothing lands in the repo (§V16).
     """
-    fetcher = HttpsFetcher()
     for relative_path in LIVE_FILES:
-        data = fetcher.fetch(f"{BASE_URL}/{relative_path}", max_bytes=MAX_FILE_BYTES)
+        data = fetch_upstream_bytes(f"{BASE_URL}/{relative_path}")
         target = dest / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)

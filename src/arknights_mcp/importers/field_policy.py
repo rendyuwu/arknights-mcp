@@ -35,7 +35,13 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    shape (tests/fixtures/stage_4_4_real) carries ``zoneID``+``zoneNameSecond`` and
 #:    no ``zoneName``, so the zone display name -- the §T179 stage search alias --
 #:    imported NULL from a real snapshot. Name-only metadata, same §V18 ceiling.
-FIELD_POLICY_VERSION = "8"
+#: 9: T193/§V97 (B130) -- no allowlist change; the SANITIZE TRANSFORM every kept value
+#:    passes through changed, so the same allowlisted fields now store different bytes.
+#:    A removed control char leaves a space instead of welding the words either side
+#:    (`"...additional target\nUnlimited duration"` no longer stores as
+#:    `"...targetUnlimited duration"`). Bumped beside TRANSFORM_VERSION so the repaired
+#:    bytes actually promote over an unchanged snapshot (§V92).
+FIELD_POLICY_VERSION = "9"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale

@@ -380,7 +380,11 @@ def test_control_chars_stripped_in_enemy_import_end_to_end(
 
     name = facts.display_name or ""
     assert _NUL not in name and _RTL not in name  # control + bidi stripped
-    assert "ReconDrone" in name  # benign text preserved (chars removed, not the word)
+    # §V97/B130: the control char leaves a SPACE (it stood between two words), the
+    # zero-width bidi override just goes. Benign text survives either way; what does
+    # NOT survive is the old weld, which stored this name as "ReconDrone".
+    assert "Recon Drone" in name
+    assert "ReconDrone" not in name
 
     level_blob = repr((facts.levels[0].immunities, facts.levels[0].abilities))
     assert _NUL not in level_blob  # nested dict/list string leaves sanitized (§V31/B8)
@@ -388,7 +392,7 @@ def test_control_chars_stripped_in_enemy_import_end_to_end(
 
     # A control-char search term matches nothing pathological; the sanitized doc is
     # what got indexed, so search never surfaces an unsanitized string either.
-    hits = search_entities(poisoned_enemy_conn, query="ReconDrone").hits
+    hits = search_entities(poisoned_enemy_conn, query="Recon Drone").hits
     for hit in hits:
         assert _NUL not in (hit.display_name or "") and _RTL not in (hit.display_name or "")
 

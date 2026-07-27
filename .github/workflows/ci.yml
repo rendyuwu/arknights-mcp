@@ -45,12 +45,13 @@ jobs:
         run: uv run pytest -q --cov=arknights_mcp --cov-report=term-missing
 
   live-upstream:
-    # SPEC §T68 / §C: real-shape validation against LIVE upstream. Needs network,
-    # so it is a dedicated Linux-only job gated by ARKMCP_LIVE_UPSTREAM (the test
-    # module skips itself unless the flag is set). Fetches a pinned
-    # arknights_assets_gamedata commit, imports it, and asserts real 4-4 combat
-    # data; nothing fetched is committed (§V16, fetch -> discard).
-    name: live-upstream real-shape (§T68)
+    # SPEC §T68 / §T193 / §C: real-corpus validation against LIVE upstream. Needs
+    # network, so it is a dedicated Linux-only job gated by ARKMCP_LIVE_UPSTREAM (the
+    # test modules skip themselves unless the flag is set). Fetches a pinned
+    # arknights_assets_gamedata commit and asserts (a) real 4-4 combat data after an
+    # import (§T68) and (b) the §V97 token boundary over every real EN effect
+    # template (§T193/B130). Nothing fetched is committed (§V16, fetch -> discard).
+    name: live-upstream real-corpus (§T68, §T193)
     runs-on: ubuntu-latest
     # Non-blocking: a flaky/unreachable/rate-limited upstream must not turn CI red
     # for unrelated changes. The job still runs and reports its own status; it just
@@ -69,10 +70,17 @@ jobs:
       - name: Sync dependencies (locked)
         run: uv sync --locked --dev
 
-      - name: Real-shape validation vs live upstream
+      - name: Real-corpus validation vs live upstream
         env:
           ARKMCP_LIVE_UPSTREAM: "1"
-        run: uv run pytest tests/contract/test_live_upstream.py -q
+          # §V56/§V61 official EN feed (the same endpoint config.example.toml and
+          # config/data_sources.toml document). Supplied here rather than defaulted in
+          # test code: there is deliberately no shipped default feed URL.
+          ARKMCP_ANNOUNCE_FEED_URL: "https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json"
+        run: |
+          uv run pytest \
+            tests/contract/test_live_upstream.py \
+            tests/contract/test_template_weld.py -q
 
   cn-cross-validate:
     # SPEC §T69 / §C: CI-only kengxxiao_gamedata CN cross-validator. Fetches a

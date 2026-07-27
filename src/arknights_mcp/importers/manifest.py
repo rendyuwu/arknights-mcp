@@ -24,7 +24,12 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: ``row`` into the tiles' top-origin grid frame at import, so an identical snapshot
 #: now imports different bytes. The bump is what makes a rebuild promote over an
 #: unchanged snapshot instead of no-opping as "content unchanged" (§V92).
-TRANSFORM_VERSION = "2"
+#:
+#: ``3`` (B130/§V97): the untrusted-string sanitize now replaces a removed control char
+#: with a space instead of deleting it in place, so every imported effect TEMPLATE and
+#: announcement title that carried an upstream ``\n`` imports different bytes. Same
+#: reason for the bump: without it the repaired sanitize never reaches an active build.
+TRANSFORM_VERSION = "3"
 
 
 def _now_iso() -> str:
