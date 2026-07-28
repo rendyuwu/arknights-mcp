@@ -49,6 +49,7 @@
   "stage": {
     "difficulty": "NORMAL",
     "display_name": "Arts Barrage",
+    "event_name": null,
     "game_id": "gs_arts",
     "max_life_points": 3,
     "provenance": {

@@ -89,6 +89,10 @@ class StageFacts:
     #: second lookup the client has no tool for, or invites it to guess; ``None`` when
     #: the zone carries no name in source, and the tool layer omits the key there.
     zone_display_name: str | None
+    #: §V110/B155: the TITLE of the event the zone belongs to ("Lone Trail"), which is
+    #: a different string from a different source file than the sub-zone subtitle in
+    #: ``zone_display_name``. ``None`` when the zone belongs to no event.
+    event_name: str | None
     stage_type: str | None
     difficulty: str | None
     sanity_cost: int | None
@@ -178,6 +182,7 @@ def _stage_facts(stage: StageRow) -> StageFacts:
         display_name=stage.display_name,
         zone_game_id=stage.zone_game_id,
         zone_display_name=stage.zone_display_name,
+        event_name=stage.event_name,
         stage_type=stage.stage_type,
         # §V80/B84: the emitted ``difficulty`` is the truthful stage-variant tag, not
         # the raw source column -- a ``tough_*`` / ``easy_*`` game_id is upgraded off

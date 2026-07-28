@@ -10,9 +10,10 @@ columns (``game_id`` + ``name`` + ``aliases`` + ``stage_code`` + ``tags``).
 Sources per entity type:
 
 * enemy  -> ``enemies`` (name) + ``enemy_aliases`` (aliases);
-* stage  -> ``stages`` (name + ``stage_code``) + its zone/event display name from
-  ``zones`` as the stage's alias (T179 -- "Lone Trail" finds the stages in that
-  event; the zone itself is not a queryable entity, so the name rides the stage
+* stage  -> ``stages`` (name + ``stage_code``) + its zone SUBTITLE *and* event TITLE
+  from ``zones`` as the stage's alias (T179 + §V110/T205 -- "Lone Trail" finds the
+  stages in that event, and the title comes from ``activity_table``, not the zone
+  name; the zone itself is not a queryable entity, so the names ride the stage
   documents instead of a zone document, §V73);
 * operator -> ``operators`` (name + ``tag_json`` -> tags) + ``operator_aliases``;
 * item -> ``items`` (name; no alias/code/tag table -- T142/§V73).
@@ -46,15 +47,24 @@ _ENEMY_SQL = (
     "WHERE a.enemy_pk = e.enemy_pk) "
     "FROM enemies e"
 )
-# A stage's alias is its zone/event display name (T179): one zone per stage via
-# the zone_pk FK, so no GROUP_CONCAT and no B22 ordering concern -- the document
-# bytes stay deterministic. The join is region-guarded (z.server = s.server, §V5)
-# so a stage can never borrow a display name from the other region's zone row.
+# A stage's alias is its zone/event name (T179): one zone per stage via the zone_pk
+# FK, so no GROUP_CONCAT and no B22 ordering concern -- the document bytes stay
+# deterministic. The join is region-guarded (z.server = s.server, §V5) so a stage can
+# never borrow a display name from the other region's zone row.
 # ORDER BY pins the stage enumeration (and thus FTS document insert order /
 # rowids) to the table's own key rather than a query-planner scan artifact, so
 # two builds of byte-identical source stay byte-identical (T24/B22 class).
+#
+# §V110/B155: TWO names come back, because the zone holds two. ``z.display_name`` is
+# the sub-zone SUBTITLE zone_table carries ("The Coming of The Future"); ``z.event_name``
+# is the event TITLE from activity_table ("Lone Trail") -- the name a client actually
+# types, and one that appears nowhere in zone_table. Indexing only the first is the bug:
+# the promised "an event name finds that event's stages" matched nothing for 120 EN
+# events. Both go in the SAME ``aliases`` column, so §V90's own-name precedence tier
+# (which keys on that column being the only match) is unchanged.
 _STAGE_SQL = (
-    "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code, z.display_name "
+    "SELECT s.stage_pk, s.server, s.game_id, s.display_name, s.stage_code, "
+    "z.display_name, z.event_name "
     "FROM stages s "
     "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
     "ORDER BY s.stage_pk"
@@ -70,6 +80,19 @@ _OPERATOR_SQL = (
 # item resolvable by name -> game_id in ``search_entities`` (§V73), so ``get_item_drops``
 # has a real name->id path instead of the dead-end pointer B67 flagged.
 _ITEM_SQL = "SELECT i.item_pk, i.server, i.game_id, i.display_name FROM items i"
+
+
+def _stage_aliases(zone_name: str | None, event_name: str | None) -> str | None:
+    """Join a stage's zone SUBTITLE and event TITLE into its alias document (§V110).
+
+    Order is fixed (subtitle then title) and an exact duplicate is dropped -- some
+    events name a zone after themselves -- so two builds of byte-identical source
+    produce byte-identical FTS documents (the B22 determinism concern). ``None`` when
+    the zone carries neither name (44 EN zones have no activity row and no subtitle).
+    """
+    parts = [part for part in (zone_name, event_name) if part]
+    unique = list(dict.fromkeys(parts))
+    return " ".join(unique) if unique else None
 
 
 def _tags_from_json(raw: str | None) -> str | None:
@@ -97,8 +120,11 @@ def build_search_index(conn: sqlite3.Connection) -> int:
     for enemy_pk, server, game_id, name, aliases in conn.execute(_ENEMY_SQL):
         rows.append(("enemy", server, enemy_pk, game_id, name, aliases, None, None))
 
-    for stage_pk, server, game_id, name, stage_code, zone_name in conn.execute(_STAGE_SQL):
-        rows.append(("stage", server, stage_pk, game_id, name, zone_name, stage_code, None))
+    for stage_pk, server, game_id, name, stage_code, zone_name, event_name in conn.execute(
+        _STAGE_SQL
+    ):
+        aliases = _stage_aliases(zone_name, event_name)
+        rows.append(("stage", server, stage_pk, game_id, name, aliases, stage_code, None))
 
     for operator_pk, server, game_id, name, tag_json, aliases in conn.execute(_OPERATOR_SQL):
         tags = _tags_from_json(tag_json)

@@ -71,6 +71,7 @@
   "stage": {
     "difficulty": "NORMAL",
     "display_name": "Combustion",
+    "event_name": null,
     "game_id": "main_04-04",
     "max_life_points": 3,
     "provenance": {

@@ -75,6 +75,23 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
+def column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """True when ``table.column`` exists (§V37 single home, column-level sibling).
+
+    Same job as :func:`table_exists` one level down: a read path must tolerate an
+    ACTIVE build made before a migration that only ADDS a column (e.g.
+    ``zones.event_name``, migration 0015) -- the server may be serving such a build
+    while the new code is already deployed (§V21). ``PRAGMA table_info`` takes the
+    table name as an identifier, so it is passed through a bound query on
+    ``pragma_table_info`` rather than interpolated (§V2).
+    """
+    row = conn.execute(
+        "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+        (table, column),
+    ).fetchone()
+    return row is not None
+
+
 @contextmanager
 def integrity_guard(
     message: str | Callable[[sqlite3.IntegrityError], str],

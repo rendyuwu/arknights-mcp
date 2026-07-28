@@ -88,6 +88,13 @@ STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 #: importer reads its ``charSkins`` metadata from the SAME snapshot, a skin is
 #: cosmetic naming FACT (``operator_skins`` is outside CRITICAL_TABLES), and a
 #: combat-only snapshot legitimately lacks the table.
+#: ``activity_table`` (§T205/§V110, B155) joins the same class once more: the stage
+#: importer reads its ``basicInfo[<actId>].name`` + ``zoneToActivity`` map to give each
+#: event zone its TITLE ("Lone Trail", "Babel"). That title exists in no other file --
+#: ``zone_table`` carries only the sub-zone SUBTITLE -- so without this fetch the event
+#: name a client actually types matches nothing (B155). It is name-only metadata from
+#: the SAME snapshot, and a combat-only snapshot legitimately lacks it, so it is
+#: fetched every sync and tolerated-if-absent (the zones then keep a NULL event_name).
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/character_table.json",
     "gamedata/excel/skill_table.json",
@@ -95,6 +102,7 @@ SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/battle_equip_table.json",
     "gamedata/excel/gacha_table.json",
     "gamedata/excel/skin_table.json",
+    "gamedata/excel/activity_table.json",
 )
 
 

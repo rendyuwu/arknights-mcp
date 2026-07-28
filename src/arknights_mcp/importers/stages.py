@@ -14,6 +14,7 @@ from typing import Any
 
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.field_policy import (
+    ACTIVITY_ALLOWLIST,
     STAGE_ALLOWLIST,
     ZONE_ALLOWLIST,
     apply_allowlist,
@@ -36,6 +37,20 @@ class ParsedZone:
     game_id: str
     display_name: str | None
     zone_type: str | None
+    provenance_record: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ParsedActivity:
+    """One event's TITLE, as the client would name it (§V110/B155).
+
+    Distinct from :class:`ParsedZone`'s ``display_name``, which is the sub-zone
+    SUBTITLE ``zone_table`` carries ("The Coming of The Future"). The title
+    ("Lone Trail") exists only in ``activity_table``, so a zone holds both.
+    """
+
+    game_id: str
+    display_name: str
     provenance_record: dict[str, Any]
 
 
@@ -64,6 +79,10 @@ class StageImportResult:
     #: rows) is a silent-empty regression the pipeline fails closed on (§V30).
     levels_referenced: int = 0
     levels_imported: int = 0
+    #: Zones that got an event TITLE from ``activity_table`` (§V110). 0 is legitimate
+    #: only when the snapshot carries no activity table at all; with the table present
+    #: the importer fails closed rather than shipping a title-less index (B155).
+    zone_event_names: int = 0
 
 
 def parse_zones(zone_raw: Any) -> list[ParsedZone]:
@@ -91,6 +110,57 @@ def parse_zones(zone_raw: Any) -> list[ParsedZone]:
             )
         )
     return out
+
+
+def parse_activity_titles(activity_raw: Any) -> dict[str, ParsedActivity]:
+    """Map each zone game_id to its event title, from ``activity_table`` (§V110).
+
+    Two source keys, both required: ``basicInfo[<actId>].name`` holds the title, and
+    ``zoneToActivity`` maps a zone id onto its ``actId``. The join is the whole point
+    -- a zone knows nothing about its event, and the event record knows nothing about
+    its zones (B155: at the pinned commit this resolves 266 of 429 EN zones onto 120
+    distinct titles; a zone with no activity row, e.g. ``camp_zone_*`` annihilation or
+    ``tower_*``, is simply absent from the returned map and keeps a NULL title, §V26).
+
+    Raises :class:`ImporterError` when the table is present but shaped otherwise, or
+    when it yields no titles at all despite a non-empty ``basicInfo`` -- a silent-empty
+    title map is exactly the state B155 shipped in, and it is invisible downstream
+    (every zone still has its subtitle, so nothing else looks wrong, §V30).
+    """
+    if not isinstance(activity_raw, dict):
+        raise ImporterError("activity table is not a JSON object")
+    basic_info = activity_raw.get("basicInfo")
+    zone_to_activity = activity_raw.get("zoneToActivity")
+    if not isinstance(basic_info, dict) or not isinstance(zone_to_activity, dict):
+        raise ImporterError("activity table missing top-level 'basicInfo' / 'zoneToActivity'")
+
+    titles: dict[str, ParsedActivity] = {}
+    for act_id in sorted(basic_info):
+        entry = basic_info[act_id]
+        if not isinstance(entry, dict):
+            continue
+        kept = apply_allowlist(entry, ACTIVITY_ALLOWLIST).kept
+        display_name = as_str(kept.get("name"))
+        if display_name is None:
+            continue
+        titles[act_id] = ParsedActivity(
+            game_id=act_id, display_name=display_name, provenance_record=kept
+        )
+
+    by_zone: dict[str, ParsedActivity] = {}
+    for zone_id in sorted(zone_to_activity):
+        act_id = zone_to_activity[zone_id]
+        if not isinstance(act_id, str):
+            continue
+        activity = titles.get(act_id)
+        if activity is not None:
+            by_zone[zone_id] = activity
+    if basic_info and not by_zone:
+        raise ImporterError(
+            "activity table yielded no event titles: basicInfo has "
+            f"{len(basic_info)} entries but zoneToActivity resolved none (§V110/B155)"
+        )
+    return by_zone
 
 
 def parse_stages(stage_raw: Any) -> list[ParsedStage]:
@@ -137,14 +207,33 @@ def import_stages(
     *,
     stage_table_path: str = "gamedata/excel/stage_table.json",
     zone_table_path: str = "gamedata/excel/zone_table.json",
+    activity_table_path: str = "gamedata/excel/activity_table.json",
 ) -> StageImportResult:
     """Import zones + stages for ``adapter.server`` and each stage's level file."""
     server = adapter.server
     zones = parse_zones(adapter.read_json(zone_table_path))
     stages = parse_stages(adapter.read_json(stage_table_path))
+    # §V110/B155: the event TITLE lives in activity_table, never in zone_table. The
+    # table is fetched tolerant-absent (§V41/B36) -- a combat-only snapshot lacking it
+    # imports every zone with a NULL event_name -- but when it IS there its shape is
+    # contract, so parse_activity_titles fails closed on a silent-empty map.
+    activity_by_zone: dict[str, ParsedActivity] = {}
+    if adapter.exists(activity_table_path):
+        activity_by_zone = parse_activity_titles(adapter.read_json(activity_table_path))
+    else:
+        _LOG.warning(
+            "snapshot has no %s: zones import with no event title, so an event is not "
+            "searchable by name (§V110)",
+            activity_table_path,
+        )
     enemy_pk_by_game_id = _enemy_pk_by_game_id(conn, server)
 
+    # One provenance row per ACTIVITY record, shared by that event's zones (the title
+    # is one source fact, not one per zone). Its source_path is the activity table, so
+    # the row never claims the zone table said something it did not (§V17).
+    activity_provenance: dict[str, int] = {}
     zone_pk_by_game_id: dict[str, int] = {}
+    zone_event_names = 0
     for zone in zones:
         provenance_id = insert_record_provenance(
             conn,
@@ -153,10 +242,34 @@ def import_stages(
             source_record_key=zone.game_id,
             record=zone.provenance_record,
         )
+        activity = activity_by_zone.get(zone.game_id)
+        event_provenance_id: int | None = None
+        if activity is not None:
+            event_provenance_id = activity_provenance.get(activity.game_id)
+            if event_provenance_id is None:
+                event_provenance_id = insert_record_provenance(
+                    conn,
+                    snapshot_id=snapshot_id,
+                    source_path=activity_table_path,
+                    source_record_key=activity.game_id,
+                    record=activity.provenance_record,
+                )
+                activity_provenance[activity.game_id] = event_provenance_id
+            zone_event_names += 1
         cur = conn.execute(
-            "INSERT INTO zones (server, game_id, display_name, zone_type, provenance_id) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (server, zone.game_id, zone.display_name, zone.zone_type, provenance_id),
+            "INSERT INTO zones (server, game_id, display_name, zone_type, provenance_id, "
+            "event_name, activity_game_id, event_provenance_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                server,
+                zone.game_id,
+                zone.display_name,
+                zone.zone_type,
+                provenance_id,
+                activity.display_name if activity is not None else None,
+                activity.game_id if activity is not None else None,
+                event_provenance_id,
+            ),
         )
         zone_pk_by_game_id[zone.game_id] = int(cur.lastrowid or 0)
 
@@ -260,4 +373,5 @@ def import_stages(
         levels=totals,
         levels_referenced=levels_referenced,
         levels_imported=levels_imported,
+        zone_event_names=zone_event_names,
     )

@@ -45,7 +45,12 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    bypass this module's cap entirely and go through ``util.text.clean_template_text``
 #:    (tags stripped BEFORE a 1024-char cap), so 349 EN templates that this allowlist
 #:    silently cut mid-sentence at 512 now import whole. Same §V92 reasoning as 9.
-FIELD_POLICY_VERSION = "10"
+#: 11: T205/§V110 (B155) added ACTIVITY_ALLOWLIST (event id + TITLE): ``zone_table``
+#:    carries only the sub-zone SUBTITLE, so the event name a client searches by
+#:    ("Lone Trail") was in no imported field at all -- 120 EN titles unreachable.
+#:    New stored bytes (``zones.event_name``), so the bump is what makes §V92 promote
+#:    the rebuilt content over an unchanged snapshot.
+FIELD_POLICY_VERSION = "11"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -88,7 +93,21 @@ ENEMY_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
 
 # ``zoneName`` is the synthetic-fixture key; the real zone_table names a zone via
 # ``zoneNameSecond`` (see FIELD_POLICY_VERSION note 8). Both are NAME-only (§V18).
+#
+# §V110/B155: what that key holds is the sub-zone SUBTITLE, not the event title. The
+# Lone Trail zones are named "The Coming of The Future" / "The Lingering of the Past" /
+# "The Pursuing of the Present"; the string "Lone Trail" appears nowhere in zone_table
+# (and ``zoneNameFirst`` holds 19 mainline "Episode N" labels, not event titles). The
+# title comes from ACTIVITY_ALLOWLIST below.
 ZONE_ALLOWLIST: frozenset[str] = frozenset({"zoneId", "zoneName", "zoneNameSecond", "type"})
+
+#: Event/activity fields kept from ``activity_table.json`` ``basicInfo`` (§V110/T205).
+#: The event TITLE is the name a client searches an event by, and it lives only here
+#: (B155). Deliberately id + name ONLY: the same record carries schedule prose, shop /
+#: medal ids, and display flags that nothing reads -- the §V18 metadata ceiling. The
+#: ``zoneToActivity`` map that joins a zone to its activity is a flat id->id map, not a
+#: record, so it has no allowlist of its own.
+ACTIVITY_ALLOWLIST: frozenset[str] = frozenset({"id", "name"})
 
 STAGE_ALLOWLIST: frozenset[str] = frozenset(
     {

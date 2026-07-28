@@ -16,10 +16,12 @@ their region (§V5); the service shapes them.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
 from arknights_mcp.db.repositories.base import Repository
+from arknights_mcp.util.sqlite import column_exists
 
 
 @dataclass(frozen=True)
@@ -33,11 +35,19 @@ class SearchHitRow:
     non-stage hit (operators/enemies have no difficulty) and for a stage with no
     difficulty in source.
 
-    ``zone_display_name`` is the stage's zone/event display name (T186/B113): the
+    ``zone_display_name`` is the stage's zone display name (T186/B113): the
     string that made an alias-only hit match, so the client can tell *why* a stage
     it never named came back and partition mixed hits by event. ``None`` for a
     non-stage hit and for a stage whose zone carries no name in source (416 of 3264
     en stages on the 2026-07-27 build) -- the tool layer omits the key there (§V67).
+
+    ``event_name`` is the stage's EVENT TITLE (§V110/B155, migration 0015) and is a
+    different fact from a different file: ``zone_display_name`` is the sub-zone
+    subtitle from ``zone_table`` ("The Coming of The Future"), ``event_name`` the
+    title from ``activity_table`` ("Lone Trail"). Either can be the string that made
+    an alias-only hit match, so both ride the row rather than one conflated column.
+    ``None`` for a non-stage hit, for a zone with no activity row (annihilation /
+    tower / IS zones), and on an ACTIVE build predating migration 0015 (§V21).
     """
 
     entity_type: str
@@ -48,6 +58,7 @@ class SearchHitRow:
     stage_code: str | None
     difficulty: str | None
     zone_display_name: str | None
+    event_name: str | None
 
 
 # The B97 deterministic region order (en before cn), as a build-time SQL fragment
@@ -128,28 +139,45 @@ _ALIAS_ONLY_GROUP = (
 # trailing locale ``EXISTS`` clause and the alias tables are no longer consulted at
 # query time. Aliases still feed the FTS ``name`` document at build time (operator
 # self-aliases, §T98), so an operator remains matchable by appellation.
-_SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
-    "zone_display_name FROM ("
-    "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
-    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
-    "z.display_name AS zone_display_name, "
-    f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
-    "rank AS score "
-    "FROM entity_fts "
-    "LEFT JOIN stages s "
-    "ON entity_fts.entity_type = 'stage' "
-    "AND s.stage_pk = entity_fts.entity_pk "
-    "AND s.server = entity_fts.server "
-    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
-    "WHERE entity_fts MATCH ? "
-    "AND (? IS NULL OR entity_fts.server = ?) "
-    "AND (? IS NULL OR entity_fts.entity_type = ?) "
-    f"ORDER BY alias_grp, rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
-    "LIMIT ?"
-    ") "
-    f"ORDER BY alias_grp, {_region_order('server')}, score, game_id"
-)
+# The event-title expression is the one part of these queries that varies, and it
+# varies on the SCHEMA, never on a request: ``zones.event_name`` arrives in migration
+# 0015, and the server may be serving an ACTIVE build made before it (§V21). Both
+# alternatives are literals authored here and the pair is expanded at import time, so
+# the executed SQL is still a fixed constant chosen from a closed set -- nothing from a
+# caller reaches the query text (§V2).
+_EVENT_NAME_COLUMN = "z.event_name"
+_EVENT_NAME_ABSENT = "NULL"
+_EVENT_NAME_EXPRESSIONS = (_EVENT_NAME_COLUMN, _EVENT_NAME_ABSENT)
+
+
+def _build_search_sql(event_name: str) -> str:
+    return (
+        "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
+        "zone_display_name, event_name FROM ("
+        "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
+        "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+        "z.display_name AS zone_display_name, "
+        f"{event_name} AS event_name, "
+        f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
+        "rank AS score "
+        "FROM entity_fts "
+        "LEFT JOIN stages s "
+        "ON entity_fts.entity_type = 'stage' "
+        "AND s.stage_pk = entity_fts.entity_pk "
+        "AND s.server = entity_fts.server "
+        "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
+        "WHERE entity_fts MATCH ? "
+        "AND (? IS NULL OR entity_fts.server = ?) "
+        "AND (? IS NULL OR entity_fts.entity_type = ?) "
+        f"ORDER BY alias_grp, rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
+        "LIMIT ?"
+        ") "
+        f"ORDER BY alias_grp, {_region_order('server')}, score, game_id"
+    )
+
+
+_SEARCH_SQL = {expr: _build_search_sql(expr) for expr in _EVENT_NAME_EXPRESSIONS}
+
 
 # ``search_stages`` (§T33): stage-scoped FTS, but a stage whose ``stage_code``
 # equals the raw query (case-insensitive) is pulled to the top ahead of bm25
@@ -166,29 +194,34 @@ _SEARCH_SQL = (
 # ``alias_grp`` sits BELOW ``exact_grp`` and above rank: an exact stage-code match still
 # wins outright (the §T33 contract), then a stage matching on its own name/code outranks
 # one matching only through its zone name (§V90), in both membership and display.
-_STAGE_SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
-    "zone_display_name FROM ("
-    "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
-    "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
-    "z.display_name AS zone_display_name, "
-    "(CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END) AS exact_grp, "
-    f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
-    "rank AS score "
-    "FROM entity_fts "
-    "LEFT JOIN stages s "
-    "ON s.stage_pk = entity_fts.entity_pk "
-    "AND s.server = entity_fts.server "
-    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
-    "WHERE entity_fts MATCH ? "
-    "AND entity_fts.entity_type = 'stage' "
-    "AND (? IS NULL OR entity_fts.server = ?) "
-    "ORDER BY exact_grp, alias_grp, rank, "
-    f"{_region_order('entity_fts.server')}, entity_fts.game_id "
-    "LIMIT ?"
-    ") "
-    f"ORDER BY exact_grp, alias_grp, {_region_order('server')}, score, game_id"
-)
+def _build_stage_search_sql(event_name: str) -> str:
+    return (
+        "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
+        "zone_display_name, event_name FROM ("
+        "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
+        "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+        "z.display_name AS zone_display_name, "
+        f"{event_name} AS event_name, "
+        "(CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END) AS exact_grp, "
+        f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
+        "rank AS score "
+        "FROM entity_fts "
+        "LEFT JOIN stages s "
+        "ON s.stage_pk = entity_fts.entity_pk "
+        "AND s.server = entity_fts.server "
+        "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
+        "WHERE entity_fts MATCH ? "
+        "AND entity_fts.entity_type = 'stage' "
+        "AND (? IS NULL OR entity_fts.server = ?) "
+        "ORDER BY exact_grp, alias_grp, rank, "
+        f"{_region_order('entity_fts.server')}, entity_fts.game_id "
+        "LIMIT ?"
+        ") "
+        f"ORDER BY exact_grp, alias_grp, {_region_order('server')}, score, game_id"
+    )
+
+
+_STAGE_SEARCH_SQL = {expr: _build_stage_search_sql(expr) for expr in _EVENT_NAME_EXPRESSIONS}
 
 
 def _to_hit(row: Any) -> SearchHitRow:
@@ -201,6 +234,7 @@ def _to_hit(row: Any) -> SearchHitRow:
         stage_code,
         difficulty,
         zone_display_name,
+        event_name,
     ) = row
     return SearchHitRow(
         entity_type=entity_type,
@@ -211,11 +245,20 @@ def _to_hit(row: Any) -> SearchHitRow:
         stage_code=stage_code,
         difficulty=difficulty,
         zone_display_name=zone_display_name,
+        event_name=event_name,
     )
 
 
 class SearchRepository(Repository):
     """Read-only FTS5 access for entity search (§V2)."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        super().__init__(conn)
+        # Probed once per repository, not per query: the schema cannot change under a
+        # read-only connection to an immutable build (§V2/§V21).
+        self._event_name = (
+            _EVENT_NAME_COLUMN if column_exists(conn, "zones", "event_name") else _EVENT_NAME_ABSENT
+        )
 
     def search(
         self,
@@ -235,7 +278,7 @@ class SearchRepository(Repository):
         extra-locale (ja/ko) alias filter is retired (§V57, T156).
         """
         params = (match, server, server, entity_type, entity_type, limit)
-        return [_to_hit(r) for r in self._all(_SEARCH_SQL, params)]
+        return [_to_hit(r) for r in self._all(_SEARCH_SQL[self._event_name], params)]
 
     def search_stages(
         self,
@@ -256,4 +299,4 @@ class SearchRepository(Repository):
         Every value is bound (§V2).
         """
         params = (exact_code, match, server, server, limit)
-        return [_to_hit(r) for r in self._all(_STAGE_SEARCH_SQL, params)]
+        return [_to_hit(r) for r in self._all(_STAGE_SEARCH_SQL[self._event_name], params)]

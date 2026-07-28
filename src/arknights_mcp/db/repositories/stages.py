@@ -14,10 +14,12 @@ carries ``snapshot_id`` + ``imported_at`` (§V5). Every value is bound (§V2).
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
 from arknights_mcp.db.repositories.base import Repository
+from arknights_mcp.util.sqlite import column_exists
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,10 @@ class StageRow:
     #: The zone's display name, pairing the opaque ``zone_game_id`` with something a
     #: client can read (§V69, T186); ``None`` when the zone is unnamed in source.
     zone_display_name: str | None
+    #: The TITLE of the event that zone belongs to (§V110/B155): a different fact from
+    #: a different file than ``zone_display_name`` (the sub-zone subtitle). ``None`` for
+    #: a zone with no activity row and on a build predating migration 0015 (§V21).
+    event_name: str | None
     stage_type: str | None
     difficulty: str | None
     sanity_cost: int | None
@@ -134,20 +140,39 @@ class StageSpawnRow:
     variant_id: str | None
 
 
-_STAGE_SELECT = (
-    "SELECT s.stage_pk, s.server, s.game_id, s.stage_code, s.display_name, "
-    "z.game_id, z.display_name, s.stage_type, s.difficulty, s.sanity_cost, "
-    "s.recommended_level, s.max_life_points, p.snapshot_id, ss.imported_at "
-    "FROM stages s "
-    "JOIN record_provenance p ON p.provenance_id = s.provenance_id "
-    "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
-    # §V5 parity with the T179 search-index zones join: region-guarded, so a stage
-    # can never surface the other region's zone game_id even from a corrupt FK.
-    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
-    "WHERE s.server = ? AND "
-)
-_STAGE_BY_CODE_SQL = _STAGE_SELECT + "s.stage_code = ? ORDER BY s.stage_pk LIMIT 1"
-_STAGE_BY_GAME_ID_SQL = _STAGE_SELECT + "s.game_id = ? ORDER BY s.stage_pk LIMIT 1"
+# ``zones.event_name`` arrives in migration 0015 (§V110), and this code may be serving
+# an ACTIVE build made before it, so the expression is picked from a closed set of two
+# AUTHORED literals per :data:`_EVENT_NAME_EXPRESSIONS` -- never from request data (§V2,
+# §V21; the same degrade as ``OperatorRepository.skins`` one level down).
+_EVENT_NAME_COLUMN = "z.event_name"
+_EVENT_NAME_ABSENT = "NULL"
+_EVENT_NAME_EXPRESSIONS = (_EVENT_NAME_COLUMN, _EVENT_NAME_ABSENT)
+
+
+def _stage_select(event_name: str) -> str:
+    return (
+        "SELECT s.stage_pk, s.server, s.game_id, s.stage_code, s.display_name, "
+        f"z.game_id, z.display_name, {event_name}, "
+        "s.stage_type, s.difficulty, s.sanity_cost, "
+        "s.recommended_level, s.max_life_points, p.snapshot_id, ss.imported_at "
+        "FROM stages s "
+        "JOIN record_provenance p ON p.provenance_id = s.provenance_id "
+        "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
+        # §V5 parity with the T179 search-index zones join: region-guarded, so a stage
+        # can never surface the other region's zone game_id even from a corrupt FK.
+        "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
+        "WHERE s.server = ? AND "
+    )
+
+
+_STAGE_BY_CODE_SQL = {
+    expr: _stage_select(expr) + "s.stage_code = ? ORDER BY s.stage_pk LIMIT 1"
+    for expr in _EVENT_NAME_EXPRESSIONS
+}
+_STAGE_BY_GAME_ID_SQL = {
+    expr: _stage_select(expr) + "s.game_id = ? ORDER BY s.stage_pk LIMIT 1"
+    for expr in _EVENT_NAME_EXPRESSIONS
+}
 
 # A stage-scoped inline variant (§T80) overlays its stats on the base: COALESCE the
 # variant's §V29-verified stat block (hp/atk/def/res/attack_interval/move_speed/
@@ -239,6 +264,7 @@ def _to_stage_row(row: Any) -> StageRow:
         display_name,
         zone_game_id,
         zone_display_name,
+        event_name,
         stage_type,
         difficulty,
         sanity_cost,
@@ -255,6 +281,7 @@ def _to_stage_row(row: Any) -> StageRow:
         display_name=display_name,
         zone_game_id=zone_game_id,
         zone_display_name=zone_display_name,
+        event_name=event_name,
         stage_type=stage_type,
         difficulty=difficulty,
         sanity_cost=sanity_cost,
@@ -380,14 +407,23 @@ def _to_stage_spawn_row(row: Any) -> StageSpawnRow:
 class StageRepository(Repository):
     """Read-only access to stages and their enemy occurrences (§V2)."""
 
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        super().__init__(conn)
+        # Probed once per repository: an ACTIVE build predating migration 0015 has no
+        # ``zones.event_name``, and the read must degrade to NULL rather than raise
+        # (§V21, mirrors the ``operator_skins`` table-level degrade).
+        self._event_name = (
+            _EVENT_NAME_COLUMN if column_exists(conn, "zones", "event_name") else _EVENT_NAME_ABSENT
+        )
+
     def stage_by_game_id(self, server: str, game_id: str) -> StageRow | None:
         """Stage for ``(server, game_id)`` -- the unique key -- or ``None``."""
-        row = self._one(_STAGE_BY_GAME_ID_SQL, (server, game_id))
+        row = self._one(_STAGE_BY_GAME_ID_SQL[self._event_name], (server, game_id))
         return _to_stage_row(row) if row is not None else None
 
     def stage_by_code(self, server: str, stage_code: str) -> StageRow | None:
         """Stage for ``(server, stage_code)`` or ``None`` (first by ``stage_pk``)."""
-        row = self._one(_STAGE_BY_CODE_SQL, (server, stage_code))
+        row = self._one(_STAGE_BY_CODE_SQL[self._event_name], (server, stage_code))
         return _to_stage_row(row) if row is not None else None
 
     def stage_enemies(self, stage_pk: int) -> list[StageEnemyRow]:

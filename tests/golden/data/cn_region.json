@@ -49,6 +49,7 @@
   "stage": {
     "difficulty": "NORMAL",
     "display_name": "夜巡",
+    "event_name": null,
     "game_id": "cs_1",
     "max_life_points": 3,
     "provenance": {

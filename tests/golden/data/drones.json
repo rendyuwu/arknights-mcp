@@ -78,6 +78,7 @@
   "stage": {
     "difficulty": "NORMAL",
     "display_name": "Drone Swarm",
+    "event_name": null,
     "game_id": "gs_drones",
     "max_life_points": 3,
     "provenance": {

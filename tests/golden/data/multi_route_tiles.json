@@ -99,6 +99,7 @@
   "stage": {
     "difficulty": "NORMAL",
     "display_name": "Split Lanes",
+    "event_name": null,
     "game_id": "gs_multi",
     "max_life_points": 3,
     "provenance": {

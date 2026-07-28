@@ -117,9 +117,14 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
     limitation is the sole absence signal.
 
     §V69 (T186): ``zone_display_name`` pairs the opaque ``zone_game_id`` with a readable
-    zone/event name, so ``zone_game_id: "act12d0"`` stops being an id the client must
+    zone name, so ``zone_game_id: "act12d0"`` stops being an id the client must
     either abandon or invent a meaning for. Omitted when the zone is unnamed in source
-    (§V67) -- the id still ships, so the absence is visible rather than fabricated."""
+    (§V67) -- the id still ships, so the absence is visible rather than fabricated.
+
+    §V110 (B155): ``event_name`` names the EVENT that zone belongs to ("Lone Trail"),
+    which the zone name does not -- ``zone_display_name`` is the sub-zone subtitle
+    ("The Coming of The Future"), so a client given only that cannot say which event a
+    stage is from. Omitted for a zone with no event (§V67)."""
     out: dict[str, object] = {
         "server": stage.server,
         "game_id": stage.game_id,
@@ -132,6 +137,8 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
     }
     if stage.zone_display_name is not None:
         out["zone_display_name"] = stage.zone_display_name
+    if stage.event_name is not None:
+        out["event_name"] = stage.event_name
     if stage.recommended_level is not None:
         out["recommended_level"] = stage.recommended_level
     if stage.max_life_points is not None:

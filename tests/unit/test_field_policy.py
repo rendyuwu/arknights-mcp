@@ -36,7 +36,10 @@ def test_field_policy_version_present() -> None:
     #    this module's cap and go through util.text.clean_template_text (tags stripped
     #    BEFORE a 1024-char cap), so templates this allowlist silently cut mid-sentence
     #    at 512 store whole.
-    assert FIELD_POLICY_VERSION == "10"
+    # 11: T205/§V110 (B155) added ACTIVITY_ALLOWLIST -- the event TITLE
+    #    (activity_table basicInfo[<actId>].name) was in no allowlist at all, so the
+    #    name a client searches an event by ("Lone Trail") reached no column.
+    assert FIELD_POLICY_VERSION == "11"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

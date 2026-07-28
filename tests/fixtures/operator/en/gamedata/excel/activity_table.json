@@ -1,0 +1,56 @@
+{
+  "basicInfo": {
+    "act25side": {
+      "id": "act25side",
+      "type": "TYPE_ACT25SIDE",
+      "displayType": "NONE",
+      "name": "Lone Trail",
+      "startTime": 1699376400,
+      "endTime": 1701169199,
+      "rewardEndTime": 1701773999,
+      "displayOnHome": true,
+      "hasStage": true,
+      "templateShopId": "shop_act25side",
+      "medalGroupId": "medalGroupActivity25side",
+      "ungroupedMedalIds": null,
+      "isReplicate": false,
+      "needFixedSync": false,
+      "trapDomainId": null,
+      "recType": "SPECIAL",
+      "isPageEntry": false,
+      "isMagnify": false,
+      "picGroup": {},
+      "usePicGroup": false
+    },
+    "act33side": {
+      "id": "act33side",
+      "type": "TYPE_ACT9D0",
+      "displayType": "SIDESTORY",
+      "name": "Babel",
+      "startTime": 1728561600,
+      "endTime": 1730458799,
+      "rewardEndTime": 1730977199,
+      "displayOnHome": true,
+      "hasStage": true,
+      "templateShopId": "shop_act33side",
+      "medalGroupId": "medalGroupActivity33side",
+      "ungroupedMedalIds": null,
+      "isReplicate": false,
+      "needFixedSync": false,
+      "trapDomainId": null,
+      "recType": "SPECIAL",
+      "isPageEntry": false,
+      "isMagnify": false,
+      "picGroup": {},
+      "usePicGroup": false
+    }
+  },
+  "zoneToActivity": {
+    "act25side_zone1": "act25side",
+    "act25side_zone2": "act25side",
+    "act25side_zone3": "act25side",
+    "act33side_zone1": "act33side",
+    "act33side_zone2": "act33side",
+    "act33side_zone3": "act33side"
+  }
+}
