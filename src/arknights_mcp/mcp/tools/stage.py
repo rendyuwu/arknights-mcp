@@ -32,6 +32,8 @@ shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
@@ -413,7 +415,15 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     advertised (B41). A stat is ``null`` when the source field is absent (§V26).
     ``variant_id`` (the inline ``useDb:false`` variant id, §T80) is OMITTED rather
     than emitted as a bare null for a base-enemy occurrence (§V67/B90); the
-    ``attack_type`` scalar is likewise omitted when absent in source (§V67/B98)."""
+    ``attack_type`` scalar is likewise omitted when absent in source (§V67/B98).
+
+    §V101/§T197: ``attack_range`` / ``block_behavior`` / ``abilities`` ride here too --
+    the ranged-arts, block-bypass and ability-token rules cite them as evidence field
+    paths, and until now this response emitted none of the three, so those paths resolved
+    to nothing a client could look up. Same §V67 discipline: an absent scalar omits its
+    key, and ``abilities`` is ``[]`` when the source confirms none, omitted when the
+    source carried no such field (B58). An evidence row for one of these fields exists
+    only when the rule read a value, so the row and its key appear together."""
     out: dict[str, object] = {
         "game_id": occ.game_id,
         "display_name": occ.display_name,
@@ -441,6 +451,13 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     # §V67/B98: absent-in-source scalar omitted, never null.
     if occ.attack_type is not None:
         out["attack_type"] = occ.attack_type
+    if occ.attack_range is not None:
+        out["attack_range"] = occ.attack_range
+    if occ.block_behavior is not None:
+        out["block_behavior"] = occ.block_behavior
+    # §V67/B58: [] = the source confirms none; key absent = the source carried no field.
+    if occ.abilities is not None:
+        out["abilities"] = list(occ.abilities)
     return out
 
 
@@ -457,9 +474,19 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     if result.status == "not_found" or result.stage is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
+    # §V101/§T197: the stage-level metrics the lane/route + tiles/deploy observations cite
+    # as evidence field paths (``metrics.route_record_count``, ``metrics.tile_total``, ...)
+    # ride the stage block, so every evidence path resolves against the record its ``ref``
+    # names. Additive (§V21); omitted whole when no metric was loaded and per key when a
+    # single datum is absent (§V67 -- absent, never a null standing for zero).
+    stage_block = _stage_to_dict(result.stage)
+    if result.metrics is not None:
+        stage_block["metrics"] = {
+            key: value for key, value in asdict(result.metrics).items() if value is not None
+        }
     data: dict[str, object] = {
         "depth": depth,
-        "stage": _stage_to_dict(result.stage),
+        "stage": stage_block,
         "observations": [observation_to_dict(o) for o in result.observations],
     }
     if depth != "summary":

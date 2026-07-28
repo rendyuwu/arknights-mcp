@@ -1,6 +1,12 @@
 {
   "ambiguity": null,
   "analyzer_version": "1",
+  "metrics": {
+    "buildable_melee": 0,
+    "buildable_ranged": 0,
+    "route_record_count": 1,
+    "tile_total": 3
+  },
   "observations": [
     {
       "analyzer_version": "1",
@@ -10,9 +16,16 @@
         {
           "count": null,
           "field": "attack_range",
-          "note": "arts damage at range (total_count=2)",
+          "note": "arts damage at range",
           "ref": "enemy_caster",
           "value": 2.5
+        },
+        {
+          "count": null,
+          "field": "total_count",
+          "note": null,
+          "ref": "enemy_caster",
+          "value": 2
         }
       ],
       "limitations": [],
@@ -24,9 +37,12 @@
   ],
   "occurrences": [
     {
+      "abilities": [],
       "atk": 300,
       "attack_interval": 2.5,
+      "attack_range": 2.5,
       "attack_type": "magical",
+      "block_behavior": "blockable",
       "def_": 100,
       "display_name": "Arts Caster",
       "enemy_class": "ELITE",

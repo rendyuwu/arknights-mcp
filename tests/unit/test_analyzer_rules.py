@@ -52,12 +52,17 @@ def occ(game_id: str, **kw: Any) -> EnemyOccurrence:
 
 def ctx(
     *occurrences: EnemyOccurrence,
+    stage_game_id: str = "main_01-01",
     stage_code: str = "1-1",
     route_count: int | None = None,
     tiles: StageTiles | None = None,
 ) -> StageThreatContext:
+    """A stage context whose game_id and stage_code DIFFER on purpose (§V68/B136): a
+    stage-level evidence row must ref the unique game_id, and a test where the two
+    strings are equal cannot tell the two apart."""
     return StageThreatContext(
         server="en",
+        stage_game_id=stage_game_id,
         stage_code=stage_code,
         occurrences=tuple(occurrences),
         route_count=route_count,
@@ -134,12 +139,18 @@ def test_def_res_skew_fires_on_high_armor_low_res() -> None:
     obs = _obs_by_tag(result)["def_res_skew"]
     assert obs.rule_id == DEF_RES_SKEW_ID
     _assert_v6_fields(obs)
-    assert "def=800" in obs.evidence[0].value
+    # §V101/B137: one fact per row -- two separately-typed stats, never one row with an
+    # invented "def/res" path and a packed "def=800,res=0" string the client must split.
+    assert [(e.field, e.value) for e in obs.evidence] == [("def", 800), ("res", 0)]
+    assert all(isinstance(e.value, int) for e in obs.evidence)
 
 
 def test_def_res_skew_fires_on_high_res_low_armor() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_mystic", defense=100, res=70))))["def_res_skew"]
-    assert obs.evidence[0].note is not None and "physical" in obs.evidence[0].note
+    assert [(e.field, e.value) for e in obs.evidence] == [("def", 100), ("res", 70)]
+    # The comparison stays prose on both rows (§V101): it says which damage type wins,
+    # which neither scalar states on its own.
+    assert all(e.note is not None and "physical" in e.note for e in obs.evidence)
 
 
 def test_def_res_skew_balanced_enemy_does_not_fire() -> None:
@@ -220,7 +231,7 @@ def test_support_aura_counts_distinct_enemy_once_across_variants() -> None:
     v0 = occ("enemy_medic", abilities=("heal_allies",))
     v1 = occ("enemy_medic", abilities=("aura",))
     obs = _obs_by_tag(analyze_stage(ctx(v0, v1)))["support_aura"]
-    assert len(obs.evidence) == 2
+    assert [e.value for e in obs.evidence if e.field == "abilities"] == ["heal_allies", "aura"]
     assert {e.ref for e in obs.evidence} == {"enemy_medic"}
     assert "1 enemy type" in obs.summary
 
@@ -238,6 +249,15 @@ def test_pressure_spike_fires_on_tight_burst() -> None:
     # fires at reduced confidence and stamps the fragment-relative limitation.
     assert obs.confidence < 0.8
     assert any("fragment-relative" in lim for lim in obs.limitations)
+    # §V101/B137: the note used to pack "8 spawns; computed window 8s is fragment-
+    # relative" -- one number restating the typed value, one the client had to parse out.
+    # The window's two operands are separately emitted fields, so each is its own row.
+    assert [(e.field, e.value) for e in obs.evidence] == [
+        ("total_count", 8),
+        ("first_spawn_time", 2.0),
+        ("last_spawn_time", 10.0),
+    ]
+    assert all(e.note is None for e in obs.evidence)
 
 
 def test_pressure_spike_fragment_relative_window_reports_with_limitation() -> None:
@@ -267,6 +287,9 @@ def test_pressure_spike_missing_window_reduces_confidence_and_limits() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(blind)))["pressure_spike"]
     assert obs.confidence < 0.8
     assert any("spawn timing missing" in lim for lim in obs.limitations)
+    # §V26/§V67: an absent window emits no spawn-bound row at all -- never a null or a
+    # zero standing in for "unknown". The §V26 limitation is the sole absence signal.
+    assert [(e.field, e.value) for e in obs.evidence] == [("total_count", 8)]
 
 
 # --- lane/route ---------------------------------------------------------------
@@ -276,17 +299,22 @@ def test_lane_route_fires_on_multiple_routes() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), route_count=3)))["lane_route"]
     assert obs.rule_id == LANE_ROUTE_ID
     _assert_v6_fields(obs)
+    # §V68/B136: the stage-level row refs the unique game_id, never the shared stage_code.
+    # §V101: the count is the typed value and nothing restates it in prose.
+    assert obs.evidence[0].ref == "main_01-01"
+    assert obs.evidence[0].field == "metrics.route_record_count"
     assert obs.evidence[0].value == 3
-    assert obs.evidence[0].note == "3 raw route records"
+    assert obs.evidence[0].note is None
 
 
 def test_lane_route_raw_count_is_not_labelled_lanes() -> None:
     # §V49/B43: a stage with 26 raw route records must NOT headline "26 lanes" -- the
     # raw route-record count overstates distinct lanes. It fires at reduced confidence
-    # with a limitation that the raw count is not the lane count.
+    # with a limitation that the raw count is not the lane count. §V101: "records, not
+    # lanes" is carried by the field name + the limitation, never by a number in a note.
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), route_count=26)))["lane_route"]
     assert "26 lanes" not in obs.summary
-    assert "26 raw route records" in obs.evidence[0].note
+    assert obs.evidence[0].field == "metrics.route_record_count"
     assert obs.confidence < 0.85  # raw count is not an authoritative lane measure
     assert any("distinct lanes" in lim for lim in obs.limitations)
 
@@ -307,6 +335,16 @@ def test_tiles_deploy_fires_on_scarce_surface() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), tiles=tiles)))["tiles_deploy"]
     assert obs.rule_id == TILES_DEPLOY_ID
     _assert_v6_fields(obs)
+    # §V68/B136: B136 named lane_route only; this rule had the same stage_code ref on
+    # every row it has ever emitted. §V101: the grid total was prose ("of 24 tiles") and
+    # is now its own typed row at its own emitted path.
+    assert {e.ref for e in obs.evidence} == {"main_01-01"}
+    assert [(e.field, e.value) for e in obs.evidence] == [
+        ("metrics.buildable_ranged", 1),
+        ("metrics.buildable_melee", 2),
+        ("metrics.tile_total", 24),
+    ]
+    assert all(e.note is None for e in obs.evidence)
 
 
 def test_tiles_deploy_ample_surface_does_not_fire() -> None:

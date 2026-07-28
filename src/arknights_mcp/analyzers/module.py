@@ -167,10 +167,17 @@ def _trait_observation(module: ModuleInput) -> Observation | None:
     altering = [level for level in module.levels if level.present and level.trait_change_count > 0]
     if not altering:
         return None
+    # §V101/B137: ``field="trait_changes"`` with ``value=1`` read as a magnitude-free
+    # flag restating mere presence -- and ``trait_changes`` is emitted as a LIST, so the
+    # value was never that field's scalar. The count is named as what it is: how many
+    # entries the emitted trait_changes list carries at that level (2 and 3 both occur in
+    # the real corpus, so it is a real magnitude, not a dressed-up boolean). The level
+    # stays in the note: it is the §V85 level list a deduped row carries, and the
+    # evidence tuple has no level slot.
     evidence = [
         EvidenceItem(
             ref=module.game_id,
-            field="trait_changes",
+            field="trait_changes.count",
             value=level.trait_change_count,
             note=f"module level {level.level}",
         )
@@ -209,13 +216,17 @@ def _talent_observation(module: ModuleInput) -> Observation | None:
         for change in level.talent_changes:
             idx = change.talent_index
             if idx is not None and idx < 0:
-                # -1 = the operator's token/summon effect; a typed flag, never a bare -1.
+                # -1 = the operator's token/summon effect; a typed label, never a bare -1.
+                # §V101: the path is the one the wire really carries. This row used to name
+                # ``talent_changes.token_effect``, a field no response has ever emitted --
+                # the label the service attaches is ``applies_to: "token"`` (§V83), so the
+                # evidence points at that, and the client can look it up.
                 token_effect = True
                 evidence.append(
                     EvidenceItem(
                         ref=module.game_id,
-                        field="talent_changes.token_effect",
-                        value=True,
+                        field="talent_changes.applies_to",
+                        value="token",
                         note=f"module level {level.level}",
                     )
                 )

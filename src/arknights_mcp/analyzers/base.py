@@ -67,9 +67,18 @@ class StageTiles:
 
 @dataclass(frozen=True)
 class StageThreatContext:
-    """Typed input to the stage analyzer for one ``(server, stage)``."""
+    """Typed input to the stage analyzer for one ``(server, stage)``.
+
+    ``stage_game_id`` is REQUIRED and is what a stage-level evidence row refs (§V68):
+    ``stage_code`` is shared by the normal/tough/challenge variants of one stage, so an
+    observation reffing ``"14-18"`` is undecidable and un-joinable to the stage block,
+    which is keyed on ``game_id`` (B57/B136). It is deliberately not defaulted -- an
+    ``or stage_code`` fallback would re-admit that bug silently the first time a caller
+    forgot it. ``stage_code`` stays for the human-readable summary text only.
+    """
 
     server: str
+    stage_game_id: str
     stage_code: str | None
     occurrences: tuple[EnemyOccurrence, ...]
     # M3 stage-level rule inputs (§T39): the count of distinct enemy routes and the
@@ -81,11 +90,29 @@ class StageThreatContext:
 
 @dataclass(frozen=True)
 class EvidenceItem:
-    """A single typed datum that drove an observation (§V6 evidence)."""
+    """A single typed datum that drove an observation (§V6 evidence, §V101 shape).
 
-    ref: str  # what the datum is about (an enemy ``game_id``)
-    field: str  # the typed source field it came from
-    value: Any  # the observed typed value
+    §V6 says evidence must EXIST; §V101 says what one row IS (B137). The four rules,
+    all of them testable:
+
+    * ``ref`` -- an unambiguous stable id (§V68): an enemy/module ``game_id``, or a
+      stage's ``game_id`` -- never a ``stage_code``, which several stage variants share.
+    * ``field`` -- a REAL emitted field path, relative to the record ``ref`` names
+      (``def`` and ``total_count`` on an enemy occurrence, ``metrics.tile_total`` on the
+      stage block, ``stat_bonus.atk`` on a module). Never a packed pseudo-path like
+      ``"def/res"``, which resolves to nothing a client can look up.
+    * ``value`` -- THAT field's scalar. Never a packed string (``"def=200,res=50"``),
+      never a magnitude-free ``1`` that only restates presence.
+    * ``note`` -- PROSE ONLY. A number a client may USE never lives here: it is a fact
+      with a field path of its own, so it gets its own row (one fact per row, a packed
+      pair becomes two rows plus the comparison in the note). The one number that does
+      belong in a note is the §V85 level list a deduped row carries, because ``count``
+      is dedup multiplicity and the tuple has no level slot.
+    """
+
+    ref: str  # what the datum is about (an enemy / module / stage ``game_id``)
+    field: str  # the emitted field path, relative to that record
+    value: Any  # that field's typed scalar
     note: str | None = None
     #: How many byte-identical source rows this row stands for after §V85 dedup
     #: (``None`` = the row was unique; the wire mapping omits the key then, §V67).

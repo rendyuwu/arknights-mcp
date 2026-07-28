@@ -1,6 +1,12 @@
 {
   "ambiguity": null,
   "analyzer_version": "1",
+  "metrics": {
+    "buildable_melee": 2,
+    "buildable_ranged": 1,
+    "route_record_count": 2,
+    "tile_total": 10
+  },
   "observations": [
     {
       "analyzer_version": "1",
@@ -9,9 +15,9 @@
       "evidence": [
         {
           "count": null,
-          "field": "route_count",
-          "note": "2 raw route records",
-          "ref": "GS-3",
+          "field": "metrics.route_record_count",
+          "note": null,
+          "ref": "gs_multi",
           "value": 2
         }
       ],
@@ -30,17 +36,24 @@
       "evidence": [
         {
           "count": null,
-          "field": "buildable_ranged",
-          "note": "of 10 tiles",
-          "ref": "GS-3",
+          "field": "metrics.buildable_ranged",
+          "note": null,
+          "ref": "gs_multi",
           "value": 1
         },
         {
           "count": null,
-          "field": "buildable_melee",
-          "note": "of 10 tiles",
-          "ref": "GS-3",
+          "field": "metrics.buildable_melee",
+          "note": null,
+          "ref": "gs_multi",
           "value": 2
+        },
+        {
+          "count": null,
+          "field": "metrics.tile_total",
+          "note": null,
+          "ref": "gs_multi",
+          "value": 10
         }
       ],
       "limitations": [],
@@ -52,9 +65,12 @@
   ],
   "occurrences": [
     {
+      "abilities": [],
       "atk": 280,
       "attack_interval": 1.5,
+      "attack_range": 0.0,
       "attack_type": "physical",
+      "block_behavior": "blockable",
       "def_": 200,
       "display_name": "Foot Soldier A",
       "enemy_class": "NORMAL",
@@ -74,9 +90,12 @@
       "weight": 2
     },
     {
+      "abilities": [],
       "atk": 260,
       "attack_interval": 1.6,
+      "attack_range": 0.0,
       "attack_type": "physical",
+      "block_behavior": "blockable",
       "def_": 150,
       "display_name": "Foot Soldier B",
       "enemy_class": "NORMAL",

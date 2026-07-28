@@ -24,7 +24,7 @@ from arknights_mcp.analyzers.base import (
 from arknights_mcp.analyzers.rules._common import (
     ability_tokens,
     by_game_id,
-    count_note,
+    count_evidence,
     distinct_refs,
     is_aerial,
 )
@@ -97,13 +97,12 @@ class BlockBypassRule:
                 continue
 
             evidence.append(
-                EvidenceItem(
-                    ref=occ.game_id,
-                    field=deciding_field,
-                    value=deciding_value,
-                    note=count_note(occ.total_count),
-                )
+                EvidenceItem(ref=occ.game_id, field=deciding_field, value=deciding_value)
             )
+            # §V101: the spawn count is its own fact -> its own typed row.
+            count_row = count_evidence(occ)
+            if count_row is not None:
+                evidence.append(count_row)
             confidence = max(confidence, conf)
 
         if not evidence:

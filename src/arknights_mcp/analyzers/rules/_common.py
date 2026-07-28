@@ -3,7 +3,7 @@
 One home for the pieces every rule reuses so no loop or constant is copy-pasted
 across the rule modules (§V37):
 
-* :func:`count_note` -- the ``total_count=<n>`` evidence note.
+* :func:`count_evidence` -- the enemy's ``total_count`` evidence ROW (§V101).
 * :func:`distinct_refs` -- the §V35 distinct-``ref`` tally (count entities, not
   occurrence rows: an enemy seen at several level variants counts once).
 * :func:`by_game_id` -- deterministic enemy iteration order (§V26).
@@ -36,9 +36,19 @@ FLY_MOTIONS = frozenset({"FLY", "FLYING", "AIR"})
 GROUND_MOTIONS = frozenset({"WALK", "GROUND", "CRAWL", "CLIMB", "DRIFT", "SWIM", "WALL"})
 
 
-def count_note(count: int | None) -> str | None:
-    """The ``total_count=<n>`` evidence note, or ``None`` when the count is absent."""
-    return f"total_count={count}" if count is not None else None
+def count_evidence(occ: EnemyOccurrence) -> EvidenceItem | None:
+    """The enemy's spawn-count evidence row, or ``None`` when the count is absent.
+
+    §V101/B137: this used to be a ``note="total_count=43"`` string riding the deciding
+    row, which put two numbers in one row -- one typed, the other buried in prose the
+    client had to parse. ``total_count`` is a fact with its own emitted field path
+    (``occurrences[].total_count``), so it is its own row (one fact per row). One §V37
+    home: every rule that reports how many of an enemy a stage fields calls this, so
+    the packed-note shape cannot come back one rule at a time.
+    """
+    if occ.total_count is None:
+        return None
+    return EvidenceItem(ref=occ.game_id, field="total_count", value=occ.total_count)
 
 
 def distinct_refs(evidence: Sequence[EvidenceItem]) -> int:
@@ -108,14 +118,11 @@ class AbilityTokenRule:
             hit = sorted(tokens & self.tokens)
             if not hit:
                 continue
-            evidence.append(
-                EvidenceItem(
-                    ref=occ.game_id,
-                    field="abilities",
-                    value=hit[0],
-                    note=count_note(occ.total_count),
-                )
-            )
+            evidence.append(EvidenceItem(ref=occ.game_id, field="abilities", value=hit[0]))
+            # §V101: how many of the enemy the stage fields is its own fact, its own row.
+            count_row = count_evidence(occ)
+            if count_row is not None:
+                evidence.append(count_row)
         if not evidence:
             return RuleResult()
         return RuleResult(

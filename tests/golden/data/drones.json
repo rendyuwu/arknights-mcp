@@ -1,6 +1,12 @@
 {
   "ambiguity": null,
   "analyzer_version": "1",
+  "metrics": {
+    "buildable_melee": 0,
+    "buildable_ranged": 0,
+    "route_record_count": 1,
+    "tile_total": 3
+  },
   "observations": [
     {
       "analyzer_version": "1",
@@ -10,16 +16,30 @@
         {
           "count": null,
           "field": "motion_type",
-          "note": "total_count=2",
+          "note": null,
           "ref": "enemy_drone_a",
           "value": "FLY"
         },
         {
           "count": null,
+          "field": "total_count",
+          "note": null,
+          "ref": "enemy_drone_a",
+          "value": 2
+        },
+        {
+          "count": null,
           "field": "motion_type",
-          "note": "total_count=2",
+          "note": null,
           "ref": "enemy_drone_b",
           "value": "FLY"
+        },
+        {
+          "count": null,
+          "field": "total_count",
+          "note": null,
+          "ref": "enemy_drone_b",
+          "value": 2
         }
       ],
       "limitations": [],
@@ -31,9 +51,14 @@
   ],
   "occurrences": [
     {
+      "abilities": [
+        "aerial"
+      ],
       "atk": 260,
       "attack_interval": 1.6,
+      "attack_range": 1.2,
       "attack_type": "physical",
+      "block_behavior": "unblockable_flying",
       "def_": 0,
       "display_name": "Scout Drone A",
       "enemy_class": "ELITE",
@@ -53,9 +78,14 @@
       "weight": 1
     },
     {
+      "abilities": [
+        "aerial"
+      ],
       "atk": 270,
       "attack_interval": 1.6,
+      "attack_range": 1.2,
       "attack_type": "physical",
+      "block_behavior": "unblockable_flying",
       "def_": 0,
       "display_name": "Scout Drone B",
       "enemy_class": "ELITE",

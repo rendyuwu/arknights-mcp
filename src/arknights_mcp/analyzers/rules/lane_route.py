@@ -26,7 +26,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, count_note
+from arknights_mcp.analyzers.rules._common import by_game_id, count_evidence
 
 RULE_ID = "threat.lane_route"
 
@@ -54,26 +54,30 @@ class LaneRouteRule:
         if route_count is None or route_count < _MULTI_LANE:
             return RuleResult()
 
-        stage_ref = ctx.stage_code or "stage"
+        # §V68/B136: the stage-level row refs the stage's game_id, never its stage_code --
+        # normal/tough/challenge variants share one code, so a "14-18" ref is undecidable
+        # and un-joinable to the stage block, which is keyed on game_id (B57 fixed the
+        # same defect on get_item_drops; this surface kept it).
         evidence: list[EvidenceItem] = [
+            # §V101: the number was duplicated into the note ("22 raw route records") --
+            # the value already carries it, and "records, not lanes" is what the field
+            # name and the standing limitation say, so the note holds no number at all.
             EvidenceItem(
-                ref=stage_ref,
-                field="route_count",
+                ref=ctx.stage_game_id,
+                field="metrics.route_record_count",
                 value=route_count,
-                note=f"{route_count} raw route records",
             )
         ]
         # Enemies that themselves split across several route records reinforce the threat.
         for occ in by_game_id(ctx.occurrences):
             if occ.route_count is not None and occ.route_count > 1:
                 evidence.append(
-                    EvidenceItem(
-                        ref=occ.game_id,
-                        field="route_count",
-                        value=occ.route_count,
-                        note=count_note(occ.total_count),
-                    )
+                    EvidenceItem(ref=occ.game_id, field="route_count", value=occ.route_count)
                 )
+                # §V101: the spawn count is a separate fact -> a separate row.
+                count_row = count_evidence(occ)
+                if count_row is not None:
+                    evidence.append(count_row)
 
         return RuleResult(
             observation=Observation(

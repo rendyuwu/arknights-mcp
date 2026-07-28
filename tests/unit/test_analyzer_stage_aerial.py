@@ -18,8 +18,17 @@ from arknights_mcp.analyzers.rules import THREAT_RULES
 from arknights_mcp.analyzers.rules.aerial import RULE_ID, AerialThreatRule
 
 
-def _ctx(*occ: EnemyOccurrence, stage_code: str = "4-4") -> StageThreatContext:
-    return StageThreatContext(server="en", stage_code=stage_code, occurrences=tuple(occ))
+def _ctx(
+    *occ: EnemyOccurrence, stage_game_id: str = "main_04-04", stage_code: str = "4-4"
+) -> StageThreatContext:
+    # §V68/B136: game_id and stage_code differ on purpose -- "4-4" is shared by
+    # main_04-04 and main_04-04#f#, which is exactly why a ref may not be the code.
+    return StageThreatContext(
+        server="en",
+        stage_game_id=stage_game_id,
+        stage_code=stage_code,
+        occurrences=tuple(occ),
+    )
 
 
 DRONE = EnemyOccurrence(
@@ -68,6 +77,14 @@ def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
     ev = obs.evidence[0]
     assert ev.field == "motion_type"
     assert ev.value == "FLY"
+    # §V101/B137: how many drones the stage fields used to ride the deciding row as a
+    # "total_count=2" note -- a second number buried in a string the client had to parse.
+    # It is a fact with its own emitted field path, so it is its own row with no prose.
+    assert [(e.field, e.value) for e in obs.evidence] == [
+        ("motion_type", "FLY"),
+        ("total_count", 2),
+    ]
+    assert all(e.note is None for e in obs.evidence)
 
 
 def test_no_observation_when_only_ground_enemies() -> None:

@@ -2,6 +2,9 @@
 arts resistance are strongly asymmetric, so one damage type is far more effective
 against them than the other.
 
+Each enemy yields two evidence rows -- one per stat, each carrying its own scalar at
+its own emitted field path (§V101) -- with the skew direction stated in the note.
+
 Reads the typed ``defense`` + ``res`` stats only (§V26) -- never a name or
 description. Both stats must be present to judge a skew; a partially-typed enemy
 (one stat missing) is not concluded from, it is recorded as a limitation (§V26).
@@ -61,11 +64,12 @@ class DefResSkewRule:
             else:
                 continue
 
-            evidence.append(
-                EvidenceItem(
-                    ref=occ.game_id, field="def/res", value=f"def={d},res={r}", note=direction
-                )
-            )
+            # §V101/B137: one fact per row. This was a single row with an invented path
+            # ("def/res") and a packed value ("def=1000,res=0") the client had to split
+            # itself; both stats are separately emitted fields, so each gets its own row
+            # carrying its own scalar, with the comparison stated in the shared note.
+            evidence.append(EvidenceItem(ref=occ.game_id, field="def", value=d, note=direction))
+            evidence.append(EvidenceItem(ref=occ.game_id, field="res", value=r, note=direction))
             confidence = max(confidence, _CONFIDENCE)
 
         if not evidence:

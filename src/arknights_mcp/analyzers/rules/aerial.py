@@ -23,7 +23,7 @@ from arknights_mcp.analyzers.rules._common import (
     GROUND_MOTIONS,
     ability_tokens,
     by_game_id,
-    count_note,
+    count_evidence,
     distinct_refs,
 )
 
@@ -94,13 +94,13 @@ class AerialThreatRule:
                 continue
 
             evidence.append(
-                EvidenceItem(
-                    ref=occ.game_id,
-                    field=deciding_field,
-                    value=deciding_value,
-                    note=count_note(occ.total_count),
-                )
+                EvidenceItem(ref=occ.game_id, field=deciding_field, value=deciding_value)
             )
+            # §V101: the spawn count is a fact with its own field path -> its own row,
+            # never a "total_count=7" note welded onto the deciding row.
+            count_row = count_evidence(occ)
+            if count_row is not None:
+                evidence.append(count_row)
             confidence = max(confidence, conf)
             total_spawns += occ.total_count or 0
 

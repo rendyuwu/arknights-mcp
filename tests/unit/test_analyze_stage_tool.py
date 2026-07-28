@@ -290,7 +290,21 @@ def test_observations_carry_every_v6_field_at_all_depths(conn: sqlite3.Connectio
             assert isinstance(obs["limitations"], list)
             assert obs["analyzer_version"]
             for ev in obs["evidence"]:
-                assert set(ev) == {"ref", "field", "value", "note"}
+                # §V101: ref + field + value are the mandatory typed tuple. ``note`` is
+                # prose and ``count`` is §V85 dedup multiplicity, so both are omitted
+                # rather than shipped null (§V67) -- and after T197 most rows carry
+                # neither, because a number that used to sit in the note is now a row.
+                assert (
+                    {"ref", "field", "value"}
+                    <= set(ev)
+                    <= {
+                        "ref",
+                        "field",
+                        "value",
+                        "note",
+                        "count",
+                    }
+                )
                 assert ev["ref"] and ev["field"]
 
 

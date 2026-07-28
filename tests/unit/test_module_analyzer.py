@@ -212,13 +212,21 @@ def _token_module(talents: tuple[ModuleTalentChange, ...]) -> ModuleInput:
 def test_talent_observation_glosses_token_effect_index() -> None:
     # §T148/§V71: talentIndex -1 is the token/summon effect convention, not a numbered
     # talent; the observation glosses it as "the token effect" and leaks no bare -1 --
-    # neither in the summary nor the evidence (a typed token_effect flag instead).
+    # neither in the summary nor the evidence.
+    # §V101/§T197: the row names the path the WIRE really carries. It used to say
+    # ``talent_changes.token_effect``, a field no response has ever emitted, so the
+    # evidence pointed at nothing a client could look up; the label the service attaches
+    # (§V83) is ``applies_to: "token"``, and that is what the evidence names now.
     module = _token_module((ModuleTalentChange(talent_index=-1),))
     talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
     assert "token effect" in talent.summary  # type: ignore[attr-defined]
     assert "-1" not in talent.summary  # type: ignore[attr-defined]
     assert all(ev.value != -1 for ev in talent.evidence)  # type: ignore[attr-defined]
-    assert any(ev.field == "talent_changes.token_effect" for ev in talent.evidence)  # type: ignore[attr-defined]
+    token_rows = [  # type: ignore[attr-defined]
+        ev for ev in talent.evidence if ev.field == "talent_changes.applies_to"
+    ]
+    assert [ev.value for ev in token_rows] == ["token"]
+    assert not any("token_effect" in ev.field for ev in talent.evidence)  # type: ignore[attr-defined]
 
 
 def test_talent_observation_combines_numbered_and_token_effect() -> None:
@@ -288,6 +296,13 @@ def test_identical_trait_evidence_across_levels_collapses() -> None:
     assert row.count == 2 and row.value == 2
     assert row.note == "module level 2; module level 3"
     assert "level(s) 2, 3" in trait.summary  # type: ignore[attr-defined]
+    # §V101/B137: the row used to be ``field="trait_changes", value=1``, which read as a
+    # magnitude-free presence flag -- and ``trait_changes`` is emitted as a LIST, so the
+    # value was never that field's scalar. It now names the count of that emitted list.
+    assert row.field == "trait_changes.count"
+    # The level list stays in the note on purpose: ``count`` is §V85 dedup multiplicity
+    # and the §V101 tuple has no level slot, so prose is the only home the spec leaves.
+    assert row.note is not None and "module level" in row.note
 
 
 def test_distinct_evidence_values_stay_separate_rows() -> None:

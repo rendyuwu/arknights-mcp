@@ -17,8 +17,6 @@ several level variants counts once (§V35).
 
 from __future__ import annotations
 
-from typing import Any
-
 from arknights_mcp.analyzers.base import (
     EvidenceItem,
     Observation,
@@ -65,8 +63,14 @@ class PressureSpikeRule:
                 continue
             first, last = occ.first_spawn_time, occ.last_spawn_time
 
-            note: str
-            value: Any
+            # §V101/B137: the note used to read "13 spawns; computed window 7s is
+            # fragment-relative, not elapsed" -- it restated the typed value AND buried a
+            # second number the client had to parse out. The spawn count is the row's own
+            # value; the window's two operands are separately emitted fields, so each is
+            # its own row and the client derives the window itself. What the window MEANS
+            # (fragment-relative, may overstate the burst) is prose, and it already rides
+            # the per-enemy §V39 limitation, so no note is needed on any row.
+            spawn_bounds: tuple[EvidenceItem, ...] = ()
             if first is not None and last is not None:
                 window = max(last - first, 0.0)
                 if window > _SPIKE_MAX_WINDOW:
@@ -74,20 +78,18 @@ class PressureSpikeRule:
                 # B30/§V39: the window is fragment-relative preDelay aggregated across
                 # waves, not elapsed -> report the count but flag the window and reduce
                 # confidence; never present it as a confirmed elapsed burst.
-                value = count
-                note = (
-                    f"{count} spawns; computed window {window:g}s is fragment-relative, not elapsed"
+                spawn_bounds = (
+                    EvidenceItem(ref=occ.game_id, field="first_spawn_time", value=first),
+                    EvidenceItem(ref=occ.game_id, field="last_spawn_time", value=last),
                 )
                 conf = _CONF_WINDOWED
                 limitations.append(f"{occ.game_id}: {_FRAGMENT_WINDOW_LIMITATION}")
             else:
-                value, note = count, f"{count} spawns; spawn window unknown"
                 conf = _CONF_WINDOW_MISSING
                 limitations.append(f"{occ.game_id}: spawn timing missing; burst window unconfirmed")
 
-            evidence.append(
-                EvidenceItem(ref=occ.game_id, field="total_count", value=value, note=note)
-            )
+            evidence.append(EvidenceItem(ref=occ.game_id, field="total_count", value=count))
+            evidence.extend(spawn_bounds)
             confidence = max(confidence, conf)
 
         if not evidence:

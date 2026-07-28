@@ -114,6 +114,14 @@ class EnemyOccurrenceFacts:
     ``motion_type`` and stat block already read the variant's value over the base
     prefab (COALESCE in the repository; §V46); ``None`` for a plain base-enemy
     occurrence.
+
+    ``attack_range`` / ``block_behavior`` / ``abilities`` are the three typed fields the
+    ranged-arts, block-bypass and ability-token rules decide from. They are carried here
+    (§T197/§V101) because those rules cite them as evidence field paths, and a path this
+    response does not emit is one a client cannot look up -- the same defect as the packed
+    ``"def/res"`` pseudo-field (B137), and the same over-promising the ``detailed`` depth
+    was already caught doing in B41. ``abilities is None`` means the source carried no
+    such field; ``()`` means present-but-empty (§V26/B58).
     """
 
     game_id: str
@@ -136,6 +144,40 @@ class EnemyOccurrenceFacts:
     move_speed: float | None
     weight: int | None
     variant_id: str | None
+    attack_range: float | None = None
+    block_behavior: str | None = None
+    abilities: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class StageMetrics:
+    """The stage-level scalars the threat rules decide from (§V101 evidence targets).
+
+    ``route_record_count`` is deliberately not called ``route_count``: it counts raw
+    enemy-route RECORDS, which share start/end/checkpoint geometry, so it is not a
+    distinct-lane tally (§V49/B43) -- and the enemy occurrences already carry a
+    ``route_count`` meaning something narrower (how many records THAT enemy splits
+    across), so one name for both would be two meanings under one key (§V99).
+    Every field is optional: absent means the datum was not loaded, never zero (§V26/§V67).
+    """
+
+    route_record_count: int | None = None
+    tile_total: int | None = None
+    buildable_melee: int | None = None
+    buildable_ranged: int | None = None
+
+    def is_empty(self) -> bool:
+        """True when no metric was loaded, so the block is omitted rather than emitted
+        as an all-null object (§V67)."""
+        return all(
+            v is None
+            for v in (
+                self.route_record_count,
+                self.tile_total,
+                self.buildable_melee,
+                self.buildable_ranged,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -157,6 +199,11 @@ class StageAnalysisResult:
     #: §V102 (§T195): set when the requested ``stage_code`` matched more than one stage,
     #: so the tool can name the pick + its alternates instead of answering silently.
     ambiguity: StageAmbiguity | None = None
+    #: §V101 (§T197): the stage-level scalars the lane/route + tiles/deploy rules decide
+    #: from. They are emitted (as ``stage.metrics``) because the evidence rows name them
+    #: as field paths, and a path a response never carries is not one a client can look
+    #: up -- the same defect as the packed ``"def/res"`` pseudo-field (B137).
+    metrics: StageMetrics | None = None
 
 
 def _parse_abilities(raw: str | None) -> tuple[str, ...] | None:
@@ -310,6 +357,9 @@ def analyze_stage(
     occurrences: list[EnemyOccurrenceFacts] = []
     threat_inputs: list[EnemyOccurrence] = []
     for enemy in repo.stage_enemies(stage.stage_pk):
+        # §V37: decoded once and handed to BOTH the facts row and the rule input, so the
+        # evidence path and the value it names can never be decoded two different ways.
+        abilities = _parse_abilities(enemy.abilities_json)
         occurrences.append(
             EnemyOccurrenceFacts(
                 game_id=enemy.game_id,
@@ -332,6 +382,11 @@ def analyze_stage(
                 move_speed=enemy.move_speed,
                 weight=enemy.weight,
                 variant_id=enemy.variant_id,
+                # §V101/§T197: the fields the ranged-arts / block-bypass / ability-token
+                # rules cite as evidence paths, so those paths resolve on this response.
+                attack_range=enemy.attack_range,
+                block_behavior=enemy.block_behavior,
+                abilities=abilities,
             )
         )
         threat_inputs.append(
@@ -340,7 +395,7 @@ def analyze_stage(
                 display_name=enemy.display_name,
                 motion_type=enemy.motion_type,
                 attack_type=enemy.attack_type,
-                abilities=_parse_abilities(enemy.abilities_json),
+                abilities=abilities,
                 total_count=enemy.total_count,
                 defense=enemy.def_,
                 res=enemy.res,
@@ -365,14 +420,28 @@ def analyze_stage(
         else None
     )
 
+    route_count = repo.route_count(stage.stage_pk)
     analysis = run_threat_analysis(
         StageThreatContext(
             server=stage.server,
+            # §V68/B136: the analyzer refs evidence by the stage's unique game_id --
+            # stage_code is shared by the normal/tough variants and rides along for
+            # display only.
+            stage_game_id=stage.game_id,
             stage_code=stage.stage_code,
             occurrences=tuple(threat_inputs),
-            route_count=repo.route_count(stage.stage_pk),
+            route_count=route_count,
             tiles=tiles,
         )
+    )
+
+    # §V101: the same stage-level scalars the rules just decided from, carried out so the
+    # evidence rows that name them resolve against the response (§V67: absent, not zero).
+    metrics = StageMetrics(
+        route_record_count=route_count,
+        tile_total=tiles.total if tiles is not None else None,
+        buildable_melee=tiles.buildable_melee if tiles is not None else None,
+        buildable_ranged=tiles.buildable_ranged if tiles is not None else None,
     )
 
     return StageAnalysisResult(
@@ -384,6 +453,7 @@ def analyze_stage(
         warnings=analysis.warnings,
         analyzer_version=analysis.analyzer_version,
         ambiguity=ambiguity,
+        metrics=None if metrics.is_empty() else metrics,
     )
 
 

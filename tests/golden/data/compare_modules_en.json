@@ -146,7 +146,7 @@
       "evidence": [
         {
           "count": null,
-          "field": "trait_changes",
+          "field": "trait_changes.count",
           "note": "module level 1",
           "ref": "uniequip_002_amiya",
           "value": 1

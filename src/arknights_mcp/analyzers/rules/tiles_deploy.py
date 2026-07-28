@@ -49,20 +49,22 @@ class TilesDeployRule:
         if not scarce:
             return RuleResult()
 
-        stage_ref = ctx.stage_code or "stage"
+        # §V68/B136: ref = the stage's game_id, never the variant-shared stage_code.
+        # §V101: the tile counts are emitted at stage.metrics, so the evidence names that
+        # real path instead of a bare pseudo-field; the grid total was a number buried in
+        # the note ("of 88 tiles") and is now its own row, one fact per row.
         evidence = (
             EvidenceItem(
-                ref=stage_ref,
-                field="buildable_ranged",
+                ref=ctx.stage_game_id,
+                field="metrics.buildable_ranged",
                 value=tiles.buildable_ranged,
-                note=f"of {tiles.total} tiles",
             ),
             EvidenceItem(
-                ref=stage_ref,
-                field="buildable_melee",
+                ref=ctx.stage_game_id,
+                field="metrics.buildable_melee",
                 value=tiles.buildable_melee,
-                note=f"of {tiles.total} tiles",
             ),
+            EvidenceItem(ref=ctx.stage_game_id, field="metrics.tile_total", value=tiles.total),
         )
         return RuleResult(
             observation=Observation(

@@ -18,7 +18,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, count_note, distinct_refs
+from arknights_mcp.analyzers.rules._common import by_game_id, count_evidence, distinct_refs
 
 RULE_ID = "threat.ranged_arts"
 
@@ -61,15 +61,15 @@ class RangedArtsRule:
             else:
                 continue  # arts but melee range -> not a ranged-arts threat
 
-            cnote = count_note(occ.total_count)
             evidence.append(
-                EvidenceItem(
-                    ref=occ.game_id,
-                    field=deciding_field,
-                    value=deciding_value,
-                    note=f"{note} ({cnote})" if cnote else note,
-                )
+                EvidenceItem(ref=occ.game_id, field=deciding_field, value=deciding_value, note=note)
             )
+            # §V101: the spawn count used to be appended into this row's note as
+            # "(total_count=7)" -- it is a fact of its own, so it is a row of its own and
+            # the note is left as pure prose.
+            count_row = count_evidence(occ)
+            if count_row is not None:
+                evidence.append(count_row)
             confidence = max(confidence, conf)
 
         if not evidence:
