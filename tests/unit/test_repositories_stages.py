@@ -23,6 +23,7 @@ from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.repositories.stages import StageRepository
 from arknights_mcp.importers.enemies import import_enemies
 from arknights_mcp.importers.stages import import_stages
+from arknights_mcp.services.stages import MAX_STAGE_CODE_MATCHES
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
@@ -74,10 +75,11 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
     return open_read_only(db_path)
 
 
-def test_stage_by_code_carries_provenance(conn: sqlite3.Connection) -> None:
+def test_stages_by_code_carries_provenance(conn: sqlite3.Connection) -> None:
     repo = StageRepository(conn)
-    stage = repo.stage_by_code("en", "4-4")
-    assert stage is not None
+    # §V102 (§T195): a stage_code is not unique, so the read returns the whole matching
+    # set (bounded) in pick order and the service discloses; the fixture holds one.
+    (stage,) = repo.stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)
     assert stage.server == "en"
     assert stage.game_id == "main_04-04"
     assert stage.stage_code == "4-4"
@@ -90,25 +92,26 @@ def test_stage_by_code_carries_provenance(conn: sqlite3.Connection) -> None:
 
 def test_stage_by_game_id_matches_by_code(conn: sqlite3.Connection) -> None:
     repo = StageRepository(conn)
-    assert repo.stage_by_game_id("en", "main_04-04") == repo.stage_by_code("en", "4-4")
+    assert [repo.stage_by_game_id("en", "main_04-04")] == repo.stages_by_code(
+        "en", "4-4", MAX_STAGE_CODE_MATCHES
+    )
 
 
 def test_wrong_region_returns_none(conn: sqlite3.Connection) -> None:
     # §V5: en data is not surfaced under a cn lookup.
     repo = StageRepository(conn)
-    assert repo.stage_by_code("cn", "4-4") is None
+    assert repo.stages_by_code("cn", "4-4", MAX_STAGE_CODE_MATCHES) == []
     assert repo.stage_by_game_id("cn", "main_04-04") is None
 
 
 def test_absent_stage_returns_none(conn: sqlite3.Connection) -> None:
     repo = StageRepository(conn)
-    assert repo.stage_by_code("en", "9-9") is None
+    assert repo.stages_by_code("en", "9-9", MAX_STAGE_CODE_MATCHES) == []
 
 
 def test_stage_enemies_typed_occurrences(conn: sqlite3.Connection) -> None:
     repo = StageRepository(conn)
-    stage = repo.stage_by_code("en", "4-4")
-    assert stage is not None
+    (stage,) = repo.stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)
     by_id = {e.game_id: e for e in repo.stage_enemies(stage.stage_pk)}
     assert set(by_id) == {"enemy_1007_slime", "enemy_1105_drone"}
 
@@ -127,7 +130,6 @@ def test_repository_is_read_only(conn: sqlite3.Connection) -> None:
     # §V2: repository queries never write.
     before = conn.total_changes
     repo = StageRepository(conn)
-    stage = repo.stage_by_code("en", "4-4")
-    assert stage is not None
+    (stage,) = repo.stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)
     repo.stage_enemies(stage.stage_pk)
     assert conn.total_changes == before

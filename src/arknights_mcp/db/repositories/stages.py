@@ -165,8 +165,8 @@ def _stage_select(event_name: str) -> str:
     )
 
 
-_STAGE_BY_CODE_SQL = {
-    expr: _stage_select(expr) + "s.stage_code = ? ORDER BY s.stage_pk LIMIT 1"
+_STAGES_BY_CODE_SQL = {
+    expr: _stage_select(expr) + "s.stage_code = ? ORDER BY s.stage_pk LIMIT ?"
     for expr in _EVENT_NAME_EXPRESSIONS
 }
 _STAGE_BY_GAME_ID_SQL = {
@@ -421,10 +421,19 @@ class StageRepository(Repository):
         row = self._one(_STAGE_BY_GAME_ID_SQL[self._event_name], (server, game_id))
         return _to_stage_row(row) if row is not None else None
 
-    def stage_by_code(self, server: str, stage_code: str) -> StageRow | None:
-        """Stage for ``(server, stage_code)`` or ``None`` (first by ``stage_pk``)."""
-        row = self._one(_STAGE_BY_CODE_SQL[self._event_name], (server, stage_code))
-        return _to_stage_row(row) if row is not None else None
+    def stages_by_code(self, server: str, stage_code: str, limit: int) -> list[StageRow]:
+        """Every stage sharing ``(server, stage_code)``, ordered by ``stage_pk`` (§V102).
+
+        A stage_code is NOT unique: 927 en codes (2293 stages) on the 2026-07-28 build
+        are shared by two or more stages -- ``4-4`` by ``main_04-04`` and its four-star
+        ``main_04-04#f#``, ``LT-1`` by 36 tower stages. The lookup used to take the first
+        row and drop the rest silently, so the caller could neither disclose which one it
+        answered with nor name the alternates (B139). It returns the whole matching set,
+        bounded by ``limit`` (§V19 -- never an unbounded slice), and the service picks +
+        discloses. ``ORDER BY stage_pk`` keeps the pick deterministic across runs (§V91),
+        and the covering ``idx_stages_code`` serves the filter (§V94)."""
+        rows = self._all(_STAGES_BY_CODE_SQL[self._event_name], (server, stage_code, limit))
+        return [_to_stage_row(r) for r in rows]
 
     def stage_enemies(self, stage_pk: int) -> list[StageEnemyRow]:
         """Every enemy occurrence in the stage, ordered by ``game_id`` then variant."""

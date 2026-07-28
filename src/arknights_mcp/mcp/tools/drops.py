@@ -57,6 +57,11 @@ from arknights_mcp.mcp.tools._shared import (
     ranked_observation_to_dict,
     run_guarded,
 )
+from arknights_mcp.mcp.tools._stage_selector import (
+    STAGE_SELECTOR_NOTE,
+    stage_ambiguity_action,
+    stage_ambiguity_limitation,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.items import GetItemDropsInput
 from arknights_mcp.models.stages import GetStageDropsInput
@@ -73,7 +78,8 @@ _TOOL_NAME = "get_stage_drops"
 _TOOL_TITLE = "Get stage drops"
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's item drop rates by region + stage_code (e.g. 4-4) or "
-    "game_id, sourced from the Penguin Statistics cache. Each drop carries its "
+    "game_id, sourced from the Penguin Statistics cache. " + STAGE_SELECTOR_NOTE + " "
+    "Each drop carries its "
     "quantity, its times, and its drop_rate. The times is the sample run count. The "
     "drop_rate is the expected number of items per run (quantity divided by times), not "
     "a probability. The penguin provenance (snapshot and "
@@ -240,7 +246,14 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     the flag (or when nothing was rankable) all raw ``drops`` facts are emitted.
     """
     if result.status == "not_found" or result.stage is None:
-        return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
+        # §V102/§V24 (B139): a stage_code shared by several stages can make "no drop
+        # data" an artefact of the silent pick rather than of the cache, so the action
+        # names the alternates -- a retryable handle instead of a dead end.
+        return error(
+            "not_found",
+            _NOT_FOUND_MESSAGE,
+            suggested_action=stage_ambiguity_action(result.ambiguity, _NOT_FOUND_ACTION),
+        )
 
     shared_prov, deviations = hoist_drop_provenance([_drop_provenance_row(d) for d in result.drops])
 
@@ -298,7 +311,11 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     # per-drop ``expired`` flags + the staleness limitation (mirrors get_data_status).
     # build_envelope carries the status (ok | data_stale) + the full payload either
     # way, and still enforces the §V22 size cap.
-    limitations: tuple[str, ...] = (_STALE_LIMITATION,) if result.stale else ()
+    # §V102 (b)/B139: the shared-stage_code disclosure leads -- which stage these drop
+    # rates belong to decides whether the numbers answer the question that was asked.
+    limitations: tuple[str, ...] = stage_ambiguity_limitation(result.ambiguity)
+    if result.stale:
+        limitations = (*limitations, _STALE_LIMITATION)
     # §V104 (b)/(c): every drop row carries item_type, so its STATIC domain + the
     # source-defined "may grow" caveat ride the response rather than the description
     # (§V111 a) -- the domain is read against the token, post-call.

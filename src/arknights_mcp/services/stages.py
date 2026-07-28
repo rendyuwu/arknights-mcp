@@ -154,6 +154,9 @@ class StageAnalysisResult:
     observations: tuple[Observation, ...]
     warnings: tuple[str, ...]
     analyzer_version: str | None
+    #: §V102 (§T195): set when the requested ``stage_code`` matched more than one stage,
+    #: so the tool can name the pick + its alternates instead of answering silently.
+    ambiguity: StageAmbiguity | None = None
 
 
 def _parse_abilities(raw: str | None) -> tuple[str, ...] | None:
@@ -195,24 +198,79 @@ def _stage_facts(stage: StageRow) -> StageFacts:
     )
 
 
+#: §V102/§V19 (§T195): the bounded read behind an ambiguous ``stage_code``. The whole
+#: matching set is read so the pick can be disclosed with its alternates, but the read
+#: stays bounded -- never an unbounded slice (§V19). 64 is set well above the real
+#: maximum, COUNTED rather than guessed (§V96): the largest group on the 2026-07-28
+#: build is 36 stages (``LT-1``..``LT-6``, en + cn). A set that ever hits the cap is
+#: reported as truncated rather than silently undercounted (§V74 (a) precedent).
+MAX_STAGE_CODE_MATCHES = 64
+
+
+@dataclass(frozen=True)
+class StageAmbiguity:
+    """The disclosure owed when a ``stage_code`` selected more than one stage (§V102).
+
+    ``stage_code`` is unique to no one: on the 2026-07-28 build 927 en codes (2293
+    stages) are shared, so ``get_stage(stage_code="4-4")`` answered with ``main_04-04``
+    and never mentioned ``main_04-04#f#`` -- the client believed it asked about "4-4"
+    and got "4-4" (B139). This carries what the tool layer needs to say so: the code
+    asked for, the stage actually answered with (its ``game_id`` + its §V80-truthful
+    ``difficulty``), and the alternates' ``game_id``s -- the only handle that can select
+    one of them. TYPED data only; the client-facing wording lives in one home at the
+    tool layer (§V37/§V71).
+
+    ``truncated`` marks a matching set that hit :data:`MAX_STAGE_CODE_MATCHES`, so a
+    partial alternates list is never presented as complete (§V26).
+    """
+
+    stage_code: str
+    chosen_game_id: str
+    chosen_difficulty: str | None
+    alternates: tuple[str, ...]
+    truncated: bool
+
+
 def _resolve_stage(
     repo: StageRepository,
     server: str,
     *,
     stage_code: str | None,
     game_id: str | None,
-) -> StageRow | None:
+) -> tuple[StageRow | None, StageAmbiguity | None]:
     """Resolve a stage by ``game_id`` (preferred, unique) or ``stage_code`` (§V37).
 
-    Single home for the selector shared by :func:`analyze_stage` and
-    :func:`get_stage`. Raises :class:`ValueError` when neither is given (the tool
-    models require exactly one, but a direct caller must fail loudly, not silently).
+    Single home for the selector shared by :func:`analyze_stage`, :func:`get_stage`
+    and :func:`~arknights_mcp.services.drops.get_stage_drops`. Raises
+    :class:`ValueError` when neither is given (the tool models require exactly one, but
+    a direct caller must fail loudly, not silently).
+
+    Returns ``(stage, ambiguity)``. ``game_id`` is the unique key, so it never yields an
+    ambiguity. A ``stage_code`` matching several stages resolves DETERMINISTICALLY to
+    the lowest ``stage_pk`` -- the same stage every run (§V91) and the same one this
+    lookup has always returned (§V21: the pick does not change, only the disclosure is
+    added) -- and reports the rest as :class:`StageAmbiguity` so the caller can name the
+    pick and its alternates instead of answering half the question silently (§V102 b).
     """
     if game_id is not None:
-        return repo.stage_by_game_id(server, game_id)
-    if stage_code is not None:
-        return repo.stage_by_code(server, stage_code)
-    raise ValueError("stage lookup requires stage_code or game_id")
+        return repo.stage_by_game_id(server, game_id), None
+    if stage_code is None:
+        raise ValueError("stage lookup requires stage_code or game_id")
+    matches = repo.stages_by_code(server, stage_code, MAX_STAGE_CODE_MATCHES)
+    if not matches:
+        return None, None
+    chosen = matches[0]
+    if len(matches) == 1:
+        return chosen, None
+    return chosen, StageAmbiguity(
+        stage_code=stage_code,
+        chosen_game_id=chosen.game_id,
+        # §V80/B84: the truthful variant tag, through the same §V37 home the facts use --
+        # the disclosure must not say NORMAL about a stage the facts call FOUR_STAR.
+        chosen_difficulty=stage_variant(chosen.game_id, chosen.difficulty),
+        alternates=tuple(row.game_id for row in matches[1:]),
+        truncated=len(matches) == MAX_STAGE_CODE_MATCHES,
+    )
 
 
 def _not_found(server: str) -> StageAnalysisResult:
@@ -242,7 +300,7 @@ def analyze_stage(
     call this same function (§V14).
     """
     repo = StageRepository(conn)
-    stage = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
+    stage, ambiguity = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
 
     if stage is None:
         return _not_found(server)
@@ -325,6 +383,7 @@ def analyze_stage(
         observations=analysis.observations,
         warnings=analysis.warnings,
         analyzer_version=analysis.analyzer_version,
+        ambiguity=ambiguity,
     )
 
 
@@ -403,6 +462,8 @@ class StageDetailResult:
     spawns_page: SectionPage | None
     map_image: RenderedMap | None = None
     limitations: tuple[str, ...] = ()
+    #: §V102 (§T195): set when the requested ``stage_code`` matched more than one stage.
+    ambiguity: StageAmbiguity | None = None
 
 
 def _validate_page(page: int, page_size: int) -> tuple[int, int]:
@@ -523,7 +584,7 @@ def get_stage(
     rp, rsize = _validate_page(routes_page, routes_page_size)
     sp, ssize = _validate_page(spawns_page, spawns_page_size)
     repo = StageRepository(conn)
-    stage = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
+    stage, ambiguity = _resolve_stage(repo, server, stage_code=stage_code, game_id=game_id)
     if stage is None:
         return _not_found_detail(server)
 
@@ -631,4 +692,5 @@ def get_stage(
         spawns_page=spawns_page_info,
         map_image=map_image,
         limitations=tuple(limitations),
+        ambiguity=ambiguity,
     )

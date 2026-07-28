@@ -52,6 +52,7 @@ from arknights_mcp.db.repositories.stages import StageRepository
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
 from arknights_mcp.services.stages import (
     SectionPage,
+    StageAmbiguity,
     StageFacts,
     StageProvenance,
     _resolve_stage,
@@ -118,6 +119,14 @@ class StageDropsResult:
     warnings: tuple[str, ...]
     analyzer_version: str | None
     stale: bool
+    #: §V102 (§T195): set when the requested ``stage_code`` matched more than one stage.
+    #: Carried on the ``not_found`` result too, unlike the sibling stage tools: this tool
+    #: reports not_found for a resolved stage that simply has no drop cache, and on the
+    #: 2026-07-28 build 206 shared codes have a first-by-stage_pk stage with NO drops
+    #: while a sibling under the same code HAS them (cn "10-10" picks ``easy_10-09`` over
+    #: ``main_10-09``/``tough_10-09``) -- so the silent pick, not the data, produced the
+    #: "no drops" answer, and the alternates belong in the suggested action (§V24/§V102).
+    ambiguity: StageAmbiguity | None = None
 
 
 #: Typed outcome of an item->stage drop comparison (§T103). ``data_stale`` when at
@@ -252,7 +261,7 @@ def _drop_facts(row: StageDropRow, now: datetime) -> DropFacts:
     )
 
 
-def _not_found(server: str) -> StageDropsResult:
+def _not_found(server: str, ambiguity: StageAmbiguity | None = None) -> StageDropsResult:
     return StageDropsResult(
         status="not_found",
         server=server,
@@ -262,6 +271,7 @@ def _not_found(server: str) -> StageDropsResult:
         warnings=(),
         analyzer_version=None,
         stale=False,
+        ambiguity=ambiguity,
     )
 
 
@@ -293,7 +303,9 @@ def get_stage_drops(
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=UTC)
 
-    stage = _resolve_stage(StageRepository(conn), server, stage_code=stage_code, game_id=game_id)
+    stage, ambiguity = _resolve_stage(
+        StageRepository(conn), server, stage_code=stage_code, game_id=game_id
+    )
     if stage is None:
         return _not_found(server)
 
@@ -302,7 +314,10 @@ def get_stage_drops(
         # A stage with no drop cache asserts no drop fact -- report it as absent with
         # a suggested admin action (§V24), rather than an empty ``ok`` that reads as
         # "this stage drops nothing". The tool maps this to a not_found envelope.
-        return _not_found(server)
+        # §V102: the ambiguity rides along, because a shared stage_code makes this the
+        # ONE path where the silent pick can invent the absence -- the stage that has
+        # the drops may be an alternate under the very code the client asked for.
+        return _not_found(server, ambiguity)
 
     facts = tuple(_drop_facts(row, clock) for row in drop_rows)
     stale = any(f.expired for f in facts)
@@ -349,6 +364,7 @@ def get_stage_drops(
         warnings=warnings,
         analyzer_version=analyzer_version,
         stale=stale,
+        ambiguity=ambiguity,
     )
 
 

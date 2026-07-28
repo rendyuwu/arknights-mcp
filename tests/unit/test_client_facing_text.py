@@ -39,6 +39,7 @@ from arknights_mcp.mcp.tools._shared import (
     DB_UNAVAILABLE_ACTION,
     ENEMY_STAT_SCALE_NOTE,
     ENUM_LEGENDS,
+    LEVEL_VARIANT_NOTE,
     MODULE_CHANGE_DEDUP_NOTE,
     OPEN_ENUM_LIMITATIONS,
     SEARCH_COVERAGE_POINTER,
@@ -489,8 +490,15 @@ def test_moved_blocks_left_every_description() -> None:
 def test_level_variant_join_key_is_named() -> None:
     # §V104/§V69: a spawn's enemy_level_variant is the join key into the enemy's per-tier
     # stat block, and neither side named the other before.
-    for name in ("get_enemy", "get_stage", "analyze_stage"):
+    #
+    # §T195/§V111 (a): get_stage's copy MOVED to a limitation on the responses that emit
+    # the key (the opt-in spawn rows) to pay for the §V102 selector contract, so it is
+    # asserted where it now lives -- see tests/unit/test_stage_selector_ambiguity.py,
+    # which drives include_spawns and checks the note arrives beside the values. The two
+    # tools that emit the key unconditionally still carry it pre-call.
+    for name in ("get_enemy", "analyze_stage"):
         assert "enemy_level_variant" in _desc(name), name
+    assert "enemy_level_variant" in LEVEL_VARIANT_NOTE
 
 
 # --- §V71 (f)/§V111 (d) (T207, B156): the description budget is a NUMBER, over ALL ---

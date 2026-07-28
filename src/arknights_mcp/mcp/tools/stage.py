@@ -49,6 +49,10 @@ from arknights_mcp.mcp.tools._shared import (
     page_to_dict,
     run_guarded,
 )
+from arknights_mcp.mcp.tools._stage_selector import (
+    STAGE_SELECTOR_NOTE,
+    stage_ambiguity_limitation,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stage_map_render import RenderedMap
@@ -80,19 +84,26 @@ _TOOL_TITLE = "Get stage"
 #: * the deploy-vs-passable gloss -> nowhere, because it was already DUPLICATED by
 #:   :data:`_TILE_GRID_LIMITATION`, which rides every grid-bearing response (§V37).
 #:
+#: §T195/§V111 (b) added the §V102 selector contract (:data:`STAGE_SELECTOR_NOTE`) and paid
+#: for it by MOVING a fourth block rather than deleting one: :data:`LEVEL_VARIANT_NOTE` now
+#: rides as a limitation on the responses that actually emit the key it decodes -- the
+#: spawn rows' ``enemy_level_variant`` (this tool emits ``level_variant`` nowhere else), so
+#: it reaches the client beside the value instead of billing every caller who never sets
+#: ``include_spawns``. Same call §T207 made for the stat-scale + confidence notes.
+#:
 #: What leads is what a caller needs BEFORE the call (§V111 c): the selector, a worked
 #: example, and what each include_ flag adds.
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
-    "game_id. The default response is compact facts + provenance; set include_map "
+    "game_id. " + STAGE_SELECTOR_NOTE + " The default response is compact facts + "
+    "provenance; set include_map "
     "/ include_routes / include_spawns to add the tile grid, enemy routes, or spawn "
     "timeline. Set include_map_image for a rendered SVG map drawn from the stage's own "
     "grid data (a derived image, not game artwork); a very large map is omitted with a "
     "note. The SVG is for display only -- do not reason from the image; for tile-level "
     "reasoning use include_map's tile_grid. " + STAGE_MAP_GUIDE_POINTER + " "
     "Spawn timeline values (spawn_time and interval) are in seconds. "
-    + LEVEL_VARIANT_NOTE
-    + " difficulty is the stage variant tag; the response's enum_legend gives its values "
+    "difficulty is the stage variant tag; the response's enum_legend gives its values "
     "and those of stage_type. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
@@ -272,9 +283,13 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
     if result.routes_page is not None:
         data["routes"] = [_route_to_dict(r) for r in result.routes]
         data["routes_page"] = page_to_dict(result.routes_page)
+    spawn_limitation: tuple[str, ...] = ()
     if result.spawns_page is not None:
         data["spawns"] = [_spawn_to_dict(s) for s in result.spawns]
         data["spawns_page"] = page_to_dict(result.spawns_page)
+        # §V104/§V111 (a) (§T195): the join-key gloss rides the section that emits the
+        # key (spawn rows' ``enemy_level_variant``), not every caller's description.
+        spawn_limitation = (LEVEL_VARIANT_NOTE,)
     if result.map_image is not None:
         data["map_image"] = _map_image_to_dict(result.map_image)
 
@@ -291,8 +306,13 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
         # §V74 (d) forbidden-vs-passable gloss (when a grid is emitted), the §V22 map
         # caption (if any), plus the §V67/§V26 (B58) "not present in source" limitation
         # naming any expected stage scalar the source omitted.
+        # §V102 (b)/B139: when the requested stage_code named more than one stage, say
+        # WHICH one answered and name the alternates -- the pick was silent before, so a
+        # client could not tell it had been given half the answer.
         limitations=(
+            *stage_ambiguity_limitation(result.ambiguity),
             *tile_grid_limitation,
+            *spawn_limitation,
             *result.limitations,
             *_stage_absent_field_limitations(result.stage),
             *enum_limitations,
@@ -350,7 +370,8 @@ _ANALYZE_TOOL_NAME = "analyze_stage"
 _ANALYZE_TOOL_TITLE = "Analyze stage"
 _ANALYZE_TOOL_DESCRIPTION = (
     "Analyze one Arknights stage (by region + stage_code, e.g. 4-4, or game_id) "
-    "into deterministic, evidence-backed threat observations: each carries a "
+    "into deterministic, evidence-backed threat observations. " + STAGE_SELECTOR_NOTE + " "
+    "Each observation carries a "
     "rule_id, typed evidence, a confidence score, and limitations -- facts and "
     "observations only, never a mandatory or best-in-slot recommendation. depth "
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
@@ -450,7 +471,12 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     # max_life_points), so this surface carries the same sole-signal limitation
     # naming them as get_stage does; a detailed occurrence row likewise omits an
     # absent attack_type, so that omission is named too (sole signal, never silent).
-    limitations = _stage_absent_field_limitations(result.stage)
+    # §V102 (b)/B139: the shared-stage_code disclosure leads, at every depth -- which
+    # stage was analyzed is the first thing a client must be able to check.
+    limitations = (
+        *stage_ambiguity_limitation(result.ambiguity),
+        *_stage_absent_field_limitations(result.stage),
+    )
     if depth == "detailed" and any(o.attack_type is None for o in result.occurrences):
         limitations = (*limitations, _OCCURRENCE_ATTACK_TYPE_LIMITATION)
     # §V104 (b): only the DETAILED occurrence row carries enemy_class, so only it needs

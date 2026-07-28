@@ -32,8 +32,19 @@ class _StageSelector(StrictModel):
     """Region + exactly-one-of (stage_code | game_id) selector (§V5).
 
     A stage is addressed by its human ``stage_code`` (e.g. ``4-4``) or its unique
-    ``game_id``. Requiring exactly one keeps the lookup unambiguous; ``server`` is
+    ``game_id``. Requiring exactly one keeps the *call* unambiguous; ``server`` is
     mandatory so the fact is always region-attributed (§V5).
+
+    §V102 (a) (§T195, B139): the selector CONTRACT is client-facing text, so its home is
+    the tool description (:data:`~arknights_mcp.mcp.tools._shared.STAGE_SELECTOR_NOTE`,
+    carried by all three stage tools), NOT a ``Field(description=...)`` here: the
+    published schema strips every ``description`` keyword (§V71 b -- docstrings carry
+    internal cites), so text placed here would never reach a client. What the schema DOES
+    carry is the structural half -- the two optional selectors, their bounds, and
+    ``additionalProperties: false``. The "exactly one" rule was previously learnable only
+    by tripping this validator; the pick a shared ``stage_code`` resolves to is disclosed
+    per response as a limitation (§V102 b), since ``stage_code`` is not unique (927 en
+    codes are shared on the 2026-07-28 build).
     """
 
     server: Region
