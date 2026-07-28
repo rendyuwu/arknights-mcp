@@ -45,12 +45,7 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
-from arknights_mcp.services.image_refs import (
-    image_ref_to_dict,
-    named_skin_ref_to_dict,
-    operator_identity_refs,
-    operator_image_refs,
-)
+from arknights_mcp.services.image_refs import operator_ref_dicts
 from arknights_mcp.services.operators import (
     ModuleLevelFacts,
     OperatorDetailResult,
@@ -58,7 +53,6 @@ from arknights_mcp.services.operators import (
     OperatorModuleFacts,
     OperatorPhaseFacts,
     OperatorSkillFacts,
-    OperatorSkinFacts,
     OperatorSummary,
     OperatorTalentFacts,
     SkillLevelFacts,
@@ -274,36 +268,13 @@ def _operator_to_dict(
         # -- no byte, no url stored, no fetch. §V5: rides this operator's OWN region
         # envelope (game_id and skin rows are region-scoped) so en/cn never mix. §V19: a
         # bounded per-entity attach, never a catalog list/page/search.
-        # §T182/§V88: with the imported skin domain present the NAMED gallery replaces the
-        # derived base-outfit fallback -- one ref per operator_skins row (complete,
-        # named, alt-form-labeled); without it (pre-0014 build / combat-only snapshot)
-        # the base `_1b`/`_2b` fallback + the partial-gallery limitation stay (§V21).
-        if operator.skins:
-            refs = [image_ref_to_dict(r) for r in operator_identity_refs(operator.game_id)]
-            refs += [_named_skin_ref(s) for s in operator.skins]
-        else:
-            refs = [image_ref_to_dict(r) for r in operator_image_refs(operator.game_id)]
-        data["image_refs"] = refs
+        # §T182/§V88: with the imported skin domain present the NAMED gallery replaces
+        # the derived base-outfit fallback; without it (pre-0014 build / combat-only
+        # snapshot) the base `_1b`/`_2b` fallback + the partial-gallery limitation stay
+        # (§V21). That choice + the per-row shaping live in the §V37 service home
+        # (B125), so this transport only decides WHETHER to attach, never WHAT.
+        data["image_refs"] = operator_ref_dicts(operator.game_id, operator.skins)
     return data
-
-
-def _named_skin_ref(skin: OperatorSkinFacts) -> dict[str, object]:
-    """One named-gallery skin ref (§T182/§V88); shaping lives in the §V37 service home.
-
-    ``is_buy_skin`` is tri-state (§V67): only an explicit source ``True`` emits the
-    ``paid`` flag -- ``None`` (source did not state it) stays absent exactly like
-    ``False``, and the tool description says an absent field may mean "not stated by
-    the source" (never a fabricated not-paid claim).
-    """
-    return named_skin_ref_to_dict(
-        skin_id=skin.skin_id,
-        portrait_id=skin.portrait_id,
-        skin_name=skin.display_name,
-        skin_group_id=skin.skin_group_id,
-        skin_group_name=skin.skin_group_name,
-        alt_form=skin.is_alt_form,
-        paid=skin.is_buy_skin is True,
-    )
 
 
 def _shape(

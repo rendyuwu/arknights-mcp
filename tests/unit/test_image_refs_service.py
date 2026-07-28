@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from arknights_mcp.config import AppConfig, ImageRefsConfig, load_config
+from arknights_mcp.mcp.tools import operator as operator_tool
 from arknights_mcp.services import image_refs
 from arknights_mcp.services.image_refs import (
     IMAGE_REFS_BASE_URL,
@@ -41,9 +42,11 @@ from arknights_mcp.services.image_refs import (
     operator_identity_refs,
     operator_image_refs,
     operator_portrait_paths,
+    operator_ref_dicts,
     operator_skin_paths,
     skin_image_path,
 )
+from arknights_mcp.services.operators import OperatorSkinFacts
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_CONFIG = REPO_ROOT / "config.example.toml"
@@ -233,6 +236,82 @@ def test_identity_refs_are_portrait_plus_avatar_only() -> None:
         "skin",
         "skin",
     ]
+
+
+# --- §V37: the named-vs-fallback branch has ONE home (T189/B125) --------------------
+
+
+def _skin(
+    skin_id: str,
+    portrait_id: str,
+    *,
+    display_name: str | None = None,
+    skin_group_id: str | None = None,
+    skin_group_name: str | None = None,
+    is_buy_skin: bool | None = None,
+    is_alt_form: bool = False,
+) -> OperatorSkinFacts:
+    return OperatorSkinFacts(
+        skin_id=skin_id,
+        portrait_id=portrait_id,
+        display_name=display_name,
+        skin_group_id=skin_group_id,
+        skin_group_name=skin_group_name,
+        is_buy_skin=is_buy_skin,
+        is_alt_form=is_alt_form,
+    )
+
+
+def test_operator_ref_dicts_falls_back_without_skin_rows() -> None:
+    # §V88/§V21: a build with no imported skin domain keeps the derived _1b/_2b pair.
+    refs = operator_ref_dicts(OPERATOR_ID, [])
+    assert refs == [image_ref_to_dict(r) for r in operator_image_refs(OPERATOR_ID)]
+    assert [r["category"] for r in refs][-2:] == ["skin", "skin"]
+
+
+def test_operator_ref_dicts_named_gallery_replaces_fallback() -> None:
+    # §T182/§V88: with imported rows the NAMED gallery replaces the derived pair --
+    # identity refs (portrait+avatar) then one ref per skin row, never both galleries.
+    skins = [
+        _skin("char_002_amiya#1", "char_002_amiya_1", skin_group_id="ILLUST_0"),
+        _skin(
+            "char_002_amiya@epoque#4",
+            "char_002_amiya_epoque#4",
+            display_name="Epoque",
+            skin_group_name="Epoque series",
+            is_buy_skin=True,
+        ),
+    ]
+    refs = operator_ref_dicts(OPERATOR_ID, skins)
+    identity = [image_ref_to_dict(r) for r in operator_identity_refs(OPERATOR_ID)]
+    assert refs[: len(identity)] == identity
+    gallery = refs[len(identity) :]
+    assert [r["skin_id"] for r in gallery] == [s.skin_id for s in skins]
+    assert gallery[1]["path"] == "skin/char_002_amiya_epoque%234b.png"
+    # the derived fallback pair is GONE (no unnamed skin ref rides along).
+    assert all("skin_id" in r for r in gallery)
+    assert len(refs) == len(identity) + len(skins)
+
+
+def test_operator_ref_dicts_paid_is_tri_state() -> None:
+    # §V67: only an explicit source True emits `paid`; None (not stated) stays absent
+    # exactly like False -- never a fabricated not-paid claim.
+    unstated = operator_ref_dicts(OPERATOR_ID, [_skin("s", "p", is_buy_skin=None)])[-1]
+    explicit_false = operator_ref_dicts(OPERATOR_ID, [_skin("s", "p", is_buy_skin=False)])[-1]
+    explicit_true = operator_ref_dicts(OPERATOR_ID, [_skin("s", "p", is_buy_skin=True)])[-1]
+    assert "paid" not in unstated
+    assert "paid" not in explicit_false
+    assert explicit_true["paid"] is True
+
+
+def test_named_vs_fallback_branch_has_single_home() -> None:
+    # §V37/B125: the choice lives in the service; the tool layer decides only WHETHER
+    # to attach refs (the config+registry gate), never WHICH gallery to build.
+    tool_src = Path(operator_tool.__file__).read_text(encoding="utf-8")
+    assert "operator_ref_dicts" in tool_src
+    for gone in ("named_skin_ref_to_dict", "operator_identity_refs", "operator_image_refs"):
+        assert gone not in tool_src, gone
+    assert "if operator.skins" not in tool_src
 
 
 # --- §V1 / §V24: no network -------------------------------------------------------

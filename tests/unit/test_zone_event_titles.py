@@ -225,13 +225,14 @@ def test_silent_empty_title_map_fails_closed() -> None:
 
     Nothing downstream looks wrong when it happens -- every zone still has its
     subtitle -- so the importer refuses the snapshot instead of shipping a search
-    index that silently cannot answer an event name.
+    index that silently cannot answer an event name. Routed through the shared §V30
+    guard since T189/B125; the §V110/B155 cite rides in its message.
     """
     broken = {
         "basicInfo": ACTIVITY_TABLE["basicInfo"],
         "zoneToActivity": {"act25sre_zone1": "act_that_is_not_in_basic_info"},
     }
-    with pytest.raises(ImporterError, match="no event titles"):
+    with pytest.raises(ImporterError, match="none resolved to a zone event title"):
         parse_activity_titles(broken)
 
 

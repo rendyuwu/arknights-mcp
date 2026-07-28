@@ -46,6 +46,7 @@ from arknights_mcp.importers.field_policy import (
     LIMIT_PARAM_ALLOWLIST,
     apply_allowlist,
 )
+from arknights_mcp.importers.guards import guard_not_silently_empty
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
@@ -273,12 +274,15 @@ def import_banners(
         return BannerImportResult()
     gacha_raw = adapter.read_json(gacha_table_path)
     parsed = parse_banners(gacha_raw)
-    pool_count = _pool_entry_count(gacha_raw)
-    if pool_count and not parsed:
-        raise ImporterError(
-            f"{adapter.server}: gacha_table had {pool_count} pool entr(y|ies) but none "
-            "resolved to a banner; refusing a silent empty banner build (§V30)"
-        )
+    guard_not_silently_empty(
+        candidates=_pool_entry_count(gacha_raw),
+        produced=len(parsed),
+        scope=adapter.server,
+        source="gacha_table",
+        unit="pool entr(y|ies)",
+        resolution="resolved to a banner",
+        outcome="empty banner build",
+    )
     return insert_banners(
         conn,
         parsed,

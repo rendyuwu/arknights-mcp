@@ -51,10 +51,12 @@ E0-vs-E2 art from the typed field, not a filename-convention guess.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from arknights_mcp.services.operators import OperatorSkinFacts
     from arknights_mcp.sources.registry import SourceRegistry
 
 #: The registry ``source_id`` (§V27) for these references. Single home (§V37) for the
@@ -221,6 +223,42 @@ def named_skin_ref_to_dict(
     if paid:
         ref["paid"] = True
     return ref
+
+
+def operator_ref_dicts(game_id: str, skins: Sequence[OperatorSkinFacts]) -> list[dict[str, object]]:
+    """An operator's full ``image_refs`` list: NAMED gallery, else the derived fallback.
+
+    The single §V37 home (B125) for the named-vs-fallback choice §T182/§V88 introduced,
+    which had been living in the tool layer: with imported ``operator_skins`` rows the
+    complete NAMED gallery replaces the derived base-outfit pair (identity refs + one
+    :func:`named_skin_ref_to_dict` per row -- named, alt-form-labeled); without them
+    (a pre-0014 build, or a combat-only snapshot) the operator keeps the derived
+    ``_1b``/``_2b`` fallback of :func:`operator_image_refs` plus the partial-gallery
+    limitation the wiring attaches (§V21 stale-active-db degrade).
+
+    ``is_buy_skin`` is tri-state (§V67): only an explicit source ``True`` emits the
+    ``paid`` flag -- ``None`` (the source did not state it) stays absent exactly like
+    ``False``, so an unstated field is never emitted as a fabricated not-paid claim.
+
+    Pure derivation over already-stored ids -- no URL stored, no fetch (§V63/§V1).
+    Whether the result is emitted at all is the wiring's gate (:func:`refs_enabled`).
+    """
+    if not skins:
+        return [image_ref_to_dict(ref) for ref in operator_image_refs(game_id)]
+    refs = [image_ref_to_dict(ref) for ref in operator_identity_refs(game_id)]
+    refs += [
+        named_skin_ref_to_dict(
+            skin_id=skin.skin_id,
+            portrait_id=skin.portrait_id,
+            skin_name=skin.display_name,
+            skin_group_id=skin.skin_group_id,
+            skin_group_name=skin.skin_group_name,
+            alt_form=skin.is_alt_form,
+            paid=skin.is_buy_skin is True,
+        )
+        for skin in skins
+    ]
+    return refs
 
 
 def enemy_image_path(game_id: str) -> str:

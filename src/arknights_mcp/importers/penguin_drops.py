@@ -36,6 +36,7 @@ from arknights_mcp.importers.field_policy import (
     REGION_TO_NAME_LOCALE,
     apply_allowlist,
 )
+from arknights_mcp.importers.guards import guard_not_silently_empty
 from arknights_mcp.importers.manifest import insert_record_provenance, make_snapshot_id
 from arknights_mcp.sources.penguin_statistics import DEFAULT_SOURCE_ID
 from arknights_mcp.util.coerce import as_int, as_str
@@ -400,11 +401,15 @@ def import_penguin_drops(
     # §V30: a non-empty matrix yielding zero stored drops is a silent-empty regression
     # (a stageId/itemId join failure, or drops fetched for a region with no stages).
     # Fail closed so the candidate is discarded and the active DB stays untouched (§V3).
-    if parsed_drops and drops_inserted == 0:
-        raise ImporterError(
-            f"{region}: penguin matrix had {len(parsed_drops)} drop row(s) but none resolved "
-            "to a stage+item; refusing a silent empty drop build (§V30)"
-        )
+    guard_not_silently_empty(
+        candidates=len(parsed_drops),
+        produced=drops_inserted,
+        scope=region,
+        source="penguin matrix",
+        unit="drop row(s)",
+        resolution="resolved to a stage+item",
+        outcome="empty drop build",
+    )
 
     return PenguinDropImportResult(
         region=region,

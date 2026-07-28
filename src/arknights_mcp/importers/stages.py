@@ -19,6 +19,7 @@ from arknights_mcp.importers.field_policy import (
     ZONE_ALLOWLIST,
     apply_allowlist,
 )
+from arknights_mcp.importers.guards import guard_not_silently_empty
 from arknights_mcp.importers.levels import LevelImportResult, insert_level, parse_level
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.normalization import (
@@ -155,11 +156,15 @@ def parse_activity_titles(activity_raw: Any) -> dict[str, ParsedActivity]:
         activity = titles.get(act_id)
         if activity is not None:
             by_zone[zone_id] = activity
-    if basic_info and not by_zone:
-        raise ImporterError(
-            "activity table yielded no event titles: basicInfo has "
-            f"{len(basic_info)} entries but zoneToActivity resolved none (§V110/B155)"
-        )
+    guard_not_silently_empty(
+        candidates=len(basic_info),
+        produced=len(by_zone),
+        source="activity_table",
+        unit="basicInfo entr(y|ies)",
+        resolution="resolved to a zone event title",
+        outcome="empty event-title map",
+        cite="§V110/B155",
+    )
     return by_zone
 
 

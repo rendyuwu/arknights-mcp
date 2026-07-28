@@ -24,7 +24,6 @@ discarded, and the active database stays untouched (fail-closed, §V3).
 from __future__ import annotations
 
 import json
-import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -33,7 +32,12 @@ from pathlib import Path
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.importers.banners import BannerImportResult, import_banners
-from arknights_mcp.importers.enemies import ImporterError, import_enemies
+from arknights_mcp.importers.enemies import import_enemies
+from arknights_mcp.importers.guards import (
+    guard_not_silently_empty,
+    import_optional_domain,
+    refuse_silent_empty,
+)
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
 from arknights_mcp.importers.modules import import_modules
 from arknights_mcp.importers.operators import import_operators
@@ -42,9 +46,6 @@ from arknights_mcp.importers.skins import SkinImportResult, import_skins
 from arknights_mcp.importers.stages import StageImportResult, import_stages
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.sources.registry import SourceRegistry, SourceRegistryEntry
-from arknights_mcp.util.sqlite import savepoint
-
-_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -179,42 +180,34 @@ def _import_one(
     # a snapshot without uniequip_table imports zero (optional per snapshot, §V30
     # is combat-scoped).
     modules = import_modules(conn, job.adapter, record.snapshot_id)
-    # Banners soft-resolve featured char ids to an operator_pk, so they import after
-    # operators, INSIDE this main build (not as a post-promotion ride-along) -- a
-    # snapshot without gacha_table imports zero (optional per snapshot, B36/§V41). But an
-    # OPTIONAL archive must not fail-close the MANDATORY combat core (§V62/§V58/B53), so
-    # the banner import is savepoint-isolated: a banner ImporterError (§V30 non-empty
-    # gacha_table -> 0 banners, or a §V33 dup gachaPoolId / repeated featured char id)
-    # rolls back only THIS region's partial banner + featured-op + provenance rows and the
-    # build continues game-data-only (banners are outside CRITICAL_TABLES, so an empty
-    # archive is legitimate; §V3 combat fail-closed unchanged). The savepoint name is fixed
-    # because regions run sequentially (mirrors _ride_along's fixed "ride_along" name).
-    try:
-        with savepoint(conn, "banners"):
-            banners = import_banners(conn, job.adapter, record.snapshot_id)
-    except ImporterError as exc:
-        _LOG.warning(
-            "%s: banner archive unavailable, skipped; continuing combat build (§V62/§V58): %s",
-            job.server,
-            exc,
-        )
-        banners = BannerImportResult()
-    # Skins are the same optional fail-open class as banners (§V88/§V58, ADR 0015):
-    # they soft-resolve char ids to an operator_pk so they import after operators, and
-    # a skin ImporterError (§V30 non-empty charSkins -> 0 skins, or a §V33 dup skinId)
-    # rolls back only THIS region's partial skin + provenance rows; the combat build
-    # continues (operator_skins is outside CRITICAL_TABLES, so an empty gallery is
-    # legitimate; §V3 combat fail-closed unchanged).
-    try:
-        with savepoint(conn, "skins"):
-            skins = import_skins(conn, job.adapter, record.snapshot_id)
-    except ImporterError as exc:
-        _LOG.warning(
-            "%s: skin gallery unavailable, skipped; continuing combat build (§V88/§V58): %s",
-            job.server,
-            exc,
-        )
-        skins = SkinImportResult()
+    # Banners and skins are the OPTIONAL fail-open domains of the main build (§V58):
+    # both soft-resolve char ids to an operator_pk so both import after operators,
+    # INSIDE this build (not as a post-promotion ride-along), and a snapshot carrying
+    # neither table imports zero of each (optional per snapshot, B36/§V41). An optional
+    # domain must not fail-close the MANDATORY combat core (§V62/§V88/B53), so each runs
+    # under import_optional_domain (the §V37 home, B125): its ImporterError (a §V30
+    # non-empty-source-zero-rows guard, or a §V33 dup gachaPoolId / skinId) rolls back
+    # only THIS region's partial domain + provenance rows and the build continues
+    # game-data-only -- neither table is CRITICAL, so an empty archive/gallery is
+    # legitimate and §V3 combat fail-closed is unchanged.
+    banners = import_optional_domain(
+        conn,
+        lambda: import_banners(conn, job.adapter, record.snapshot_id),
+        domain="banners",
+        server=job.server,
+        describe="banner archive",
+        empty=BannerImportResult,
+        cites="§V62/§V58",
+    )
+    skins = import_optional_domain(
+        conn,
+        lambda: import_skins(conn, job.adapter, record.snapshot_id),
+        domain="skins",
+        server=job.server,
+        describe="skin gallery",
+        empty=SkinImportResult,
+        cites="§V88/§V58",
+    )
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
@@ -247,16 +240,23 @@ def _guard_not_silently_empty(server: str, stages: StageImportResult) -> None:
     build with empty combat data.
     """
     lv = stages.levels
-    if stages.levels_referenced and stages.levels_imported == 0:
-        raise ImporterError(
-            f"{server}: {stages.levels_referenced} stage(s) reference a level file but none "
-            "resolved; refusing a silent empty combat build (§V30)"
-        )
+    guard_not_silently_empty(
+        candidates=stages.levels_referenced,
+        produced=stages.levels_imported,
+        scope=server,
+        source="stage_table",
+        unit="stage(s) referencing a level file",
+        resolution="resolved to an imported level",
+        outcome="empty combat build",
+    )
+    # The second case does not fit the shared candidates-vs-produced predicate (three
+    # downstream counts, any one of them zero), so it states its own reason and raises
+    # through the same §V37 refusal home rather than re-forking the message (B125).
     if stages.levels_imported and (lv.tiles == 0 or lv.spawns == 0 or lv.stage_enemies == 0):
-        raise ImporterError(
+        refuse_silent_empty(
             f"{server}: imported {stages.levels_imported} level file(s) but produced "
-            f"tiles={lv.tiles} spawns={lv.spawns} stage_enemies={lv.stage_enemies}; "
-            "refusing a silent empty combat build (§V30)"
+            f"tiles={lv.tiles} spawns={lv.spawns} stage_enemies={lv.stage_enemies}",
+            outcome="empty combat build",
         )
 
 

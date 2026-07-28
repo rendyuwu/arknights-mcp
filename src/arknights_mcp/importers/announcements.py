@@ -32,6 +32,7 @@ from arknights_mcp.importers.field_policy import (
     FIELD_POLICY_VERSION,
     apply_allowlist,
 )
+from arknights_mcp.importers.guards import guard_not_silently_empty
 from arknights_mcp.importers.manifest import insert_record_provenance, make_snapshot_id
 from arknights_mcp.sources.announcements import source_id_for_region
 from arknights_mcp.util.coerce import as_int, as_str
@@ -267,11 +268,15 @@ def import_announcements(
     # so the candidate is discarded and the active DB stays untouched (§V3). A
     # genuinely empty feed (no dict entries) imports zero rows without error --
     # ``announcements`` is not a CRITICAL_TABLE (disabled by default, D14/§V56).
-    if skipped and not parsed:
-        raise ImporterError(
-            f"{region}: announcement feed had {skipped} entr(y|ies) but none carried an "
-            "announceId; refusing a silent empty announcement build (§V30)"
-        )
+    guard_not_silently_empty(
+        candidates=skipped,
+        produced=len(parsed),
+        scope=region,
+        source="announcement feed",
+        unit="entr(y|ies)",
+        resolution="carried an announceId",
+        outcome="empty announcement build",
+    )
     if skipped:
         _LOG.warning(
             "announcements %s: %d feed entr(y|ies) skipped (missing announceId)", region, skipped
@@ -291,12 +296,17 @@ def import_announcements(
     # carry no readable date is indistinguishable from a broken date-map, so both are
     # refused rather than promoted as a silently degraded build. (url/category are not
     # filter keys, so their absence degrades visibly, not silently -- not a trip.)
-    if parsed and all(a.date is None for a in parsed):
-        raise ImporterError(
-            f"{region}: announcement feed had {len(parsed)} entr(y|ies) but none carried a "
-            "mapped date; refusing a silent degraded announcement build "
-            "(§V30/§V61) -- the feed field-map matched no known date shape"
-        )
+    guard_not_silently_empty(
+        candidates=len(parsed),
+        produced=sum(1 for a in parsed if a.date is not None),
+        scope=region,
+        source="announcement feed",
+        unit="entr(y|ies)",
+        resolution="carried a mapped date",
+        outcome="degraded announcement build",
+        cite="§V30/§V61",
+        detail=" -- the feed field-map matched no known date shape",
+    )
 
     fetched_iso = fetched_dt.isoformat()
     snapshot_id = _insert_snapshot(

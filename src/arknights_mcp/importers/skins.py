@@ -47,6 +47,7 @@ from arknights_mcp.importers.field_policy import (
     SKIN_ALLOWLIST,
     apply_allowlist,
 )
+from arknights_mcp.importers.guards import guard_not_silently_empty
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.importers.operators import operator_pk_by_game_id
 from arknights_mcp.sources.base import SourceAdapter
@@ -240,11 +241,15 @@ def import_skins(
     skin_raw = adapter.read_json(skin_table_path)
     parsed = parse_skins(skin_raw)
     candidate_count = _operator_entry_count(skin_raw)
-    if candidate_count and not parsed:
-        raise ImporterError(
-            f"{adapter.server}: skin_table had {candidate_count} operator skin entr(y|ies) "
-            "but none resolved to a skin row; refusing a silent empty skin gallery (§V30)"
-        )
+    guard_not_silently_empty(
+        candidates=candidate_count,
+        produced=len(parsed),
+        scope=adapter.server,
+        source="skin_table",
+        unit="operator skin entr(y|ies)",
+        resolution="resolved to a skin row",
+        outcome="empty skin gallery",
+    )
     skipped = candidate_count - len(parsed)
     if skipped > 0:
         _LOG.warning(
