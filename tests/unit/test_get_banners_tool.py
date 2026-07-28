@@ -252,11 +252,11 @@ def test_classic_family_partial_resolve(conn: sqlite3.Connection) -> None:
         "resolved": True,
         "operator_name": "Amiya",
     }
-    assert resolved["char_999_ghost"] == {
-        "char_id": "char_999_ghost",
-        "resolved": False,
-        "operator_name": None,
-    }
+    # §V67/§V69 (B135/T196): the unresolved op keeps its raw id and drops the name key
+    # rather than carrying ``operator_name: null``. ``resolved: False`` is the typed
+    # signal that the id had no name in this build -- a null beside it said the same
+    # thing a second, weaker way (B98: never null AND a flag for one absence).
+    assert resolved["char_999_ghost"] == {"char_id": "char_999_ghost", "resolved": False}
 
 
 def test_standard_banner_has_no_featured_op_and_limitation(conn: sqlite3.Connection) -> None:

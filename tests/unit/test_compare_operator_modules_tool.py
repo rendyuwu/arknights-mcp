@@ -113,7 +113,10 @@ def test_facts_only_compares_all_three_levels(conn: sqlite3.Connection) -> None:
     assert data["levels"] == [1, 2, 3]
     # facts_only carries no observations section.
     assert "observations" not in data and "warnings" not in data
-    assert env.to_dict()["analyzer_version"] is None
+    # §V67 (B135/T196): facts_only runs no analyzer, so the envelope omits the key
+    # rather than reporting a null version a client would have to interpret.
+    assert env.analyzer_version is None
+    assert "analyzer_version" not in env.to_dict()
     module = _cx1(data)
     assert module["module_type"] == "CX-1"
     levels = {lv["level"]: lv for lv in module["levels"]}

@@ -214,9 +214,13 @@ def test_v70_variant_stages_distinguishable_by_difficulty(tmp_path: Path) -> Non
     assert by_game_id["main_04-04"]["difficulty"] != by_game_id["main_04-04#f#"]["difficulty"]
 
 
-def test_stage_without_difficulty_carries_null_tag(tmp_path: Path) -> None:
-    # §V21 additive: a stage with no difficulty in source keeps the key present
-    # with a null value (the outer join never drops the row).
+def test_stage_without_difficulty_omits_the_tag(tmp_path: Path) -> None:
+    # §V67 (B135/T196): a stage with no difficulty in source OMITS the key. This test
+    # used to pin the opposite ("keeps the key present with a null value", read as §V21
+    # additive) -- that is exactly the null §V67 forbids, since a client cannot tell
+    # "this stage has no difficulty tier" from "the tier is unknown" out of a null. The
+    # row still arrives (the outer join never drops it), which is what §V21 protects; the
+    # variant tag is simply absent, and the locator stays distinguishable by game_id.
     path = tmp_path / "nodiff.sqlite"
     writer = build_database(path)
     prov = _seed_provenance(writer)
@@ -226,8 +230,9 @@ def test_stage_without_difficulty_carries_null_tag(tmp_path: Path) -> None:
     writer.close()
     with open_read_only(path) as conn:
         rows = _handler(conn)(query="4-4").to_dict()["data"]["results"]  # type: ignore[index]
-    assert rows[0]["difficulty"] is None
-    assert "difficulty" in rows[0]
+    assert "difficulty" not in rows[0]
+    # The row itself is still delivered, with its identity keys intact.
+    assert rows[0]["game_id"] == "main_04-04"
 
 
 def test_v80_tough_and_easy_prefix_locators_truthful(tmp_path: Path) -> None:

@@ -31,13 +31,19 @@ class ActiveSnapshotInfo:
     imported_at: str
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "server": self.server,
-            "snapshot_id": self.snapshot_id,
-            "commit_sha": self.commit_sha,
-            "upstream_version": self.upstream_version,
-            "imported_at": self.imported_at,
-        }
+        # §V67 (B135): a local-snapshot import has no upstream commit or version, so
+        # those keys are absent rather than null -- the same shape the sibling
+        # ``SnapshotStatus`` (services/status.py) already emits for get_data_status.
+        # The envelope sweep would drop them anyway; doing it here keeps the DOMAIN
+        # result identical to the wire, which is what lets the §V34 "resource == service"
+        # equality hold as a plain comparison.
+        out: dict[str, object] = {"server": self.server, "snapshot_id": self.snapshot_id}
+        if self.commit_sha is not None:
+            out["commit_sha"] = self.commit_sha
+        if self.upstream_version is not None:
+            out["upstream_version"] = self.upstream_version
+        out["imported_at"] = self.imported_at
+        return out
 
 
 @dataclass(frozen=True)

@@ -646,13 +646,14 @@ def page_to_dict(page: SectionPage) -> dict[str, object]:
 #: carried no such data; a value is never ``null``, so a client need not decide
 #: "none vs unknown". Shared: one wording, one home (§V37). Client-facing text, so no
 #: internal cites/jargon (§V71) -- the cites live in this comment, never the emitted
-#: string.
+#: string. §T196/B135 made the promise unconditional -- see
+#: :mod:`arknights_mcp.mcp.payload_hygiene`, which now enforces it for every tool.
 LIST_FIELD_CONVENTION = (
-    "Field conventions: a list field is [] when the source confirms none, and is "
-    "omitted entirely when the source carries no such data (never null). Some "
-    "optional scalar fields are likewise omitted when the source carries no value; "
-    "a numeric stat the source lacks may instead be null. A field the "
-    "response would normally include but the source omits is named in limitations."
+    "Field conventions: no field is ever null. A list field is [] when the source "
+    "confirms none, and is omitted entirely when the source carries no such data; an "
+    "optional scalar is likewise omitted when the source carried no value. A field the "
+    "response would normally include but the source omits is named in limitations, as is "
+    "a name or description the source fills with placeholder characters."
 )
 
 

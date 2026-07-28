@@ -15,6 +15,10 @@ Three invariants live here:
   The builder measures the serialized envelope and, when a payload would exceed
   the cap, fails closed to a bounded ``partial`` envelope (data dropped, a cap
   limitation added) rather than emitting an oversized response.
+* **§V67/§V103** -- the payload rules, applied once here for every tool because
+  four per-surface rollouts did not close them (B135): no ``null`` reaches the
+  wire, and a masked source name/description carries its disclosure (B141). See
+  :mod:`arknights_mcp.mcp.payload_hygiene`.
 * **§V23** -- every result carries a typed status from :data:`STATUS_VALUES`; an
   unknown status is rejected. Error envelopes never leak a stack trace or local
   path -- :func:`internal_error` emits a fixed, safe message and keeps any
@@ -33,6 +37,8 @@ from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from pydantic import ValidationError
+
+from arknights_mcp.mcp.payload_hygiene import clean_payload
 
 #: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
@@ -139,14 +145,20 @@ class ResponseEnvelope:
         # §I field order: schema_version -> status -> data -> provenance ->
         # limitations -> analyzer_version. Dicts preserve insertion order, so the
         # emitted JSON matches the contract shape.
-        return {
+        body: dict[str, object] = {
             "schema_version": self.schema_version,
             "status": self.status,
             "data": dict(self.data),
             "provenance": [p.to_dict() for p in self.provenance],
             "limitations": list(self.limitations),
-            "analyzer_version": self.analyzer_version,
         }
+        # §V67 (B135): a non-analysis tool runs no analyzer, so it has no analyzer
+        # version -- the key is absent rather than an ambiguous null. ``data`` is
+        # swept at :func:`build_envelope`; this is the one null that lives on the
+        # envelope itself, outside that payload.
+        if self.analyzer_version is not None:
+            body["analyzer_version"] = self.analyzer_version
+        return body
 
 
 def serialized_size(envelope: ResponseEnvelope) -> int:
@@ -209,13 +221,23 @@ def build_envelope(
     Rejects an unknown ``status`` (§V23) and enforces the §V22 cap: a payload
     that would serialize over :data:`MAX_RESPONSE_BYTES` is returned as a bounded
     ``partial`` envelope instead.
+
+    Every tool result converges here, so this is where the two payload rules apply
+    (:func:`~arknights_mcp.mcp.payload_hygiene.clean_payload`): ``null`` leaves are
+    dropped (§V67) and a masked source name/description earns its §V103 disclosure.
+    Doing it here rather than at each shaping site is the point -- B135's null
+    discipline had been rolled out four times, once per surface under review, and
+    each pass left the surfaces nobody was looking at still shipping nulls. The
+    sweep runs BEFORE the §V22 cap so the cap measures the bytes actually emitted,
+    disclosure included.
     """
     _validate_status(status)
+    payload, payload_limitations = clean_payload(data if data is not None else {})
     envelope = ResponseEnvelope(
         status=status,
-        data=dict(data) if data is not None else {},
+        data=payload,
         provenance=tuple(provenance),
-        limitations=tuple(limitations),
+        limitations=(*limitations, *payload_limitations),
         analyzer_version=analyzer_version,
     )
     return _enforce_cap(envelope)
