@@ -56,6 +56,7 @@ _PUBLIC_FIELDS = frozenset(
         "redistribution_status",
         "attribution_text",
         "contact_url",
+        "internal_ref",
         "enabled",
         "last_reviewed_at",
     }
@@ -95,6 +96,12 @@ class SourceRegistryEntry(BaseModel):
     redistribution_status: str = ""
     attribution_text: str = ""
     contact_url: str = ""
+    #: §V71 (b) (B131): the ONE place an internal reference (a founder decision id, a
+    #: milestone, an ADR number, a spec cite) may ride the public projection. The registry
+    #: ships VERBATIM to an MCP client through :meth:`public_view`, so a cite parked inside
+    #: ``purpose`` prose IS a wire cite the client must read past; here it is an explicitly
+    #: ignorable field a client can skip whole. Every OTHER public field stays cite-free.
+    internal_ref: str = ""
     policy_notes: str = ""
     enabled: bool = False
     last_reviewed_at: str = ""

@@ -24,7 +24,10 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    ENEMY_CLASS_NOTE,
+    ENEMY_STAT_SCALE_NOTE,
     IMAGE_REFS_PATH_NOTE,
+    LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
     ConnectionProvider,
     absent_field_limitation,
@@ -47,10 +50,18 @@ _TOOL_DESCRIPTION = (
     "Fetch one Arknights enemy's facts by region + game_id: class, boss/elite "
     "flags, attack/motion type, and the per-level stat block (hp, atk, def, res, "
     "attack interval in seconds, attack range, move speed, weight, life-point "
-    "reduction) with immunities and abilities. When the image-reference source is "
+    "reduction) with immunities and abilities. "
+    + ENEMY_CLASS_NOTE
+    + " "
+    + ENEMY_STAT_SCALE_NOTE
+    + " "
+    + LEVEL_VARIANT_NOTE
+    + " When the image-reference source is "
     "enabled, an additional image_refs list with the derived enemy sprite reference is "
-    "included. " + IMAGE_REFS_PATH_NOTE + " Each ref carries a variant label (the enemy "
-    "sprite is variant base). en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "included, decoded by the image_refs_legend it carries. "
+    + IMAGE_REFS_PATH_NOTE
+    + " en/cn are never mixed. "
+    + LIST_FIELD_CONVENTION
 )
 
 _NOT_FOUND_MESSAGE = "no enemy matched the given region and game_id"

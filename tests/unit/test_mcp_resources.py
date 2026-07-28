@@ -27,6 +27,7 @@ from mcp.types import ReadResourceResult, Resource, ResourceTemplate
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
+from arknights_mcp.instructions import BLACKBOARD_KEY_ENTRIES, BLACKBOARD_KEY_GLOSSARY
 from arknights_mcp.mcp.resources import (
     ResourceError,
     ResourceRegistry,
@@ -81,7 +82,7 @@ def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None
 
     fixed_uris = {str(r.uri) for r in fixed}
     template_uris = {r.uriTemplate for r in templates}
-    assert fixed_uris == {"arknights://sources"}
+    assert fixed_uris == {"arknights://sources", "arknights://glossary/blackboard"}
     assert template_uris == {
         "arknights://enemy/{server}/{game_id}",
         "arknights://stage/{server}/{stage_id}",
@@ -172,6 +173,43 @@ def test_sources_read_is_public_safe(
     dumped = json.dumps(body)
     assert "policy_notes" not in dumped
     assert str(REPO_ROOT) not in dumped
+
+
+# --- §V84/B144: the blackboard glossary's CLIENT-FETCHABLE home ---------------
+
+
+def test_glossary_read_serves_the_single_entries_home(resources: ResourceRegistry) -> None:
+    # §V84 (B144): the operator tools' descriptions used to point at the server
+    # ``instructions``, an OPTIONAL initialize field a client may drop -- for such a
+    # client the pointer named a surface that did not exist. This resource IS the home
+    # they now name, and it projects the one shared entries tuple (§V37), so the resource
+    # and the instructions can never disagree about a key's meaning.
+    body = _body(resources.read("arknights://glossary/blackboard"))
+    assert body["status"] == "ok"
+    data = body["data"]
+    entries = data["entries"]  # type: ignore[index]
+    assert [(tuple(e["keys"]), e["meaning"]) for e in entries] == [
+        (keys, meaning) for keys, meaning in BLACKBOARD_KEY_ENTRIES
+    ]
+    # Every glossed key really appears in the instructions projection of the same home.
+    for entry in entries:
+        for key in entry["keys"]:
+            assert key in BLACKBOARD_KEY_GLOSSARY, key
+
+
+def test_glossary_read_needs_no_database(registry: SourceRegistry) -> None:
+    # Static project text (§V18/§V31: never assembled from imported source strings), so it
+    # must stay readable on a server with no promoted build -- the §V65 (c) grounding path
+    # cannot depend on the data being there.
+    def broken_conn() -> sqlite3.Connection:
+        raise DatabaseUnavailable("no build")
+
+    resources = build_default_resources(broken_conn, registry=registry, mode="local")
+    body = _body(resources.read("arknights://glossary/blackboard"))
+    assert body["status"] == "ok"
+    assert body["data"]["entries"]  # type: ignore[index]
+    # It states no source fact, so it carries no region/provenance (§V5 governs facts).
+    assert body["provenance"] == []
 
 
 # --- §V23 typed status resource -----------------------------------------------

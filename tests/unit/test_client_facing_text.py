@@ -25,7 +25,12 @@ from pathlib import Path
 
 import pytest
 
-from arknights_mcp.instructions import BLACKBOARD_KEY_GLOSSARY, SERVER_INSTRUCTIONS
+from arknights_mcp.instructions import (
+    BLACKBOARD_KEY_ENTRIES,
+    BLACKBOARD_KEY_GLOSSARY,
+    SERVER_INSTRUCTIONS,
+)
+from arknights_mcp.mcp.resources import build_default_resources
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools._shared import BLACKBOARD_GLOSSARY_POINTER, DB_UNAVAILABLE_ACTION
 from arknights_mcp.mcp.tools.drops import _ITEM_NO_DROPS_ACTION, _ITEM_NOT_FOUND_ACTION
@@ -243,9 +248,9 @@ def test_module_tool_overlap_cross_ref_documented() -> None:
 
 
 def test_blackboard_glossary_single_home_with_pointers() -> None:
-    # §V84 (B89): the ~1.5KB glossary was embedded in BOTH get_operator +
+    # §V84 (B89): the ~1KB glossary was embedded in BOTH get_operator +
     # compare_operator_modules descriptions = 2x every-session context cost. It now lives
-    # once in the server instructions, and each emitting description carries only a short
+    # once in the shared entries home, and each emitting description carries only a short
     # pointer -- no >=500-char block is duplicated across the two descriptions.
     assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
     assert len(BLACKBOARD_KEY_GLOSSARY) >= 500  # the block §V84 forbids duplicating
@@ -256,6 +261,261 @@ def test_blackboard_glossary_single_home_with_pointers() -> None:
     # §V71 (b): the pointer is client-facing, so it carries no internal cite/jargon.
     assert "§" not in BLACKBOARD_GLOSSARY_POINTER
     assert not _BUG_CITE.search(BLACKBOARD_GLOSSARY_POINTER)
+
+
+def test_glossary_pointer_names_a_client_fetchable_home() -> None:
+    # §V84 (B144, T194): the pointer used to say "provided in this server's instructions".
+    # ``instructions`` is an OPTIONAL initialize field a client may drop, and the client
+    # that reported this received none -- so for it the pointer named a surface that did
+    # not exist and the §V65 (c) grounding path evaporated silently. The home must be
+    # reachable FROM THE TOOL CALL: an MCP resource.
+    assert "arknights://glossary/blackboard" in BLACKBOARD_GLOSSARY_POINTER
+    assert "instructions" not in BLACKBOARD_GLOSSARY_POINTER
+    # The named URI is really registered, and really serves the glossary (§V37 one home):
+    # a pointer to an unregistered URI would dangle exactly like the old one.
+    resources = build_default_resources(
+        _no_conn, registry=load_source_registry(REGISTRY), mode="local"
+    )
+    uris = {str(r.uri) for r in resources.list_resources()}
+    assert "arknights://glossary/blackboard" in uris
+    body = json.loads(resources.read("arknights://glossary/blackboard").contents[0].text)
+    assert body["status"] == "ok"
+    served = {tuple(e["keys"]): e["meaning"] for e in body["data"]["entries"]}
+    assert served == {keys: meaning for keys, meaning in BLACKBOARD_KEY_ENTRIES}
+
+
+# --- §V104/B142 (T194): every emitted enum states its value DOMAIN client-side ---
+
+#: The enum-valued wire fields this server emits, mapped to ``(tool, values)``. Each
+#: value set was COUNTED against the shipped en+cn build (§V96: a domain is counted, not
+#: guessed) -- ``difficulty`` is the case that proves it, since three descriptions named
+#: four values while the wire emits five (``SIX_STAR``: 76 main-story rows). A domain the
+#: description PARTITIONS must be exhaustive over the emitted values, so every token here
+#: must appear in the owning tool's description.
+_ENUM_DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("get_stage", "difficulty", ("NORMAL", "FOUR_STAR", "SIX_STAR", "TOUGH", "EASY")),
+    ("search_stages", "difficulty", ("NORMAL", "FOUR_STAR", "SIX_STAR", "TOUGH", "EASY")),
+    ("search_entities", "difficulty", ("NORMAL", "FOUR_STAR", "SIX_STAR", "TOUGH", "EASY")),
+    (
+        "get_stage",
+        "stage_type",
+        ("MAIN", "SUB", "ACTIVITY", "DAILY", "CAMPAIGN", "CLIMB_TOWER", "SPECIAL_STORY", "GUIDE"),
+    ),
+    ("get_enemy", "enemy_class", ("NORMAL", "ELITE", "BOSS")),
+    ("get_enemy", "motion_type", ("WALK", "FLY")),
+    ("analyze_stage", "enemy_class", ("NORMAL", "ELITE", "BOSS")),
+    ("get_operator", "skill_type", ("AUTO", "MANUAL", "PASSIVE")),
+    (
+        "get_operator",
+        "sp_type",
+        ("INCREASE_WITH_TIME", "INCREASE_WHEN_ATTACK", "INCREASE_WHEN_TAKEN_DAMAGE"),
+    ),
+    ("get_operator", "duration_type", ("NONE", "AMMO")),
+    (
+        "get_operator",
+        "profession",
+        ("PIONEER", "WARRIOR", "TANK", "SNIPER", "CASTER", "MEDIC", "SUPPORT", "SPECIAL"),
+    ),
+    ("get_operator", "position", ("MELEE", "RANGED")),
+    (
+        "get_stage_drops",
+        "item_type",
+        (
+            "MATERIAL",
+            "CHIP",
+            "CARD_EXP",
+            "RECRUIT_TAG",
+            "ACTIVITY_ITEM",
+            "FURN",
+            "TEMP",
+            "ARKPLANNER",
+            "LGG_SHD",
+        ),
+    ),
+    (
+        "get_item_drops",
+        "item_type",
+        (
+            "MATERIAL",
+            "CHIP",
+            "CARD_EXP",
+            "RECRUIT_TAG",
+            "ACTIVITY_ITEM",
+            "FURN",
+            "TEMP",
+            "ARKPLANNER",
+            "LGG_SHD",
+        ),
+    ),
+    (
+        "get_banners",
+        "rule_type",
+        (
+            "NORMAL",
+            "SINGLE",
+            "DOUBLE",
+            "LINKAGE",
+            "LIMITED",
+            "SPECIAL",
+            "ATTAIN",
+            "BACKFLOW",
+            "CLASSIC",
+            "CLASSIC_DOUBLE",
+            "CLASSIC_ATTAIN",
+            "FESCLASSIC",
+        ),
+    ),
+    ("get_data_status", "mode", ("local", "remote")),
+)
+
+
+@pytest.mark.parametrize(("tool", "field", "values"), _ENUM_DOMAINS)
+def test_emitted_enum_domain_is_stated_in_its_description(
+    tool: str, field: str, values: tuple[str, ...]
+) -> None:
+    # §V104 (B142): an emitted enum whose domain is stated nowhere leaves the client to
+    # guess -- get_banners named 4 of 12 rule types, so the ONE classification its
+    # description delegated was undecidable for the rest.
+    desc = _desc(tool)
+    assert field in desc, (tool, field)
+    missing = [v for v in values if v not in desc]
+    assert missing == [], (tool, field, missing)
+
+
+def test_open_enum_domains_are_declared_open() -> None:
+    # §V104: a source-defined domain that the description cannot close must SAY it is
+    # open, so a token outside the listed set reads as source-defined, not as an error.
+    for name in ("get_stage_drops", "get_item_drops", "get_banners"):
+        assert "may grow" in _desc(name), name
+    # get_announcements: category is the publisher's own grouping, never a fixed set.
+    assert "category is the feed's own grouping token" in _desc("get_announcements")
+
+
+def test_scale_bearing_stats_state_their_scale() -> None:
+    # §V104 extends §V71 (e) from units to SCALES: res/move_speed/weight sat on the same
+    # stat block as attack_interval (documented "in seconds") with nothing said, so
+    # "res: 80" could be a percentage or a flat value.
+    for name in ("get_enemy", "analyze_stage"):
+        desc = _desc(name)
+        assert "res is arts damage reduction in percent" in desc, name
+        assert "move_speed is in tiles per second" in desc, name
+        assert "shift-resistance rank" in desc, name
+
+
+def test_confidence_scale_stated_on_every_observation_tool() -> None:
+    # §V104: confidence rides every observation (§V6) and had no stated scale, so 0.8 read
+    # as a calibrated 80% -- a probability this server never computes.
+    for name in ("analyze_stage", "compare_operator_modules", "get_stage_drops", "get_item_drops"):
+        desc = _desc(name)
+        assert "confidence is a 0 to 1 heuristic tier" in desc, name
+        assert "not a calibrated probability" in desc, name
+
+
+def test_contradictory_enum_reading_is_glossed() -> None:
+    # §V104/§V74 (d): duration_type "NONE" ships beside duration: 30 on 10937 skill-level
+    # rows in the shipped build. Without a gloss the pair reads as a contradiction.
+    desc = _desc("get_operator")
+    assert "NONE means the source declares no duration type" in desc
+
+
+def test_level_variant_join_key_is_named() -> None:
+    # §V104/§V69: a spawn's enemy_level_variant is the join key into the enemy's per-tier
+    # stat block, and neither side named the other before.
+    for name in ("get_enemy", "get_stage", "analyze_stage"):
+        assert "enemy_level_variant" in _desc(name), name
+
+
+# --- §V71 (f)/B145 (T194): get_operator's description is no longer the fattest ---
+
+
+def test_get_operator_description_dropped_the_response_side_mechanics() -> None:
+    # B145: >half the description described skin/image-ref MECHANICS that belong beside
+    # the values (the image_refs_legend + the standing limitations now carry them), and it
+    # was long enough that a client tool-listing truncated it mid-sentence.
+    desc = _desc("get_operator")
+    for gone in (
+        "e0 (elite-0)",
+        "marks art belonging to an alternate playable form",
+        "paid marks an outfit the source flags as purchasable",
+        "An absent optional ref field means default art",
+        "do not infer mechanics from a key name alone",  # BLACKBOARD_LIMITATION says it
+    ):
+        assert gone not in desc, gone
+    # The pre-call facts a caller needs survive a truncating client: they lead.
+    head = desc[:640]
+    assert "game_id char_002_amiya" in head  # a worked example selector
+    assert "include_provenance only adds a second copy" in head  # the flag's real effect
+    assert "compare_operator_modules" in head  # which sibling tool to prefer
+
+
+# --- §V47/B146 (T194): get_announcements no longer primes the client for nothing ---
+
+
+def test_announcements_description_drops_the_stale_disabled_claim() -> None:
+    # B146: the description asserted "The announcement source is disabled by default, so a
+    # region with no imported feed returns an empty list" -- false since the M9 review
+    # flipped the adapter ENABLED (§V56), and both feeds import on a normal sync. It
+    # primed a client to expect nothing and disbelieve what it got.
+    desc = _desc("get_announcements")
+    assert "disabled by default" not in desc
+    registry = load_source_registry(REGISTRY)
+    for source_id in ("arknights_global_official_news", "arknights_cn_official_news"):
+        entry = registry.get(source_id)
+        assert entry is not None and entry.enabled, source_id
+    # The honest replacement points at a tool the client CAN call to check (§V71 a).
+    assert "get_data_status" in desc
+
+
+# --- §V71 (b)/B131 (T194): the registry is the THIRD client-facing surface ---
+
+
+def test_registry_public_text_carries_no_internal_cites() -> None:
+    # §V71 (b) SCOPE += REGISTRY DATA: config/data_sources.toml ships VERBATIM to a client
+    # through get_data_sources, so a cite parked in `purpose` IS a wire cite. T137 swept
+    # the CODE constants after B62 and never looked at this surface (the one-surface-not-
+    # all class). ``internal_ref`` is the one explicitly ignorable carve-out -- everything
+    # else a client reads must be cite-free.
+    offenders: list[tuple[str, str, str]] = []
+    for entry in load_source_registry(REGISTRY).entries.values():
+        for field, value in entry.public_view().items():
+            if field == "internal_ref" or not isinstance(value, str):
+                continue
+            for marker in _CITE_JARGON:
+                if marker in value:
+                    offenders.append((entry.source_id, field, marker))
+            if _BUG_CITE.search(value):
+                offenders.append((entry.source_id, field, "bug-cite"))
+    assert offenders == [], f"internal cites in public registry text: {offenders}"
+
+
+def test_registry_decision_ids_live_in_internal_ref() -> None:
+    # The carve-out is real, not a way to delete the bookkeeping: the founder-decision /
+    # ADR / milestone refs that used to sit inside `purpose` prose still exist, in the
+    # field a client can skip whole.
+    registry = load_source_registry(REGISTRY)
+    news = registry.get("arknights_global_official_news")
+    images = registry.get("arknights_game_resource")
+    assert news is not None and images is not None
+    assert "D14" in news.internal_ref
+    assert "ADR 0008" in images.internal_ref
+    # ... and they are gone from the prose a client reads.
+    assert "D14" not in news.purpose
+    assert "ADR 0008" not in images.purpose and "§V63" not in images.purpose
+
+
+def test_registry_status_tokens_are_glossed_for_the_client() -> None:
+    # B131: the *_status fields are snake_case machine tokens on a self-described public
+    # registry, two of them whole sentences compressed into one token. The tokens stay
+    # machine-readable; what changed is that the tool now tells the client what they are.
+    registry = load_source_registry(REGISTRY)
+    primary = registry.get("arknights_assets_gamedata")
+    images = registry.get("arknights_game_resource")
+    assert primary is not None and images is not None
+    assert primary.permission_status == "not_granted"
+    assert images.license_status == "agpl_3_0_code_only"
+    desc = _desc("get_data_sources")
+    assert "short machine tokens" in desc
+    assert "internal_ref" in desc and "ignore it" in desc
 
 
 # --- (b) T137/B62: RUNTIME-emitted client strings carry no cites/jargon either --

@@ -61,31 +61,42 @@ from arknights_mcp.services.operators import (
 
 _TOOL_NAME = "get_operator"
 _TOOL_TITLE = "Get operator"
+#: §V71 (f)/§V104 (B145/B142). This description was the longest on the server (~370
+#: words) and more than half of it described skin/image-ref MECHANICS -- long enough that
+#: a client tool-listing truncated it mid-sentence, cutting the pre-call facts a caller
+#: actually needs. Those mechanics moved to where the client reads the values: the
+#: ``image_refs_legend`` hoisted onto the response decodes the category/variant labels,
+#: and the derived-link + alt-form caveats already ride ``limitations`` on every
+#: ref-emitting response. The template-grounding sentence went the same way: it repeated
+#: :data:`BLACKBOARD_LIMITATION` almost verbatim, and that limitation rides every response
+#: carrying blackboard data. What replaces them is what a caller needs BEFORE the call: an
+#: example selector, what each flag adds (``include_provenance`` stated its effect
+#: nowhere while envelope provenance shipped unconditionally, so it read as a no-op), and
+#: the §V104 value domains for the enums this tool emits.
 _TOOL_DESCRIPTION = (
-    "Fetch one Arknights operator's facts by region + game_id. The default response "
-    "is compact identity + a summary (rarity, profession, subclass, position, tags, "
-    "and how many phases/skills/talents/modules exist) + provenance; set "
-    "include_phases / include_skills / include_talents / include_modules to add each "
-    "(bounded) heavy section. When the image-reference source is enabled, an additional "
-    "image_refs list of derived portrait/avatar/skin art references is included. "
+    "Fetch one Arknights operator's facts by region + game_id (for example server en, "
+    "game_id char_002_amiya). The default response is compact identity, a summary of the "
+    "operator's class and section counts, region, and provenance. Set include_phases / "
+    "include_skills / include_talents / include_modules to add each bounded heavy "
+    "section. include_provenance only adds a second copy of the snapshot provenance "
+    "inside data; the envelope carries it either way. To compare one operator's modules "
+    "across their upgrade levels side by side, or for evidence-backed module "
+    "observations, use compare_operator_modules instead. en/cn are never mixed. "
+    "profession is the class token: PIONEER (Vanguard), WARRIOR (Guard), TANK "
+    "(Defender), SPECIAL (Specialist), SUPPORT (Supporter), SNIPER, CASTER, or MEDIC. "
+    "position is MELEE or RANGED. A skill's skill_type is AUTO, MANUAL, or PASSIVE. Its "
+    "sp_type is INCREASE_WITH_TIME, INCREASE_WHEN_ATTACK, INCREASE_WHEN_TAKEN_DAMAGE, or "
+    "a raw source code such as 8. Its duration_type is NONE or AMMO, where NONE means the "
+    "source declares no duration type, not that the skill has no duration: read the "
+    "level's duration, in seconds. A skill's effect template rides the skill when it is "
+    "the same at every level, and the level when the wording differs. With the "
+    "image-reference source enabled the response adds derived portrait, avatar, and skin "
+    "image_refs, decoded by the image_refs_legend it carries. "
     + IMAGE_REFS_PATH_NOTE
-    + " Each ref carries "
-    "a variant label naming the art: e0 (elite-0), e1 (elite-1), e2 (elite-2), base "
-    "(avatar), or skin (outfit art). On builds carrying the imported skin gallery, "
-    "each skin ref also carries skin_id, plus skin_name and skin_group when the source "
-    "names them; paid marks an outfit the source flags as purchasable, and alt_form "
-    "marks art belonging to an alternate playable form of the operator (its e0/e1/e2 "
-    "variants name that form's art). An absent optional ref field means default art, "
-    "not applicable, or not stated by the source. en/cn are never mixed. Skill, talent, "
-    "and module effects "
-    "include the in-game effect "
-    "description template (when present in the source) alongside raw blackboard "
-    "key-value data; read the template to interpret the values, and do not infer "
-    "mechanics from a key name alone. A skill's template is emitted once as the "
-    "skill's description when it is the same at every level; it appears on a level only "
-    "when the wording differs between levels. " + MODULE_CHANGE_DEDUP_NOTE + " To compare "
-    "one operator's modules across their upgrade levels side by side, or for evidence-backed "
-    "module observations, use compare_operator_modules instead. " + BLACKBOARD_GLOSSARY_POINTER
+    + " "
+    + MODULE_CHANGE_DEDUP_NOTE
+    + " "
+    + BLACKBOARD_GLOSSARY_POINTER
 )
 
 _NOT_FOUND_MESSAGE = "no operator matched the given region and game_id"

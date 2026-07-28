@@ -13,6 +13,13 @@ status, private-hosting status, redistribution status, required attribution
 text, contact/issue URL, date last reviewed, enabled/disabled state, and the
 current snapshot commit/version and retrieval time.
 
+**Client-facing surface (SPEC §V71 b):** every public registry field ships
+verbatim to an MCP client through `get_data_sources`, so `purpose` and the
+`*_status` tokens are written for that audience. Internal bookkeeping — founder
+decision ids, milestones, ADR numbers, spec cites — lives in the registry's
+`internal_ref` field, which a client is meant to ignore, never inline in prose
+the client reads.
+
 **Cautious posture (D13; PRD Section 10.9):** neither a public repository, nor
 an attribution offer, nor a takedown offer is treated as permission to reuse.
 No raw snapshots or prebuilt databases are distributed. Every source has a

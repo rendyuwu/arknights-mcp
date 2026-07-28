@@ -47,8 +47,11 @@ _TOOL_DESCRIPTION = (
     "the official news feed: each entry carries only its announce_id, title, date, "
     "url, and category -- never the article body, html, or prose. Optional since/until "
     "bounds window the list by ISO date (inclusive); results are newest-first and paged "
-    "(bounded page/page_size). en/cn are never mixed. The announcement source is "
-    "disabled by default, so a region with no imported feed returns an empty list."
+    "(bounded page/page_size). en/cn are never mixed. The feed is imported by an admin "
+    "sync, never fetched while answering, so the list reflects the last import. category "
+    "is the feed's own grouping token, which the publisher defines and changes over time. "
+    "An empty list means no announcement in the requested window on this build; call "
+    "get_data_status to see whether an announcement snapshot was imported for the region."
 )
 
 
@@ -71,9 +74,11 @@ def _announcement_to_dict(ann: AnnouncementFacts) -> dict[str, object]:
 def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 ``ok`` envelope (§V5 region + provenance).
 
-    A region with no announcements is a legitimate empty list (the adapter is disabled
-    by default, D14/§V56), so this is always an ``ok`` result -- never a ``not_found``
-    (this is a list tool, not an entity lookup). The list is paged (§V19/§V22): the
+    A region with no announcements in the requested window is a legitimate empty list, so
+    this is always an ``ok`` result -- never a ``not_found`` (this is a list tool, not an
+    entity lookup). The adapter has been ENABLED by default since the M9 policy review
+    (§V56/§T93), so the description must not tell a client to expect nothing (B146): both
+    feeds import on a normal sync. The list is paged (§V19/§V22): the
     ``page`` descriptor reports the full ``total`` + ``has_more`` while ``announcements``
     holds only the requested page. Provenance is the distinct announcement snapshots
     backing the FULL filtered set (§V5, derived in the service so a later page never

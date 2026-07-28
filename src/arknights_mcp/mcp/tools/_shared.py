@@ -24,7 +24,7 @@ from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation
 from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
-from arknights_mcp.services.image_refs import IMAGE_REFS_BASE_URL
+from arknights_mcp.services.image_refs import IMAGE_REFS_BASE_URL, IMAGE_REFS_LEGEND
 from arknights_mcp.services.operators import cost_item_id
 from arknights_mcp.services.stages import SectionPage
 
@@ -62,14 +62,18 @@ BLACKBOARD_LIMITATION = (
 
 #: §V65 grounding FLOOR path (c) + §V84/§T169: the one-line pointer folded into the
 #: description of every tool that emits bare blackboard data (``get_operator`` +
-#: ``compare_operator_modules``). The glossary itself is ~1.5KB, so embedding it in each
-#: description made a client pay for it twice every session (B89); it now lives once in the
-#: server instructions (:data:`arknights_mcp.instructions.BLACKBOARD_KEY_GLOSSARY`) and each
-#: description carries only this pointer (§V84 one home, no >=500-char block duplicated across
-#: descriptions; §V37 one pointer home). Client-facing text, so no internal cites/jargon
-#: (§V71 b); a short sentence (§V71 f).
+#: ``compare_operator_modules``). The glossary itself is ~1KB, so embedding it in each
+#: description made a client pay for it twice every session (B89); it lives once in
+#: :data:`arknights_mcp.instructions.BLACKBOARD_KEY_ENTRIES` and each description carries
+#: only this pointer (§V84 one home, no >=500-char block duplicated across descriptions;
+#: §V37 one pointer home). The pointer names the ``arknights://glossary/blackboard``
+#: RESOURCE, not the server instructions: ``instructions`` is an optional ``initialize``
+#: field a client may drop, and for such a client the old pointer named a surface that did
+#: not exist (B144). A resource is reachable from the tool call itself. Client-facing text,
+#: so no internal cites/jargon (§V71 b); short sentences (§V71 f).
 BLACKBOARD_GLOSSARY_POINTER = (
-    "A glossary of common blackboard keys is provided in this server's instructions."
+    "A glossary of common blackboard keys is available from this server as the resource "
+    "arknights://glossary/blackboard."
 )
 
 
@@ -129,17 +133,21 @@ def attach_image_ref_disclosures(
     """Attach the two coupled image-ref envelope fields atomically (§T183/§V66, §V72).
 
     Every ref-emitting tool (``get_operator`` / ``get_enemy`` / ``get_banners``) must,
-    exactly when the response actually emits refs, BOTH hoist the shared mirror base
-    onto ``data`` as ``image_refs_base_url`` (once -- each ref carries only its
-    relative path) AND append :data:`IMAGE_REFS_LIMITATION`. The two are one predicate
-    (§V63: "0 refs emitted -> base key absent", §V67), so they live in one §V37 home:
-    a surface can never ship un-joinable relative paths (base forgotten) or an
-    undisclosed derived link (limitation forgotten). Mutates ``data`` in place and
+    exactly when the response actually emits refs, hoist the shared mirror base onto
+    ``data`` as ``image_refs_base_url`` (once -- each ref carries only its relative
+    path), hoist the ``image_refs_legend`` decoding the emitted ``category`` /
+    ``variant`` labels (§V104/B145 -- the legend rides WITH the values it decodes
+    instead of bloating a tool description), AND append
+    :data:`IMAGE_REFS_LIMITATION`. The three are one predicate (§V63: "0 refs emitted
+    -> base key absent", §V67), so they live in one §V37 home: a surface can never ship
+    un-joinable relative paths (base forgotten), undecodable labels (legend forgotten),
+    or an undisclosed derived link (limitation forgotten). Mutates ``data`` in place and
     returns the extended limitations tuple; a no-op when ``emits_refs`` is False.
     """
     if not emits_refs:
         return limitations
     data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
+    data["image_refs_legend"] = {axis: dict(labels) for axis, labels in IMAGE_REFS_LEGEND.items()}
     return (*limitations, IMAGE_REFS_LIMITATION)
 
 
@@ -195,6 +203,88 @@ MODULE_CHANGE_DEDUP_NOTE = (
     "listed once on the module (as trait_changes or talent_changes) and omitted from each "
     'level. A talent change tagged applies_to "token" affects the operator\'s summon or '
     "token rather than the operator."
+)
+
+
+#: §V104 (B142): the stage-variant tag's value DOMAIN, stated where a client reads it.
+#: Three tools emit ``difficulty`` (``get_stage`` + both search locators) and each used to
+#: carry its own near-identical sentence naming only four of the five emitted values --
+#: ``SIX_STAR`` (76 main-story rows in the shipped build) was undocumented, so the one
+#: classification the descriptions delegate to the client was undecidable for it. One
+#: wording, one home (§V37/§V84). The value origins are stated because two of the five are
+#: DERIVED here (§V80): a ``tough_``/``easy_`` game_id whose source difficulty says
+#: ``NORMAL`` would otherwise read as the plain stage. Client-facing text, so no internal
+#: cites/jargon (§V71 b); short sentences (§V71 f).
+DIFFICULTY_NOTE = (
+    "difficulty is the stage variant tag: NORMAL, FOUR_STAR, SIX_STAR, TOUGH, or EASY. "
+    "NORMAL, FOUR_STAR (a challenge stage) and SIX_STAR (a second variant of some "
+    "main-story stages) come from the source's own difficulty field; TOUGH and EASY are "
+    "derived from the stage's game id. The tag is what keeps a stage and its variant that "
+    "share a code and name distinguishable."
+)
+
+
+#: §V104 (B142): the enemy classification enums. ``enemy_class`` sits beside the
+#: redundant ``is_boss`` / ``is_elite`` booleans, so say how they relate instead of
+#: leaving the client to guess which one wins. Emitted by ``get_enemy`` and by
+#: ``analyze_stage(depth="detailed")``, hence one shared home (§V37). Client-facing text,
+#: so no internal cites/jargon (§V71 b); short sentences (§V71 f).
+ENEMY_CLASS_NOTE = (
+    "enemy_class is NORMAL, ELITE, or BOSS, and is omitted when the source states none; "
+    "is_boss and is_elite are the same fact as booleans. motion_type is WALK (ground) or "
+    "FLY (aerial). attack_type, when present, is the source's own token."
+)
+
+
+#: §V104/§V71 (e) (B142): the scale-bearing enemy stats. ``attack_interval`` already
+#: stated its unit while ``res`` / ``move_speed`` / ``weight`` -- read on the SAME stat
+#: block -- stated none, so a client could only guess whether ``res: 80`` was a percentage
+#: or a flat value and whether ``weight: 3`` was kilograms. Shared by ``get_enemy`` +
+#: ``analyze_stage`` (§V37). Ranges verified against the shipped build (res 0-1000,
+#: move_speed 0.0-5.0, weight -2..13). Client-facing text, no internal cites (§V71 b).
+ENEMY_STAT_SCALE_NOTE = (
+    "Stat scales: res is arts damage reduction in percent (100 or more means arts damage "
+    "is fully resisted), move_speed is in tiles per second, and weight is the "
+    "shift-resistance rank (a rank, not a mass) where a higher rank resists push and pull "
+    "more."
+)
+
+
+#: §V104/§V69 (B142): ``level_variant`` is the enemy's difficulty tier within the SAME
+#: enemy record (0 is the base tier), and it is the join key a stage spawn references as
+#: ``enemy_level_variant`` -- unnamed anywhere before, so a client reading a spawn had no
+#: way to know which stat block applied. Shared by ``get_enemy`` / ``get_stage`` /
+#: ``analyze_stage`` (§V37). Client-facing text, no internal cites (§V71 b).
+LEVEL_VARIANT_NOTE = (
+    "An enemy's stats are listed per level_variant, that enemy's difficulty tier (0 is "
+    "the base tier). A stage spawn names its tier as enemy_level_variant; join the two on "
+    "that value to read the right stat block."
+)
+
+
+#: §V104 (B142): the item category enum. Both drop tools emit ``item_type`` and none
+#: documented it, leaving opaque tokens (``FURN``, ``CARD_EXP``, ``LGG_SHD``) for the
+#: client to decode. The nine tokens named here are the full set observed in the shipped
+#: build; the domain is source-defined, so it is declared OPEN rather than partitioned.
+#: One wording, one home (§V37). Client-facing text, no internal cites (§V71 b).
+ITEM_TYPE_NOTE = (
+    "item_type is the source's own category token: MATERIAL, CHIP (class chips), "
+    "CARD_EXP (EXP battle records), RECRUIT_TAG, ACTIVITY_ITEM (event currency), FURN "
+    "(furniture), TEMP, ARKPLANNER, or LGG_SHD. The set is defined by the game data and "
+    "may grow, so treat an unlisted token as source-defined rather than an error."
+)
+
+
+#: §V104/§V6 (B142): the ``confidence`` scale, stated once per observation-emitting tool
+#: (``analyze_stage`` / ``compare_operator_modules`` / both drop tools). Every observation
+#: carries a confidence and NOTHING said what the number meant, so 0.8 read as "80%
+#: likely" -- a calibrated probability this server never computes (§V8 gates a
+#: recommendation at 0.5 on the same heuristic scale). One wording, one home (§V37).
+#: Client-facing text, so no internal cites/jargon (§V71 b); short sentences (§V71 f).
+CONFIDENCE_SCALE_NOTE = (
+    "confidence is a 0 to 1 heuristic tier set by the rule that produced the observation: "
+    "higher means more of the fields the rule wanted were present and unambiguous. It is "
+    "not a calibrated probability and is never a measured frequency."
 )
 
 

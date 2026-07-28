@@ -53,9 +53,12 @@ _TOOL_DESCRIPTION = (
     "List Arknights banner archive metadata by region (en/cn), sourced from the game "
     "data gacha_table. Each entry carries only its pool id, display name, open/end "
     "schedule, rule type, and the typed featured operators. It never carries gacha "
-    "summary, detail, html, or image prose. A standard banner (NORMAL/SINGLE/DOUBLE/"
-    "LINKAGE) carries no typed featured operator, because its rate-up is not in the "
-    "typed game data. That absence is reported as a limitation, never fabricated. This "
+    "summary, detail, html, or image prose. rule_type is the source's own pool-rule "
+    "token: NORMAL, SINGLE, DOUBLE, LINKAGE, LIMITED, SPECIAL, ATTAIN, BACKFLOW, "
+    "CLASSIC, CLASSIC_DOUBLE, CLASSIC_ATTAIN, or FESCLASSIC. The set is defined by the "
+    "game data and may grow, so treat an unlisted token as source-defined rather than an "
+    "error. Many pools carry no typed featured operator, because their rate-up is not in "
+    "the typed game data. That absence is reported as a limitation, never fabricated. This "
     "is a historical schedule fact, not gacha planning. It has no pull-probability, "
     "pity, or spark. Optional since/until bounds window the list by ISO open-time "
     "(inclusive). An optional query narrows the list to banners whose display name "
@@ -63,8 +66,9 @@ _TOOL_DESCRIPTION = (
     "page/page_size). When the "
     "image-reference source is enabled, a featured operator that resolved to a present "
     "operator also carries an image_refs list with its derived portrait and avatar "
-    "references. " + IMAGE_REFS_PATH_NOTE + " Each ref carries a variant label (e0/e2 "
-    "for portrait, base/e2 for avatar). en/cn are never mixed."
+    "references, decoded by the image_refs_legend the response carries. "
+    + IMAGE_REFS_PATH_NOTE
+    + " en/cn are never mixed."
 )
 
 

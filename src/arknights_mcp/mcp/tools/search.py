@@ -34,7 +34,7 @@ from collections.abc import Callable
 
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import DIFFICULTY_NOTE, ConnectionProvider, run_guarded
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.search import SearchEntitiesInput
 from arknights_mcp.models.stages import SearchStagesInput
@@ -96,12 +96,9 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "Search indexed Arknights operators, enemies, stages, and items by name, alias, "
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
     "get_operator / get_enemy / get_stage for full facts, or feed an item locator's "
-    "game_id to get_item_drops. Only a stage locator carries stage_code and a "
-    "difficulty variant tag (NORMAL, FOUR_STAR challenge, TOUGH, or EASY); other "
-    "locators omit both keys. The difficulty tag lets a normal stage and its "
-    "challenge, tough, or easy variant that share a code and name stay "
-    "distinguishable. For a stage code like 4-4, prefer "
-    "search_stages, which ranks an exact stage-code match first. "
+    "game_id to get_item_drops. Only a stage locator carries stage_code and difficulty; "
+    "other locators omit both keys. " + DIFFICULTY_NOTE + " For a stage code like 4-4, "
+    "prefer search_stages, which ranks an exact stage-code match first. "
     "Results are bounded (default 10, max 50) and en/cn are never mixed. "
     + _COVERAGE_NOTE
     + " "
@@ -112,10 +109,8 @@ _STAGES_TOOL_TITLE = "Search stages"
 _STAGES_TOOL_DESCRIPTION = (
     "Search indexed Arknights stages by stage code (e.g. 4-4), name, or game id. "
     "An exact stage-code match is ranked first. Returns ranked, region-tagged "
-    "locators; use get_stage for full facts + map/spawns. Each locator carries a "
-    "difficulty variant tag (NORMAL, FOUR_STAR challenge, TOUGH, or EASY), so a "
-    "normal stage and its challenge, tough, or easy variant that share a code and "
-    "name stay distinguishable. Results are bounded "
+    "locators; use get_stage for full facts + map/spawns. " + DIFFICULTY_NOTE + " "
+    "Results are bounded "
     "(default 10, max 50) and en/cn are never mixed. "
     + _COVERAGE_NOTE
     + " "

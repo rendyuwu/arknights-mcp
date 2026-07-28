@@ -48,6 +48,8 @@ from arknights_mcp.mcp.envelopes import (
 )
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    CONFIDENCE_SCALE_NOTE,
+    ITEM_TYPE_NOTE,
     ConnectionProvider,
     hoist_drop_provenance,
     page_to_dict,
@@ -82,7 +84,11 @@ _TOOL_DESCRIPTION = (
     "twice. A drop that cannot be ranked (missing drop rate) stays in the raw drops "
     "list with a warning naming it. If nothing was rankable the full raw drops list "
     "is returned with the warnings. Without the flag the "
-    "raw drops list is returned. Those are facts and "
+    "raw drops list is returned. "
+    + ITEM_TYPE_NOTE
+    + " "
+    + CONFIDENCE_SCALE_NOTE
+    + " Those are facts and "
     "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
     "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
     "the cache. en/cn are never mixed."
@@ -365,7 +371,11 @@ _ITEM_TOOL_DESCRIPTION = (
     "stages are never listed twice. If nothing was rankable the raw stages list is "
     "returned with warnings naming the exclusions. Without the flag the raw stages list "
     "is returned and "
-    "paged on its own. That ranking is an ordering and evidence, never a "
+    "paged on its own. "
+    + ITEM_TYPE_NOTE
+    + " "
+    + CONFIDENCE_SCALE_NOTE
+    + " That ranking is an ordering and evidence, never a "
     "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
     "byproducts/synthesis are not modeled. A stage drop past its expiry is still "
     "returned, flagged data_stale. It is downgraded in the ranking, not dropped. A "

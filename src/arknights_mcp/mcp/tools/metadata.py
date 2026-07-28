@@ -44,7 +44,9 @@ _STATUS_TOOL_TITLE = "Get data status"
 _STATUS_TOOL_DESCRIPTION = (
     "Report the active build's data status: schema + analyzer version, deployment "
     "mode, and the active snapshots per region (source, commit/version, and age in "
-    "days so the client can judge freshness). Each snapshot row carries its server "
+    "days so the client can judge freshness). mode is local (this server runs over "
+    "stdio for one local client) or remote (it serves authenticated HTTP); it "
+    "describes the deployment, not the data. Each snapshot row carries its server "
     "and snapshot_id inline; the import time travels with the matching response "
     "provenance entry (join on snapshot_id). commit_sha/upstream_version/age_days "
     "appear only when known. Warns when the active build has no snapshots or no "
@@ -56,7 +58,12 @@ _SOURCES_TOOL_TITLE = "Get data sources"
 _SOURCES_TOOL_DESCRIPTION = (
     "List the public-safe source registry: id, owner, canonical URL, purpose + "
     "consumed fields, region coverage, license/permission posture, attribution, "
-    "and the active snapshot per region. No secrets, local paths, or OAuth config."
+    "and the active snapshot per region. No secrets, local paths, or OAuth config. "
+    "The four *_status fields (license, permission, private_hosting, "
+    "redistribution) are short machine tokens recording this project's own posture "
+    "toward the source; they are not a legal opinion, and the set of tokens is "
+    "defined by this registry rather than by any standard. internal_ref is a "
+    "maintainer bookkeeping note (decision and document ids); ignore it."
 )
 
 

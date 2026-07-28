@@ -30,6 +30,7 @@ from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
+    CONFIDENCE_SCALE_NOTE,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
     ConnectionProvider,
@@ -55,7 +56,8 @@ _TOOL_DESCRIPTION = (
     "side by side; a level a module does not define is marked present=false. mode "
     "facts_only returns the comparison; with_observations adds deterministic, "
     "evidence-backed observations (never a mandatory or best-in-slot verdict). "
-    "en/cn are never mixed. Each stat/trait/talent change includes the in-game "
+    + CONFIDENCE_SCALE_NOTE
+    + " en/cn are never mixed. Each stat/trait/talent change includes the in-game "
     "effect description template (when present in the source) alongside raw blackboard "
     "key-value data; read the template to interpret the values, and do not infer "
     "mechanics from a key name alone. A module's trait template is emitted once as the "

@@ -35,6 +35,11 @@ from __future__ import annotations
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
+    CONFIDENCE_SCALE_NOTE,
+    DIFFICULTY_NOTE,
+    ENEMY_CLASS_NOTE,
+    ENEMY_STAT_SCALE_NOTE,
+    LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
     ConnectionProvider,
     absent_field_limitation,
@@ -80,15 +85,15 @@ _TOOL_DESCRIPTION = (
     "reach_distance, reach_offset and randomize_reach_offset fields are omitted "
     "when they sit at their zero/false default (omitted means at default). "
     "A spawn's variant_id (an inline enemy variant) is present only when the "
-    "spawn is one; a base-enemy spawn omits the key. "
+    "spawn is one; a base-enemy spawn omits the key. " + LEVEL_VARIANT_NOTE + " "
     "Spawn timeline values (spawn_time and interval) are in seconds. Set "
     "include_map_image for a rendered SVG map drawn from the stage's own grid data "
     "(a derived image, not game artwork); a very large map is omitted with a note. "
     "The SVG is for display only -- do not reason from the image; for tile-level "
     "reasoning use include_map's tile_grid. "
-    "The difficulty field is the stage variant tag (NORMAL, FOUR_STAR challenge, "
-    "TOUGH, or EASY), so a stage and its variant that share a code stay distinct. "
-    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    + DIFFICULTY_NOTE
+    + " stage_type is the source's own category: MAIN, SUB, ACTIVITY, DAILY, CAMPAIGN, "
+    "CLIMB_TOWER, SPECIAL_STORY, or GUIDE. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 #: §V74 (d): the standing gloss attached to every response that emits ``tile_grid``.
@@ -346,8 +351,16 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "observations only, never a mandatory or best-in-slot recommendation. depth "
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
     "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
-    "context, with attack_interval and spawn times in seconds). en/cn are never "
-    "mixed. " + LIST_FIELD_CONVENTION
+    "context, with attack_interval and spawn times in seconds). "
+    + CONFIDENCE_SCALE_NOTE
+    + " "
+    + ENEMY_CLASS_NOTE
+    + " "
+    + ENEMY_STAT_SCALE_NOTE
+    + " "
+    + LEVEL_VARIANT_NOTE
+    + " en/cn are never mixed. "
+    + LIST_FIELD_CONVENTION
 )
 
 #: §V67/§V26 (B98 follow-through): the detailed occurrence rows omit an

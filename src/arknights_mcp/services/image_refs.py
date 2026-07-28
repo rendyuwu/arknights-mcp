@@ -96,6 +96,31 @@ _PORTRAIT_VARIANTS = (VARIANT_E0, VARIANT_E2)
 _AVATAR_VARIANTS = (VARIANT_BASE, VARIANT_E2)
 _SKIN_VARIANTS = (VARIANT_SKIN, VARIANT_SKIN)
 
+#: §V104/§V71 (f) (B145): the RESPONSE-SIDE legend for the two ref enums, hoisted once
+#: beside ``image_refs_base_url`` on any response that emits refs. These meanings used to
+#: live in the ``get_operator`` tool description, where they were half of the longest
+#: description on the server -- long enough that a client tool-listing truncated it
+#: mid-sentence, diluting the pre-call facts a caller actually needs. A legend belongs
+#: with the values it decodes (the same choice the tile-grid and rendered-map legends
+#: make). Keyed on the emitted ``category`` / ``variant`` labels above so the legend and
+#: the stamped labels cannot drift (§V37 single home). Client-facing text, so no internal
+#: cites/jargon (§V71 b).
+IMAGE_REFS_LEGEND: dict[str, dict[str, str]] = {
+    "category": {
+        CATEGORY_PORTRAIT: "full operator art",
+        CATEGORY_AVATAR: "square operator icon",
+        CATEGORY_SKIN: "outfit art",
+        CATEGORY_ENEMY: "enemy sprite",
+    },
+    "variant": {
+        VARIANT_E0: "elite-0 art",
+        VARIANT_E1: "elite-1 art",
+        VARIANT_E2: "elite-2 art",
+        VARIANT_BASE: "default art",
+        VARIANT_SKIN: "outfit art",
+    },
+}
+
 #: Raw-content base for the mirror, pinned to ``main`` (§V63/ADR 0008). Emitted ONCE per
 #: ref-carrying response as ``image_refs_base_url`` (§T183/§V66 hoist); each ref carries
 #: only its relative ``path`` and the client joins ``base_url + "/" + path``. This

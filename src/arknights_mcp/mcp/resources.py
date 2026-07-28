@@ -12,6 +12,7 @@ The surface mirrors PRD §13.11 / §I.resource::
     arknights://status/{server}             (template)
     arknights://banners/{server}            (template)
     arknights://sources                     (fixed)
+    arknights://glossary/blackboard         (fixed)
 
 ``arknights://operator/{server}/{game_id}`` is intentionally **not** registered
 yet: the operator intel service is a stub until ``get_operator`` (§T44, M4), and a
@@ -48,6 +49,7 @@ from urllib.parse import unquote
 from mcp.types import ReadResourceResult, Resource, ResourceTemplate, TextResourceContents
 from pydantic import ValidationError
 
+from arknights_mcp.instructions import BLACKBOARD_GLOSSARY_LEAD, BLACKBOARD_KEY_ENTRIES
 from arknights_mcp.mcp.envelopes import (
     Provenance,
     ResponseEnvelope,
@@ -82,6 +84,7 @@ _STAGE_TEMPLATE = "arknights://stage/{server}/{stage_id}"
 _STATUS_TEMPLATE = "arknights://status/{server}"
 _BANNERS_TEMPLATE = "arknights://banners/{server}"
 _SOURCES_URI = "arknights://sources"
+_GLOSSARY_URI = "arknights://glossary/blackboard"
 
 #: Fixed, safe copy for the typed failure envelopes (§V23 -- no echo of untrusted
 #: URI input, no stack trace, no local path).
@@ -391,6 +394,31 @@ def _make_sources_handler(
     return handler
 
 
+def _glossary_handler(_params: Mapping[str, str]) -> ResponseEnvelope:
+    """``arknights://glossary/blackboard`` -- the blackboard-key glossary (§V84/B144).
+
+    §V65 (c) grounding needs a glossary home a client can actually reach. The server
+    ``instructions`` string is an OPTIONAL ``initialize`` field a client may drop, so a
+    tool description pointing there alone dangles for such a client (B144, reported by an
+    auditing client that received no instructions). A resource is FETCHABLE from the tool
+    call itself, so it is the home the operator-tool descriptions now name.
+
+    Static project prose projected from the single
+    :data:`~arknights_mcp.instructions.BLACKBOARD_KEY_ENTRIES` home (§V37) -- never
+    assembled from imported source strings (§V18/§V31), never region-scoped, and carrying
+    no provenance because it states no source fact (§V5 governs facts).
+    """
+    return ok(
+        {
+            "topic": "blackboard_keys",
+            "note": BLACKBOARD_GLOSSARY_LEAD + ".",
+            "entries": [
+                {"keys": list(keys), "meaning": meaning} for keys, meaning in BLACKBOARD_KEY_ENTRIES
+            ],
+        }
+    )
+
+
 #: PRD §13.11 resource descriptions (short, no game prose; §V16/§V18).
 _ENEMY_DESCRIPTION = (
     "One Arknights enemy's facts by region + game_id: class/flags, attack + motion "
@@ -416,6 +444,12 @@ _BANNERS_DESCRIPTION = (
 _SOURCES_DESCRIPTION = (
     "The public-safe source registry: id, owner, canonical URL, purpose, regions, "
     "license/permission posture, and the active snapshot per region. No secrets/paths."
+)
+_GLOSSARY_DESCRIPTION = (
+    "Common interpretations of the raw blackboard keys returned by get_operator and "
+    "compare_operator_modules: one entry per key group with its usual meaning. The "
+    "exact meaning of a key is set by the specific effect, so read the effect's own "
+    "description template first."
 )
 
 
@@ -484,6 +518,17 @@ def build_default_resources(
             description=_SOURCES_DESCRIPTION,
             uri_template=_SOURCES_URI,
             handler=_make_sources_handler(get_conn, registry),
+        )
+    )
+    # §V84/B144: the glossary's CLIENT-FETCHABLE home. Static text, so it needs no
+    # connection and stays readable on a build-less server (§V65 c grounding path).
+    resources.register(
+        ResourceSpec(
+            name="blackboard_glossary",
+            title="Blackboard key glossary",
+            description=_GLOSSARY_DESCRIPTION,
+            uri_template=_GLOSSARY_URI,
+            handler=_glossary_handler,
         )
     )
     return resources

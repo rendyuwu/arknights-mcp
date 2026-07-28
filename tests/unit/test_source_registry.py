@@ -54,6 +54,31 @@ def test_primary_source_enabled_with_mandatory_fields() -> None:
     assert primary.regions == ["en", "cn"]
 
 
+def test_internal_ref_is_the_only_carrier_of_internal_refs() -> None:
+    # §V71 (b)/B131 (T194): the registry is a CLIENT-facing surface -- every public field
+    # ships verbatim through get_data_sources. Decision/ADR/milestone/spec refs live in
+    # the one explicitly ignorable `internal_ref` field, never inline in `purpose` prose a
+    # client reads. Keeping the field in the PUBLIC allowlist is deliberate: the client is
+    # meant to be able to skip it, not to have it hidden (it holds no secret).
+    assert "internal_ref" in _PUBLIC_FIELDS
+    reg = load_source_registry(REGISTRY)
+    for entry in reg.entries.values():
+        assert "internal_ref" in entry.public_view(), entry.source_id
+        assert "§" not in entry.purpose, entry.source_id
+        assert "ADR" not in entry.purpose, entry.source_id
+    # The refs were MOVED, not deleted: the sources whose purpose carried them still
+    # record them (a sweep that silently dropped the bookkeeping would pass a "no cites"
+    # check while losing why the source is here).
+    for source_id in (
+        "arknights_global_official_news",
+        "arknights_cn_official_news",
+        "arknights_game_resource",
+        "penguin_statistics",
+    ):
+        entry = reg.get(source_id)
+        assert entry is not None and entry.internal_ref.strip(), source_id
+
+
 def test_registry_mirror_lists_every_source_id() -> None:
     # DATA_SOURCES.md (human mirror) must list every machine-registry source_id.
     reg = load_source_registry(REGISTRY)
