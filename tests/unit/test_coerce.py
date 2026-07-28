@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from arknights_mcp.importers import enemies, levels, stages
-from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
+from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, uniform_str
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH
 
 # A control (Cc) char and a bidi-override format (Cf) char sanitize_text removes.
@@ -112,3 +112,37 @@ def test_no_importer_redefines_coerce_helpers() -> None:
             if token in text:
                 offenders.append(f"{path.name}: {token}")
     assert not offenders, f"copy-pasted coerce helpers reintroduced: {offenders}"
+
+
+# --- §V112/B159: one value for every entry, or none ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (["AUTO", "AUTO", "AUTO"], "AUTO"),  # every entry agrees -> hoistable
+        (["AUTO"], "AUTO"),  # a single entry agrees with itself
+        (["8", "INCREASE_WITH_TIME"], None),  # the real sktok_mjcsdw divergence
+        (["AUTO", None], None),  # a missing entry is not agreement
+        ([None, None], None),  # nothing to hoist
+        ([], None),  # no entries at all
+    ],
+)
+def test_uniform_str_collapses_only_when_every_entry_agrees(
+    values: list[str | None], expected: str | None
+) -> None:
+    """§V112 (a): the shared rule behind both the import-time and read-time hoists.
+
+    A scalar derived from a repeated source structure may only claim the value EVERY entry
+    carries; anything else keeps its per-entry copies. Returning ``values[0]`` here is the
+    exact flatten B159 filed.
+    """
+    assert uniform_str(values) == expected
+
+
+def test_uniform_str_is_the_single_home_of_the_read_side_hoist() -> None:
+    """§V37: the service's template hoist delegates rather than keeping its own copy."""
+    from arknights_mcp.services.operators import hoist_uniform_template
+
+    assert hoist_uniform_template(["X", "X"]) == uniform_str(["X", "X"]) == "X"
+    assert hoist_uniform_template(["X", "Y"]) is uniform_str(["X", "Y"]) is None

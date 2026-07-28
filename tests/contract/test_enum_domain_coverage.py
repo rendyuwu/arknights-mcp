@@ -26,6 +26,11 @@ the bare-code arm. ``sp_type`` is mixed by upstream design, ``skill_type`` and
 ``duration_type`` are named-only -- but only on this corpus, so the pin is what turns
 "clean" from an assumption about the coercion into a measured fact about the data.
 
+T209 widened that second half to both storage sides (B159/§V112): the three columns are
+scoped PER LEVEL upstream, so a value now rides ``skills`` only while every level agrees
+and ``skill_levels`` when they do not. Reading the skill row alone would let a token drop
+out of the guard's view exactly when it starts varying.
+
 Skipped when no build is promoted (the offline ``pytest -q`` gate builds fixtures, not a
 full en+cn corpus); the unit-level pin in ``tests/unit/test_client_facing_text.py``
 carries the same value sets so a text edit still regresses loudly in CI.
@@ -147,20 +152,29 @@ def _is_source_code(value: str) -> bool:
     return value.lstrip("-").isdigit()
 
 
+#: §T209/§V112 (B159): the same three columns now live on BOTH sides -- on ``skills`` when
+#: every level agrees, on ``skill_levels`` when they do not -- and both reach the wire. A
+#: guard that read only the skill row would stop seeing a value the moment it became
+#: per-level, which is exactly the case the openness disclosure has to cover.
+_ENUM_TEXT_TABLES = ("skills", "skill_levels")
+
+
 @pytest.mark.parametrize(("column", "numeric_arm"), _ENUM_TEXT_COLUMNS)
 def test_shared_enum_coercion_columns_pin_their_emitted_token_set(
     conn: sqlite3.Connection, column: str, numeric_arm: frozenset[str]
 ) -> None:
-    rows = conn.execute(
-        f"SELECT DISTINCT {column} FROM skills WHERE {column} IS NOT NULL"  # noqa: S608
-    ).fetchall()
-    emitted = {str(value) for (value,) in rows}
+    emitted: set[str] = set()
+    for table in _ENUM_TEXT_TABLES:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"  # noqa: S608
+        ).fetchall()
+        emitted |= {str(value) for (value,) in rows}
     # Guard the guard: a typo'd column would make every assertion below vacuous.
-    assert emitted, f"skills.{column} yielded no values"
+    assert emitted, f"{column} yielded no values on {_ENUM_TEXT_TABLES}"
     numeric = {value for value in emitted if _is_source_code(value)}
     # A NEW bare code, or the first one on a sibling, must fail loudly and be verified
     # against the pinned upstream before any text claims it exists (§V29/§V96).
-    assert numeric == set(numeric_arm), f"skills.{column} numeric arm moved: {sorted(numeric)}"
+    assert numeric == set(numeric_arm), f"{column} numeric arm moved: {sorted(numeric)}"
     # The named arm is exactly the legend: no emitted name undocumented, no documented
     # name the build stopped emitting.
     assert emitted - numeric == set(ENUM_LEGENDS[column]), column
@@ -181,3 +195,95 @@ def test_shared_enum_coercion_columns_pin_their_emitted_token_set(
         assert column not in OPEN_ENUM_LIMITATIONS, (
             f"{column} declares a mixed-encoding caveat it no longer needs"
         )
+
+
+#: §T209/§V112 (B159): the four fields ``skill_table`` scopes per level, and how many
+#: skills of the promoted build actually disagree with themselves on at least one of them
+#: (en 2 -- ``sktok_mjcsdw`` sp_type/skill_type and ``sktok_sunmao`` display_name; cn 4 --
+#: those two plus ``sktok_xbcbag`` / ``sktok_xbcbag2``, whose per-level names are the
+#: creatures they capture). The count is pinned in both directions: a build where it drops
+#: to zero would make every §V112 assertion here vacuous, and one where it grows is a new
+#: skill to re-verify against the source before the wire quietly reshapes.
+_LEVEL_SCOPED_COLUMNS = ("display_name", "skill_type", "sp_type", "duration_type")
+_VARYING_SKILLS_PER_SERVER = {"en": 2, "cn": 4}
+
+
+def _side_counts(conn: sqlite3.Connection, column: str) -> list[tuple[str, int, int]]:
+    """``(server, skills with the value hoisted, skills with it per level)`` for ``column``."""
+    return conn.execute(  # noqa: S608 -- column comes from the module-level tuple above
+        f"""
+        SELECT s.server,
+               SUM(s.{column} IS NOT NULL),
+               SUM(s.{column} IS NULL AND EXISTS (
+                   SELECT 1 FROM skill_levels l
+                   WHERE l.skill_pk = s.skill_pk AND l.{column} IS NOT NULL))
+        FROM skills s GROUP BY s.server
+        """
+    ).fetchall()
+
+
+@pytest.mark.parametrize("column", _LEVEL_SCOPED_COLUMNS)
+def test_a_level_scoped_field_is_stored_on_exactly_one_side(
+    conn: sqlite3.Connection, column: str
+) -> None:
+    """§V112 (a)/(b): the skill states what every level shares, the level what differs.
+
+    Never both: a value on the skill row plus the same value repeated per level is the
+    §V66.3 hoist done twice, and a client reading one side would not know the other exists.
+    """
+    both = conn.execute(
+        f"""
+        SELECT COUNT(*) FROM skills s WHERE s.{column} IS NOT NULL AND EXISTS (
+            SELECT 1 FROM skill_levels l
+            WHERE l.skill_pk = s.skill_pk AND l.{column} IS NOT NULL)
+        """  # noqa: S608 -- column comes from the module-level tuple above
+    ).fetchone()[0]
+    assert both == 0, f"{column} is stored on both the skill and its levels for {both} skills"
+    # Guard the guard: the corpus has to actually carry the column somewhere.
+    assert any(hoisted or per_level for _, hoisted, per_level in _side_counts(conn, column))
+
+
+def test_the_per_level_side_is_non_degenerate(conn: sqlite3.Connection) -> None:
+    """§V96: skills whose levels really do disagree, counted -- not assumed to exist.
+
+    Without this the §V112 storage split could be shipped over a corpus where nothing
+    varies, and every assertion about it would pass while the case it exists for went
+    unmeasured (B128's lesson, applied to the level axis).
+    """
+    varying = dict(
+        conn.execute(
+            """
+            SELECT s.server, COUNT(DISTINCT s.skill_pk) FROM skills s JOIN skill_levels l
+            ON l.skill_pk = s.skill_pk
+            WHERE (s.display_name IS NULL AND l.display_name IS NOT NULL)
+               OR (s.skill_type IS NULL AND l.skill_type IS NOT NULL)
+               OR (s.sp_type IS NULL AND l.sp_type IS NOT NULL)
+               OR (s.duration_type IS NULL AND l.duration_type IS NOT NULL)
+            GROUP BY s.server
+            """
+        ).fetchall()
+    )
+    assert varying == _VARYING_SKILLS_PER_SERVER, varying
+
+
+def test_the_named_sp_type_a_level_1_read_discarded_is_stored(conn: sqlite3.Connection) -> None:
+    """The exact row B159 was filed on, in the corpus the tools answer from.
+
+    ``sktok_mjcsdw`` used to store the unnamed code ``8`` for the whole skill; the named
+    token its level 2 carries is now stored beside it instead of being overwritten.
+    """
+    rows = conn.execute(
+        """
+        SELECT s.server, l.level, l.sp_type FROM skills s JOIN skill_levels l
+        ON l.skill_pk = s.skill_pk WHERE s.game_id = 'sktok_mjcsdw' ORDER BY s.server, l.level
+        """
+    ).fetchall()
+    assert rows == [
+        ("cn", 1, "8"),
+        ("cn", 2, "INCREASE_WITH_TIME"),
+        ("en", 1, "8"),
+        ("en", 2, "INCREASE_WITH_TIME"),
+    ], rows
+    assert conn.execute(
+        "SELECT sp_type FROM skills WHERE game_id = 'sktok_mjcsdw' AND server = 'en'"
+    ).fetchone() == (None,)

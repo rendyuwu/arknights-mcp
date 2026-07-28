@@ -34,7 +34,15 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: length-capped, and capped at ``MAX_TEMPLATE_LENGTH`` rather than the name-class 512,
 #: so the 349 EN skill/talent templates (and 1 module template) the old order cut
 #: mid-sentence import whole. Same reason for the bump.
-TRANSFORM_VERSION = "4"
+#:
+#: ``5`` (B159/§V112): a skill's ``name``/``skillType``/``durationType``/``spType`` are
+#: scoped PER LEVEL upstream and were stored as level 1's value for the whole skill; each
+#: level now keeps its own and the skill scalar holds only what every level shares. Four
+#: EN/CN skills import different bytes (``sktok_mjcsdw`` no longer stores the unnamed
+#: ``sp_type`` code its level 2 names). No allowlist change -- all four keys were already
+#: allowlisted -- so ``FIELD_POLICY_VERSION`` stands and this bump alone is what makes the
+#: re-import promote over an unchanged snapshot (§V92).
+TRANSFORM_VERSION = "5"
 
 
 def _now_iso() -> str:

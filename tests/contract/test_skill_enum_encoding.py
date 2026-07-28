@@ -145,3 +145,79 @@ def test_sp_type_mixes_both_encodings_in_one_pinned_tree(server: str) -> None:
     caveat = OPEN_ENUM_LIMITATIONS["sp_type"]
     for value in {str(value) for value in numeric_rows}:
         assert value in caveat, value
+
+
+#: §T209/§V112 (B159): the four fields ``skill_table`` scopes PER LEVEL, with the number of
+#: skills whose levels DISAGREE at the pin, counted per server (en, cn). T208 found the
+#: mixed encoding while reading these same rows and left the level axis open: the importer
+#: was storing level 1's value as the whole skill's, so a skill that changes between
+#: mastery levels had three facts dropped and a fourth asserted for levels it does not
+#: describe. ``durationType`` is at 0 today -- pinned anyway, because that is the §V112 (c)
+#: point: a field is uniform by DATA, never by construction, and the first skill whose
+#: duration type changes must fail here rather than import silently flattened.
+_LEVEL_SCOPED_FIELDS: tuple[tuple[str | None, str, int, int], ...] = (
+    ("spData", "spType", 1, 1),
+    (None, "skillType", 1, 1),
+    (None, "durationType", 0, 0),
+    (None, "name", 1, 3),
+)
+
+
+def _varying_skill_ids(server: str, holder_key: str | None, field: str) -> list[str]:
+    """Skill ids whose own levels do not agree on ``field`` (types included, §V99)."""
+    out: list[str] = []
+    for skill_id, entry in _skill_table(server).items():
+        seen: set[tuple[str, object]] = set()
+        for level in entry.get("levels") or []:
+            if not isinstance(level, dict):
+                continue
+            holder = level.get(holder_key) if holder_key else level
+            if isinstance(holder, dict) and field in holder:
+                value = holder[field]
+                # (type, value) so a NAME and a CODE never collapse into one token -- the
+                # §V99 axis this same skill (`sktok_mjcsdw`) is the live case for.
+                seen.add((type(value).__name__, str(value)))
+        if len(seen) > 1:
+            out.append(skill_id)
+    return out
+
+
+@pytest.mark.parametrize("server", SERVERS)
+@pytest.mark.parametrize(("holder_key", "field", "en_count", "cn_count"), _LEVEL_SCOPED_FIELDS)
+def test_per_level_variance_count_is_pinned_at_the_source(
+    server: str, holder_key: str | None, field: str, en_count: int, cn_count: int
+) -> None:
+    """§V112 (c): how many skills vary is COUNTED at the pin, never assumed to be none."""
+    varying = _varying_skill_ids(server, holder_key, field)
+    expected = en_count if server == "en" else cn_count
+    assert len(varying) == expected, f"{server} {field} varying skills moved: {sorted(varying)}"
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_the_flattened_skill_carried_a_named_sp_type_on_a_later_level(server: str) -> None:
+    """The fact a level-1 read discarded, at the source (§V112/B159).
+
+    ``sktok_mjcsdw`` is where the two bugs meet: T208 verified that upstream ships no name
+    for the code ``8``, which is true of the corpus -- and this skill's OWN level 2 ships a
+    named token anyway. Storing level 1's value for the whole skill therefore kept the
+    undecidable arm and threw away the decidable one, invisibly, because the result reads
+    exactly like the open-domain case T208 documented.
+    """
+    levels = _skill_table(server)["sktok_mjcsdw"]["levels"]
+    sp_types = [(level.get("spData") or {}).get("spType") for level in levels]
+    assert sp_types[0] == 8, sp_types
+    assert isinstance(sp_types[1], str) and sp_types[1] in ENUM_LEGENDS["sp_type"], sp_types
+    skill_types = [level.get("skillType") for level in levels]
+    assert skill_types == ["PASSIVE", "AUTO"], skill_types
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_a_per_level_field_we_already_store_per_level_is_the_control(server: str) -> None:
+    """``rangeId`` proves the shape was never the obstacle (§V96 non-degenerate).
+
+    It sits on the same level entries, varies for seven skills in both regions, and has
+    always been stored per level -- so the four fields beside it were flattened by the
+    MAPPING, not by anything the source made hard. A corpus where it stopped varying would
+    make that argument vacuous, so the count is pinned too.
+    """
+    assert len(_varying_skill_ids(server, None, "rangeId")) == 7

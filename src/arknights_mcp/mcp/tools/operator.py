@@ -28,6 +28,8 @@ Three invariants are load-bearing here:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
@@ -115,6 +117,50 @@ _NOT_FOUND_ACTION = (
 _SUMMARY_ENUM_FIELDS = ("profession", "position")
 _SKILL_ENUM_FIELDS = ("skill_type", "sp_type", "duration_type")
 
+#: The four ``skill_table`` fields the source scopes PER LEVEL (§V112/B159). One home for
+#: the list the variance detector and both emit sites below walk. Local to this module,
+#: not :mod:`_shared`: ``get_operator`` is the only tool that puts skills on the wire, and
+#: a shared home for a single caller is indirection, not §V37 dedup.
+LEVEL_SCOPED_SKILL_FIELDS: tuple[str, ...] = (
+    "display_name",
+    "skill_type",
+    "sp_type",
+    "duration_type",
+)
+
+#: §V112/§V108 (§T209, B159): the routing note for a skill whose name or enum values are
+#: not the same at every mastery level. The source scopes those four fields PER LEVEL, and
+#: the importer used to store level 1's value as the skill's -- so ``sktok_mjcsdw`` claimed
+#: the unnamed ``sp_type`` code its own level 2 names. They are now stored where the source
+#: scopes them: the skill carries a value only when every level agrees, and otherwise the
+#: key is absent there (§V67 omit, never a null and never a representative pick) and each
+#: level carries its own. Absence alone would read as "the source has none" (the §V26
+#: case), so a response carrying a varying skill also carries this note, which says where
+#: the values went (§V108 -- a bounded view routes to the fuller one). Attached only when a
+#: skill in THIS response actually varies. Client-facing text, so no internal cites/jargon
+#: (§V71 b); short sentences (§V71 f).
+SKILL_LEVEL_VARIANCE_NOTE = (
+    "One or more skills here change name, skill_type, sp_type, or duration_type between "
+    "mastery levels. Those fields are omitted on the skill and given on each level "
+    "instead, so read them from the skill's levels list. A field present on the skill "
+    "applies to all of its levels."
+)
+
+
+def _has_level_varying_skill(skills: Iterable[OperatorSkillFacts]) -> bool:
+    """True when any emitted skill carries one of the four fields per LEVEL (§V112/B159).
+
+    The detector for :data:`SKILL_LEVEL_VARIANCE_NOTE`. A skill varies exactly when the
+    parent value is absent while a level supplies one -- the shape the importer writes when
+    the source's levels disagree. A field absent on BOTH sides is absent from the source
+    (§V26/§V67), a different case this note must not claim.
+    """
+    return any(
+        getattr(skill, field) is None and any(getattr(lv, field) is not None for lv in skill.levels)
+        for skill in skills
+        for field in LEVEL_SCOPED_SKILL_FIELDS
+    )
+
 
 def _summary_to_dict(summary: OperatorSummary) -> dict[str, object]:
     """The compact identity + per-section counts (§V22 default; no prose §V16)."""
@@ -168,16 +214,37 @@ def _skill_level_to_dict(level: SkillLevelFacts) -> dict[str, object]:
     # Omit the key otherwise rather than emit an ambiguous null (§V67).
     if level.description is not None:
         out["description"] = level.description
+    # §V112/§V66.3 (B159): the source scopes name + the three enums per LEVEL. They ride
+    # the skill when every level agrees and this level then omits them; a level carries
+    # its own only when the levels disagree, so the discarded values are back on the wire.
+    out.update(_level_scoped(level))
     return out
+
+
+def _level_scoped(facts: OperatorSkillFacts | SkillLevelFacts) -> dict[str, object]:
+    """The four per-level fields ``facts`` actually carries (§V112/B159; §V67 omit-key).
+
+    Emitted on whichever side owns the value: the skill when every level agrees, the level
+    when they disagree. A ``None`` is never written out -- on the skill it would claim the
+    source has no value when the levels merely differ, and on a level it would repeat what
+    the skill already states (§V67: absent key, never an ambiguous null).
+    """
+    return {
+        field: value
+        for field in LEVEL_SCOPED_SKILL_FIELDS
+        if (value := getattr(facts, field)) is not None
+    }
 
 
 def _skill_to_dict(skill: OperatorSkillFacts) -> dict[str, object]:
     out: dict[str, object] = {
         "game_id": skill.game_id,
-        "display_name": skill.display_name,
-        "skill_type": skill.skill_type,
-        "sp_type": skill.sp_type,
-        "duration_type": skill.duration_type,
+        # §V112/§V67 (B159): each of the four rides the skill only when it is the value
+        # every level shares. Absent means either the levels disagree -- each level then
+        # carries its own and SKILL_LEVEL_VARIANCE_NOTE says where to read them -- or the
+        # source carried none; never a null, and never level 1's value passed off as the
+        # skill's.
+        **_level_scoped(skill),
         "slot_index": skill.slot_index,
         "unlock_phase": skill.unlock_phase,
         "unlock_level": skill.unlock_level,
@@ -315,6 +382,11 @@ def _shape(
     limitations: tuple[str, ...] = ()
     if operator.skills or operator.talents or operator.modules:
         limitations = (BLACKBOARD_LIMITATION,)
+    # §V112/§V108 (§T209, B159): a skill whose name or enum values differ between mastery
+    # levels emits them per level, with the skill's own key absent -- absence alone reads
+    # as "the source has none", so the note says where the values are instead.
+    if _has_level_varying_skill(operator.skills):
+        limitations = (*limitations, SKILL_LEVEL_VARIANCE_NOTE)
     # §V69/§V26 (§T132): a module upgrade-cost item whose display name is absent from the
     # build is emitted as a bare id, so add the standing cost-name limitation instead of
     # leaving a bare id (never fabricate a name). Additive to the blackboard caveat.

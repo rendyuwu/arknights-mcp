@@ -16,6 +16,7 @@ allowlist and so must sanitize their own string leaves (§V18).
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from arknights_mcp.util.text import sanitize_text
@@ -78,6 +79,28 @@ def suffix_int(value: Any, prefix: str) -> int | None:
         tail = upper[len(head) :]
         if upper.startswith(head) and tail.isdigit():
             return int(tail)
+    return None
+
+
+def uniform_str(values: Iterable[str | None]) -> str | None:
+    """The one string every element of ``values`` carries, else ``None`` (§V112/§V66.3).
+
+    A field a repeated source structure scopes PER ENTRY (a skill level, a module level)
+    may only be lifted to the parent when every entry agrees; ``None`` says "the entries
+    disagree, or none carried a value", which is the caller's signal to keep the per-entry
+    copies rather than pick ``entries[0]`` and lose the rest (§V112 b). Empty input, a lone
+    ``None``, and a mix of ``None`` with a string all read as "no single shared value".
+
+    The single §V37 home for both sides of that lift: the importer decides what a skill
+    scalar may store (:func:`~arknights_mcp.importers.operators.parse_skills`), and the
+    read side hoists a uniform effect template out of the level rows
+    (:func:`~arknights_mcp.services.operators.hoist_uniform_template`).
+    """
+    distinct = set(values)
+    if len(distinct) == 1:
+        (only,) = distinct
+        if isinstance(only, str):
+            return only
     return None
 
 

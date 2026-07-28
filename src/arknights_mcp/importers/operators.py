@@ -43,7 +43,14 @@ from arknights_mcp.importers.field_policy import (
 )
 from arknights_mcp.importers.manifest import insert_record_provenance
 from arknights_mcp.sources.base import SourceAdapter
-from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, suffix_int
+from arknights_mcp.util.coerce import (
+    as_float,
+    as_int,
+    as_str,
+    json_or_none,
+    suffix_int,
+    uniform_str,
+)
 from arknights_mcp.util.sqlite import integrity_guard
 from arknights_mcp.util.text import clean_template_text
 
@@ -69,11 +76,21 @@ class ParsedSkillLevel:
     #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
     #: at parse time (§V18); ``None`` when the source level carries no description.
     description: str | None
+    #: This level's OWN name / enum values (§V112/B159). The source scopes all four per
+    #: level; they are carried here so a level that disagrees with its siblings keeps its
+    #: value instead of being overwritten by level 1's.
+    display_name: str | None
+    skill_type: str | None
+    sp_type: str | None
+    duration_type: str | None
 
 
 @dataclass(frozen=True)
 class ParsedSkill:
     game_id: str
+    #: The value every level shares, or ``None`` when the levels disagree (§V112 a/b).
+    #: ``None`` is not "absent from the source": it means the fact is per level, and the
+    #: level rows carry it. Never level 1's value standing in for the rest.
     display_name: str | None
     skill_type: str | None
     sp_type: str | None
@@ -240,7 +257,18 @@ def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, i
 
 
 def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
-    """Transform raw ``skill_table`` (id-keyed dict) into typed, allowlisted skills."""
+    """Transform raw ``skill_table`` (id-keyed dict) into typed, allowlisted skills.
+
+    ``name`` / ``skillType`` / ``durationType`` / ``spData.spType`` are scoped PER LEVEL
+    upstream, so each :class:`ParsedSkillLevel` keeps its own value and the skill-wide
+    scalar is the one every level shares -- ``None`` when they disagree (§V112, B159).
+    Reading level 1 and calling it the skill's value discarded the others: ``sktok_mjcsdw``
+    stored the unnamed ``spType`` code ``8`` from its level 1 while its level 2 sends
+    ``INCREASE_WITH_TIME``, and ``sktok_sunmao`` stored "Connect" while its level 5 is
+    "Engrave". The uniform case (1597 of 1598 EN skills) is unchanged: the value rides the
+    skill row and every level row leaves it ``NULL``, the same hoist ``gameplay_description``
+    already uses (§V66.3).
+    """
     if not isinstance(skill_raw, dict):
         return []
     parsed: list[ParsedSkill] = []
@@ -272,22 +300,47 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                     # lands before the tag strip and cuts the template mid-sentence
                     # (§V109/B154). `description` is on SKILL_LEVEL_ALLOWLIST either way.
                     description=_template_text(raw_level.get("description")),
+                    # §V112: this level's OWN four, not level 1's (B159).
+                    display_name=as_str(kept.get("name")),
+                    skill_type=_enum_text(kept.get("skillType")),
+                    sp_type=_enum_text(sp.get("spType")),
+                    duration_type=_enum_text(kept.get("durationType")),
                 )
             )
-        first = kept_levels[0] if kept_levels else {}
-        first_sp = _as_dict(first.get("spData"))
         parsed.append(
             ParsedSkill(
                 game_id=game_id,
-                display_name=as_str(first.get("name")),
-                skill_type=_enum_text(first.get("skillType")),
-                sp_type=_enum_text(first_sp.get("spType")),
-                duration_type=_enum_text(first.get("durationType")),
+                # §V112 (a): a scalar the skill may claim only when every level agrees;
+                # `uniform_str` returns None the moment they diverge, and the diverging
+                # values stay on their level rows (§V112 b).
+                display_name=uniform_str(lv.display_name for lv in levels),
+                skill_type=uniform_str(lv.skill_type for lv in levels),
+                sp_type=uniform_str(lv.sp_type for lv in levels),
+                duration_type=uniform_str(lv.duration_type for lv in levels),
                 levels=levels,
                 provenance_record={"skill_id": game_id, "levels": kept_levels},
             )
         )
     return parsed
+
+
+def _level_only(
+    skill: ParsedSkill, level: ParsedSkillLevel
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """The four per-level values to STORE on ``level``: its own, or ``NULL`` when hoisted.
+
+    A field the skill row already carries (every level agreed, §V112 a) is redundant on
+    each level row, so it is stored once on the skill and ``NULL`` here -- the same
+    hoist ``gameplay_description`` and the module change bundles use (§V66.3). A field
+    the skill row left ``NULL`` is either varying (§V112 b) or absent from the source;
+    in both cases this level's own value is the honest one to store.
+    """
+    return (
+        level.display_name if skill.display_name is None else None,
+        level.skill_type if skill.skill_type is None else None,
+        level.sp_type if skill.sp_type is None else None,
+        level.duration_type if skill.duration_type is None else None,
+    )
 
 
 def insert_skills(
@@ -331,7 +384,9 @@ def insert_skills(
                 conn.execute(
                     "INSERT INTO skill_levels "
                     "(skill_pk, level, sp_cost, initial_sp, duration, range_id, "
-                    "blackboard_json, gameplay_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "blackboard_json, gameplay_description, display_name, skill_type, "
+                    "sp_type, duration_type) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         skill_pk,
                         level.level,
@@ -341,6 +396,11 @@ def insert_skills(
                         level.range_id,
                         json_or_none(level.blackboard),
                         level.description,  # effect template (§V65 (a)/ADR 0010)
+                        # §V112 (a)/§V66.3: a value the whole skill shares rides the skill
+                        # row once; a level stores its own only when the levels disagree,
+                        # so NULL here reads as "see the skill row" and the uniform case
+                        # costs no repeated bytes.
+                        *_level_only(skill, level),
                     ),
                 )
         skill_pk_by_game_id[skill.game_id] = skill_pk

@@ -38,11 +38,15 @@
               }
             ],
             "description": null,
+            "display_name": null,
             "duration": 15.0,
+            "duration_type": null,
             "initial_sp": 10,
             "level": 1,
             "range_id": null,
-            "sp_cost": 25
+            "skill_type": null,
+            "sp_cost": 25,
+            "sp_type": null
           }
         ],
         "skill_type": "MANUAL",

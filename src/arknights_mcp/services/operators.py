@@ -38,7 +38,7 @@ from arknights_mcp.db.repositories.operators import (
     TalentLevelRow,
     TalentRow,
 )
-from arknights_mcp.util.coerce import json_load
+from arknights_mcp.util.coerce import json_load, uniform_str
 
 #: Typed outcome of an operator lookup. The full §V23 status vocabulary is wired
 #: into the tool envelope (§T29); this service reports only these two.
@@ -101,6 +101,11 @@ class SkillLevelFacts:
     levels it is hoisted once to the parent :class:`OperatorSkillFacts` and this
     per-level field is ``None`` (§V66.3 payload dedup); it is populated here only when
     the levels' templates differ, so the varying text is never lost.
+
+    ``display_name`` / ``skill_type`` / ``sp_type`` / ``duration_type`` follow the same
+    rule for the four fields the source scopes per level (§V112/B159): ``None`` while the
+    skill's own value applies to every level, populated when the levels disagree and the
+    skill's is therefore absent.
     """
 
     level: int
@@ -110,6 +115,10 @@ class SkillLevelFacts:
     range_id: str | None
     blackboard: object | None
     description: str | None
+    display_name: str | None
+    skill_type: str | None
+    sp_type: str | None
+    duration_type: str | None
 
 
 @dataclass(frozen=True)
@@ -121,6 +130,11 @@ class OperatorSkillFacts:
     template varies by level, in which case each :class:`SkillLevelFacts` carries its
     own. The hoist is byte-lossless -- exactly one of the skill-level or per-level
     ``description`` carries the text.
+
+    ``display_name`` / ``skill_type`` / ``sp_type`` / ``duration_type`` read the same way
+    (§V112/B159): the source scopes all four per level, so a value here is one every level
+    shares, and ``None`` means either the levels disagree -- their own values are on the
+    :class:`SkillLevelFacts` -- or the source carried none at all.
     """
 
     game_id: str
@@ -299,13 +313,12 @@ def hoist_uniform_template(values: Iterable[str | None]) -> str | None:
     loses no information (the hoist is lossless: the text lives in exactly one place). The
     single §V37 home shared by the skill hoist (:func:`_skill_facts`) and the module-compare
     trait-change hoist.
+
+    The collapse itself is :func:`~arknights_mcp.util.coerce.uniform_str`, shared with the
+    importer, which applies the same rule to the four fields the source scopes per skill
+    LEVEL (§V112/B159) -- one home for "the value every entry agrees on, else none".
     """
-    distinct = set(values)
-    if len(distinct) == 1:
-        (only,) = distinct
-        if isinstance(only, str):
-            return only
-    return None
+    return uniform_str(values)
 
 
 #: The keys that IDENTIFY which talent/trait change a bundle is (§V83): two entries sharing
@@ -505,7 +518,12 @@ def _skill_facts(repo: OperatorRepository, row: OperatorSkillRow) -> OperatorSki
 
 
 def _skill_level_facts(row: SkillLevelRow, *, hoisted: bool) -> SkillLevelFacts:
-    """One skill level; its effect template is dropped when it was hoisted to the skill (§V66.3)."""
+    """One skill level; its effect template is dropped when it was hoisted to the skill (§V66.3).
+
+    The four per-level fields (§V112/B159) need no such flag: the importer already stored
+    each one only on the side that owns it -- on the skill when every level agreed, on the
+    level when they did not -- so passing the row's value through is byte-lossless.
+    """
     return SkillLevelFacts(
         level=row.level,
         sp_cost=row.sp_cost,
@@ -514,6 +532,10 @@ def _skill_level_facts(row: SkillLevelRow, *, hoisted: bool) -> SkillLevelFacts:
         range_id=row.range_id,
         blackboard=shape_blackboard(json_load(row.blackboard_json)),
         description=None if hoisted else row.gameplay_description,
+        display_name=row.display_name,
+        skill_type=row.skill_type,
+        sp_type=row.sp_type,
+        duration_type=row.duration_type,
     )
 
 

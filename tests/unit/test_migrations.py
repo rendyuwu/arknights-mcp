@@ -219,6 +219,17 @@ def test_operator_domain_columns(tmp_path: Path) -> None:
     }
 
 
+def test_skill_levels_carry_the_per_level_source_fields(tmp_path: Path) -> None:
+    # §V112/B159 (migration 0016): skill_table scopes name + the three enums PER LEVEL, so
+    # the level row can hold them. All four are nullable -- NULL means the skill row
+    # carries the value every level shares (§V66.3 hoist), never "unknown".
+    conn = build_database(tmp_path / "candidate.sqlite")
+    cols = {r[1]: r for r in conn.execute("PRAGMA table_info(skill_levels)")}
+    for column in ("display_name", "skill_type", "sp_type", "duration_type"):
+        assert column in cols, column
+        assert cols[column][3] == 0, column  # notnull flag is 0
+
+
 def test_gameplay_description_columns_present_but_optional(tmp_path: Path) -> None:
     # V16: policy-controlled prose columns exist in the schema (importer excludes
     # them by default) and are nullable, never NOT NULL.

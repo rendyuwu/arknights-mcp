@@ -91,6 +91,11 @@ class SkillLevelRow:
     ``blackboard_json`` stays a JSON string here (allowlisted + sanitized at import,
     §V18/§V31) and is decoded in the service; ``gameplay_description`` is the imported
     in-game effect TEMPLATE (§V65 (a)/ADR 0010) surfaced alongside the blackboard.
+
+    ``display_name`` / ``skill_type`` / ``sp_type`` / ``duration_type`` are the source's
+    PER-LEVEL values (§V112/B159), stored only when the skill's levels disagree; ``None``
+    means the skill row carries the shared value (§V66.3 hoist), exactly as for
+    ``gameplay_description``.
     """
 
     level: int
@@ -100,6 +105,10 @@ class SkillLevelRow:
     range_id: str | None
     blackboard_json: str | None
     gameplay_description: str | None
+    display_name: str | None
+    skill_type: str | None
+    sp_type: str | None
+    duration_type: str | None
 
 
 @dataclass(frozen=True)
@@ -203,7 +212,7 @@ _SKILLS_SQL = (
 
 _SKILL_LEVELS_SQL = (
     "SELECT level, sp_cost, initial_sp, duration, range_id, blackboard_json, "
-    "gameplay_description "
+    "gameplay_description, display_name, skill_type, sp_type, duration_type "
     "FROM skill_levels WHERE skill_pk = ? ORDER BY level"
 )
 
@@ -346,6 +355,10 @@ class OperatorRepository(Repository):
                 range_id=r[4],
                 blackboard_json=r[5],
                 gameplay_description=r[6],
+                display_name=r[7],
+                skill_type=r[8],
+                sp_type=r[9],
+                duration_type=r[10],
             )
             for r in self._all(_SKILL_LEVELS_SQL, (skill_pk,))
         ]

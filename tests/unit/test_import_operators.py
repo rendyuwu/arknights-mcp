@@ -21,6 +21,7 @@ from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.operators import (
     ParsedAlias,
     ParsedOperator,
+    _level_only,
     import_operators,
     insert_operators,
     parse_operators,
@@ -274,6 +275,80 @@ def test_parse_skills_round_trips_a_bare_numeric_sp_type() -> None:
     assert skill.sp_type == "8"
     assert skill.skill_type == "PASSIVE"
     assert skill.duration_type == "NONE"
+
+
+#: §V112/B159: the real shape a flattening importer cannot represent -- one skill whose
+#: levels disagree on all four per-level fields. Transcribed from ``sktok_mjcsdw`` at the
+#: pinned upstream (level 1 PASSIVE with the unnamed ``spType`` code 8, level 2 AUTO with
+#: the NAMED ``INCREASE_WITH_TIME``) plus the ``sktok_sunmao`` rename, so the fixture is a
+#: real corpus shape rather than an invented one (B107 lesson). The live count is pinned
+#: against upstream itself in ``tests/contract/test_skill_enum_encoding.py``.
+_VARYING_SKILL = {
+    "sktok_varies": {
+        "skillId": "sktok_varies",
+        "levels": [
+            {
+                "name": "Connect",
+                "skillType": "PASSIVE",
+                "durationType": "NONE",
+                "duration": 0.0,
+                "rangeId": None,
+                "spData": {"spType": 8, "spCost": 999, "initSp": 0},
+                "blackboard": [],
+            },
+            {
+                "name": "Engrave",
+                "skillType": "AUTO",
+                "durationType": "AMMO",
+                "duration": 0.0,
+                "rangeId": None,
+                "spData": {"spType": "INCREASE_WITH_TIME", "spCost": 999, "initSp": 0},
+                "blackboard": [],
+            },
+        ],
+    }
+}
+
+
+def test_parse_skills_keeps_a_field_the_levels_disagree_on_per_level() -> None:
+    # §V112 (a)/(b) (B159): all four are scoped per LEVEL upstream. Reading level 1 and
+    # calling it the skill's value discarded the rest -- and on this exact skill it kept
+    # the unnamed sp_type code 8 while level 2 carries the NAMED token. The skill claims
+    # nothing when its levels disagree; each level keeps its own.
+    skill = parse_skills(_VARYING_SKILL)[0]
+    assert (skill.display_name, skill.skill_type, skill.sp_type, skill.duration_type) == (
+        None,
+        None,
+        None,
+        None,
+    )
+    assert [
+        (lv.display_name, lv.skill_type, lv.sp_type, lv.duration_type) for lv in skill.levels
+    ] == [
+        ("Connect", "PASSIVE", "8", "NONE"),
+        ("Engrave", "AUTO", "INCREASE_WITH_TIME", "AMMO"),
+    ]
+
+
+def test_parse_skills_hoists_a_field_every_level_shares() -> None:
+    # §V112 (a)/§V66.3: the uniform case (1597 of 1598 EN skills) rides the skill row once
+    # and the level rows repeat nothing -- the same hoist gameplay_description uses.
+    skill = {s.game_id: s for s in parse_skills(SKILLS)}["skchr_amiya_1"]
+    assert skill.display_name == "Arts Charge"
+    assert [lv.display_name for lv in skill.levels] == ["Arts Charge", "Arts Charge"]
+    assert [_level_only(skill, lv) for lv in skill.levels] == [
+        (None, None, None, None),
+        (None, None, None, None),
+    ]
+
+
+def test_a_field_absent_from_every_level_stays_absent_on_both_sides() -> None:
+    # §V26/§V67: "the source carried none" is a different fact from "the levels disagree",
+    # and neither side may invent a value for it.
+    raw = {"sk_bare": {"skillId": "sk_bare", "levels": [{"duration": 0.0, "blackboard": []}]}}
+    skill = parse_skills(raw)[0]
+    assert skill.sp_type is None
+    assert skill.levels[0].sp_type is None
 
 
 def test_parse_skills_reads_typed_fields() -> None:

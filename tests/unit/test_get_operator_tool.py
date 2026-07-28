@@ -178,6 +178,10 @@ def test_skill_level_range_id_omitted_when_absent() -> None:
         range_id=None,
         blackboard=None,
         description=None,
+        display_name=None,
+        skill_type=None,
+        sp_type=None,
+        duration_type=None,
     )
     assert "range_id" not in _skill_level_to_dict(level)
     assert _skill_level_to_dict(replace(level, range_id="x-1"))["range_id"] == "x-1"
