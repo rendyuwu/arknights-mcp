@@ -79,6 +79,25 @@ class MetadataRepository(Repository):
         rows = self._all("SELECT DISTINCT server FROM source_snapshots")
         return frozenset(str(r[0]) for r in rows)
 
+    def has_source_snapshot(self, source_id: str, server: str) -> bool:
+        """Whether ONE source imported a snapshot for ONE region (§V5/§V50).
+
+        The sanctioned per-source availability probe, and the §V37 home for it:
+        :meth:`active_servers` answers "does this region have data at all", which an
+        OPTIONAL domain (announcements, banners, skins, penguin drops) cannot use --
+        its region is fully imported while its own feed never ran. Without this the
+        two cases ship identical bytes: an unimported feed and a live feed with no
+        row in the requested window both answer ``ok`` + ``[]`` (B146/§V30).
+
+        Both values are bound (§V2); the caller maps region -> source id, so no
+        region string is ever interpolated into the query.
+        """
+        row = self._one(
+            "SELECT 1 FROM source_snapshots WHERE source_id = ? AND server = ? LIMIT 1",
+            (source_id, server),
+        )
+        return row is not None
+
     def domain_row_counts(self) -> dict[str, int]:
         """Row counts per domain table; a table absent from the schema counts 0."""
         counts: dict[str, int] = {}

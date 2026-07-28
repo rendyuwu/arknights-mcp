@@ -13,8 +13,10 @@ allowlist -> repo -> service -> tool) is exercised. They assert:
 * the optional since/until ISO date window narrows the list, newest-first;
 * the §V19/§V22 bounded pagination: out-of-range page rejected at BOTH the model and
   the service (never a silent clamp), and the page descriptor reports total + has_more;
-* a region with no announcements is a legitimate empty ``ok`` list (the adapter is
-  disabled by default, D14/§V56), never a ``not_found``;
+* a region with no announcements is a legitimate empty ``ok`` list (§V106 (b)), never a
+  ``not_found`` -- and never a BARE one: §V50 availability is decided before absence is
+  asserted, so a never-imported feed and a live feed with nothing in the window carry
+  DIFFERENT limitations (B146);
 * the typed §V23 envelope shape, including fail-closed ``database_unavailable`` /
   ``internal_error`` with no path/trace leak;
 * the §I.tool wire contract: a read-only spec with a bounded input schema, present in
@@ -102,16 +104,19 @@ class _FakeFetcher:
         return self._payload
 
 
-def _candidate(tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False) -> Path:
+def _candidate(
+    tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False, name: str = "cand.sqlite"
+) -> Path:
     """Build the 4-4 fixture candidate, then import announcements via the real T95 path.
 
     Opens a read-write handle onto the freshly built candidate (before promotion +
     read-only reopen, mirroring the importer's own shape) and runs
     ``import_announcements`` with a fake fetcher; ``build_candidate`` already seeded the
     announcement sources into ``data_sources`` (the full registry), so the snapshot FK
-    holds.
+    holds. ``name`` keeps two differently-seeded builds apart in one ``tmp_path``, so a
+    test may compare an imported feed against a never-imported one (T206/B146).
     """
-    path = tmp_path / "cand.sqlite"
+    path = tmp_path / name
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
     build_candidate(
         path,
@@ -139,7 +144,13 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 @pytest.fixture
 def bare_conn(tmp_path: Path) -> sqlite3.Connection:
     """4-4 build with NO announcements imported (the empty-domain case)."""
-    return open_read_only(_candidate(tmp_path, seed_en=False, seed_cn=False))
+    return open_read_only(_candidate(tmp_path, seed_en=False, seed_cn=False, name="bare.sqlite"))
+
+
+@pytest.fixture
+def en_only_conn(tmp_path: Path) -> sqlite3.Connection:
+    """4-4 build with the en feed imported and the cn feed never run (§V50 per region)."""
+    return open_read_only(_candidate(tmp_path, seed_en=True, seed_cn=False, name="en_only.sqlite"))
 
 
 def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
@@ -254,18 +265,84 @@ def test_out_of_range_page_rejected_at_service(conn: sqlite3.Connection) -> None
         get_announcements(conn, server="en", page=0)
 
 
-# --- empty domain: ok empty list, never not_found (§V56/§V23) -----------------
+# --- empty domain: ok empty list, never not_found (§V106 (b)/§V23) ------------
 
 
 def test_empty_region_is_ok_empty_list(bare_conn: sqlite3.Connection) -> None:
-    # §V56: the announcement source is disabled by default, so a region with no
-    # imported feed is a legitimate empty ``ok`` list, not a ``not_found``.
+    # §V106 (b): an empty answer to a well-formed set query is ``ok`` + an empty
+    # collection, never a ``not_found`` (that would be an entity-lookup verdict).
     env = _handler(bare_conn)(server="en")
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert data["announcements"] == []  # type: ignore[index]
     assert data["page"] == {"page": 1, "page_size": 50, "total": 0, "has_more": False}  # type: ignore[index]
     assert env.to_dict()["provenance"] == []
+
+
+# --- §V50 availability BEFORE absence (T206/B146) -----------------------------
+
+
+def test_unimported_feed_names_the_source_and_the_admin_action(
+    bare_conn: sqlite3.Connection,
+) -> None:
+    # §V50: with no announcement snapshot for the region, "no announcement" is not
+    # inferable -- the empty list must say the feed never ran, name the source, and
+    # give the §V28 admin step (importing is CLI-only, never a query-time fetch, §V1).
+    env = _handler(bare_conn)(server="en")
+    assert env.status == "ok"
+    limitations = env.to_dict()["limitations"]
+    assert isinstance(limitations, list) and len(limitations) == 1
+    text = limitations[0]
+    assert "arknights_global_official_news" in text
+    assert "no imported snapshot" in text
+    assert "arknights-mcp sync --server en" in text
+
+
+def test_availability_verdict_is_per_region(en_only_conn: sqlite3.Connection) -> None:
+    # §V5/§V50: the probe is the REGION's own feed. en imported + cn not is a normal
+    # build state, and a sibling region's success must not vouch for cn (§V30 class).
+    assert _handler(en_only_conn)(server="en").limitations == ()
+    cn = _handler(en_only_conn)(server="cn").to_dict()["limitations"]
+    assert isinstance(cn, list) and len(cn) == 1
+    assert "arknights_cn_official_news" in cn[0]
+    assert "arknights-mcp sync --server cn" in cn[0]
+
+
+def test_empty_window_on_an_imported_feed_says_so_differently(
+    conn: sqlite3.Connection, bare_conn: sqlite3.Connection
+) -> None:
+    # THE B146 defect: an unimported feed and a live feed with nothing in the window
+    # shipped identical bytes, so the response could not be read either way. Both are
+    # still ``ok`` + ``[]``, but the limitation now decides it -- and the imported one
+    # never suggests a sync, which would read as "the cache is missing".
+    windowed = _handler(conn)(server="en", since="2027-01-01T00:00:00+00:00")
+    unimported = _handler(bare_conn)(server="en")
+    assert windowed.status == unimported.status == "ok"
+    assert windowed.to_dict()["data"]["announcements"] == []  # type: ignore[index]
+    assert unimported.to_dict()["data"]["announcements"] == []  # type: ignore[index]
+
+    assert windowed.limitations != unimported.limitations
+    (empty,) = windowed.limitations
+    assert "is imported for this region" in empty
+    assert "since/until" in empty
+    assert "arknights-mcp sync" not in empty
+
+
+def test_non_empty_result_carries_no_availability_limitation(conn: sqlite3.Connection) -> None:
+    # The rows themselves prove the feed is present; a caveat here would be noise.
+    assert _handler(conn)(server="en").limitations == ()
+
+
+def test_service_direct_unsupported_region_states_it_has_no_feed(
+    conn: sqlite3.Connection,
+) -> None:
+    # Unreachable through the tool (the model admits only en/cn) but reachable through
+    # the service: an empty list for a region that HAS no feed must not read as "this
+    # region published nothing" (§V26/§V50/§V56).
+    result = get_announcements(conn, server="jp")
+    assert result.status == "ok" and result.announcements == ()
+    (text,) = result.limitations
+    assert "no official announcement feed for region jp" in text
 
 
 # --- §V23 fail-closed ---------------------------------------------------------

@@ -18,6 +18,10 @@ The load-bearing invariants:
 * **§V19/§V22** -- the list is paged through a bounded window (``page``); the ranking is
   fixed (newest first) + provenance computed over the FULL set upstream, so a page never
   shifts them, and the size-capped envelope keeps the default response small.
+* **§V50/§V106 (b)** -- an empty list is an ``ok`` answer that says WHY: the service's
+  availability verdict (was this region's feed ever imported?) rides ``limitations``, so
+  an unimported feed and a live feed with nothing in the window never ship the same
+  bytes (B146).
 * **§V23** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the shared
   :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
@@ -50,8 +54,9 @@ _TOOL_DESCRIPTION = (
     "(bounded page/page_size). en/cn are never mixed. The feed is imported by an admin "
     "sync, never fetched while answering, so the list reflects the last import. category "
     "is the feed's own grouping token, which the publisher defines and changes over time. "
-    "An empty list means no announcement in the requested window on this build; call "
-    "get_data_status to see whether an announcement snapshot was imported for the region."
+    "An empty list always states why in limitations: whether the region's feed was never "
+    "imported (get_data_status lists every imported snapshot) or the window excluded "
+    "everything."
 )
 
 
@@ -75,15 +80,17 @@ def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 ``ok`` envelope (§V5 region + provenance).
 
     A region with no announcements in the requested window is a legitimate empty list, so
-    this is always an ``ok`` result -- never a ``not_found`` (this is a list tool, not an
-    entity lookup). The adapter has been ENABLED by default since the M9 policy review
-    (§V56/§T93), so the description must not tell a client to expect nothing (B146): both
-    feeds import on a normal sync. The list is paged (§V19/§V22): the
-    ``page`` descriptor reports the full ``total`` + ``has_more`` while ``announcements``
-    holds only the requested page. Provenance is the distinct announcement snapshots
-    backing the FULL filtered set (§V5, derived in the service so a later page never
-    drops one); the comparison is region-scoped, so every provenance row shares the
-    requested region.
+    this is always an ``ok`` result -- never a ``not_found`` (§V106 (b): this is a set
+    query, not an entity lookup). The adapter has been ENABLED by default since the M9
+    policy review (§V56/§T93), so the description must not tell a client to expect
+    nothing (B146): both feeds import on a normal sync. An empty list is never BARE
+    either -- the service's §V50 availability verdict rides ``limitations``, so a feed
+    that was never imported for the region cannot be mistaken for a feed reporting
+    nothing. The list is paged (§V19/§V22): the ``page`` descriptor reports the full
+    ``total`` + ``has_more`` while ``announcements`` holds only the requested page.
+    Provenance is the distinct announcement snapshots backing the FULL filtered set
+    (§V5, derived in the service so a later page never drops one); the comparison is
+    region-scoped, so every provenance row shares the requested region.
 
     §V77/§V66 (B79): region is stated ONCE on the parent ``server`` field (and the
     envelope provenance), never repeated on every announcement row.
@@ -99,6 +106,7 @@ def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
             Provenance(server=result.server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
             for p in result.provenance
         ),
+        limitations=result.limitations,
     )
 
 

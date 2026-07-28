@@ -7,6 +7,11 @@ row carries its region + provenance (§V5); en and cn are never mixed (the regio
 part of the query). The scope is METADATA-ONLY (§V56, extends §V16): only the five
 metadata fields are surfaced -- there is no body/html/prose to leak.
 
+An empty answer states WHY (§V50/§V106 (b)): the feed is an OPTIONAL domain, so
+"never imported for this region" and "imported, nothing in the requested window" are
+different facts that used to ship identical bytes (``ok`` + ``[]``, B146). Availability
+is checked BEFORE absence is asserted, against the region's own announcement snapshot.
+
 Read-only + parameterized SQL only (§V2): the parameterized ``SELECT`` lives in
 :class:`~arknights_mcp.db.repositories.announcements.AnnouncementRepository`. It does
 not open the connection; callers pass one in, so both transports share this exact
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from arknights_mcp.db.repositories.announcements import AnnouncementRepository, AnnouncementRow
+from arknights_mcp.db.repositories.metadata import MetadataRepository
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
 from arknights_mcp.services.stages import (
     SectionPage,
@@ -28,11 +34,68 @@ from arknights_mcp.services.stages import (
     _section_page,
     _validate_page,
 )
+from arknights_mcp.sources.announcements import source_id_for_region
 
-#: Typed outcome of an announcement lookup. Always ``ok``: a region with no
-#: announcements is a legitimate empty list (the adapter is disabled by default,
-#: D14/§V56), not a ``not_found`` -- this is a list tool, not an entity lookup.
+#: Typed outcome of an announcement lookup. Always ``ok`` (§V106 (b)): this is a SET
+#: query, not an entity lookup, so an empty list is a legitimate answer to a
+#: well-formed question -- never a ``not_found``. Why it is empty rides the
+#: ``limitations`` instead (§V50), which keeps the status additive (⊥ a §V21 bump).
 AnnouncementsStatus = Literal["ok"]
+
+
+def feed_not_imported_limitation(source_id: str, server: str) -> str:
+    """§V50: the region's announcement feed has NO imported snapshot on this build.
+
+    Named source + an admin step (§V28: importing is CLI-only, never a query-time
+    fetch, §V1). This is the availability half of §V50 -- absence of announcements
+    cannot be asserted when the feed itself never ran -- and it is deliberately
+    worded nothing like :func:`empty_window_limitation`, because the whole B146
+    defect was that the two cases were indistinguishable on the wire.
+    """
+    return (
+        f"the official announcement feed `{source_id}` has no imported snapshot for "
+        f"{server} on this build, so this list cannot show whether announcements exist; "
+        f"ask the server admin to run `arknights-mcp sync --server {server}`"
+    )
+
+
+def empty_window_limitation() -> str:
+    """§V106 (b): the feed IS imported and no announcement fell in the window.
+
+    A well-formed set query with zero hits is an ``ok`` answer, not a failure, but it
+    still says why it is empty + what to change. The counterpart to
+    :func:`feed_not_imported_limitation`: this one confirms the feed is present.
+    """
+    return (
+        "the announcement feed is imported for this region, but no announcement falls in "
+        "the requested window; widen or drop the since/until bounds"
+    )
+
+
+def feed_carries_no_announcement_limitation() -> str:
+    """§V106 (b): the feed is imported for this region and carries no announcement.
+
+    Distinct from :func:`empty_window_limitation` because no window was requested:
+    nothing the client can change would widen this result, so it is told the emptiness
+    is the imported snapshot's, not its query's.
+    """
+    return (
+        "the announcement feed is imported for this region but its snapshot carries no "
+        "announcement; this is the imported feed's own content, not a filtered-out result"
+    )
+
+
+def no_announcement_source_limitation(server: str) -> str:
+    """§V56: the region has no official announcement feed at all.
+
+    Unreachable through the MCP tool (the input model admits only en/cn) and kept for
+    a caller reaching the service directly: an empty list from a region that has no
+    feed must not read as "this region published nothing" (§V26/§V50).
+    """
+    return (
+        f"there is no official announcement feed for region {server}; "
+        "announcements are available for en and cn only"
+    )
 
 
 @dataclass(frozen=True)
@@ -61,6 +124,7 @@ class AnnouncementsResult:
     is the distinct announcement snapshots (``snapshot_id`` + ``imported_at``) backing
     the full filtered set, all sharing the requested region (§V5) -- derived over the
     full set (never the current page) so a later page never drops a snapshot.
+    ``limitations`` carries the §V50/§V106 (b) reason an empty list is empty.
     """
 
     status: AnnouncementsStatus
@@ -68,6 +132,7 @@ class AnnouncementsResult:
     announcements: tuple[AnnouncementFacts, ...]
     page: SectionPage
     provenance: tuple[StageProvenance, ...]
+    limitations: tuple[str, ...]
 
 
 def _announcement_facts(row: AnnouncementRow) -> AnnouncementFacts:
@@ -102,6 +167,38 @@ def _announcement_provenance(rows: tuple[AnnouncementRow, ...]) -> tuple[StagePr
     return tuple(provenance)
 
 
+def _limitations(
+    conn: sqlite3.Connection, server: str, total: int, windowed: bool
+) -> tuple[str, ...]:
+    """Why an empty announcement list is empty (§V50 availability, then §V106 (b)).
+
+    Availability is decided BEFORE absence is asserted: a region whose feed has no
+    imported snapshot gets :func:`feed_not_imported_limitation`, naming the source and
+    the admin step, because "no announcement" is simply not inferable from a feed that
+    never ran (§V50/§V26). Only once the feed IS present does an empty result mean what
+    a client would read it to mean, and then it says so -- through
+    :func:`empty_window_limitation` when a since/until window excluded everything, else
+    through :func:`feed_carries_no_announcement_limitation`. Exactly one string fires,
+    so the cases are always distinguishable on the wire (B146).
+
+    A non-empty result carries none of them: the rows themselves prove the feed is
+    present. A region outside {en,cn} has no announcement source at all (§V56) -- the
+    model gate rejects one before it reaches here, so this only answers a caller
+    arriving through the service directly, and it says so rather than implying the
+    region merely has nothing to report.
+    """
+    if total > 0:
+        return ()
+    source_id = source_id_for_region(server)
+    if source_id is None:
+        return (no_announcement_source_limitation(server),)
+    if not MetadataRepository(conn).has_source_snapshot(source_id, server):
+        return (feed_not_imported_limitation(source_id, server),)
+    if windowed:
+        return (empty_window_limitation(),)
+    return (feed_carries_no_announcement_limitation(),)
+
+
 def get_announcements(
     conn: sqlite3.Connection,
     *,
@@ -123,8 +220,10 @@ def get_announcements(
     (mirroring the model gate -- one contract, both places, never a silent clamp). The
     provenance is computed over the FULL filtered set BEFORE slicing, so a later page
     never drops a snapshot. A region with no announcements is a legitimate empty ``ok``
-    list (the adapter is disabled by default, D14/§V56), never a ``not_found``. Both
-    transports call this same function (§V14).
+    list, never a ``not_found`` (§V106 (b)) -- but never a BARE one either: the result
+    states whether the region's feed was ever imported (§V50) before an empty list can
+    be read as "nothing was announced" (B146). Both transports call this same function
+    (§V14).
     """
     p, size = _validate_page(page, page_size)
 
@@ -141,4 +240,7 @@ def get_announcements(
         announcements=tuple(_announcement_facts(r) for r in rows),
         page=page_info,
         provenance=provenance,
+        limitations=_limitations(
+            conn, server, len(all_rows), windowed=since is not None or until is not None
+        ),
     )
