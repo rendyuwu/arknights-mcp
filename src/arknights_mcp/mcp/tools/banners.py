@@ -32,7 +32,9 @@ from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_PATH_NOTE,
+    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
+    attach_enum_legend,
     attach_image_ref_disclosures,
     page_to_dict,
     run_guarded,
@@ -53,11 +55,8 @@ _TOOL_DESCRIPTION = (
     "List Arknights banner archive metadata by region (en/cn), sourced from the game "
     "data gacha_table. Each entry carries only its pool id, display name, open/end "
     "schedule, rule type, and the typed featured operators. It never carries gacha "
-    "summary, detail, html, or image prose. rule_type is the source's own pool-rule "
-    "token: NORMAL, SINGLE, DOUBLE, LINKAGE, LIMITED, SPECIAL, ATTAIN, BACKFLOW, "
-    "CLASSIC, CLASSIC_DOUBLE, CLASSIC_ATTAIN, or FESCLASSIC. The set is defined by the "
-    "game data and may grow, so treat an unlisted token as source-defined rather than an "
-    "error. Many pools carry no typed featured operator, because their rate-up is not in "
+    "summary, detail, html, or image prose. The response's enum_legend gives the values "
+    "of rule_type. Many pools carry no typed featured operator, because their rate-up is not in "
     "the typed game data. That absence is reported as a limitation, never fabricated. This "
     "is a historical schedule fact, not gacha planning. It has no pull-probability, "
     "pity, or spark. Optional since/until bounds window the list by ISO open-time "
@@ -151,6 +150,15 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
     # base ONCE onto data and appends the derived-unverified limitation, exactly when
     # this page actually emits refs; every ref carries only its relative path.
     limitations = attach_image_ref_disclosures(data, result.limitations, emits_refs=emits_refs)
+    # §V104 (b)/(c): every banner row carries rule_type, so its STATIC 12-token domain +
+    # the source-defined "may grow" caveat ride the response instead of the description
+    # (§V111 a). B142/B138 is exactly this field: the description named 4 of 12, so the one
+    # classification it delegated was undecidable for the other 7.
+    # §V67: a region with no banners (gacha_table is tolerant-absent, B36) emits no
+    # rule_type at all, so it ships neither the legend nor its openness caveat.
+    limitations = attach_enum_legend(
+        data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME] if result.banners else (), limitations
+    )
     return ok(
         data,
         provenance=tuple(

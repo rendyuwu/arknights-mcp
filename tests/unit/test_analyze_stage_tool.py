@@ -29,7 +29,11 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
+from arknights_mcp.mcp.tools._shared import (
+    CONFIDENCE_SCALE_NOTE,
+    ENEMY_STAT_SCALE_NOTE,
+    LIST_FIELD_CONVENTION,
+)
 from arknights_mcp.mcp.tools.stage import (
     _occurrence_full,
     _shape_analysis,
@@ -425,3 +429,30 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert tool.inputSchema["additionalProperties"] is False
     depth_schema = tool.inputSchema["properties"]["depth"]
     assert set(depth_schema["enum"]) == {"summary", "standard", "detailed"}
+
+
+def test_enum_legend_and_stat_scales_ride_only_the_detailed_depth(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V104 (b)/§V67: only the DETAILED occurrence row carries enemy_class and the
+    # res/move_speed/weight block, so only that depth ships their domain + scales. A
+    # legend or a scale for a field this depth never emits is noise (§V66).
+    detailed = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()
+    assert set(detailed["data"]["enum_legend"]) == {"enemy_class"}  # type: ignore[arg-type,index]
+    assert ENEMY_STAT_SCALE_NOTE in detailed["limitations"]
+    for depth in ("summary", "standard"):
+        env = _handler(conn)(server="en", stage_code="4-4", depth=depth).to_dict()
+        assert "enum_legend" not in env["data"], depth  # type: ignore[operator]
+        assert ENEMY_STAT_SCALE_NOTE not in env["limitations"], depth
+
+
+def test_confidence_scale_rides_every_observation_bearing_depth(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V104/§V6: observations ride EVERY depth (the depth ladder scales the surrounding
+    # facts, not the observations), so the scale their confidence is read on rides every
+    # depth too -- once per envelope (§V66), not once per observation.
+    for depth in ("summary", "standard", "detailed"):
+        env = _handler(conn)(server="en", stage_code="4-4", depth=depth).to_dict()
+        assert env["data"]["observations"], depth  # type: ignore[index]
+        assert env["limitations"].count(CONFIDENCE_SCALE_NOTE) == 1, depth  # type: ignore[union-attr]

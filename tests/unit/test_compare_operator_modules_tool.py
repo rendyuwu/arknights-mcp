@@ -35,6 +35,7 @@ from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
+    CONFIDENCE_SCALE_NOTE,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
     evidence_to_dict,
@@ -235,12 +236,27 @@ def test_description_points_to_blackboard_glossary(conn: sqlite3.Connection) -> 
         assert key in BLACKBOARD_KEY_GLOSSARY, key
 
 
-def test_description_documents_change_dedup_and_token_label(conn: sqlite3.Connection) -> None:
-    # §V83/B88: the client reads the tool description literally, so the trait/talent change
-    # dedup + the applies_to "token" label + the level-hoist semantics are documented there.
+def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection) -> None:
+    # §V83/B88: the trait/talent change dedup + the applies_to "token" label + the
+    # level-hoist semantics are part of the client contract. §T207/§V111 (a) moved the
+    # home from BOTH module-tool descriptions to a standing limitation -- it names what
+    # the emitted bundles omit, which is read against the payload. Moved, not deleted.
+    env = _handler(conn)(server="en", game_id=_AMIYA)
+    lims = env.to_dict()["limitations"]
+    assert MODULE_CHANGE_DEDUP_NOTE in lims
+    assert 'applies_to "token"' in MODULE_CHANGE_DEDUP_NOTE
     desc = build_compare_operator_modules_spec(lambda: conn).description
-    assert MODULE_CHANGE_DEDUP_NOTE in desc
-    assert 'applies_to "token"' in desc
+    assert MODULE_CHANGE_DEDUP_NOTE not in desc
+
+
+def test_confidence_scale_rides_only_the_observation_mode(conn: sqlite3.Connection) -> None:
+    # §V104/§V6: the scale is stated ONCE per response that carries a confidence (§V66),
+    # and facts_only carries none -- so the caveat rides with_observations alone rather
+    # than the description of all four observation-emitting tools (§V111 a).
+    with_obs = _handler(conn)(server="en", game_id=_AMIYA, mode="with_observations")
+    assert CONFIDENCE_SCALE_NOTE in with_obs.to_dict()["limitations"]
+    facts_only = _handler(conn)(server="en", game_id=_AMIYA)
+    assert CONFIDENCE_SCALE_NOTE not in facts_only.to_dict()["limitations"]
 
 
 def test_client_facing_blackboard_text_has_no_internal_cites() -> None:

@@ -24,7 +24,7 @@ from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
+from arknights_mcp.mcp.tools._shared import ENEMY_STAT_SCALE_NOTE, LIST_FIELD_CONVENTION
 from arknights_mcp.mcp.tools.enemy import (
     _enemy_absent_field_limitations,
     _enemy_to_dict,
@@ -71,7 +71,10 @@ def test_default_returns_enemy_facts_and_levels(conn: sqlite3.Connection) -> Non
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"enemy"}
+    # §V104 (b)/§T207: every enemy row carries enemy_class + motion_type, so their static
+    # domains ride the response beside the values instead of the tool description.
+    assert set(data) == {"enemy", "enum_legend"}
+    assert set(data["enum_legend"]) == {"enemy_class", "motion_type"}  # type: ignore[arg-type,index]
     enemy = data["enemy"]
     assert enemy["game_id"] == "enemy_1007_slime"  # type: ignore[index]
     assert enemy["display_name"] == "Originium Slug"  # type: ignore[index]
@@ -297,3 +300,15 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert tool.inputSchema["additionalProperties"] is False
     assert set(tool.inputSchema["required"]) == {"server", "game_id"}
     assert tool.inputSchema["properties"]["game_id"]["maxLength"] == MAX_ID_LEN
+
+
+def test_stat_scales_ride_the_response_that_carries_the_stats(
+    conn: sqlite3.Connection,
+) -> None:
+    # §V104/§V71 (e): res / move_speed / weight sit on the same block as attack_interval
+    # ("in seconds") and stated nothing, so "res: 0" could be a percentage or a flat
+    # value. §T207/§V111 (a) moved the home from this description to a standing
+    # limitation -- a scale is read beside its number, and every stat block emits one.
+    env = _handler(conn)(server="en", game_id="enemy_1007_slime")
+    assert ENEMY_STAT_SCALE_NOTE in env.to_dict()["limitations"]
+    assert ENEMY_STAT_SCALE_NOTE not in build_get_enemy_spec(lambda: conn).description

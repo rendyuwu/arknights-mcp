@@ -22,6 +22,10 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import (
+    SEARCH_COVERAGE_ENTRIES,
+    SEARCH_COVERAGE_POINTER,
+)
 from arknights_mcp.mcp.tools.search import build_search_stages_spec
 from arknights_mcp.services.search import MAX_LIMIT
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -365,10 +369,16 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     # the coverage instead of the retired "not indexed" caveat.
     assert "A zone name (for example Gavial's Footprints)" in desc
     assert "matches the stages in that zone" in desc
-    # T186/B113: §V75 -- the alias ranking rule and the zone_display_name attribution
-    # are stated in THIS sibling too, not only in search_entities.
-    assert "listed after every entity that matched on its own name" in desc
-    assert "zone_display_name" in desc
+    # T186/B113 + §T207/§V84: §V75 still requires this sibling to carry the alias
+    # ranking rule and the zone_display_name attribution -- it now carries the POINTER
+    # to their single home, because stated inline in both siblings they formed the
+    # >=500-char identical block §V84 forbids.
+    guide = dict(SEARCH_COVERAGE_ENTRIES)
+    assert (
+        "listed after every entity that matched on its own name" in guide["zone_and_event_ranking"]
+    )
+    assert "zone_display_name" in guide["zone_and_event_attribution"]
+    assert SEARCH_COVERAGE_POINTER in desc
     # The stages variant states the exact-code exception honestly: exact stage-code
     # matches lead regardless of region, THEN the en-before-cn order applies.
     assert "exact stage-code matches are listed first" in desc

@@ -56,15 +56,12 @@ _TOOL_DESCRIPTION = (
     "side by side; a level a module does not define is marked present=false. mode "
     "facts_only returns the comparison; with_observations adds deterministic, "
     "evidence-backed observations (never a mandatory or best-in-slot verdict). "
-    + CONFIDENCE_SCALE_NOTE
-    + " en/cn are never mixed. Each stat/trait/talent change includes the in-game "
+    "en/cn are never mixed. Each stat/trait/talent change includes the in-game "
     "effect description template (when present in the source) alongside raw blackboard "
-    "key-value data; read the template to interpret the values, and do not infer "
-    "mechanics from a key name alone. A module's trait template is emitted once as the "
+    "key-value data. A module's trait template is emitted once as the "
     "module's trait_change_description when it is the same at every level; it appears on a "
     "level's trait change only when the wording differs between levels. "
-    + MODULE_CHANGE_DEDUP_NOTE
-    + " For an operator's full kit (identity, phases, skills, talents, and modules), use "
+    "For an operator's full kit (identity, phases, skills, talents, and modules), use "
     "get_operator with include_modules. This tool instead compares modules level by level, "
     "and its with_observations mode adds evidence-backed observations. "
     + BLACKBOARD_GLOSSARY_POINTER
@@ -158,6 +155,15 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
     # so no present-filter is needed here -- one shape with the get_operator call site.
     if has_unnamed_cost_item(lv.cost for m in result.modules for lv in m.levels):
         limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
+    # §V83/§V66 (B88): the dedup/labelling note rides the response that carries the deduped
+    # bundles -- it names what those bundles OMIT, which is read post-call (§V111 a). Same
+    # gate as the blackboard caveat: no modules, no deduped payload, no note.
+    if result.modules:
+        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE)
+    # §V104/§V6: the confidence scale rides the mode that emits a confidence, once per
+    # envelope (§V66); facts_only carries no observation, so it carries no scale.
+    if result.mode == "with_observations" and result.observations:
+        limitations = (*limitations, CONFIDENCE_SCALE_NOTE)
     prov = result.provenance
     return ok(
         data,

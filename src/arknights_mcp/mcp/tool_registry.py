@@ -31,6 +31,30 @@ ToolHandler = Callable[..., ResponseEnvelope]
 #: Empty-object JSON schema for a tool that takes no parameters.
 _EMPTY_INPUT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
+#: §V71 (f)/§V111 (d) (§T207, B145/B156): the tool-description budget, as a NUMBER.
+#:
+#: §V71 (f) used to bound the description only qualitatively ("short sentences, not a
+#: 6-8-line clause chain"), so B145 could be closed by halving ONE tool: ``get_operator``
+#: went 2185 -> 2040 and the rule read satisfied while ``get_stage``, never audited, sat at
+#: 2881 and became the new longest string on the server (B156 -- "the halving moved the
+#: crown, not the problem"). A qualitative bound audits whichever tool someone happens to
+#: look at; a number audits all of them.
+#:
+#: Enforced at registration, not merely asserted in a test, for the same reason read-only
+#: is enforced here rather than hinted: a spec that only a test knows about is a spec a new
+#: tool can ship past. Over-budget fails LOUDLY at assembly, on every transport, before any
+#: client sees a truncated string.
+#:
+#: 1600 is a chosen budget, not a measured client limit -- no MCP client publishes where it
+#: truncates a tool listing, and the client that reported B145 reported the symptom (a
+#: description cut mid-sentence) rather than a threshold. It is set below every tool's
+#: pre-pass length except the three metadata tools, so it bites, and it leaves each tool
+#: room for the §V-mandated text that legitimately belongs pre-call. Going over is NOT
+#: closed by deleting a mandated fact (§V111 b): the fact MOVES to a named home -- the
+#: published input schema (§V107), a static response-side legend (§V104 b), a limitation,
+#: or an MCP resource (§V84) -- which is how §T207 brought all 13 under it.
+MAX_TOOL_DESCRIPTION_CHARS = 1600
+
 
 class ToolRegistryError(ValueError):
     """Raised on an invalid registration (duplicate name or mutating tool)."""
@@ -86,11 +110,20 @@ class ToolRegistry:
         self._specs: dict[str, ToolSpec] = {}
 
     def register(self, spec: ToolSpec) -> ToolSpec:
-        """Register ``spec``. Rejects a duplicate name or a mutating tool."""
+        """Register ``spec``. Rejects a duplicate name, a mutating tool, or an
+        over-budget description (§V2/§V28, §V71 f/§V111 d)."""
         if not spec.read_only:
             raise ToolRegistryError(
                 f"tool {spec.name!r} is not read-only; MCP tools are read-only (§V2) "
                 "and admin ops are CLI-only (§V28)"
+            )
+        if len(spec.description) > MAX_TOOL_DESCRIPTION_CHARS:
+            raise ToolRegistryError(
+                f"tool {spec.name!r} description is {len(spec.description)} chars, over the "
+                f"{MAX_TOOL_DESCRIPTION_CHARS}-char budget (§V71 f/§V111 d). Move a fact to "
+                "its named home -- input schema (§V107), response legend (§V104 b), a "
+                "limitation, or an MCP resource (§V84) -- never delete a mandated one "
+                "(§V111 b)"
             )
         if spec.name in self._specs:
             raise ToolRegistryError(f"tool {spec.name!r} already registered")

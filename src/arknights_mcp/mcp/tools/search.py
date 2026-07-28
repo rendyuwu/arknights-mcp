@@ -34,7 +34,13 @@ from collections.abc import Callable
 
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._shared import DIFFICULTY_NOTE, ConnectionProvider, run_guarded
+from arknights_mcp.mcp.tools._shared import (
+    SEARCH_COVERAGE_POINTER,
+    TOOL_ENUM_LEGEND_FIELDS,
+    ConnectionProvider,
+    attach_enum_legend,
+    run_guarded,
+)
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.search import SearchEntitiesInput
 from arknights_mcp.models.stages import SearchStagesInput
@@ -66,17 +72,26 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 #: (server filter / per-row server field) is named. The en/cn-only clause is one
 #: constant because the not_found actions repeat it -- one home, three readers.
 _EN_CN_ONLY_CLAUSE = "names are indexed in English and Chinese only"
-_COVERAGE_NOTE = (
-    _EN_CN_ONLY_CLAUSE[:1].upper() + _EN_CN_ONLY_CLAUSE[1:] + "; Japanese or Korean names will "
-    "not match. Matching is exact-token with prefix support; typos and fuzzy "
-    "queries will not match. A zone name (for example Gavial's Footprints) or an event "
-    "title (for example Lone Trail) also matches the stages in that zone or event. Such "
-    "a stage is listed after every entity that matched on its own name, code, or id, so "
-    "an event never crowds out the operator it is named after. A stage that matched this "
-    "way carries the zone name in zone_display_name and the event title in event_name. "
-    "Main story chapters and the permanent modes (annihilation, Stationary Security "
-    "Service, Integrated Strategies) belong to no event, so they carry no event title "
-    "and are found by chapter or zone name, stage name, or stage code."
+#: §V84/§V111 (§T207): this block was 788 chars and BYTE-IDENTICAL in both search
+#: descriptions -- exactly the ">=500-char identical block across >=2 tool descriptions"
+#: §V84 forbids, and it went unseen because §V84's only guard checked the blackboard
+#: glossary. It is now split by WHEN a caller needs it (§V111 c), not deleted (§V111 b):
+#: what stays here is the PRE-call half, which changes how a caller forms the query at all
+#: (which languages index, that matching is exact-token, that a zone or event title is a
+#: usable query); the ranking/attribution/coverage-gap half is read AGAINST a result and
+#: moved to the ``arknights://glossary/search-coverage`` resource this note points at.
+#: What remains is under §V84's 500-char duplication bar.
+#: Split in two so the per-tool region-order note can sit BETWEEN them (see
+#: :data:`_BOUNDED_NOTE`): back to back these are ~490 shared chars, and abutting any
+#: other shared sentence they cross §V84's 500-char bar again.
+_INDEX_NOTE = (
+    _EN_CN_ONLY_CLAUSE[:1].upper() + _EN_CN_ONLY_CLAUSE[1:] + ", so Japanese or Korean names "
+    "will not match. Matching is exact-token with prefix support, so typos and fuzzy "
+    "queries will not match."
+)
+_ZONE_EVENT_NOTE = (
+    "A zone name (for example Gavial's Footprints) or an event title (for example Lone "
+    "Trail) also matches the stages in that zone or event. " + SEARCH_COVERAGE_POINTER
 )
 _REGION_ORDER_NOTE = (
     "Without a server filter both regions are searched, the strongest matches are "
@@ -90,6 +105,25 @@ _STAGES_REGION_ORDER_NOTE = (
     "each row's server field."
 )
 
+#: §V104 (b) (§T207): a locator's ``difficulty`` is now decoded by the response's
+#: ``enum_legend``, so what stays inline is only the pointer to it. WHY the tag exists --
+#: that a variant shares its code and name with the base stage -- moved INTO the TOUGH /
+#: EASY glosses, which is where a client meets the ambiguity it resolves. Shared by both
+#: search descriptions (§V37), well under §V84's duplication bar.
+_DIFFICULTY_LEGEND_NOTE = (
+    "A stage locator's difficulty is the stage variant tag, and the response's "
+    "enum_legend gives its values."
+)
+
+#: §V84 (§T207): the shared blocks are ORDERED so the text that genuinely DIFFERS sits
+#: between them. These two descriptions legitimately share four notes; run back to back
+#: they formed a 790-char identical block -- the thing §V84 forbids -- even though no
+#: single note is near the 500-char bar, and the bar is on the BLOCK, not the constant.
+#: Interleaving the per-tool region-order note keeps the longest identical run at ~383,
+#: and reads better besides: what indexes, then how results order, then bounds, then the
+#: zone/event coverage that closes the string.
+_BOUNDED_NOTE = "Results are bounded (default 10, max 50) and en/cn are never mixed."
+
 _ENTITIES_TOOL_NAME = "search_entities"
 _ENTITIES_TOOL_TITLE = "Search entities"
 _ENTITIES_TOOL_DESCRIPTION = (
@@ -97,24 +131,33 @@ _ENTITIES_TOOL_DESCRIPTION = (
     "stage code, game id, or tag. Returns ranked, region-tagged locators; use "
     "get_operator / get_enemy / get_stage for full facts, or feed an item locator's "
     "game_id to get_item_drops. Only a stage locator carries stage_code and difficulty; "
-    "other locators omit both keys. " + DIFFICULTY_NOTE + " For a stage code like 4-4, "
+    "other locators omit both keys. For a stage code like 4-4, "
     "prefer search_stages, which ranks an exact stage-code match first. "
-    "Results are bounded (default 10, max 50) and en/cn are never mixed. "
-    + _COVERAGE_NOTE
+    + _DIFFICULTY_LEGEND_NOTE
+    + " "
+    + _INDEX_NOTE
     + " "
     + _REGION_ORDER_NOTE
+    + " "
+    + _BOUNDED_NOTE
+    + " "
+    + _ZONE_EVENT_NOTE
 )
 _STAGES_TOOL_NAME = "search_stages"
 _STAGES_TOOL_TITLE = "Search stages"
 _STAGES_TOOL_DESCRIPTION = (
     "Search indexed Arknights stages by stage code (e.g. 4-4), name, or game id. "
     "An exact stage-code match is ranked first. Returns ranked, region-tagged "
-    "locators; use get_stage for full facts + map/spawns. " + DIFFICULTY_NOTE + " "
-    "Results are bounded "
-    "(default 10, max 50) and en/cn are never mixed. "
-    + _COVERAGE_NOTE
+    "locators; use get_stage for full facts + map/spawns. "
+    + _DIFFICULTY_LEGEND_NOTE
+    + " "
+    + _INDEX_NOTE
     + " "
     + _STAGES_REGION_ORDER_NOTE
+    + " "
+    + _BOUNDED_NOTE
+    + " "
+    + _ZONE_EVENT_NOTE
 )
 
 #: Fixed, safe copy for the typed ``not_found`` envelopes (§V23 -- no query echo,
@@ -192,16 +235,18 @@ def _guarded_search(
     get_conn: ConnectionProvider,
     run: SearchRunner,
     *,
+    tool_name: str,
     not_found_message: str,
     not_found_action: str,
 ) -> ResponseEnvelope:
     """Run a search service call and map it to a typed §V23 envelope.
 
     Shared by ``search_entities`` and ``search_stages``: the only per-tool
-    variation is the runner (which service + params) and the ``not_found`` copy.
-    The connection acquisition + fail-closed error handling is delegated to the
-    shared :func:`run_guarded` (§V37); here we own only the search-specific
-    ``ok`` locator shaping and the ``not_found`` mapping.
+    variation is the runner (which service + params), the ``not_found`` copy, and the
+    ``tool_name`` the §V104 legend fields are keyed on. The connection acquisition +
+    fail-closed error handling is delegated to the shared :func:`run_guarded` (§V37);
+    here we own only the search-specific ``ok`` locator shaping and the ``not_found``
+    mapping.
     """
 
     def shape(result: SearchResult) -> ResponseEnvelope:
@@ -219,13 +264,21 @@ def _guarded_search(
             return error("data_stale", _DATA_STALE_MESSAGE, suggested_action=_DATA_STALE_ACTION)
         if result.status == "not_found":
             return error("not_found", not_found_message, suggested_action=not_found_action)
-        return ok(
-            {
-                "query": result.query,
-                "count": len(result.hits),
-                "results": [_hit_to_dict(hit) for hit in result.hits],
-            }
+        data: dict[str, object] = {
+            "query": result.query,
+            "count": len(result.hits),
+            "results": [_hit_to_dict(hit) for hit in result.hits],
+        }
+        # §V104 (b)/§V67: only a STAGE locator carries ``difficulty`` (a non-stage row
+        # omits the key entirely, B90), so the legend rides only a result set that
+        # actually has one -- and when it does it is the WHOLE 5-value vocabulary, never
+        # just the tags these hits happen to carry (a filtered legend teaches a partial
+        # domain the client then caches).
+        emits_difficulty = any(hit.entity_type == "stage" for hit in result.hits)
+        limitations = attach_enum_legend(
+            data, TOOL_ENUM_LEGEND_FIELDS[tool_name] if emits_difficulty else (), ()
         )
+        return ok(data, limitations=limitations)
 
     return run_guarded(get_conn, run, shape)
 
@@ -255,6 +308,7 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 entity_type=parsed.entity_type,
                 limit=parsed.limit,
             ),
+            tool_name=_ENTITIES_TOOL_NAME,
             not_found_message=_ENTITIES_NOT_FOUND_MESSAGE,
             not_found_action=_ENTITIES_NOT_FOUND_ACTION,
         )
@@ -288,6 +342,7 @@ def build_search_stages_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 server=parsed.server,
                 limit=parsed.limit,
             ),
+            tool_name=_STAGES_TOOL_NAME,
             not_found_message=_STAGES_NOT_FOUND_MESSAGE,
             not_found_action=_STAGES_NOT_FOUND_ACTION,
         )

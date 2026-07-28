@@ -49,8 +49,9 @@ from arknights_mcp.mcp.envelopes import (
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     CONFIDENCE_SCALE_NOTE,
-    ITEM_TYPE_NOTE,
+    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
+    attach_enum_legend,
     hoist_drop_provenance,
     page_to_dict,
     ranked_observation_to_dict,
@@ -85,10 +86,7 @@ _TOOL_DESCRIPTION = (
     "list with a warning naming it. If nothing was rankable the full raw drops list "
     "is returned with the warnings. Without the flag the "
     "raw drops list is returned. "
-    + ITEM_TYPE_NOTE
-    + " "
-    + CONFIDENCE_SCALE_NOTE
-    + " Those are facts and "
+    "The response's enum_legend gives the values of item_type. Those are facts and "
     "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
     "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
     "the cache. en/cn are never mixed."
@@ -300,6 +298,15 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     # per-drop ``expired`` flags + the staleness limitation (mirrors get_data_status).
     # build_envelope carries the status (ok | data_stale) + the full payload either
     # way, and still enforces the §V22 size cap.
+    limitations: tuple[str, ...] = (_STALE_LIMITATION,) if result.stale else ()
+    # §V104 (b)/(c): every drop row carries item_type, so its STATIC domain + the
+    # source-defined "may grow" caveat ride the response rather than the description
+    # (§V111 a) -- the domain is read against the token, post-call.
+    limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME], limitations)
+    # §V104/§V6: the confidence scale rides the response carrying a confidence, once.
+    if result.observation is not None:
+        limitations = (*limitations, CONFIDENCE_SCALE_NOTE)
+
     prov = result.stage.provenance
     return build_envelope(
         "data_stale" if result.stale else "ok",
@@ -311,7 +318,7 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
                 imported_at=prov.imported_at,
             ),
         ),
-        limitations=(_STALE_LIMITATION,) if result.stale else (),
+        limitations=limitations,
         analyzer_version=result.analyzer_version,
     )
 
@@ -372,10 +379,8 @@ _ITEM_TOOL_DESCRIPTION = (
     "returned with warnings naming the exclusions. Without the flag the raw stages list "
     "is returned and "
     "paged on its own. "
-    + ITEM_TYPE_NOTE
-    + " "
-    + CONFIDENCE_SCALE_NOTE
-    + " That ranking is an ordering and evidence, never a "
+    "The response's enum_legend gives the values of item_type. "
+    "That ranking is an ordering and evidence, never a "
     "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
     "byproducts/synthesis are not modeled. A stage drop past its expiry is still "
     "returned, flagged data_stale. It is downgraded in the ranking, not dropped. A "
@@ -574,6 +579,14 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     # that backed the FULL comparison (§V5/§V54, derived in the service so a later page
     # never drops one); the comparison is region-scoped (§V5), so every provenance row
     # shares the item's region.
+    limitations: tuple[str, ...] = (_STALE_LIMITATION,) if result.stale else ()
+    # §V104 (b)/(c): the item block carries item_type, so its STATIC domain + the
+    # source-defined "may grow" caveat ride the response, not the description (§V111 a).
+    limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_ITEM_TOOL_NAME], limitations)
+    # §V104/§V6: the confidence scale rides the response carrying a confidence, once.
+    if result.observation is not None:
+        limitations = (*limitations, CONFIDENCE_SCALE_NOTE)
+
     return build_envelope(
         "data_stale" if result.stale else "ok",
         data=data,
@@ -581,7 +594,7 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
             Provenance(server=result.server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
             for p in result.provenance
         ),
-        limitations=(_STALE_LIMITATION,) if result.stale else (),
+        limitations=limitations,
         analyzer_version=result.analyzer_version,
     )
 

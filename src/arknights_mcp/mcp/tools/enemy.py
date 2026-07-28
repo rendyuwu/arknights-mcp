@@ -29,8 +29,10 @@ from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_PATH_NOTE,
     LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
+    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
     absent_field_limitation,
+    attach_enum_legend,
     attach_image_ref_disclosures,
     run_guarded,
 )
@@ -52,9 +54,7 @@ _TOOL_DESCRIPTION = (
     "attack interval in seconds, attack range, move speed, weight, life-point "
     "reduction) with immunities and abilities. "
     + ENEMY_CLASS_NOTE
-    + " "
-    + ENEMY_STAT_SCALE_NOTE
-    + " "
+    + " The response's enum_legend gives the values of enemy_class and motion_type. "
     + LEVEL_VARIANT_NOTE
     + " When the image-reference source is "
     "enabled, an additional image_refs list with the derived enemy sprite reference is "
@@ -192,6 +192,12 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
     # base ONCE onto data and appends the derived-unverified limitation, exactly when
     # the sprite ref is emitted (get_enemy always emits one when the gate is on).
     limitations = attach_image_ref_disclosures(data, limitations, emits_refs=image_refs_enabled)
+    # §V104 (b): the STATIC domains of the two enums every enemy row carries, hoisted
+    # beside the values instead of spelled out in the description (§V111 contention).
+    limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME], limitations)
+    # §V104/§V71 (e): the stat block always rides this tool, so its scales ride with it --
+    # res/move_speed/weight are read AS numbers, and "res: 80" is undecidable without them.
+    limitations = (*limitations, ENEMY_STAT_SCALE_NOTE)
     return ok(
         data,
         provenance=[

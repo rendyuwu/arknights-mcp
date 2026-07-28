@@ -36,13 +36,15 @@ from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._shared import (
     CONFIDENCE_SCALE_NOTE,
-    DIFFICULTY_NOTE,
     ENEMY_CLASS_NOTE,
     ENEMY_STAT_SCALE_NOTE,
     LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
+    STAGE_MAP_GUIDE_POINTER,
+    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
     absent_field_limitation,
+    attach_enum_legend,
     observation_to_dict,
     page_to_dict,
     run_guarded,
@@ -65,35 +67,33 @@ from arknights_mcp.services.stages import (
 
 _TOOL_NAME = "get_stage"
 _TOOL_TITLE = "Get stage"
+#: §V71 (f)/§V111 (§T207, B156). At 2881 chars this was the LONGEST description on the
+#: server -- the crown B145's ``get_operator`` halving moved rather than removed, and the
+#: same truncation exposure (a client tool-listing cutting the string mid-sentence, which
+#: costs the caller the pre-call facts that lead it). Nothing was deleted to bring it under
+#: the §V71 (f) budget (§V111 b forbids that); three blocks MOVED to named homes:
+#:
+#: * the ~970-char tile-grid/route/checkpoint/spawn reading guide -> the MCP resource
+#:   :data:`STAGE_MAP_GUIDE_URI`, named here by a one-line pointer (§V84/B144 home);
+#: * the ``difficulty`` + ``stage_type`` value domains -> the response's ``enum_legend``
+#:   (§V104 b), which arrives beside the values it decodes;
+#: * the deploy-vs-passable gloss -> nowhere, because it was already DUPLICATED by
+#:   :data:`_TILE_GRID_LIMITATION`, which rides every grid-bearing response (§V37).
+#:
+#: What leads is what a caller needs BEFORE the call (§V111 c): the selector, a worked
+#: example, and what each include_ flag adds.
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights stage's facts by region + stage_code (e.g. 4-4) or "
     "game_id. The default response is compact facts + provenance; set include_map "
     "/ include_routes / include_spawns to add the tile grid, enemy routes, or spawn "
-    "timeline. The tile grid comes as tile_grid: one string per grid row (top row "
-    "first) plus a legend mapping each character to its tile fields; absent_symbol "
-    "marks a cell with no tile. Grid rows run top to bottom and each string runs "
-    "left to right, matching the board on screen: rows[0] is the top edge of the "
-    "map, rows[-1] the bottom, character 0 the left edge. Route and checkpoint "
-    "positions use the same board -- col is the character index within a row, row "
-    "is the index into rows -- so a spawn tile at rows[0] is at the TOP of the map. "
-    "A tile's tile_key/buildable_type describe where you "
-    "may DEPLOY (a tile_forbidden tile blocks deployment), while passable describes "
-    "whether ENEMIES may cross it -- so a forbidden tile can still be passable; the "
-    "two are not in conflict. Enemy routes are collapsed to distinct geometry: each "
-    "entry carries an occurrence_count and the raw route_indices that share it. "
-    "A checkpoint always carries type and position; its optional time, "
-    "reach_distance, reach_offset and randomize_reach_offset fields are omitted "
-    "when they sit at their zero/false default (omitted means at default). "
-    "A spawn's variant_id (an inline enemy variant) is present only when the "
-    "spawn is one; a base-enemy spawn omits the key. " + LEVEL_VARIANT_NOTE + " "
-    "Spawn timeline values (spawn_time and interval) are in seconds. Set "
-    "include_map_image for a rendered SVG map drawn from the stage's own grid data "
-    "(a derived image, not game artwork); a very large map is omitted with a note. "
-    "The SVG is for display only -- do not reason from the image; for tile-level "
-    "reasoning use include_map's tile_grid. "
-    + DIFFICULTY_NOTE
-    + " stage_type is the source's own category: MAIN, SUB, ACTIVITY, DAILY, CAMPAIGN, "
-    "CLIMB_TOWER, SPECIAL_STORY, or GUIDE. en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "timeline. Set include_map_image for a rendered SVG map drawn from the stage's own "
+    "grid data (a derived image, not game artwork); a very large map is omitted with a "
+    "note. The SVG is for display only -- do not reason from the image; for tile-level "
+    "reasoning use include_map's tile_grid. " + STAGE_MAP_GUIDE_POINTER + " "
+    "Spawn timeline values (spawn_time and interval) are in seconds. "
+    + LEVEL_VARIANT_NOTE
+    + " difficulty is the stage variant tag; the response's enum_legend gives its values "
+    "and those of stage_type. en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 #: §V74 (d): the standing gloss attached to every response that emits ``tile_grid``.
@@ -259,6 +259,9 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     data: dict[str, object] = {"stage": _stage_to_dict(result.stage)}
+    # §V104 (b): the STATIC domains of the two enums every stage row carries, hoisted
+    # beside the values instead of spelled out in the description (§V111 contention).
+    enum_limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME], ())
     tile_grid_limitation: tuple[str, ...] = ()
     if result.stage_map is not None:
         data["map"] = _map_header_to_dict(result.stage_map)
@@ -292,6 +295,7 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
             *tile_grid_limitation,
             *result.limitations,
             *_stage_absent_field_limitations(result.stage),
+            *enum_limitations,
         ),
     )
 
@@ -352,12 +356,8 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
     "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
     "context, with attack_interval and spawn times in seconds). "
-    + CONFIDENCE_SCALE_NOTE
-    + " "
     + ENEMY_CLASS_NOTE
-    + " "
-    + ENEMY_STAT_SCALE_NOTE
-    + " "
+    + " The response's enum_legend gives the values of enemy_class. "
     + LEVEL_VARIANT_NOTE
     + " en/cn are never mixed. "
     + LIST_FIELD_CONVENTION
@@ -453,6 +453,19 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     limitations = _stage_absent_field_limitations(result.stage)
     if depth == "detailed" and any(o.attack_type is None for o in result.occurrences):
         limitations = (*limitations, _OCCURRENCE_ATTACK_TYPE_LIMITATION)
+    # §V104 (b): only the DETAILED occurrence row carries enemy_class, so only it needs
+    # the domain -- a legend for a field this response omits would be noise (§V67).
+    # §V104/§V71 (e): the same gate carries the stat scales -- only the detailed row
+    # emits res/move_speed/weight, and they are undecidable as bare numbers.
+    if depth == "detailed":
+        limitations = attach_enum_legend(
+            data, TOOL_ENUM_LEGEND_FIELDS[_ANALYZE_TOOL_NAME], limitations
+        )
+        limitations = (*limitations, ENEMY_STAT_SCALE_NOTE)
+    # §V104/§V6: the confidence scale rides the response that carries a confidence,
+    # stated ONCE per envelope (§V66) rather than in the description (§V111 a).
+    if result.observations:
+        limitations = (*limitations, CONFIDENCE_SCALE_NOTE)
 
     prov = result.stage.provenance
     return ok(

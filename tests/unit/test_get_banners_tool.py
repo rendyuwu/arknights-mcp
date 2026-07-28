@@ -197,7 +197,7 @@ def test_ok_returns_banner_metadata(conn: sqlite3.Connection) -> None:
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    assert set(data) == {"server", "banners", "page"}
+    assert set(data) == {"server", "banners", "page", "enum_legend"}
     # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
     assert data["server"] == "en"
     banners = data["banners"]

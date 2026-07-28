@@ -190,13 +190,16 @@ SKIN_ALT_FORM_NOTE = (
 
 
 #: §V83/§V66 (T168, B88): the client-facing note describing how a module's trait/talent
-#: change bundles are deduped + labelled, folded into the description of both tools that emit
+#: change bundles are deduped + labelled, attached to every response of both tools that emit
 #: modules (``get_operator`` include_modules + ``compare_operator_modules``). Duplicate/subset
 #: rows for one change are collapsed to a single row; a bundle identical at every level rides
 #: the module once (``trait_changes`` / ``talent_changes``) and is omitted from each level; a
 #: talent change tagged ``applies_to: "token"`` affects the operator's summon/token, not the
-#: operator. Shared: one wording, one home (§V37). Client-facing text, so no internal
-#: cites/jargon (§V71); short sentences (§V71 f).
+#: operator. Shared: one wording, one home (§V37). §T207/§V111 (a): the home moved from the
+#: two tool DESCRIPTIONS to a standing LIMITATION -- it describes what the emitted payload
+#: OMITTED (the §V26 absent-field class), which is read post-call beside the payload, and as
+#: description text it was a 366-char block billed to both tools' §V71 (f) budget every
+#: session. Client-facing text, so no internal cites/jargon (§V71); short sentences (§V71 f).
 MODULE_CHANGE_DEDUP_NOTE = (
     "For a module's trait_changes and talent_changes: repeated identical entries for one "
     "change are collapsed into a single row. A bundle that is the same at every level is "
@@ -206,33 +209,17 @@ MODULE_CHANGE_DEDUP_NOTE = (
 )
 
 
-#: §V104 (B142): the stage-variant tag's value DOMAIN, stated where a client reads it.
-#: Three tools emit ``difficulty`` (``get_stage`` + both search locators) and each used to
-#: carry its own near-identical sentence naming only four of the five emitted values --
-#: ``SIX_STAR`` (76 main-story rows in the shipped build) was undocumented, so the one
-#: classification the descriptions delegate to the client was undecidable for it. One
-#: wording, one home (§V37/§V84). The value origins are stated because two of the five are
-#: DERIVED here (§V80): a ``tough_``/``easy_`` game_id whose source difficulty says
-#: ``NORMAL`` would otherwise read as the plain stage. Client-facing text, so no internal
+#: §V104 (B142): the enemy classification fields' cross-field RELATION -- not a value
+#: domain, so it stays in the description while the domains themselves ride
+#: :data:`ENUM_LEGENDS` (§V104 b). ``enemy_class`` sits beside the redundant ``is_boss`` /
+#: ``is_elite`` booleans, so say how they relate instead of leaving the client to guess
+#: which one wins, and say that the key is omitted rather than defaulted when the source
+#: states no class (§V67). Emitted by ``get_enemy`` and by ``analyze_stage(depth=
+#: "detailed")``, hence one shared home (§V37). Client-facing text, so no internal
 #: cites/jargon (§V71 b); short sentences (§V71 f).
-DIFFICULTY_NOTE = (
-    "difficulty is the stage variant tag: NORMAL, FOUR_STAR, SIX_STAR, TOUGH, or EASY. "
-    "NORMAL, FOUR_STAR (a challenge stage) and SIX_STAR (a second variant of some "
-    "main-story stages) come from the source's own difficulty field; TOUGH and EASY are "
-    "derived from the stage's game id. The tag is what keeps a stage and its variant that "
-    "share a code and name distinguishable."
-)
-
-
-#: §V104 (B142): the enemy classification enums. ``enemy_class`` sits beside the
-#: redundant ``is_boss`` / ``is_elite`` booleans, so say how they relate instead of
-#: leaving the client to guess which one wins. Emitted by ``get_enemy`` and by
-#: ``analyze_stage(depth="detailed")``, hence one shared home (§V37). Client-facing text,
-#: so no internal cites/jargon (§V71 b); short sentences (§V71 f).
 ENEMY_CLASS_NOTE = (
-    "enemy_class is NORMAL, ELITE, or BOSS, and is omitted when the source states none; "
-    "is_boss and is_elite are the same fact as booleans. motion_type is WALK (ground) or "
-    "FLY (aerial). attack_type, when present, is the source's own token."
+    "enemy_class is omitted when the source states none; is_boss and is_elite are the "
+    "same fact as booleans. attack_type, when present, is the source's own token."
 )
 
 
@@ -241,7 +228,11 @@ ENEMY_CLASS_NOTE = (
 #: block -- stated none, so a client could only guess whether ``res: 80`` was a percentage
 #: or a flat value and whether ``weight: 3`` was kilograms. Shared by ``get_enemy`` +
 #: ``analyze_stage`` (§V37). Ranges verified against the shipped build (res 0-1000,
-#: move_speed 0.0-5.0, weight -2..13). Client-facing text, no internal cites (§V71 b).
+#: move_speed 0.0-5.0, weight -2..13). §T207/§V111 (a): the home moved from the two tool
+#: DESCRIPTIONS to a standing LIMITATION, the same call §V104's ``confidence`` scale got
+#: and for the same reason -- a scale is read POST-call, beside the number it decodes, and
+#: as description text it billed the §V71 (f) budget of both emitters every session.
+#: Client-facing text, no internal cites (§V71 b).
 ENEMY_STAT_SCALE_NOTE = (
     "Stat scales: res is arts damage reduction in percent (100 or more means arts damage "
     "is fully resisted), move_speed is in tiles per second, and weight is the "
@@ -262,30 +253,286 @@ LEVEL_VARIANT_NOTE = (
 )
 
 
-#: §V104 (B142): the item category enum. Both drop tools emit ``item_type`` and none
-#: documented it, leaving opaque tokens (``FURN``, ``CARD_EXP``, ``LGG_SHD``) for the
-#: client to decode. The nine tokens named here are the full set observed in the shipped
-#: build; the domain is source-defined, so it is declared OPEN rather than partitioned.
-#: One wording, one home (§V37). Client-facing text, no internal cites (§V71 b).
-ITEM_TYPE_NOTE = (
-    "item_type is the source's own category token: MATERIAL, CHIP (class chips), "
-    "CARD_EXP (EXP battle records), RECRUIT_TAG, ACTIVITY_ITEM (event currency), FURN "
-    "(furniture), TEMP, ARKPLANNER, or LGG_SHD. The set is defined by the game data and "
-    "may grow, so treat an unlisted token as source-defined rather than an error."
-)
-
-
 #: §V104/§V6 (B142): the ``confidence`` scale, stated once per observation-emitting tool
 #: (``analyze_stage`` / ``compare_operator_modules`` / both drop tools). Every observation
 #: carries a confidence and NOTHING said what the number meant, so 0.8 read as "80%
 #: likely" -- a calibrated probability this server never computes (§V8 gates a
 #: recommendation at 0.5 on the same heuristic scale). One wording, one home (§V37).
-#: Client-facing text, so no internal cites/jargon (§V71 b); short sentences (§V71 f).
+#: §T207/§V111 (a): the home moved from the tool DESCRIPTION to a standing LIMITATION --
+#: §V104 requires the scale be stated ONCE, not that it be stated pre-call, and the scale
+#: is read beside the number it decodes. Four descriptions carried it and each paid the
+#: §V71 (f) budget for text no caller needs before choosing the tool. Client-facing text,
+#: so no internal cites/jargon (§V71 b); short sentences (§V71 f).
 CONFIDENCE_SCALE_NOTE = (
     "confidence is a 0 to 1 heuristic tier set by the rule that produced the observation: "
     "higher means more of the fields the rule wanted were present and unambiguous. It is "
     "not a calibrated probability and is never a measured frequency."
 )
+
+
+#: §V84/§V111 (a) (§T207, B156): the two static reading guides that outgrew the tool
+#: description surface, each projected to a CLIENT-FETCHABLE MCP resource with a one-line
+#: pointer in the description that names it -- the same home §V84/B144 gave the blackboard
+#: glossary, and for the same reason: a bounded surface may not hold an unbounded block,
+#: and the alternative home has to be reachable from the tool call itself.
+#:
+#: ``stage-map``: the tile-grid/route/checkpoint/spawn reading rules were ~970 chars of
+#: POST-call instruction inside ``get_stage``'s description, which at 2881 chars was the
+#: longest on the server and the successor to the truncation B145 reported (B156).
+#:
+#: ``search-coverage``: the zone/event matching rules were an IDENTICAL 788-char block in
+#: BOTH search descriptions -- the ">=500-char block duplicated across >=2 descriptions"
+#: §V84 forbids outright. What stays inline in each description is the PRE-call half (which
+#: languages index, how matching works, that a zone or event title matches its stages),
+#: because those change how a caller forms the query (§V111 c); what moved is the ordering,
+#: attribution, and coverage-gap detail, which is read against a result.
+#:
+#: Entry tuples rather than one prose blob so the resource body is structured JSON (the
+#: :data:`~arknights_mcp.instructions.BLACKBOARD_KEY_ENTRIES` pattern) and each rule stays
+#: individually addressable. Client-facing text, so no internal cites/jargon (§V71 b).
+STAGE_MAP_GUIDE_URI = "arknights://glossary/stage-map"
+STAGE_MAP_GUIDE_ENTRIES: tuple[tuple[str, str], ...] = (
+    (
+        "tile_grid",
+        "The tile grid comes as tile_grid: one string per grid row (top row first) plus a "
+        "legend mapping each character to its tile fields. absent_symbol marks a cell "
+        "with no tile.",
+    ),
+    (
+        "orientation",
+        "Grid rows run top to bottom and each string runs left to right, matching the "
+        "board on screen: rows[0] is the top edge of the map, rows[-1] the bottom, "
+        "character 0 the left edge. Route and checkpoint positions use the same board -- "
+        "col is the character index within a row, row is the index into rows -- so a "
+        "spawn tile at rows[0] is at the TOP of the map.",
+    ),
+    (
+        "routes",
+        "Enemy routes are collapsed to distinct geometry: each entry carries an "
+        "occurrence_count and the raw route_indices that share it.",
+    ),
+    (
+        "checkpoints",
+        "A checkpoint always carries type and position. Its optional time, "
+        "reach_distance, reach_offset and randomize_reach_offset fields are omitted when "
+        "they sit at their zero/false default, so an omitted field means at default.",
+    ),
+    (
+        "spawns",
+        "A spawn's variant_id (an inline enemy variant) is present only when the spawn is "
+        "one; a base-enemy spawn omits the key.",
+    ),
+)
+STAGE_MAP_GUIDE_POINTER = (
+    "How to read tile_grid, enemy routes, checkpoints, and spawns is available from this "
+    f"server as the resource {STAGE_MAP_GUIDE_URI}."
+)
+
+SEARCH_COVERAGE_URI = "arknights://glossary/search-coverage"
+SEARCH_COVERAGE_ENTRIES: tuple[tuple[str, str], ...] = (
+    (
+        "zone_and_event_ranking",
+        "A stage matched through its zone name or event title is listed after every "
+        "entity that matched on its own name, code, or id, so an event never crowds out "
+        "the operator it is named after.",
+    ),
+    (
+        "zone_and_event_attribution",
+        "A stage that matched that way carries the zone name in zone_display_name and the "
+        "event title in event_name, so it is visible why an unrelated-looking stage came "
+        "back.",
+    ),
+    (
+        "modes_with_no_event",
+        "Main story chapters and the permanent modes (annihilation, Stationary Security "
+        "Service, Integrated Strategies) belong to no event, so they carry no event title "
+        "and are found by chapter or zone name, stage name, or stage code.",
+    ),
+)
+SEARCH_COVERAGE_POINTER = (
+    "How zone and event matches are ranked and attributed, and which modes carry no event "
+    f"title, is available from this server as the resource {SEARCH_COVERAGE_URI}."
+)
+
+
+#: §V104 (b) (§T207, B145/B156/B158): the RESPONSE-SIDE value domain for every OUTPUT enum
+#: this server emits. Each domain used to be spelled out in the description of every tool
+#: that emits the field -- ``difficulty`` in three, ``item_type`` in two -- which put §V104
+#: (every emitted enum states its domain) and §V71 (f) (the description is bounded) on the
+#: same string with no priority between them, the undecidable edit §V111 now rules on. An
+#: OUTPUT domain is read POST-call, so the legend arrives beside the value it decodes and
+#: costs none of the description budget; the precedent is :data:`IMAGE_REFS_LEGEND`, hoisted
+#: the same way by :func:`attach_image_ref_disclosures`, and the older ``tile_grid`` legend.
+#:
+#: The map is STATIC (§V104 b): it is the whole label vocabulary of the field, never
+#: filtered to the values the rows of one response happen to carry -- a filtered legend
+#: teaches a client a PARTIAL domain it then caches.
+#:
+#: Every token below was COUNTED over the promoted build ``2026-07-28T030224Z`` (§V96 --
+#: a domain is counted, never guessed); ``TOUGH``/``EASY`` are the one pair that is not
+#: stored, being DERIVED at query time from a ``tough_``/``easy_`` game id whose stored
+#: difficulty says ``NORMAL`` (§V80/B84), so the stored set alone would drop them.
+#:
+#: The gloss of each value is exactly the gloss its description carried -- this is a MOVE,
+#: never a rewrite (§V111 b), so no value gains a meaning that was not already shipped and
+#: verified. Where the shipped description glossed a token only as the source's own, the
+#: gloss says so rather than inventing one (§V26/§V96 forbid guessing a source token's
+#: meaning; ``sp_type``'s numeric arm is the live case, B157). A domain that is OPEN carries
+#: its openness in :data:`OPEN_ENUM_LIMITATIONS` instead, per §V104 (c). Client-facing text,
+#: so no internal cites/jargon (§V71 b).
+_SOURCE_TOKEN = "the source's own token"
+
+ENUM_LEGENDS: dict[str, dict[str, str]] = {
+    "difficulty": {
+        "NORMAL": "the base stage, from the source's own difficulty field",
+        "FOUR_STAR": "a challenge stage, from the source's own difficulty field",
+        "SIX_STAR": (
+            "a second variant of some main-story stages, from the source's own difficulty field"
+        ),
+        "TOUGH": (
+            "the harder variant, derived from the stage's game id; it shares its code and "
+            "name with the base stage, and this tag is what tells the two apart"
+        ),
+        "EASY": (
+            "the easier variant, derived from the stage's game id; it shares its code and "
+            "name with the base stage, and this tag is what tells the two apart"
+        ),
+    },
+    "stage_type": dict.fromkeys(
+        (
+            "MAIN",
+            "SUB",
+            "ACTIVITY",
+            "DAILY",
+            "CAMPAIGN",
+            "CLIMB_TOWER",
+            "SPECIAL_STORY",
+            "GUIDE",
+        ),
+        "the source's own category token",
+    ),
+    "enemy_class": dict.fromkeys(("NORMAL", "ELITE", "BOSS"), _SOURCE_TOKEN),
+    "motion_type": {"WALK": "ground", "FLY": "aerial"},
+    "profession": {
+        "PIONEER": "Vanguard",
+        "WARRIOR": "Guard",
+        "TANK": "Defender",
+        "SPECIAL": "Specialist",
+        "SUPPORT": "Supporter",
+        "SNIPER": "Sniper",
+        "CASTER": "Caster",
+        "MEDIC": "Medic",
+    },
+    "position": dict.fromkeys(("MELEE", "RANGED"), _SOURCE_TOKEN),
+    "skill_type": dict.fromkeys(("AUTO", "MANUAL", "PASSIVE"), _SOURCE_TOKEN),
+    "sp_type": dict.fromkeys(
+        ("INCREASE_WITH_TIME", "INCREASE_WHEN_ATTACK", "INCREASE_WHEN_TAKEN_DAMAGE"),
+        _SOURCE_TOKEN,
+    ),
+    "duration_type": {
+        "NONE": (
+            "the source declares no duration type -- not that the skill has no duration: "
+            "read the level's own duration, in seconds"
+        ),
+        "AMMO": _SOURCE_TOKEN,
+    },
+    "item_type": {
+        "MATERIAL": _SOURCE_TOKEN,
+        "CHIP": "class chips",
+        "CARD_EXP": "EXP battle records",
+        "RECRUIT_TAG": _SOURCE_TOKEN,
+        "ACTIVITY_ITEM": "event currency",
+        "FURN": "furniture",
+        "TEMP": _SOURCE_TOKEN,
+        "ARKPLANNER": _SOURCE_TOKEN,
+        "LGG_SHD": _SOURCE_TOKEN,
+    },
+    "rule_type": dict.fromkeys(
+        (
+            "NORMAL",
+            "SINGLE",
+            "DOUBLE",
+            "LINKAGE",
+            "LIMITED",
+            "SPECIAL",
+            "ATTAIN",
+            "BACKFLOW",
+            "CLASSIC",
+            "CLASSIC_DOUBLE",
+            "CLASSIC_ATTAIN",
+            "FESCLASSIC",
+        ),
+        "the source's own pool-rule token",
+    ),
+}
+
+
+#: §V104 (c) (§T207): the OPEN domains -- source-defined sets that no legend can close, so
+#: a token outside :data:`ENUM_LEGENDS` must read as source-defined rather than an error.
+#: §V104 names the LIMITATION as the home for an open domain, so the openness rides the
+#: envelope beside the legend it qualifies instead of the description (§V111 a).
+#:
+#: ``sp_type`` is the §V99 mixed-encoding case (B157): the wire key carries BOTH the named
+#: tokens and a BARE NUMERIC CODE (``8`` on 1145 rows of the promoted build), because the
+#: source sends ``spType`` as an int on those rows and the importer stringifies it by
+#: design. §V104 is explicit that disclosure alone makes such a value LEGAL but not
+#: DECIDABLE, so this string is the FLOOR, not the resolution -- what ``8`` means is not
+#: verified and §V29/§V96 forbid guessing it. Resolving the encoding is its own task.
+#: Client-facing text, so no internal cites/jargon (§V71 b); short sentences (§V71 f).
+OPEN_ENUM_LIMITATIONS: dict[str, str] = {
+    "item_type": (
+        "The item_type set is defined by the game data and may grow. Treat a token the "
+        "response's enum_legend does not list as source-defined, not as an error."
+    ),
+    "rule_type": (
+        "The rule_type set is defined by the game data and may grow. Treat a token the "
+        "response's enum_legend does not list as source-defined, not as an error."
+    ),
+    "sp_type": (
+        "A skill's sp_type may also arrive as a raw source code such as 8 rather than one "
+        "of the named tokens. The code is emitted exactly as the source stores it and is "
+        "never given a fabricated meaning."
+    ),
+}
+
+
+#: §V37/§V104 (b) (§T207): the single home for WHICH enum fields each tool may decode. The
+#: tool passes the subset it actually emitted (a legend for a field the response omits
+#: would be noise, §V67), and this table is the full set it is allowed to draw from -- so
+#: the real-corpus §V104 guard can ask "does the tool that emits this column publish its
+#: domain?" without re-deriving the mapping from each tool module and drifting from it.
+TOOL_ENUM_LEGEND_FIELDS: dict[str, tuple[str, ...]] = {
+    "get_stage": ("difficulty", "stage_type"),
+    "search_stages": ("difficulty",),
+    "search_entities": ("difficulty",),
+    "get_enemy": ("enemy_class", "motion_type"),
+    "analyze_stage": ("enemy_class",),
+    "get_operator": ("profession", "position", "skill_type", "sp_type", "duration_type"),
+    "get_stage_drops": ("item_type",),
+    "get_item_drops": ("item_type",),
+    "get_banners": ("rule_type",),
+}
+
+
+def attach_enum_legend(
+    data: dict[str, object], fields: Sequence[str], limitations: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Hoist the static ``enum_legend`` for ``fields`` + any open-domain caveat (§V104 b/c).
+
+    The enum counterpart of :func:`attach_image_ref_disclosures`, and one §V37 home for
+    both halves of the same predicate: a response that emits an enum-valued field hoists
+    that field's WHOLE value vocabulary once onto ``data`` (never filtered to the values
+    these rows carry, §V104 b) AND, when the domain is source-defined and cannot be
+    closed, appends its openness limitation (§V104 c) -- a legend without that caveat
+    would read as an exhaustive partition and turn a future upstream token into an
+    apparent error. Mutates ``data`` in place and returns the extended limitations tuple;
+    an empty ``fields`` is a no-op, so a response that emitted none of them (a search with
+    no stage locator, an operator fetched without ``include_skills``) ships neither key.
+    """
+    if not fields:
+        return limitations
+    data["enum_legend"] = {field: dict(ENUM_LEGENDS[field]) for field in fields}
+    return (*limitations, *(OPEN_ENUM_LIMITATIONS[f] for f in fields if f in OPEN_ENUM_LIMITATIONS))
 
 
 def has_unnamed_cost_item(cost_lists: Iterable[object]) -> bool:

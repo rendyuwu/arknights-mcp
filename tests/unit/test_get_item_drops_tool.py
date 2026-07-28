@@ -41,6 +41,7 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools._shared import CONFIDENCE_SCALE_NOTE, OPEN_ENUM_LIMITATIONS
 from arknights_mcp.mcp.tools.drops import build_get_item_drops_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.drops import get_item_drops
@@ -83,7 +84,7 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
     assert isinstance(data, dict)
     # §V19 + §V66.2: the stages section + its bounded page + the hoisted shared
     # drop_provenance block; no efficiency block without the flag.
-    assert set(data) == {"item", "drop_provenance", "stages", "stages_page"}
+    assert set(data) == {"item", "drop_provenance", "stages", "stages_page", "enum_legend"}
     assert data["item"]["game_id"] == "sugar"  # type: ignore[index]
     # §V54/§V66.2: the penguin provenance shared by both stages is hoisted once.
     prov = data["drop_provenance"]
@@ -210,7 +211,7 @@ def test_include_efficiency_omits_stages_ranking_subsumes(tmp_path: Path) -> Non
     data = env.to_dict()["data"]
     # No duplicate per-stage list: stages/stages_page are subsumed by the ranking.
     assert "stages" not in data and "stages_page" not in data
-    assert set(data) == {"item", "drop_provenance", "efficiency"}
+    assert set(data) == {"item", "drop_provenance", "efficiency", "enum_legend"}
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
     assert len(ranking) == 2
     # §V55 evidence rides each ranking row (facts folded in) + the derived figure.
@@ -649,3 +650,30 @@ def test_tool_registered_in_shared_registry(tmp_path: Path) -> None:
     conn = open_read_only(_candidate(tmp_path))
     reg = build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY), mode="stdio")
     assert "get_item_drops" in reg.names()
+
+
+def test_item_type_domain_and_openness_ride_the_response(tmp_path: Path) -> None:
+    # §V104 (b)/(c) (§T207): the item block carries item_type, so its STATIC 9-token
+    # domain rides ``enum_legend`` and the source-defined "may grow" caveat rides a
+    # limitation -- the two homes §V104 names, neither of them the description. B142 was
+    # this exact field going undocumented on both drop tools; the fix stayed, the home
+    # moved off the §V71 (f) budget it shared with every other mandated fact.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(path, [StageDropSeed("4-4")])
+    env = _handler(open_read_only(path))(server="en", game_id="sugar")
+    data = env.to_dict()["data"]
+    assert set(data["enum_legend"]) == {"item_type"}  # type: ignore[arg-type,index]
+    assert OPEN_ENUM_LIMITATIONS["item_type"] in env.to_dict()["limitations"]
+    assert "may grow" not in build_get_item_drops_spec(lambda: None).description  # type: ignore[arg-type,misc]
+
+
+def test_confidence_scale_rides_only_the_efficiency_response(tmp_path: Path) -> None:
+    # §V104/§V6: stated ONCE per response that carries a confidence (§V66); a caller who
+    # never asks for a ranking no longer pays for the scale in the description either.
+    path = _candidate(tmp_path)
+    seed_item_across_stages(path, [StageDropSeed("4-4"), StageDropSeed("a-1")])
+    conn = open_read_only(path)
+    with_eff = _handler(conn)(server="en", game_id="sugar", include_efficiency=True)
+    assert with_eff.to_dict()["limitations"].count(CONFIDENCE_SCALE_NOTE) == 1  # type: ignore[union-attr]
+    without = _handler(conn)(server="en", game_id="sugar")
+    assert CONFIDENCE_SCALE_NOTE not in without.to_dict()["limitations"]

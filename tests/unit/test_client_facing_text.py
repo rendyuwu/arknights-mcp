@@ -31,8 +31,22 @@ from arknights_mcp.instructions import (
     SERVER_INSTRUCTIONS,
 )
 from arknights_mcp.mcp.resources import build_default_resources
+from arknights_mcp.mcp.tool_registry import MAX_TOOL_DESCRIPTION_CHARS
 from arknights_mcp.mcp.tools import build_tool_registry
-from arknights_mcp.mcp.tools._shared import BLACKBOARD_GLOSSARY_POINTER, DB_UNAVAILABLE_ACTION
+from arknights_mcp.mcp.tools._shared import (
+    BLACKBOARD_GLOSSARY_POINTER,
+    CONFIDENCE_SCALE_NOTE,
+    DB_UNAVAILABLE_ACTION,
+    ENEMY_STAT_SCALE_NOTE,
+    ENUM_LEGENDS,
+    MODULE_CHANGE_DEDUP_NOTE,
+    OPEN_ENUM_LIMITATIONS,
+    SEARCH_COVERAGE_POINTER,
+    SEARCH_COVERAGE_URI,
+    STAGE_MAP_GUIDE_POINTER,
+    STAGE_MAP_GUIDE_URI,
+    TOOL_ENUM_LEGEND_FIELDS,
+)
 from arknights_mcp.mcp.tools.drops import _ITEM_NO_DROPS_ACTION, _ITEM_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.drops import _NOT_FOUND_ACTION as _DROPS_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.enemy import _NOT_FOUND_ACTION as _ENEMY_NOT_FOUND_ACTION
@@ -284,14 +298,18 @@ def test_glossary_pointer_names_a_client_fetchable_home() -> None:
     assert served == {keys: meaning for keys, meaning in BLACKBOARD_KEY_ENTRIES}
 
 
-# --- §V104/B142 (T194): every emitted enum states its value DOMAIN client-side ---
+# --- §V104/B142 (T194) + §V104 (b)/B158 (T207): every emitted enum states its DOMAIN ---
 
 #: The enum-valued wire fields this server emits, mapped to ``(tool, values)``. Each
 #: value set was COUNTED against the shipped en+cn build (§V96: a domain is counted, not
 #: guessed) -- ``difficulty`` is the case that proves it, since three descriptions named
-#: four values while the wire emits five (``SIX_STAR``: 76 main-story rows). A domain the
-#: description PARTITIONS must be exhaustive over the emitted values, so every token here
-#: must appear in the owning tool's description.
+#: four values while the wire emits five (``SIX_STAR``: 76 main-story rows).
+#:
+#: §T207 moved the HOME, never the requirement (§V111 b): §V104 (b) sanctions a static
+#: response-side ``*_legend`` as an EQUAL home for an OUTPUT domain, so every token here
+#: must now appear in the legend the emitting tool hoists rather than in its description.
+#: The move is what let §V71 (f) get a number at all -- §V104 and §V71 (f) were writing to
+#: the same bounded string with no rule saying which yields (B158).
 _ENUM_DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("get_stage", "difficulty", ("NORMAL", "FOUR_STAR", "SIX_STAR", "TOUGH", "EASY")),
     ("search_stages", "difficulty", ("NORMAL", "FOUR_STAR", "SIX_STAR", "TOUGH", "EASY")),
@@ -365,57 +383,102 @@ _ENUM_DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "FESCLASSIC",
         ),
     ),
-    ("get_data_status", "mode", ("local", "remote")),
 )
 
 
 @pytest.mark.parametrize(("tool", "field", "values"), _ENUM_DOMAINS)
-def test_emitted_enum_domain_is_stated_in_its_description(
+def test_emitted_enum_domain_is_published_in_its_legend(
     tool: str, field: str, values: tuple[str, ...]
 ) -> None:
     # §V104 (B142): an emitted enum whose domain is stated nowhere leaves the client to
     # guess -- get_banners named 4 of 12 rule types, so the ONE classification its
     # description delegated was undecidable for the rest.
-    desc = _desc(tool)
-    assert field in desc, (tool, field)
-    missing = [v for v in values if v not in desc]
-    assert missing == [], (tool, field, missing)
+    assert field in TOOL_ENUM_LEGEND_FIELDS[tool], (tool, field)
+    legend = ENUM_LEGENDS[field]
+    # Exhaustive over the emitted values AND carrying nothing the wire does not emit --
+    # a legend that invents a value teaches a domain as badly as one that drops one.
+    assert sorted(legend) == sorted(values), (tool, field)
+    # §V104 (b): the legend DECODES, so no entry may be a bare token with no gloss.
+    assert all(gloss for gloss in legend.values()), (tool, field)
+
+
+def test_input_only_enum_domain_stays_in_the_description() -> None:
+    # §V104 (a)/(b) split by WHEN the domain is needed: ``mode`` is not a row value a
+    # legend could ride beside -- get_data_status reports one deployment posture per
+    # server -- so the description remains its home, and it is short enough to be one.
+    desc = _desc("get_data_status")
+    for value in ("local", "remote"):
+        assert value in desc, value
+    assert "mode" in desc
 
 
 def test_open_enum_domains_are_declared_open() -> None:
-    # §V104: a source-defined domain that the description cannot close must SAY it is
-    # open, so a token outside the listed set reads as source-defined, not as an error.
-    for name in ("get_stage_drops", "get_item_drops", "get_banners"):
-        assert "may grow" in _desc(name), name
-    # get_announcements: category is the publisher's own grouping, never a fixed set.
+    # §V104 (c): a source-defined domain no legend can close must SAY it is open, so a
+    # token outside the listed set reads as source-defined, not as an error. §T207 moved
+    # the home from the description to the LIMITATION §V104 (c) actually names -- the
+    # caveat now rides beside the legend it qualifies.
+    for field in ("item_type", "rule_type"):
+        text = OPEN_ENUM_LIMITATIONS[field]
+        assert "may grow" in text, field
+        assert "not as an error" in text, field
+    # get_announcements: category is the publisher's own grouping, never a fixed set. It
+    # has no legend (the domain cannot be enumerated at all), so the description states it.
     assert "category is the feed's own grouping token" in _desc("get_announcements")
+
+
+def test_sp_type_mixed_encoding_is_disclosed_as_open() -> None:
+    # §V104 (c)/§V99 (B157): sp_type carries BOTH named tokens and a bare numeric code
+    # (``8`` on 1145 rows of the promoted build). Disclosure makes the value legal but not
+    # decidable, so this is the FLOOR, not the resolution -- and the legend must NOT
+    # invent a name for the numeric arm (§V29/§V96 forbid guessing it).
+    text = OPEN_ENUM_LIMITATIONS["sp_type"]
+    assert "raw source code such as 8" in text
+    assert "never given a fabricated meaning" in text
+    assert "8" not in ENUM_LEGENDS["sp_type"]
 
 
 def test_scale_bearing_stats_state_their_scale() -> None:
     # §V104 extends §V71 (e) from units to SCALES: res/move_speed/weight sat on the same
     # stat block as attack_interval (documented "in seconds") with nothing said, so
-    # "res: 80" could be a percentage or a flat value.
-    for name in ("get_enemy", "analyze_stage"):
-        desc = _desc(name)
-        assert "res is arts damage reduction in percent" in desc, name
-        assert "move_speed is in tiles per second" in desc, name
-        assert "shift-resistance rank" in desc, name
+    # "res: 80" could be a percentage or a flat value. §T207 moved the home from both
+    # descriptions to a standing limitation -- a scale is read beside its number.
+    assert "res is arts damage reduction in percent" in ENEMY_STAT_SCALE_NOTE
+    assert "move_speed is in tiles per second" in ENEMY_STAT_SCALE_NOTE
+    assert "shift-resistance rank" in ENEMY_STAT_SCALE_NOTE
 
 
 def test_confidence_scale_stated_on_every_observation_tool() -> None:
     # §V104: confidence rides every observation (§V6) and had no stated scale, so 0.8 read
-    # as a calibrated 80% -- a probability this server never computes.
-    for name in ("analyze_stage", "compare_operator_modules", "get_stage_drops", "get_item_drops"):
-        desc = _desc(name)
-        assert "confidence is a 0 to 1 heuristic tier" in desc, name
-        assert "not a calibrated probability" in desc, name
+    # as a calibrated 80% -- a probability this server never computes. §T207 moved the
+    # home from four descriptions to a standing limitation (§V111 a).
+    assert "confidence is a 0 to 1 heuristic tier" in CONFIDENCE_SCALE_NOTE
+    assert "not a calibrated probability" in CONFIDENCE_SCALE_NOTE
 
 
 def test_contradictory_enum_reading_is_glossed() -> None:
     # §V104/§V74 (d): duration_type "NONE" ships beside duration: 30 on 10937 skill-level
-    # rows in the shipped build. Without a gloss the pair reads as a contradiction.
-    desc = _desc("get_operator")
-    assert "NONE means the source declares no duration type" in desc
+    # rows in the shipped build. Without a gloss the pair reads as a contradiction. The
+    # gloss moved INTO the legend entry, which is the one place the client meets the value.
+    gloss = ENUM_LEGENDS["duration_type"]["NONE"]
+    assert "the source declares no duration type" in gloss
+    assert "not that the skill has no duration" in gloss
+
+
+def test_moved_blocks_left_every_description() -> None:
+    # §V111 (b) is MOVE, never DELETE -- and a move that leaves the text behind is not a
+    # move at all, it is a §V37 duplication that keeps billing the budget. Each block
+    # below now has exactly one home (a legend, a limitation, or an MCP resource), so it
+    # must appear in NO tool description.
+    descs = {spec.name: spec.description for spec in _registry().specs()}
+    moved = {
+        "confidence scale": CONFIDENCE_SCALE_NOTE,
+        "enemy stat scales": ENEMY_STAT_SCALE_NOTE,
+        "module change dedup": MODULE_CHANGE_DEDUP_NOTE,
+    }
+    offenders = [
+        (label, name) for label, block in moved.items() for name, d in descs.items() if block in d
+    ]
+    assert offenders == [], offenders
 
 
 def test_level_variant_join_key_is_named() -> None:
@@ -423,6 +486,109 @@ def test_level_variant_join_key_is_named() -> None:
     # stat block, and neither side named the other before.
     for name in ("get_enemy", "get_stage", "analyze_stage"):
         assert "enemy_level_variant" in _desc(name), name
+
+
+# --- §V71 (f)/§V111 (d) (T207, B156): the description budget is a NUMBER, over ALL ---
+
+#: The pre-call fact each description must LEAD with (§V111 c): the selector or query
+#: parameter a caller has to supply to call the tool at all. A truncating client keeps the
+#: head of the string, so what a caller needs BEFORE the call has to be in it -- that is
+#: the ordering mitigation T194 shipped for get_operator, generalized to every tool.
+_LEADING_SELECTOR: dict[str, str] = {
+    "search_entities": "name",
+    "search_stages": "stage code",
+    "get_stage": "stage_code",
+    "get_enemy": "game_id",
+    "get_operator": "game_id",
+    "compare_operator_modules": "game_id",
+    "analyze_stage": "stage_code",
+    "get_stage_drops": "stage_code",
+    "get_item_drops": "item game_id",
+    "get_announcements": "region",
+    "get_banners": "region",
+    "get_data_status": "build",
+    "get_data_sources": "source",
+}
+
+
+def test_every_registered_description_is_within_budget() -> None:
+    # §V111 (d)/B156: §V71 (f) used to be qualitative, so B145 could be closed by halving
+    # ONE tool while the never-audited get_stage became the new longest string on the
+    # server -- "the halving moved the crown, not the problem". A cap that is a NUMBER
+    # measured over EVERY registered tool is the only form that cannot be satisfied by
+    # moving the crown. Registration enforces it too; this pins the measurement itself and
+    # names the offender, which a ToolRegistryError at import time cannot do for all 13.
+    over = [
+        (spec.name, len(spec.description))
+        for spec in _registry().specs()
+        if len(spec.description) > MAX_TOOL_DESCRIPTION_CHARS
+    ]
+    assert over == [], f"over the {MAX_TOOL_DESCRIPTION_CHARS}-char budget: {over}"
+
+
+def test_every_tool_is_measured_by_the_budget_guard() -> None:
+    # Guard the guard: the test above passes vacuously if the registry ever comes back
+    # empty, and _LEADING_SELECTOR below silently skips a tool it does not name.
+    names = {spec.name for spec in _registry().specs()}
+    assert len(names) >= 13
+    assert names == set(_LEADING_SELECTOR)
+
+
+def test_pre_call_facts_lead_every_description() -> None:
+    # §V111 (c): ORDER is the fallback mitigation for a truncating client -- the facts a
+    # caller needs to form the call must survive the cut, so they lead. Checked against
+    # the FIRST sentence, which is the part any truncation keeps.
+    for spec in _registry().specs():
+        first = spec.description.split(". ")[0]
+        assert _LEADING_SELECTOR[spec.name] in first, (spec.name, first)
+
+
+def test_no_shared_block_is_duplicated_across_two_descriptions() -> None:
+    # §V84: ">=2 tool descriptions must not duplicate a >=500-char identical block". Only
+    # the blackboard glossary was ever guarded, so a 788-char coverage note sat
+    # byte-identical in BOTH search descriptions until T207 measured for it. This checks
+    # every pair, so the next such block fails on arrival instead of years later.
+    bar = 500
+    descs = [(spec.name, spec.description) for spec in _registry().specs()]
+    offenders: list[tuple[str, str, str]] = []
+    for i, (name_a, a) in enumerate(descs):
+        windows = {a[j : j + bar] for j in range(len(a) - bar + 1)}
+        for name_b, b in descs[i + 1 :]:
+            shared = next((w for w in windows if w in b), None)
+            if shared is not None:
+                offenders.append((name_a, name_b, shared[:80]))
+    assert offenders == [], f"{bar}+ char blocks duplicated across descriptions: {offenders}"
+
+
+def test_moved_guides_point_at_registered_fetchable_resources() -> None:
+    # §V84/B144: a pointer must name a surface reachable FROM THE TOOL CALL. Text moved
+    # off the description surface to an MCP resource is only MOVED (§V111 b) if that
+    # resource really exists and really serves it -- otherwise the fact is deleted and the
+    # pointer dangles, the exact failure B144 reported for the instructions-based glossary.
+    resources = build_default_resources(
+        _no_conn, registry=load_source_registry(REGISTRY), mode="local"
+    )
+    uris = {str(r.uri) for r in resources.list_resources()}
+    for uri, pointer in (
+        (STAGE_MAP_GUIDE_URI, STAGE_MAP_GUIDE_POINTER),
+        (SEARCH_COVERAGE_URI, SEARCH_COVERAGE_POINTER),
+    ):
+        assert uri in pointer, uri
+        assert uri in uris, uri
+        body = json.loads(resources.read(uri).contents[0].text)
+        assert body["status"] == "ok", uri
+        assert body["data"]["entries"], uri
+        # §V71 (b): the served guide is client-facing text like any other.
+        served = " ".join(e["note"] for e in body["data"]["entries"])
+        assert "§" not in served and not _BUG_CITE.search(served), uri
+
+
+def test_pointers_are_carried_by_the_tools_that_lost_the_text() -> None:
+    # A move is only complete when the tool whose description shed the block names its new
+    # home. get_stage shed the map-reading guide; BOTH search tools shed the coverage note.
+    assert STAGE_MAP_GUIDE_POINTER in _desc("get_stage")
+    for name in ("search_entities", "search_stages"):
+        assert SEARCH_COVERAGE_POINTER in _desc(name), name
 
 
 # --- §V71 (f)/B145 (T194): get_operator's description is no longer the fattest ---

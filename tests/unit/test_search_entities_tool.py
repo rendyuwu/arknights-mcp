@@ -21,6 +21,10 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
+from arknights_mcp.mcp.tools._shared import (
+    SEARCH_COVERAGE_ENTRIES,
+    SEARCH_COVERAGE_POINTER,
+)
 from arknights_mcp.mcp.tools.search import build_search_entities_spec
 from arknights_mcp.services.search import MAX_LIMIT
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
@@ -292,8 +296,16 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "matches the stages in that zone" in desc
     # T186/B113: the client is told alias-driven stages rank below own-name matches,
     # and that such a hit is attributable via zone_display_name.
-    assert "listed after every entity that matched on its own name" in desc
-    assert "zone_display_name" in desc
+    # T186/B113 + §T207/§V84: the alias RANKING rule and the zone_display_name
+    # attribution are still client contract, but their home is now the coverage-guide
+    # resource this description points at -- byte-identical in both siblings, they were
+    # half of the 788-char block §V84 forbids duplicating across two descriptions.
+    guide = dict(SEARCH_COVERAGE_ENTRIES)
+    assert (
+        "listed after every entity that matched on its own name" in guide["zone_and_event_ranking"]
+    )
+    assert "zone_display_name" in guide["zone_and_event_attribution"]
+    assert SEARCH_COVERAGE_POINTER in desc
     assert "en results are listed before cn" in desc
     assert "pass server" in desc
     # §V75: the exact-stage-code ranking divergence cross-ref stays.

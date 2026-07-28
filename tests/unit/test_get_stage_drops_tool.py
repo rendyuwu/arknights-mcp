@@ -35,6 +35,7 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools._shared import CONFIDENCE_SCALE_NOTE, OPEN_ENUM_LIMITATIONS
 from arknights_mcp.mcp.tools.drops import build_get_stage_drops_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.drops import get_stage_drops
@@ -97,7 +98,7 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert isinstance(data, dict)
     # §V66.2: the penguin provenance shared by every drop is hoisted to one block; no
     # per-drop provenance repetition, no efficiency block without the flag.
-    assert set(data) == {"stage", "drop_provenance", "drops"}
+    assert set(data) == {"stage", "drop_provenance", "drops", "enum_legend"}
     assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
     # §V77/§V66 (B79): region stated ONCE on the parent stage, never per drop row.
     assert data["stage"]["server"] == "en"  # type: ignore[index]
@@ -188,7 +189,7 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
     data = env.to_dict()["data"]
     # §T176/B95: the ranking SUBSUMES the drops rows -- no separate ``drops`` list, so
     # the same items are never listed twice (§V66/§V22).
-    assert set(data) == {"stage", "drop_provenance", "efficiency"}
+    assert set(data) == {"stage", "drop_provenance", "efficiency", "enum_legend"}
     # §V66.1: ONE ranked observation, not a list of per-drop observations.
     ob = data["efficiency"]["observation"]  # type: ignore[index]
     assert isinstance(ob, dict)
@@ -241,7 +242,7 @@ def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
     env = _handler(conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
-    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency"}
+    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency", "enum_legend"}
     assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
     # §V67: the absent quantity/times/drop_rate are OMITTED, never emitted null --
     # the §V26 warning naming the missing rate is the sole absence signal.
@@ -274,7 +275,7 @@ def test_partial_ranking_keeps_unrankable_drop_raw(tmp_path: Path) -> None:
     # stay verifiable from the visible residual row.
     assert env.status == "data_stale"
     data = env.to_dict()["data"]
-    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency"}
+    assert set(data) == {"stage", "drop_provenance", "drops", "efficiency", "enum_legend"}
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
     assert [r["id"] for r in ranking] == ["sugar"]
     drops = data["drops"]
@@ -406,3 +407,31 @@ def test_tool_registered_in_shared_registry(fresh_conn: sqlite3.Connection) -> N
         lambda: fresh_conn, registry=load_source_registry(REGISTRY), mode="stdio"
     )
     assert "get_stage_drops" in reg.names()
+
+
+def test_item_type_domain_and_openness_ride_the_response(
+    fresh_conn: sqlite3.Connection,
+) -> None:
+    # §V104 (b)/(c) (§T207): every drop row carries item_type, so the STATIC 9-token
+    # domain rides ``enum_legend`` and the source-defined "may grow" caveat rides a
+    # limitation -- the two homes §V104 names, neither of them the description. A legend
+    # WITHOUT the caveat would read as an exhaustive partition and turn the next upstream
+    # token into an apparent error, so they are one predicate, attached together.
+    env = _handler(fresh_conn)(server="en", stage_code="4-4")
+    data = env.to_dict()["data"]
+    assert set(data["enum_legend"]) == {"item_type"}  # type: ignore[arg-type,index]
+    assert OPEN_ENUM_LIMITATIONS["item_type"] in env.to_dict()["limitations"]
+    desc = build_get_stage_drops_spec(lambda: fresh_conn).description
+    assert "may grow" not in desc
+
+
+def test_confidence_scale_rides_only_the_efficiency_response(
+    fresh_conn: sqlite3.Connection,
+) -> None:
+    # §V104/§V6: the scale is stated ONCE per response that carries a confidence (§V66).
+    # Without include_efficiency there is no observation, so no scale -- and it is no
+    # longer paid for in the description by every caller who never asks for one.
+    with_eff = _handler(fresh_conn)(server="en", stage_code="4-4", include_efficiency=True)
+    assert with_eff.to_dict()["limitations"].count(CONFIDENCE_SCALE_NOTE) == 1  # type: ignore[union-attr]
+    without = _handler(fresh_conn)(server="en", stage_code="4-4")
+    assert CONFIDENCE_SCALE_NOTE not in without.to_dict()["limitations"]

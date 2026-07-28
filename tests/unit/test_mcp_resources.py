@@ -82,7 +82,15 @@ def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None
 
     fixed_uris = {str(r.uri) for r in fixed}
     template_uris = {r.uriTemplate for r in templates}
-    assert fixed_uris == {"arknights://sources", "arknights://glossary/blackboard"}
+    # §V84/§V111 (a) (§T207): two static reading guides joined the fixed set -- the homes
+    # the stage-map and search-coverage blocks moved to when they outgrew the §V71 (f)
+    # description budget. A pointer must name a surface a client can really fetch (B144).
+    assert fixed_uris == {
+        "arknights://sources",
+        "arknights://glossary/blackboard",
+        "arknights://glossary/stage-map",
+        "arknights://glossary/search-coverage",
+    }
     assert template_uris == {
         "arknights://enemy/{server}/{game_id}",
         "arknights://stage/{server}/{stage_id}",
@@ -137,8 +145,10 @@ def test_stage_read_resolves_by_game_id(resources: ResourceRegistry) -> None:
     stage = body["data"]["stage"]  # type: ignore[index]
     assert stage["game_id"] == "main_04-04"
     assert stage["stage_code"] == "4-4"
-    # §V22: the heavy sections stay off the default resource body (facts only).
-    assert set(body["data"]) == {"stage"}  # type: ignore[arg-type]
+    # §V22: the heavy sections stay off the default resource body (facts only). §V14: the
+    # resource dispatches the get_stage TOOL, so it carries the same §V104 (b) enum_legend
+    # -- a domain must not be decidable on one surface and not the other.
+    assert set(body["data"]) == {"stage", "enum_legend"}  # type: ignore[arg-type]
 
 
 # --- §V5 region + provenance --------------------------------------------------

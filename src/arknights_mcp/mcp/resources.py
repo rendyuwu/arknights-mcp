@@ -13,6 +13,8 @@ The surface mirrors PRD §13.11 / §I.resource::
     arknights://banners/{server}            (template)
     arknights://sources                     (fixed)
     arknights://glossary/blackboard         (fixed)
+    arknights://glossary/stage-map          (fixed)
+    arknights://glossary/search-coverage    (fixed)
 
 ``arknights://operator/{server}/{game_id}`` is intentionally **not** registered
 yet: the operator intel service is a stub until ``get_operator`` (§T44, M4), and a
@@ -60,6 +62,10 @@ from arknights_mcp.mcp.envelopes import (
 )
 from arknights_mcp.mcp.tool_registry import ToolHandler
 from arknights_mcp.mcp.tools._shared import (
+    SEARCH_COVERAGE_ENTRIES,
+    SEARCH_COVERAGE_URI,
+    STAGE_MAP_GUIDE_ENTRIES,
+    STAGE_MAP_GUIDE_URI,
     ConnectionProvider,
     run_guarded,
     run_registry_guarded,
@@ -419,6 +425,33 @@ def _glossary_handler(_params: Mapping[str, str]) -> ResponseEnvelope:
     )
 
 
+def _make_guide_handler(topic: str, entries: tuple[tuple[str, str], ...]) -> ResourceHandler:
+    """A static reading-guide resource over ``entries`` (§V84/§V111 a, §T207).
+
+    The §V37 single home for both guides that moved off the tool-description surface:
+    ``arknights://glossary/stage-map`` (get_stage's tile-grid/route/spawn rules, ~970
+    chars of the 2881 that made it the server's longest description, B156) and
+    ``arknights://glossary/search-coverage`` (the 788-char block that was byte-identical
+    in BOTH search descriptions -- the duplication §V84 forbids outright).
+
+    Static project prose projected from the single ``*_GUIDE_ENTRIES`` home in
+    ``tools._shared`` -- never assembled from imported source strings (§V18/§V31), never
+    region-scoped, and carrying no provenance because it states no source fact (§V5
+    governs facts). Needs no connection, so it stays readable on a build-less server: a
+    description that points here must never dangle (the B144 failure).
+    """
+
+    def handler(_params: Mapping[str, str]) -> ResponseEnvelope:
+        return ok(
+            {
+                "topic": topic,
+                "entries": [{"subject": subject, "note": note} for subject, note in entries],
+            }
+        )
+
+    return handler
+
+
 #: PRD §13.11 resource descriptions (short, no game prose; §V16/§V18).
 _ENEMY_DESCRIPTION = (
     "One Arknights enemy's facts by region + game_id: class/flags, attack + motion "
@@ -450,6 +483,17 @@ _GLOSSARY_DESCRIPTION = (
     "compare_operator_modules: one entry per key group with its usual meaning. The "
     "exact meaning of a key is set by the specific effect, so read the effect's own "
     "description template first."
+)
+_STAGE_MAP_GUIDE_DESCRIPTION = (
+    "How to read the map sections get_stage returns with include_map / include_routes / "
+    "include_spawns: the tile_grid rows and legend, which way the board is oriented, how "
+    "enemy routes are collapsed, and which checkpoint and spawn fields are omitted at "
+    "their default."
+)
+_SEARCH_COVERAGE_GUIDE_DESCRIPTION = (
+    "How search_entities and search_stages treat zone names and event titles: where a "
+    "stage matched that way is ranked, which fields attribute the match, and which modes "
+    "carry no event title at all."
 )
 
 
@@ -529,6 +573,26 @@ def build_default_resources(
             description=_GLOSSARY_DESCRIPTION,
             uri_template=_GLOSSARY_URI,
             handler=_glossary_handler,
+        )
+    )
+    # §V84/§V111 (a) (§T207): the two reading guides that moved off the §V71 (f) budget.
+    # Static text, so neither needs a connection -- a pointer must not dangle (B144).
+    resources.register(
+        ResourceSpec(
+            name="stage_map_guide",
+            title="Stage map reading guide",
+            description=_STAGE_MAP_GUIDE_DESCRIPTION,
+            uri_template=STAGE_MAP_GUIDE_URI,
+            handler=_make_guide_handler("stage_map", STAGE_MAP_GUIDE_ENTRIES),
+        )
+    )
+    resources.register(
+        ResourceSpec(
+            name="search_coverage_guide",
+            title="Search coverage guide",
+            description=_SEARCH_COVERAGE_GUIDE_DESCRIPTION,
+            uri_template=SEARCH_COVERAGE_URI,
+            handler=_make_guide_handler("search_coverage", SEARCH_COVERAGE_ENTRIES),
         )
     )
     return resources

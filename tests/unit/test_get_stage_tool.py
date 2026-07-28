@@ -30,7 +30,11 @@ from arknights_mcp.db.repositories.stages import StageRouteRow
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools._shared import LIST_FIELD_CONVENTION
+from arknights_mcp.mcp.tools._shared import (
+    LIST_FIELD_CONVENTION,
+    STAGE_MAP_GUIDE_ENTRIES,
+    STAGE_MAP_GUIDE_POINTER,
+)
 from arknights_mcp.mcp.tools.stage import (
     _TOOL_DESCRIPTION,
     _spawn_to_dict,
@@ -84,8 +88,11 @@ def test_default_response_is_facts_only(conn: sqlite3.Connection) -> None:
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V22: heavy sections are opt-in -- absent by default.
-    assert set(data) == {"stage"}
+    # §V22: heavy sections are opt-in -- absent by default. ``enum_legend`` rides every
+    # response (§V104 b/§T207): every stage row carries difficulty + stage_type, so their
+    # domains travel with the values instead of in the description (§V111 contention).
+    assert set(data) == {"stage", "enum_legend"}
+    assert set(data["enum_legend"]) == {"difficulty", "stage_type"}  # type: ignore[arg-type,index]
     stage = data["stage"]
     assert stage["game_id"] == "main_04-04"  # type: ignore[index]
     assert stage["stage_code"] == "4-4"  # type: ignore[index]
@@ -178,13 +185,17 @@ def test_tile_grid_response_carries_forbidden_vs_passable_gloss(
 ) -> None:
     # §V74 (d): the raw source pairs a forbidden/non-buildable tile_key with
     # passable:true, which reads as a contradiction; every grid response carries a
-    # gloss that deployment and enemy-passability are separate properties. The same
-    # gloss is stated in the tool description.
+    # gloss that deployment and enemy-passability are separate properties.
     env = _handler(conn)(server="en", stage_code="4-4", include_map=True)
     lims = " ".join(env.to_dict()["limitations"])  # type: ignore[arg-type]
     assert "passable" in lims and "deploy" in lims.lower()
+    assert "tile_forbidden" in lims
+    # §T207/§V37: the description used to repeat this gloss verbatim while the limitation
+    # already rode every grid response -- two homes for one fact, and 233 chars of the
+    # §V71 (f) budget on the copy a client reads BEFORE it has a grid to read it against.
+    # The limitation is now the sole home, so the description must NOT carry it back.
     desc = build_get_stage_spec(lambda: conn).description
-    assert "tile_forbidden" in desc and "passable" in desc
+    assert "tile_forbidden" not in desc
 
 
 def test_include_routes(conn: sqlite3.Connection) -> None:
@@ -291,12 +302,17 @@ def test_checkpoint_digest_suppresses_zero_default_optional_fields() -> None:
     assert "reachOffset" not in deviating  # camelCase never leaks
 
 
-def test_tool_description_states_checkpoint_omit_is_default() -> None:
-    # §V81 (B85): omit=default is part of the client contract, so the tool description
-    # must name the suppressible checkpoint fields and say an omit means "at default".
-    desc = _TOOL_DESCRIPTION
-    assert "reach_offset" in desc and "randomize_reach_offset" in desc
-    assert "omitted" in desc and "default" in desc
+def test_checkpoint_omit_is_default_is_stated_in_the_map_guide() -> None:
+    # §V81 (B85): omit=default is part of the client contract, so the suppressible
+    # checkpoint fields must be named somewhere a client reads, with "omitted means at
+    # default". §T207 moved that home from the description to the stage-map guide
+    # resource the description points at (§V84/§V111 a) -- it is read AGAINST a returned
+    # checkpoint, and it was part of the ~970 chars that made get_stage the longest
+    # description on the server (B156). Moved, not dropped: both halves are asserted.
+    guide = dict(STAGE_MAP_GUIDE_ENTRIES)["checkpoints"]
+    assert "reach_offset" in guide and "randomize_reach_offset" in guide
+    assert "omitted" in guide and "default" in guide
+    assert STAGE_MAP_GUIDE_POINTER in _TOOL_DESCRIPTION
 
 
 def _route_row(index: int, start: object, end: object, checkpoints: object) -> StageRouteRow:
@@ -417,7 +433,7 @@ def test_route_truncated_limitation_carries_no_spec_cite() -> None:
 def test_sections_are_independent(conn: sqlite3.Connection) -> None:
     # Only the requested section appears; the others stay off (§V22).
     data = _handler(conn)(server="en", stage_code="4-4", include_spawns=True).to_dict()["data"]
-    assert set(data) == {"stage", "spawns", "spawns_page"}
+    assert set(data) == {"stage", "spawns", "spawns_page", "enum_legend"}
 
 
 def test_sections_coexist_and_spawns_page_independently(conn: sqlite3.Connection) -> None:

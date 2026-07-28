@@ -275,12 +275,24 @@ def test_description_points_to_blackboard_glossary(conn: sqlite3.Connection) -> 
         assert key in BLACKBOARD_KEY_GLOSSARY, key
 
 
-def test_description_documents_change_dedup_and_token_label(conn: sqlite3.Connection) -> None:
+def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection) -> None:
     # §V83/B88: the module trait/talent change dedup + the applies_to "token" label + the
-    # level-hoist semantics are documented in the description the client reads literally.
-    desc = build_get_operator_spec(lambda: conn).description
-    assert MODULE_CHANGE_DEDUP_NOTE in desc
-    assert 'applies_to "token"' in desc
+    # level-hoist semantics are part of the client contract. §T207/§V111 (a) moved the
+    # home from the description to a standing limitation: the note describes what the
+    # emitted bundles OMITTED, which is read against the payload, and as description text
+    # it billed 366 chars to BOTH module-emitting tools every session. Moved, not deleted.
+    env = _handler(conn)(server="en", game_id=_AMIYA, include_modules=True)
+    lims = env.to_dict()["limitations"]
+    assert MODULE_CHANGE_DEDUP_NOTE in lims
+    assert 'applies_to "token"' in MODULE_CHANGE_DEDUP_NOTE
+    assert MODULE_CHANGE_DEDUP_NOTE not in build_get_operator_spec(lambda: conn).description
+
+
+def test_change_dedup_note_rides_only_a_module_response(conn: sqlite3.Connection) -> None:
+    # §V66/§V67: no modules emitted, no deduped bundles to explain -- the note stays off,
+    # exactly like the blackboard caveat it sits beside.
+    env = _handler(conn)(server="en", game_id=_AMIYA)
+    assert MODULE_CHANGE_DEDUP_NOTE not in env.to_dict()["limitations"]
 
 
 def test_client_facing_blackboard_text_has_no_internal_cites() -> None:

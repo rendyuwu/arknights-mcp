@@ -39,6 +39,7 @@ from arknights_mcp.mcp.tools._shared import (
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
     ConnectionProvider,
+    attach_enum_legend,
     attach_image_ref_disclosures,
     has_unnamed_cost_item,
     run_guarded,
@@ -73,6 +74,14 @@ _TOOL_TITLE = "Get operator"
 #: example selector, what each flag adds (``include_provenance`` stated its effect
 #: nowhere while envelope provenance shipped unconditionally, so it read as a no-op), and
 #: the §V104 value domains for the enums this tool emits.
+#:
+#: §T207 (B158) finished the job the §V104/§V71 (f) contention had blocked: T194 could only
+#: reach 2040 because the domains it was told to ADD (+570) cancelled most of what it cut,
+#: with no rule saying which §V yields. §V104 (b) now sanctions the response-side legend as
+#: an EQUAL home for an OUTPUT domain, so those five domains moved to ``enum_legend`` where
+#: they arrive beside the values, and :data:`MODULE_CHANGE_DEDUP_NOTE` moved to a standing
+#: limitation -- it describes what the emitted module payload OMITTED, which is read
+#: post-call. Nothing was deleted to hit the number (§V111 b).
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights operator's facts by region + game_id (for example server en, "
     "game_id char_002_amiya). The default response is compact identity, a summary of the "
@@ -82,19 +91,12 @@ _TOOL_DESCRIPTION = (
     "inside data; the envelope carries it either way. To compare one operator's modules "
     "across their upgrade levels side by side, or for evidence-backed module "
     "observations, use compare_operator_modules instead. en/cn are never mixed. "
-    "profession is the class token: PIONEER (Vanguard), WARRIOR (Guard), TANK "
-    "(Defender), SPECIAL (Specialist), SUPPORT (Supporter), SNIPER, CASTER, or MEDIC. "
-    "position is MELEE or RANGED. A skill's skill_type is AUTO, MANUAL, or PASSIVE. Its "
-    "sp_type is INCREASE_WITH_TIME, INCREASE_WHEN_ATTACK, INCREASE_WHEN_TAKEN_DAMAGE, or "
-    "a raw source code such as 8. Its duration_type is NONE or AMMO, where NONE means the "
-    "source declares no duration type, not that the skill has no duration: read the "
-    "level's duration, in seconds. A skill's effect template rides the skill when it is "
-    "the same at every level, and the level when the wording differs. With the "
-    "image-reference source enabled the response adds derived portrait, avatar, and skin "
-    "image_refs, decoded by the image_refs_legend it carries. "
+    "The response's enum_legend gives the values of profession and position, and of a "
+    "skill's skill_type, sp_type, and duration_type. A skill's effect template rides the "
+    "skill when it is the same at every level, and the level when the wording differs. "
+    "With the image-reference source enabled the response adds derived portrait, avatar, "
+    "and skin image_refs, decoded by the image_refs_legend it carries. "
     + IMAGE_REFS_PATH_NOTE
-    + " "
-    + MODULE_CHANGE_DEDUP_NOTE
     + " "
     + BLACKBOARD_GLOSSARY_POINTER
 )
@@ -104,6 +106,14 @@ _NOT_FOUND_ACTION = (
     "verify the server and game_id (use search_entities to find it), or ask the server "
     "admin to run `arknights-mcp status` to check the active build"
 )
+
+#: §V104 (b)/§V67: which of this tool's five enum domains ride which response. The identity
+#: pair comes with the always-present summary; the three skill domains only when
+#: ``include_skills`` actually put skills on the wire. Their union is the tool's entry in
+#: the shared :data:`TOOL_ENUM_LEGEND_FIELDS` table (asserted in the §V104 guard), so a
+#: field added there can never be silently left unattached here.
+_SUMMARY_ENUM_FIELDS = ("profession", "position")
+_SKILL_ENUM_FIELDS = ("skill_type", "sp_type", "duration_type")
 
 
 def _summary_to_dict(summary: OperatorSummary) -> dict[str, object]:
@@ -332,6 +342,22 @@ def _shape(
             limitations = (*limitations, SKIN_GALLERY_PARTIAL_LIMITATION)
         elif any(s.is_alt_form for s in operator.skins):
             limitations = (*limitations, SKIN_ALT_FORM_NOTE)
+    # §V83/§V66 (B88): the module dedup/labelling note describes what the emitted module
+    # payload OMITTED, so it rides the response that carries modules rather than the
+    # description of both module-emitting tools (§V111 a).
+    if operator.modules:
+        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE)
+    # §V104 (b): each domain rides the response that actually emits its field -- a legend
+    # for a section this call did not request would be noise (§V67). Both subsets are
+    # drawn from the one §V37 table, so the tool and the §V104 guard cannot drift.
+    limitations = attach_enum_legend(
+        data,
+        (
+            *(_SUMMARY_ENUM_FIELDS if operator.summary is not None else ()),
+            *(_SKILL_ENUM_FIELDS if operator.skills else ()),
+        ),
+        limitations,
+    )
     return ok(
         data,
         provenance=[
