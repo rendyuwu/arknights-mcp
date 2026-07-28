@@ -432,9 +432,14 @@ def test_sp_type_mixed_encoding_is_disclosed_as_open() -> None:
     # decidable, so this is the FLOOR, not the resolution -- and the legend must NOT
     # invent a name for the numeric arm (§V29/§V96 forbid guessing it).
     text = OPEN_ENUM_LIMITATIONS["sp_type"]
-    assert "raw source code such as 8" in text
+    assert "8" in text
     assert "never given a fabricated meaning" in text
     assert "8" not in ENUM_LEGENDS["sp_type"]
+    # §T208: the disclosure is a floor, so it also routes to what IS decidable for those
+    # skills -- the named sibling and the level's own SP numbers (§V108 class: say where
+    # the answer lives instead of stopping at "cannot be decoded").
+    for neighbour in ("skill_type", "sp_cost", "initial_sp"):
+        assert neighbour in text, neighbour
 
 
 def test_scale_bearing_stats_state_their_scale() -> None:

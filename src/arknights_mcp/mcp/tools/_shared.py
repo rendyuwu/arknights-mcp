@@ -474,10 +474,15 @@ ENUM_LEGENDS: dict[str, dict[str, str]] = {
 #:
 #: ``sp_type`` is the §V99 mixed-encoding case (B157): the wire key carries BOTH the named
 #: tokens and a BARE NUMERIC CODE (``8`` on 1145 rows of the promoted build), because the
-#: source sends ``spType`` as an int on those rows and the importer stringifies it by
-#: design. §V104 is explicit that disclosure alone makes such a value LEGAL but not
-#: DECIDABLE, so this string is the FLOOR, not the resolution -- what ``8`` means is not
-#: verified and §V29/§V96 forbid guessing it. Resolving the encoding is its own task.
+#: source sends ``spType`` as an int on those rows and the importer stringifies it.
+#:
+#: §T208 settled which of B157's two exits applies, against the pinned upstream rather than
+#: from the schema (§V29/§V96). The pin ships names and the bare ``8`` in the SAME file, and
+#: a second independent export of the same game data emits the same bare ``8`` on all 1352
+#: skill ids the two share, 0 disagreements -- so no name for the code exists upstream to
+#: import, and an import-time map could only have invented one. The code therefore stays
+#: raw and this string carries the openness (§V104 c): still the FLOOR, not a resolution,
+#: which is why it also names the neighbouring fields that ARE decidable for those skills.
 #: Client-facing text, so no internal cites/jargon (§V71 b); short sentences (§V71 f).
 OPEN_ENUM_LIMITATIONS: dict[str, str] = {
     "item_type": (
@@ -489,9 +494,12 @@ OPEN_ENUM_LIMITATIONS: dict[str, str] = {
         "response's enum_legend does not list as source-defined, not as an error."
     ),
     "sp_type": (
-        "A skill's sp_type may also arrive as a raw source code such as 8 rather than one "
-        "of the named tokens. The code is emitted exactly as the source stores it and is "
-        "never given a fabricated meaning."
+        "A skill's sp_type is normally one of the named tokens the response's enum_legend "
+        "lists, but some skills carry a bare number instead (8 in this data). The game "
+        "data ships no name for that code, so it is emitted exactly as the source stores "
+        "it and is never given a fabricated meaning -- read it as source-defined, not as "
+        "an error. For those skills, skill_type and each level's sp_cost and initial_sp "
+        "are named and complete."
     ),
 }
 

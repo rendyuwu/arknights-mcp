@@ -165,10 +165,29 @@ class OperatorImportResult:
 def _enum_text(value: Any) -> str | None:
     """Enum-ish field (``skillType``/``spType``/``durationType``) → text or ``None``.
 
-    The value is read from an already-allowlisted+sanitized ``kept`` dict, so a
-    ``str`` needs no further cleaning; an ``int`` code is stringified so both the
-    modern string form and the legacy numeric form round-trip into a ``TEXT``
-    column. ``bool`` is rejected (an ``int`` subclass, never a real code).
+    The value is read from an already-allowlisted+sanitized ``kept`` dict, so a ``str``
+    needs no further cleaning; an ``int`` code is stringified so the source's numeric form
+    still round-trips into a ``TEXT`` column. ``bool`` is rejected (an ``int`` subclass,
+    never a real code).
+
+    The numeric arm is NOT a legacy encoding -- §T208 corrects the framing B157 inherited
+    from this docstring. The pinned upstream ``413a81a3`` ships BOTH forms in the SAME file
+    at the SAME pin: ``spType`` is a name on 8674 en / 9108 cn skill-level rows and the bare
+    int ``8`` on 1515 en / 1745 cn, and skill ``sktok_mjcsdw`` carries both across its own
+    levels. A second, independent export of the same game data emits that same bare ``8``
+    on every one of the 1352 skill ids it shares with the pin, with zero disagreements, so
+    the NAME does not exist upstream rather than having been missed here.
+
+    Stringifying is therefore the honest coercion (§V99 wants one type per key, but not at
+    the price of a fabricated one): dropping the int would erase the field on 1145 rows of
+    the promoted build, and mapping it to a name would invent one, which §V29/§V96 forbid.
+    What the client gets instead is disclosure -- ``OPEN_ENUM_LIMITATIONS['sp_type']``
+    (§V104 c), a floor rather than a resolution.
+
+    ``skillType``/``durationType`` are 100% strings at the same pin (10189 en / 10853 cn
+    level rows each), so the two clean siblings are clean by DATA, not by construction:
+    one upstream int would land here and reach the wire the same silent way. That is what
+    ``tests/contract/test_enum_domain_coverage.py`` pins for all three columns.
     """
     if isinstance(value, bool):
         return None

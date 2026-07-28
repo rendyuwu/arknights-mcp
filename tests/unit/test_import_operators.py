@@ -246,6 +246,36 @@ def test_parse_sanitizes_nested_tag_string() -> None:
     assert "\x00" not in "".join(amiya.tags)  # §V31 nested string leaf sanitized
 
 
+def test_parse_skills_round_trips_a_bare_numeric_sp_type() -> None:
+    # §V99/§V104 (c) (B157/§T208): upstream ships ``spType`` as a NAME on most rows and as
+    # a bare int on the rest -- both in the same file at the same pin, so the int is not a
+    # legacy form. It is stringified, never mapped: no name for the code exists upstream
+    # (verified against the pin and a second independent export of the same game data), so
+    # any map would be invented, which §V29/§V96 forbid. The sibling enum on the same level
+    # stays a name -- the two clean columns are clean by DATA, not by construction.
+    raw = {
+        "sktok_numeric": {
+            "skillId": "sktok_numeric",
+            "levels": [
+                {
+                    "name": "Unnamed SP type",
+                    "skillType": "PASSIVE",
+                    "durationType": "NONE",
+                    "description": SKILL_TEMPLATE,
+                    "duration": 0.0,
+                    "rangeId": None,
+                    "spData": {"spType": 8, "spCost": 0, "initSp": 0},
+                    "blackboard": [],
+                }
+            ],
+        }
+    }
+    skill = parse_skills(raw)[0]
+    assert skill.sp_type == "8"
+    assert skill.skill_type == "PASSIVE"
+    assert skill.duration_type == "NONE"
+
+
 def test_parse_skills_reads_typed_fields() -> None:
     skills = {s.game_id: s for s in parse_skills(SKILLS)}
     s1 = skills["skchr_amiya_1"]

@@ -20,6 +20,12 @@ with no rule saying which one yields (B158). The check is STRICTER than the old 
 one respect: the legend must match the corpus in BOTH directions, so a value the wire
 stopped emitting cannot linger as a documented token either.
 
+T208 added the second half (B157): the three ``skills`` columns fed by the SHARED
+``_enum_text`` coercion pin their whole emitted token set, split into the named arm and
+the bare-code arm. ``sp_type`` is mixed by upstream design, ``skill_type`` and
+``duration_type`` are named-only -- but only on this corpus, so the pin is what turns
+"clean" from an assumption about the coercion into a measured fact about the data.
+
 Skipped when no build is promoted (the offline ``pytest -q`` gate builds fixtures, not a
 full en+cn corpus); the unit-level pin in ``tests/unit/test_client_facing_text.py``
 carries the same value sets so a text edit still regresses loudly in CI.
@@ -33,16 +39,13 @@ from pathlib import Path
 
 import pytest
 
-from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools._shared import (
     ENUM_LEGENDS,
     OPEN_ENUM_LIMITATIONS,
     TOOL_ENUM_LEGEND_FIELDS,
 )
-from arknights_mcp.sources.registry import load_source_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 MANIFEST = REPO_ROOT / "data" / "current.json"
 
 #: ``(table, column, tool)`` for every enum-valued column a tool puts on the wire. The
@@ -97,20 +100,6 @@ def conn() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{BUILD}?mode=ro", uri=True)
 
 
-@pytest.fixture(scope="module")
-def descriptions() -> dict[str, str]:
-    def _no_conn() -> sqlite3.Connection:  # pragma: no cover - never called
-        raise RuntimeError("descriptions need no connection")
-
-    registry = build_tool_registry(
-        _no_conn,
-        registry=load_source_registry(REGISTRY),
-        mode="local",
-        image_refs_enabled=True,
-    )
-    return {spec.name: spec.description for spec in registry.specs()}
-
-
 @pytest.mark.parametrize(("table", "column", "tool"), _EMITTED_ENUM_COLUMNS)
 def test_every_emitted_enum_value_is_published_in_its_legend(
     conn: sqlite3.Connection, table: str, column: str, tool: str
@@ -139,23 +128,56 @@ def test_every_emitted_enum_value_is_published_in_its_legend(
         assert stale == [], f"{tool} legend names {column} values the build never emits: {stale}"
 
 
-def test_sp_type_numeric_fallback_is_disclosed_but_never_named(
-    conn: sqlite3.Connection, descriptions: dict[str, str]
+#: §T208 (B157): the three ``skills`` columns the SHARED ``_enum_text`` coercion feeds, with
+#: the numeric arm each one carries on the promoted build. ``sp_type`` is the mixed-encoding
+#: case (§V99) -- upstream ships a name for three values and the bare int ``8`` for the
+#: fourth, in the same file at the same pin -- while its two siblings are 100% named. The
+#: point of pinning all three is that the siblings are clean by DATA, not by construction:
+#: the same stringify runs on them, so the day upstream sends an int for ``skillType`` the
+#: code would reach the wire exactly as silently, and only a corpus-side pin catches it.
+_ENUM_TEXT_COLUMNS: tuple[tuple[str, frozenset[str]], ...] = (
+    ("sp_type", frozenset({"8"})),
+    ("skill_type", frozenset()),
+    ("duration_type", frozenset()),
+)
+
+
+def _is_source_code(value: str) -> bool:
+    """A stored enum value that is a bare number, i.e. a code the source never named."""
+    return value.lstrip("-").isdigit()
+
+
+@pytest.mark.parametrize(("column", "numeric_arm"), _ENUM_TEXT_COLUMNS)
+def test_shared_enum_coercion_columns_pin_their_emitted_token_set(
+    conn: sqlite3.Connection, column: str, numeric_arm: frozenset[str]
 ) -> None:
-    # ``sp_type`` is the one enum whose stored domain is MIXED (§V99/B157): alongside the
-    # three named tokens the source also stores a bare numeric code (``8`` on 1145 rows of
-    # the promoted build), so the legend cannot present the names as a closed partition.
-    # Asserted separately from the loop above because the honest disclosure is a phrase,
-    # not a token -- and because the legend must NOT acquire an entry for the numeric arm:
-    # what ``8`` means is unverified, and §V29/§V96 forbid guessing it. §V104 is explicit
-    # that this disclosure is the FLOOR, not the resolution.
-    rows = conn.execute("SELECT DISTINCT sp_type FROM skills WHERE sp_type IS NOT NULL")
+    rows = conn.execute(
+        f"SELECT DISTINCT {column} FROM skills WHERE {column} IS NOT NULL"  # noqa: S608
+    ).fetchall()
     emitted = {str(value) for (value,) in rows}
-    named = {"INCREASE_WITH_TIME", "INCREASE_WHEN_ATTACK", "INCREASE_WHEN_TAKEN_DAMAGE"}
-    legend = ENUM_LEGENDS["sp_type"]
-    for value in named & emitted:
-        assert value in legend, value
-    for value in emitted - named:
-        assert value not in legend, f"legend invented a meaning for the raw code {value}"
-    if emitted - named:
-        assert "raw source code" in OPEN_ENUM_LIMITATIONS["sp_type"], sorted(emitted - named)
+    # Guard the guard: a typo'd column would make every assertion below vacuous.
+    assert emitted, f"skills.{column} yielded no values"
+    numeric = {value for value in emitted if _is_source_code(value)}
+    # A NEW bare code, or the first one on a sibling, must fail loudly and be verified
+    # against the pinned upstream before any text claims it exists (§V29/§V96).
+    assert numeric == set(numeric_arm), f"skills.{column} numeric arm moved: {sorted(numeric)}"
+    # The named arm is exactly the legend: no emitted name undocumented, no documented
+    # name the build stopped emitting.
+    assert emitted - numeric == set(ENUM_LEGENDS[column]), column
+    for value in numeric:
+        # §V104 (c)/§V29/§V96: the legend must NOT acquire an entry for a code whose
+        # meaning is unverified -- disclosure makes the value legal, never decidable.
+        assert value not in ENUM_LEGENDS[column], (
+            f"legend invented a meaning for the raw {column} code {value}"
+        )
+    if numeric:
+        # §V96 non-degenerate: the numeric arm is real on this corpus, so the openness
+        # disclosure has to be shipped rather than merely available.
+        text = OPEN_ENUM_LIMITATIONS[column]
+        assert "never given a fabricated meaning" in text, column
+        for value in numeric:
+            assert value in text, (column, value)
+    else:
+        assert column not in OPEN_ENUM_LIMITATIONS, (
+            f"{column} declares a mixed-encoding caveat it no longer needs"
+        )
