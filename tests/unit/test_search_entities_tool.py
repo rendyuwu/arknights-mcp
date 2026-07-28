@@ -79,12 +79,14 @@ def test_non_stage_locator_omits_stage_code_and_difficulty(
     conn: sqlite3.Connection,
 ) -> None:
     # §V67/B90: stage_code + difficulty are stage-only; an enemy locator carries
-    # neither key (not a bare null).
+    # neither key (not a bare null). T186 adds zone_display_name to that stage-only
+    # set -- an enemy belongs to no zone, so the key must not appear on it either.
     rows = _handler(conn)(query="drone", entity_type="enemy").to_dict()["data"]["results"]
     assert rows  # sanity: the enemy is indexed
     for row in rows:  # type: ignore[union-attr]
         assert "stage_code" not in row
         assert "difficulty" not in row
+        assert "zone_display_name" not in row
 
 
 def test_stage_locator_keeps_stage_code_and_difficulty(
@@ -95,6 +97,17 @@ def test_stage_locator_keeps_stage_code_and_difficulty(
     stage = next(r for r in rows if r["game_id"] == "main_04-04")  # type: ignore[index,union-attr]
     assert stage["stage_code"] == "4-4"
     assert "difficulty" in stage
+
+
+def test_zone_matched_locator_names_the_zone(conn: sqlite3.Connection) -> None:
+    # T186/B113: a zone-name query returns stages whose own names say nothing about
+    # it. Without the zone on the wire the hit is unattributable -- the client cannot
+    # tell why the stage came back, nor group mixed results by zone. The 4-4 fixture
+    # stage sits in "Chapter 4", so that query reaches it only through the alias.
+    rows = _handler(conn)(query="Chapter", entity_type="stage").to_dict()["data"]["results"]
+    stage = next(r for r in rows if r["game_id"] == "main_04-04")  # type: ignore[index,union-attr]
+    assert stage["zone_display_name"] == "Chapter 4"
+    assert "Chapter" not in (stage["display_name"] or "")
 
 
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
@@ -273,10 +286,14 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "English and Chinese only" in desc
     assert "Japanese or Korean" in desc
     assert "fuzzy" in desc
-    # T179: zone/event names now ride stage documents as aliases -- the
-    # description states the coverage instead of the retired "not indexed" caveat.
-    assert "zone or event name" in desc
-    assert "matches the stages belonging to that zone or event" in desc
+    # T179: zone names now ride stage documents as aliases -- the description states
+    # the coverage instead of the retired "not indexed" caveat.
+    assert "A zone name (for example Gavial's Footprints)" in desc
+    assert "matches the stages in that zone" in desc
+    # T186/B113: the client is told alias-driven stages rank below own-name matches,
+    # and that such a hit is attributable via zone_display_name.
+    assert "listed after every entity that matched on its own name" in desc
+    assert "zone_display_name" in desc
     assert "en results are listed before cn" in desc
     assert "pass server" in desc
     # §V75: the exact-stage-code ranking divergence cross-ref stays.

@@ -85,6 +85,10 @@ class StageFacts:
     stage_code: str | None
     display_name: str | None
     zone_game_id: str | None
+    #: §V69/T186: the readable name for ``zone_game_id``. A bare opaque id forces a
+    #: second lookup the client has no tool for, or invites it to guess; ``None`` when
+    #: the zone carries no name in source, and the tool layer omits the key there.
+    zone_display_name: str | None
     stage_type: str | None
     difficulty: str | None
     sanity_cost: int | None
@@ -173,6 +177,7 @@ def _stage_facts(stage: StageRow) -> StageFacts:
         stage_code=stage.stage_code,
         display_name=stage.display_name,
         zone_game_id=stage.zone_game_id,
+        zone_display_name=stage.zone_display_name,
         stage_type=stage.stage_type,
         # §V80/B84: the emitted ``difficulty`` is the truthful stage-variant tag, not
         # the raw source column -- a ``tough_*`` / ``easy_*`` game_id is upgraded off

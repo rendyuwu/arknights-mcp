@@ -114,7 +114,12 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
 
     §V67 (B98): ``recommended_level`` / ``max_life_points`` are omitted when the
     source carried none, never emitted as null -- the standing absent-field
-    limitation is the sole absence signal."""
+    limitation is the sole absence signal.
+
+    §V69 (T186): ``zone_display_name`` pairs the opaque ``zone_game_id`` with a readable
+    zone/event name, so ``zone_game_id: "act12d0"`` stops being an id the client must
+    either abandon or invent a meaning for. Omitted when the zone is unnamed in source
+    (§V67) -- the id still ships, so the absence is visible rather than fabricated."""
     out: dict[str, object] = {
         "server": stage.server,
         "game_id": stage.game_id,
@@ -125,6 +130,8 @@ def _stage_to_dict(stage: StageFacts) -> dict[str, object]:
         "difficulty": stage.difficulty,
         "sanity_cost": stage.sanity_cost,
     }
+    if stage.zone_display_name is not None:
+        out["zone_display_name"] = stage.zone_display_name
     if stage.recommended_level is not None:
         out["recommended_level"] = stage.recommended_level
     if stage.max_life_points is not None:

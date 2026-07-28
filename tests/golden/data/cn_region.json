@@ -60,6 +60,7 @@
     "server": "cn",
     "stage_code": "CN-1",
     "stage_type": "MAIN",
+    "zone_display_name": "监测站",
     "zone_game_id": "cz_1"
   },
   "status": "ok",

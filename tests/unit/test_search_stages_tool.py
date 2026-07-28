@@ -70,6 +70,8 @@ def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
 def test_results_are_region_tagged_stage_locators(conn: sqlite3.Connection) -> None:
     # §V5 region travels per row; every hit is typed as a stage locator, and each
     # carries the §V70 difficulty variant tag (may be null when source omits it).
+    # T186: the fixture stage's zone IS named ("Chapter 4"), so the attribution key
+    # rides too -- it is omitted, never null, when a zone has no name (§V67).
     for row in _handler(conn)(query="Combustion").to_dict()["data"]["results"]:  # type: ignore[index]
         assert row["server"] == "en"
         assert row["entity_type"] == "stage"
@@ -80,7 +82,9 @@ def test_results_are_region_tagged_stage_locators(conn: sqlite3.Connection) -> N
             "display_name",
             "stage_code",
             "difficulty",
+            "zone_display_name",
         }
+        assert row["zone_display_name"] == "Chapter 4"
 
 
 def test_matches_by_name_and_game_id(conn: sqlite3.Connection) -> None:
@@ -357,10 +361,14 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "English and Chinese only" in desc
     assert "Japanese or Korean" in desc
     assert "fuzzy" in desc
-    # T179: zone/event names now ride stage documents as aliases -- the
-    # description states the coverage instead of the retired "not indexed" caveat.
-    assert "zone or event name" in desc
-    assert "matches the stages belonging to that zone or event" in desc
+    # T179: zone names now ride stage documents as aliases -- the description states
+    # the coverage instead of the retired "not indexed" caveat.
+    assert "A zone name (for example Gavial's Footprints)" in desc
+    assert "matches the stages in that zone" in desc
+    # T186/B113: §V75 -- the alias ranking rule and the zone_display_name attribution
+    # are stated in THIS sibling too, not only in search_entities.
+    assert "listed after every entity that matched on its own name" in desc
+    assert "zone_display_name" in desc
     # The stages variant states the exact-code exception honestly: exact stage-code
     # matches lead regardless of region, THEN the en-before-cn order applies.
     assert "exact stage-code matches are listed first" in desc

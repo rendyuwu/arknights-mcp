@@ -66,6 +66,12 @@ class SearchHit:
     source ``FOUR_STAR`` challenge variant (``#f#``) plus the prefix-derived
     ``TOUGH`` / ``EASY`` (``tough_*`` / ``easy_*``, never left ``NORMAL``). ``None``
     for a non-stage hit or a plain stage with no variant.
+
+    ``zone_display_name`` is the stage's zone/event name (T186/B113). A stage can match
+    a query through it (T179 -- an event name finds that event's stages), and without it
+    on the wire such a hit is unattributable: the client sees a stage whose own name and
+    code have nothing to do with the query and cannot partition mixed hits by event.
+    ``None`` for a non-stage hit and for a stage whose zone is unnamed in source.
     """
 
     entity_type: str
@@ -74,6 +80,7 @@ class SearchHit:
     display_name: str | None
     stage_code: str | None
     difficulty: str | None
+    zone_display_name: str | None
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,9 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
             # §V80/B84: the same truthful variant tag get_stage emits, through the
             # one §V37 home -- a ``tough_*`` / ``easy_*`` locator is never NORMAL.
             difficulty=stage_variant(row.game_id, row.difficulty),
+            # T186/B113: the zone/event name a stage may have matched through, so an
+            # alias-driven hit is attributable on the wire.
+            zone_display_name=row.zone_display_name,
         )
         for row in rows
     )

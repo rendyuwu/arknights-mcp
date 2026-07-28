@@ -82,6 +82,7 @@
     "server": "en",
     "stage_code": "4-4",
     "stage_type": "MAIN",
+    "zone_display_name": "Chapter 4",
     "zone_game_id": "main_4"
   },
   "status": "ok",

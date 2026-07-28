@@ -60,6 +60,7 @@
     "server": "en",
     "stage_code": "GS-2",
     "stage_type": "MAIN",
+    "zone_display_name": "Golden Suite Zone",
     "zone_game_id": "gz_1"
   },
   "status": "ok",

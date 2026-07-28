@@ -30,6 +30,9 @@ class StageRow:
     stage_code: str | None
     display_name: str | None
     zone_game_id: str | None
+    #: The zone's display name, pairing the opaque ``zone_game_id`` with something a
+    #: client can read (§V69, T186); ``None`` when the zone is unnamed in source.
+    zone_display_name: str | None
     stage_type: str | None
     difficulty: str | None
     sanity_cost: int | None
@@ -133,7 +136,7 @@ class StageSpawnRow:
 
 _STAGE_SELECT = (
     "SELECT s.stage_pk, s.server, s.game_id, s.stage_code, s.display_name, "
-    "z.game_id, s.stage_type, s.difficulty, s.sanity_cost, "
+    "z.game_id, z.display_name, s.stage_type, s.difficulty, s.sanity_cost, "
     "s.recommended_level, s.max_life_points, p.snapshot_id, ss.imported_at "
     "FROM stages s "
     "JOIN record_provenance p ON p.provenance_id = s.provenance_id "
@@ -235,6 +238,7 @@ def _to_stage_row(row: Any) -> StageRow:
         stage_code,
         display_name,
         zone_game_id,
+        zone_display_name,
         stage_type,
         difficulty,
         sanity_cost,
@@ -250,6 +254,7 @@ def _to_stage_row(row: Any) -> StageRow:
         stage_code=stage_code,
         display_name=display_name,
         zone_game_id=zone_game_id,
+        zone_display_name=zone_display_name,
         stage_type=stage_type,
         difficulty=difficulty,
         sanity_cost=sanity_cost,

@@ -441,8 +441,8 @@ def saturated_conn() -> sqlite3.Connection:
     12 en documents carry the query token buried in a long name (weak bm25); the
     single cn document IS the token (short doc, strongest bm25). Membership in the
     bounded result set must be best-match-first, so the cn row survives; display is
-    then region-major (en before cn). The stub ``stages`` table satisfies the §V70
-    difficulty LEFT JOIN.
+    then region-major (en before cn). The stub ``stages`` / ``zones`` tables satisfy the
+    §V70 difficulty and T186 zone-name LEFT JOINs.
     """
     conn = sqlite3.connect(":memory:")
     conn.executescript(
@@ -452,7 +452,10 @@ def saturated_conn() -> sqlite3.Connection:
             entity_type UNINDEXED, server UNINDEXED, entity_pk UNINDEXED,
             tokenize = 'unicode61'
         );
-        CREATE TABLE stages (stage_pk INTEGER, server TEXT, difficulty TEXT);
+        CREATE TABLE stages (
+            stage_pk INTEGER, server TEXT, difficulty TEXT, zone_pk INTEGER
+        );
+        CREATE TABLE zones (zone_pk INTEGER, server TEXT, display_name TEXT);
         """
     )
     for i in range(12):
@@ -494,7 +497,10 @@ def test_stage_region_order_never_evicts_stronger_cn_match() -> None:
             entity_type UNINDEXED, server UNINDEXED, entity_pk UNINDEXED,
             tokenize = 'unicode61'
         );
-        CREATE TABLE stages (stage_pk INTEGER, server TEXT, difficulty TEXT);
+        CREATE TABLE stages (
+            stage_pk INTEGER, server TEXT, difficulty TEXT, zone_pk INTEGER
+        );
+        CREATE TABLE zones (zone_pk INTEGER, server TEXT, display_name TEXT);
         """
     )
     for i in range(12):
@@ -518,3 +524,199 @@ def test_stage_region_order_never_evicts_stronger_cn_match() -> None:
     )
     assert len(rows) == 10
     assert any(r.game_id == "cn_stage_trail" for r in rows)
+
+
+# --- T186 / B113: zone-alias hardening (§V90 own-name precedence) ---------------
+
+
+#: The "Gavial's Footprints" member stages, TRANSCRIBED from the shipped build
+#: ``2026-07-27T093847Z-en-cn.sqlite`` (en) rather than invented. That matters: the
+#: first draft of this fixture named them "Unrelated Stage Name 00".. and the guard
+#: passed BEFORE the fix, because bm25 length-normalizes -- long invented names scored
+#: the alias-only docs down until they no longer outranked anything, and the fixture
+#: quietly stopped reproducing B113. The real names are short ("Feint", "Torrent"),
+#: which is precisely why their documents beat the own-name hits on the real corpus.
+#: Same synthetic-fixture escape as B107/B128; see the non-degeneracy assertion below.
+_FOOTPRINTS_MEMBERS: tuple[tuple[str, str, str], ...] = (
+    ("act12d0_ex01", "RI-EX-1", "Feint"),
+    ("act12d0_ex02", "RI-EX-2", "Wanderlust"),
+    ("act12d0_ex03", "RI-EX-3", "Mushroom Overgrowth"),
+    ("act12d0_ex04", "RI-EX-4", "No Gain Without Loss"),
+    ("act12d0_ex05", "RI-EX-5", "Trap Within the Leaves"),
+    ("act12d0_ex06", "RI-EX-6", "Torrent"),
+    ("act12d0_ex07", "RI-EX-7", "Soft Terrain"),
+    ("act12d0_ex08", "RI-EX-8", "Rampage"),
+    ("act12d0_ex01#f#", "RI-EX-1", "Feint"),
+    ("act12d0_ex02#f#", "RI-EX-2", "Wanderlust"),
+    ("act12d0_ex03#f#", "RI-EX-3", "Mushroom Overgrowth"),
+    ("act12d0_ex06#f#", "RI-EX-6", "Torrent"),
+    ("act12d0_ex08#f#", "RI-EX-8", "Rampage"),
+)
+
+#: Every document in the fixture that matches "Gavial" through its OWN name -- whether
+#: in ``name`` (the operator, the stage "Gavial's Fist") or in an ``operator_aliases``
+#: row holding that same operator's name in another language. Everything else matching
+#: the query does so only through a zone name that belongs to a different entity.
+_OWN_NAME_GAME_IDS = frozenset({"char_187_ccheal", "char_1026_gvial2", "act12d0_08"})
+
+
+def _seed_collision(path: Path, *, member_stages: int = len(_FOOTPRINTS_MEMBERS)) -> None:
+    """The B113 collision, reduced from the real corpus: one event named after an operator.
+
+    Four kinds of document, all transcribed from the shipped en build:
+
+    * ``char_187_ccheal`` "Gavial" -- the short, unambiguous own-name hit;
+    * ``char_1026_gvial2`` -- display name is the Chinese one, so it matches ONLY
+      through its ``operator_aliases`` row. This is the carve-out: the ``aliases``
+      column holds this entity's OWN name in another language, so it must keep full
+      ranking, which is why the fix is scoped to stage documents instead of
+      down-weighting the column globally;
+    * ``act12d0_08`` "Gavial's Fist" -- a stage matching on its own name, from a zone
+      named something else entirely ("Great Chief's Path");
+    * ``member_stages`` stages of "Gavial's Footprints", matching ONLY through the
+      T179 zone alias, their own names and codes saying nothing about the query.
+    """
+    writer = build_database(path)
+    provenance_id = _seed_provenance(writer)
+    writer.execute(
+        "INSERT INTO operators (server, game_id, display_name, provenance_id) VALUES (?,?,?,?)",
+        ("en", "char_187_ccheal", "Gavial", provenance_id),
+    )
+    cur = writer.execute(
+        "INSERT INTO operators (server, game_id, display_name, provenance_id) VALUES (?,?,?,?)",
+        ("en", "char_1026_gvial2", "百炼嘉维尔", provenance_id),
+    )
+    writer.execute(
+        "INSERT INTO operator_aliases (operator_pk, alias) VALUES (?,?)",
+        (int(cur.lastrowid), "Gavial the Invincible 百炼嘉维尔"),
+    )
+    cur = writer.execute(
+        "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
+        ("en", "act12d0", "Gavial's Footprints", "ACTIVITY"),
+    )
+    event_zone_pk = int(cur.lastrowid)
+    for game_id, stage_code, display_name in _FOOTPRINTS_MEMBERS[:member_stages]:
+        writer.execute(
+            "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
+            "provenance_id) VALUES (?,?,?,?,?,?)",
+            ("en", game_id, stage_code, display_name, event_zone_pk, provenance_id),
+        )
+    cur = writer.execute(
+        "INSERT INTO zones (server, game_id, display_name, zone_type) VALUES (?,?,?,?)",
+        ("en", "act12d0_main", "Great Chief's Path", "ACTIVITY"),
+    )
+    writer.execute(
+        "INSERT INTO stages (server, game_id, stage_code, display_name, zone_pk, "
+        "provenance_id) VALUES (?,?,?,?,?,?)",
+        ("en", "act12d0_08", "RI-8", "Gavial's Fist", int(cur.lastrowid), provenance_id),
+    )
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+
+
+def test_collision_fixture_still_reproduces_b113(tmp_path: Path) -> None:
+    """NON-DEGENERACY guard (§V96 class): the fixture must still exercise the bug.
+
+    Ranked the old way -- plain bm25 with no own-name group -- an alias-only member
+    stage has to come out ahead of at least one own-name document, or the tests below
+    would pass on the unfixed code and prove nothing. This assertion is what the first
+    draft of the fixture silently failed.
+    """
+    path = tmp_path / "degenerate.sqlite"
+    _seed_collision(path)
+    with open_read_only(path) as conn:
+        unfixed = [
+            row[0]
+            for row in conn.execute(
+                "SELECT entity_fts.game_id FROM entity_fts WHERE entity_fts MATCH ? "
+                "ORDER BY rank, entity_fts.game_id",
+                ('"Gavial"*',),
+            )
+        ]
+    alias_only = [i for i, gid in enumerate(unfixed) if gid not in _OWN_NAME_GAME_IDS]
+    own_name = [i for i, gid in enumerate(unfixed) if gid in _OWN_NAME_GAME_IDS]
+    assert min(alias_only) < max(own_name), (
+        "fixture no longer inverts under plain bm25; the guards below are vacuous"
+    )
+
+
+def test_zone_alias_never_outranks_an_own_name_match(tmp_path: Path) -> None:
+    # §V90/B113: the operator and the stage NAMED "Gavial's Fist" matched the query in
+    # their own names; the event's member stages matched only through the zone alias.
+    # Every own-name hit must precede every alias-only hit -- on the real corpus this
+    # ordering was inverted, with seven alias-only stages ahead of both.
+    path = tmp_path / "collision.sqlite"
+    _seed_collision(path)
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="Gavial", limit=MAX_LIMIT).hits
+        positions = {h.game_id: i for i, h in enumerate(hits)}
+        assert set(positions) >= _OWN_NAME_GAME_IDS, "own-name entities missing from the results"
+        alias_only = [i for gid, i in positions.items() if gid not in _OWN_NAME_GAME_IDS]
+        assert alias_only, "fixture no longer exercises B113: no alias-only hits"
+        assert max(positions[gid] for gid in _OWN_NAME_GAME_IDS) < min(alias_only)
+
+
+def test_zone_alias_never_evicts_an_own_name_match_from_the_bounded_set(
+    tmp_path: Path,
+) -> None:
+    # The membership half of B113 (the part a display-only sort cannot fix): with more
+    # alias-only member stages than the whole result window, an own-name match must
+    # still be IN the bounded set. 13 members vs limit 10 -- under the old ordering the
+    # cn operator and "Gavial's Fist" fell to #17 and #14 on the real corpus.
+    path = tmp_path / "evict.sqlite"
+    _seed_collision(path)
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="Gavial", limit=10).hits
+        assert len(hits) == 10
+        assert {h.game_id for h in hits} >= _OWN_NAME_GAME_IDS
+
+
+def test_stage_search_alias_precedence_sits_under_exact_code(tmp_path: Path) -> None:
+    # §T33 is not weakened by §V90: an exact stage-code match still wins outright, and
+    # only below it does own-name beat alias-only. Both rules apply in search_stages.
+    path = tmp_path / "stage_precedence.sqlite"
+    _seed_collision(path)
+    with open_read_only(path) as conn:
+        hits = search_stages(conn, query="RI-EX-3", limit=MAX_LIMIT).hits
+        assert hits[0].stage_code == "RI-EX-3"
+        gavial = search_stages(conn, query="Gavial", limit=MAX_LIMIT).hits
+        assert gavial[0].game_id == "act12d0_08"
+
+
+def test_alias_only_hit_carries_the_zone_name_that_matched(tmp_path: Path) -> None:
+    # B113's second half: an alias hit was unattributable on the wire. A stage whose
+    # own name and code say nothing about "Gavial" now ships the string that did match.
+    path = tmp_path / "attribution.sqlite"
+    _seed_collision(path, member_stages=3)
+    with open_read_only(path) as conn:
+        hits = search_entities(conn, query="Gavial", limit=MAX_LIMIT).hits
+        alias_hit = next(h for h in hits if h.game_id.startswith("act12d0_ex"))
+        assert "Gavial" not in (alias_hit.display_name or "")
+        assert alias_hit.zone_display_name == "Gavial's Footprints"
+        operator = next(h for h in hits if h.entity_type == "operator")
+        assert operator.zone_display_name is None
+
+
+def test_zone_name_absent_leaves_zone_display_name_none(tmp_path: Path) -> None:
+    # §V67: a stage whose zone carries no name in source (416 of 3264 en stages on the
+    # 2026-07-27 build) yields None here, and the tool layer omits the key -- never a
+    # null a client cannot tell from "this zone is called nothing".
+    path = tmp_path / "unnamed_zone.sqlite"
+    writer = build_database(path)
+    provenance_id = _seed_provenance(writer)
+    _seed_zone_and_stage(
+        writer,
+        provenance_id,
+        server="en",
+        zone_game_id="tower_n_01",
+        zone_name=None,
+        stage_game_id="lt_01_01",
+        stage_name="Mountainous Maze",
+    )
+    build_search_index(writer)
+    writer.commit()
+    writer.close()
+    with open_read_only(path) as conn:
+        hit = next(h for h in search_entities(conn, query="Mountainous").hits)
+        assert hit.zone_display_name is None

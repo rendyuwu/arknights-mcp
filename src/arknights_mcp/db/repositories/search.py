@@ -3,8 +3,9 @@
 The single parameterized SQL surface for the ``search_entities`` service: one FTS5
 ``MATCH`` query over ``entity_fts`` with optional region (``server``) and
 ``entity_type`` filters, bounded by an already-clamped ``limit`` (§V19). Membership
-in the bounded set is best-match-first (bm25 ``rank``) so a strong hit in either
-region is never evicted by weaker matches from the other; the selected set is then
+in the bounded set is best-match-first (bm25 ``rank``) within the §V90 own-name
+precedence group (see :func:`_alias_only_group`), so a strong hit in either region is
+never evicted by weaker matches from the other; the selected set is then
 displayed region-major (en before cn, B97) with deterministic tie-breaks. Every
 runtime value -- the MATCH expression, the filters, the limit -- is bound through
 ``?`` placeholders; the FTS match
@@ -31,6 +32,12 @@ class SearchHitRow:
     ``NORMAL``), so the wire value matches ``get_stage``. It is ``None`` for a
     non-stage hit (operators/enemies have no difficulty) and for a stage with no
     difficulty in source.
+
+    ``zone_display_name`` is the stage's zone/event display name (T186/B113): the
+    string that made an alias-only hit match, so the client can tell *why* a stage
+    it never named came back and partition mixed hits by event. ``None`` for a
+    non-stage hit and for a stage whose zone carries no name in source (416 of 3264
+    en stages on the 2026-07-27 build) -- the tool layer omits the key there (§V67).
     """
 
     entity_type: str
@@ -40,6 +47,7 @@ class SearchHitRow:
     name: str | None
     stage_code: str | None
     difficulty: str | None
+    zone_display_name: str | None
 
 
 # The B97 deterministic region order (en before cn), as a build-time SQL fragment
@@ -48,6 +56,37 @@ class SearchHitRow:
 # interpolated (§V2).
 def _region_order(server_col: str) -> str:
     return f"(CASE WHEN {server_col} = 'en' THEN 0 ELSE 1 END)"
+
+
+# §V90 own-name precedence (T186/B113). The ``aliases`` FTS column means two different
+# things depending on the document's entity_type, and that conflation is the bug:
+#
+# * operator / enemy -> the entity's OWN name in another language (878 cn operators on
+#   the 2026-07-27 build are reachable by their EN name ONLY through this column);
+# * stage -> its ZONE's display name (T179), which is another entity's name entirely.
+#
+# So an unscoped bm25 lets a whole event's member stages compete with the operator that
+# shares its name inside the bounded top-N: real corpus, query "Gavial", limit 10 ->
+# seven "Gavial's Footprints" stages crowded out both the stage actually NAMED
+# "Gavial's Fist" and the cn operator (they landed at #14 and #17).
+#
+# A per-column weight alone cannot fix it: down-weighting ``aliases`` globally also
+# demotes the cross-language operator lookup (measured -- the cn operator stayed at
+# #17), and any weight only makes the collision unlikely, never impossible, which is
+# weaker than §V90's absolute "alias must not outrank an entity's own name".
+#
+# The probe below is exact instead. bm25 sums per-column contributions, so evaluating it
+# with the ``aliases`` weight set to 0.0 returns exactly 0.0 (SQLite emits ``-0.0``, and
+# ``= 0.0`` matches it) for a document that matched through NO other column -- i.e. an
+# alias-only hit -- and a real negative score for anything that also matched its own
+# name / game_id / stage_code / tags. Grouping on that gives a hard precedence tier by
+# construction, for any query, not just the collisions we happened to count. Scoped to
+# ``entity_type = 'stage'`` because only there does ``aliases`` hold a foreign name.
+# The column weights are literals we author, never runtime values (§V2).
+_ALIAS_ONLY_GROUP = (
+    "(CASE WHEN entity_fts.entity_type = 'stage' "
+    "AND bm25(entity_fts, 1.0, 1.0, 0.0, 1.0, 1.0) = 0.0 THEN 1 ELSE 0 END)"
+)
 
 
 # The ``(? IS NULL OR col = ?)`` pairs make server / entity_type optional filters
@@ -74,27 +113,42 @@ def _region_order(server_col: str) -> str:
 # (server / game_id / stage_code) are qualified to ``entity_fts`` so the join adds
 # no interpolation and every value stays bound (§V2).
 #
+# The chained ``LEFT JOIN zones`` surfaces the T186/B113 attribution: a stage that
+# matched through its zone/event name carries that name on the wire, so a client can see
+# why a stage it never named came back and can partition mixed hits by event. Region-
+# guarded (``z.server = s.server``) in parity with the search-index join, so a stage can
+# never borrow the other region's zone name (§V5). Additive read (§V21) -- no migration,
+# no FTS schema change, and it rides the ``stages`` join already present above.
+#
+# ``alias_grp`` (:data:`_ALIAS_ONLY_GROUP`) leads BOTH orderings: membership first, so an
+# alias-only stage can never evict an own-name entity from the bounded set (the B113
+# complaint), then display, so it never outranks one in the returned list either (§V90).
+#
 # The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156): there is no
 # trailing locale ``EXISTS`` clause and the alias tables are no longer consulted at
 # query time. Aliases still feed the FTS ``name`` document at build time (operator
 # self-aliases, §T98), so an operator remains matchable by appellation.
 _SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty FROM ("
+    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
+    "zone_display_name FROM ("
     "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
     "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+    "z.display_name AS zone_display_name, "
+    f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
     "rank AS score "
     "FROM entity_fts "
     "LEFT JOIN stages s "
     "ON entity_fts.entity_type = 'stage' "
     "AND s.stage_pk = entity_fts.entity_pk "
     "AND s.server = entity_fts.server "
+    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
     "WHERE entity_fts MATCH ? "
     "AND (? IS NULL OR entity_fts.server = ?) "
     "AND (? IS NULL OR entity_fts.entity_type = ?) "
-    f"ORDER BY rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
+    f"ORDER BY alias_grp, rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
     "LIMIT ?"
     ") "
-    f"ORDER BY {_region_order('server')}, score, game_id"
+    f"ORDER BY alias_grp, {_region_order('server')}, score, game_id"
 )
 
 # ``search_stages`` (§T33): stage-scoped FTS, but a stage whose ``stage_code``
@@ -106,29 +160,48 @@ _SEARCH_SQL = (
 # region-major (en before cn) then rank (B97 -- an unfiltered "1-7" must not surface
 # the cn row first). The ``LEFT JOIN stages`` surfaces the §V70 difficulty variant
 # tag on every stage hit (see ``_SEARCH_SQL``); the WHERE already scopes to
-# ``entity_type = 'stage'`` so the join always resolves to the hit's own stage row.
+# ``entity_type = 'stage'`` so the join always resolves to the hit's own stage row,
+# and the chained ``zones`` join carries the T186/B113 zone/event attribution.
+#
+# ``alias_grp`` sits BELOW ``exact_grp`` and above rank: an exact stage-code match still
+# wins outright (the §T33 contract), then a stage matching on its own name/code outranks
+# one matching only through its zone name (§V90), in both membership and display.
 _STAGE_SEARCH_SQL = (
-    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty FROM ("
+    "SELECT entity_type, server, entity_pk, game_id, name, stage_code, difficulty, "
+    "zone_display_name FROM ("
     "SELECT entity_fts.entity_type, entity_fts.server, entity_fts.entity_pk, "
     "entity_fts.game_id, entity_fts.name, entity_fts.stage_code, s.difficulty, "
+    "z.display_name AS zone_display_name, "
     "(CASE WHEN entity_fts.stage_code = ? COLLATE NOCASE THEN 0 ELSE 1 END) AS exact_grp, "
+    f"{_ALIAS_ONLY_GROUP} AS alias_grp, "
     "rank AS score "
     "FROM entity_fts "
     "LEFT JOIN stages s "
     "ON s.stage_pk = entity_fts.entity_pk "
     "AND s.server = entity_fts.server "
+    "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
     "WHERE entity_fts MATCH ? "
     "AND entity_fts.entity_type = 'stage' "
     "AND (? IS NULL OR entity_fts.server = ?) "
-    f"ORDER BY exact_grp, rank, {_region_order('entity_fts.server')}, entity_fts.game_id "
+    "ORDER BY exact_grp, alias_grp, rank, "
+    f"{_region_order('entity_fts.server')}, entity_fts.game_id "
     "LIMIT ?"
     ") "
-    f"ORDER BY exact_grp, {_region_order('server')}, score, game_id"
+    f"ORDER BY exact_grp, alias_grp, {_region_order('server')}, score, game_id"
 )
 
 
 def _to_hit(row: Any) -> SearchHitRow:
-    entity_type, server, entity_pk, game_id, name, stage_code, difficulty = row
+    (
+        entity_type,
+        server,
+        entity_pk,
+        game_id,
+        name,
+        stage_code,
+        difficulty,
+        zone_display_name,
+    ) = row
     return SearchHitRow(
         entity_type=entity_type,
         server=server,
@@ -137,6 +210,7 @@ def _to_hit(row: Any) -> SearchHitRow:
         name=name,
         stage_code=stage_code,
         difficulty=difficulty,
+        zone_display_name=zone_display_name,
     )
 
 
@@ -155,7 +229,9 @@ class SearchRepository(Repository):
 
         ``match`` is a pre-built FTS5 expression (already tokenized + quoted by the
         service); ``server`` / ``entity_type`` are optional filters (``None`` =
-        unfiltered). ``limit`` is expected pre-clamped to the §V19 bound. The
+        unfiltered). ``limit`` is expected pre-clamped to the §V19 bound. A stage that
+        matched only through its zone/event name ranks below every own-name hit and so
+        can never evict one from the bounded set (§V90, :data:`_ALIAS_ONLY_GROUP`). The
         extra-locale (ja/ko) alias filter is retired (§V57, T156).
         """
         params = (match, server, server, entity_type, entity_type, limit)
@@ -174,8 +250,10 @@ class SearchRepository(Repository):
         ``match`` is the pre-built, tokenized FTS expression (same safe surface as
         :meth:`search`); ``exact_code`` is the raw query, compared case-insensitively
         against ``stage_code`` so an exact code match ranks ahead of bm25 ``rank``.
-        ``server`` is an optional region filter (§V5); ``limit`` is pre-clamped to
-        the §V19 bound. Every value is bound (§V2).
+        Below that, a stage matching only through its zone/event name ranks under one
+        matching its own name or code (§V90, :data:`_ALIAS_ONLY_GROUP`). ``server`` is
+        an optional region filter (§V5); ``limit`` is pre-clamped to the §V19 bound.
+        Every value is bound (§V2).
         """
         params = (exact_code, match, server, server, limit)
         return [_to_hit(r) for r in self._all(_STAGE_SEARCH_SQL, params)]

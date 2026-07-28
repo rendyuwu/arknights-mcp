@@ -35,6 +35,7 @@ from arknights_mcp.mcp.tools.stage import (
     _TOOL_DESCRIPTION,
     _spawn_to_dict,
     _stage_absent_field_limitations,
+    _stage_to_dict,
     build_get_stage_spec,
 )
 from arknights_mcp.models.common import PAGE_SIZE_MAX
@@ -90,6 +91,40 @@ def test_default_response_is_facts_only(conn: sqlite3.Connection) -> None:
     assert stage["stage_code"] == "4-4"  # type: ignore[index]
     assert stage["sanity_cost"] == 18  # type: ignore[index]
     assert stage["zone_game_id"] == "main_4"  # type: ignore[index]
+
+
+def test_zone_id_is_paired_with_its_display_name(conn: sqlite3.Connection) -> None:
+    # §V69 (T186): a bare opaque id is a forced second lookup the client has no tool
+    # for, or an invitation to guess. "main_4" ships with the name it stands for.
+    stage = _handler(conn)(server="en", stage_code="4-4").to_dict()["data"]["stage"]  # type: ignore[index]
+    assert stage["zone_game_id"] == "main_4"
+    assert stage["zone_display_name"] == "Chapter 4"
+
+
+def test_unnamed_zone_omits_display_name_and_keeps_the_id(
+    tmp_path: Path, conn: sqlite3.Connection
+) -> None:
+    # §V67: 416 of 3264 en stages on the 2026-07-27 build sit in a zone the source
+    # never names. The key is OMITTED there -- never a null the client cannot tell
+    # from "this zone is called nothing" -- while zone_game_id still ships, so the
+    # absence stays visible rather than fabricated (§V26).
+    facts = StageFacts(
+        server="en",
+        game_id="lt_01_01",
+        stage_code="LT-1",
+        display_name="Mountainous Maze",
+        zone_game_id="tower_n_01",
+        zone_display_name=None,
+        stage_type="ACTIVITY",
+        difficulty="NORMAL",
+        sanity_cost=18,
+        recommended_level=None,
+        max_life_points=None,
+        provenance=StageProvenance(snapshot_id="en:abc", imported_at="2026-07-27"),
+    )
+    emitted = _stage_to_dict(facts)
+    assert "zone_display_name" not in emitted
+    assert emitted["zone_game_id"] == "tower_n_01"
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
@@ -459,6 +494,7 @@ def test_stage_absent_field_limitation_helper() -> None:
         stage_code="B-1",
         display_name="Bare",
         zone_game_id=None,
+        zone_display_name=None,
         stage_type=None,
         difficulty=None,
         sanity_cost=10,

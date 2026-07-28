@@ -49,9 +49,14 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 #: (§V75: same rule stated in both, one home §V37; short client-facing sentences,
 #: §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) -- say so where
 #: the client reads, instead of letting a ja query die as a bare not_found;
-#: zone/event display names ARE indexed as stage aliases (T179), so "Lone Trail"
-#: surfaces that event's stages. Region order (B97): membership in the bounded
-#: result set is best-match-first across both regions; the returned set is then
+#: zone display names ARE indexed as stage aliases (T179), so a zone name surfaces
+#: that zone's stages. The worked example is one VERIFIED against the shipped build
+#: ("Gavial's Footprints" -> 16 stages), not an invented one -- an example that
+#: matches nothing is a description promising output the tool cannot produce (§V47
+#: class). Ranking (T186/B113): those alias-driven stages rank below every own-name
+#: match, and the zone name rides the hit as ``zone_display_name`` so the client can
+#: see why an unrelated-looking stage came back. Region order (B97): membership in the
+#: bounded result set is best-match-first across both regions; the returned set is then
 #: listed en before cn (search_stages lists exact stage-code matches ahead of the
 #: region order), so the ``results[0]`` grab is predictable and the escape hatch
 #: (server filter / per-row server field) is named. The en/cn-only clause is one
@@ -60,8 +65,11 @@ _EN_CN_ONLY_CLAUSE = "names are indexed in English and Chinese only"
 _COVERAGE_NOTE = (
     _EN_CN_ONLY_CLAUSE[:1].upper() + _EN_CN_ONLY_CLAUSE[1:] + "; Japanese or Korean names will "
     "not match. Matching is exact-token with prefix support; typos and fuzzy "
-    "queries will not match. A zone or event name (for example Lone Trail) matches "
-    "the stages belonging to that zone or event."
+    "queries will not match. A zone name (for example Gavial's Footprints) also "
+    "matches the stages in that zone. Such a stage is listed after every entity that "
+    "matched on its own name, code, or id, so an event never crowds out the operator "
+    "it is named after. A stage that matched this way carries the zone name in "
+    "zone_display_name."
 )
 _REGION_ORDER_NOTE = (
     "Without a server filter both regions are searched, the strongest matches are "
@@ -146,6 +154,14 @@ def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     ``stage_code`` (a normal stage and its challenge / tough / easy variant) carry
     distinct difficulty values, so a client can tell them apart in one result set
     without parsing the game-data ``game_id`` suffix/prefix (B59/B84).
+
+    ``zone_display_name`` (T186/B113) names the zone or event the stage belongs to --
+    the string a zone-name query matched. It is what makes an alias-driven hit
+    attributable: without it a client gets a stage whose own name and code look
+    unrelated to the query and cannot group mixed results by event. Unlike the two
+    fields above it is OMITTED when absent (§V67): a stage's zone is unnamed in source
+    often enough (416 of 3264 en stages on the 2026-07-27 build) that a null would be an
+    ambiguous absence rather than a domain-expected tag.
     """
     out: dict[str, object] = {
         "entity_type": hit.entity_type,
@@ -159,6 +175,8 @@ def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
     if hit.entity_type == "stage":
         out["stage_code"] = hit.stage_code
         out["difficulty"] = hit.difficulty
+        if hit.zone_display_name is not None:
+            out["zone_display_name"] = hit.zone_display_name
     return out
 
 
