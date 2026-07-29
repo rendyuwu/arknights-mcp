@@ -39,6 +39,7 @@ from arknights_mcp.mcp.tools._enum_legend import (
     TOOL_ENUM_LEGEND_FIELDS,
 )
 from arknights_mcp.mcp.tools._shared import (
+    ATTACK_RANGE_DENIED_NOTE,
     BLACKBOARD_GLOSSARY_POINTER,
     CONFIDENCE_SCALE_NOTE,
     DB_UNAVAILABLE_ACTION,
@@ -453,6 +454,18 @@ def test_scale_bearing_stats_state_their_scale() -> None:
     assert "res is arts damage reduction in percent" in ENEMY_STAT_SCALE_NOTE
     assert "move_speed is in tiles per second" in ENEMY_STAT_SCALE_NOTE
     assert "shift-resistance rank" in ENEMY_STAT_SCALE_NOTE
+
+
+def test_denied_attack_radius_is_disclosed_as_an_answer_not_a_gap() -> None:
+    # §V114 (b)/(c) (B161): for the enemies whose source states "no attack radius", the
+    # generic absent-field sentence ("the source carried no such data") is FALSE -- the
+    # source answered. The note must say what the source DID, and must not translate the
+    # marker into a claim about the enemy's reach, which nothing upstream states.
+    assert "states that it has no base attack radius" in ATTACK_RANGE_DENIED_NOTE
+    assert "rather than leaving the radius unstated" in ATTACK_RANGE_DENIED_NOTE
+    assert "does not say what that means for the enemy's reach" in ATTACK_RANGE_DENIED_NOTE
+    # ...and it never claims the data is missing, which is the sentence it replaces.
+    assert "no such data" not in ATTACK_RANGE_DENIED_NOTE
 
 
 def test_confidence_scale_stated_on_every_observation_tool() -> None:

@@ -60,6 +60,7 @@ _STATUSES = frozenset({"live", "bridge_gap", "retired", "no_home", "not_stored"}
 _DECIDING_FIELD_SOURCE_KEY = {
     "damage_types": "damageType",
     "attack_range": "attackRange",
+    "attack_range_declared_none": "attackRangeDeclaredNone",
     "targeting": "targeting",
     "motion_type": "motionType",
     "defense": "def",
@@ -77,6 +78,13 @@ def _real_shaped_sources() -> tuple[dict[str, Any], dict[str, Any]]:
     independent of it so one edit cannot silence both. It mirrors the pinned snapshot --
     every ``m_defined``/``m_value`` cell wrapped as upstream wraps it, and every home
     named in :data:`ENEMY_KEY_HOMES` present with a value a bridge COULD map.
+
+    That last clause is why there are TWO enemies (§T211/§V114). ``attackRangeDeclaredNone``
+    is emitted only where ``rangeRadius`` is the ``-1.0`` no-radius sentinel, so an input
+    carrying only a real radius could never witness it -- and a key declared ``live`` that
+    the fixture cannot produce is B160's shape again, one key over. The second enemy is
+    that home: the sentinel AND a ``RANGED`` targeting token, which is the real 13 en /
+    16 cn conflict population in miniature.
     """
     handbook = {
         "levelInfoList": [],
@@ -89,7 +97,16 @@ def _real_shaped_sources() -> tuple[dict[str, Any], dict[str, Any]]:
                 "damageType": ["MAGIC"],  # the field that replaced it
                 "description": "PROSE that must never be imported.",
                 "abilityList": [{"text": "Cannot be blocked.", "textFormat": "NORMAL"}],
-            }
+            },
+            # §T211: the sentinel half of the population -- arts damage, no radius by the
+            # source's own answer, and a targeting token that disagrees with it.
+            "enemy_1404_msnip": {
+                "enemyId": "enemy_1404_msnip",
+                "name": "Sniper",
+                "enemyLevel": "ELITE",
+                "attackType": None,
+                "damageType": ["MAGIC"],
+            },
         },
     }
     database = {
@@ -126,16 +143,47 @@ def _real_shaped_sources() -> tuple[dict[str, Any], dict[str, Any]]:
                     },
                 },
             }
-        ]
+        ],
+        "enemy_1404_msnip": [
+            {
+                "level": 0,
+                "enemyData": {
+                    "motion": {"m_defined": True, "m_value": "WALK"},
+                    "applyWay": {"m_defined": True, "m_value": "RANGED"},
+                    # The ANSWER §V103 strips out of the distance column and §V114 keeps.
+                    "rangeRadius": {"m_defined": True, "m_value": -1.0},
+                    "lifePointReduce": {"m_defined": True, "m_value": 1},
+                    "attributes": {
+                        "maxHp": {"m_defined": True, "m_value": 2400},
+                        "atk": {"m_defined": True, "m_value": 500},
+                        "def": {"m_defined": True, "m_value": 100},
+                        "magicResistance": {"m_defined": True, "m_value": 20},
+                        "moveSpeed": {"m_defined": True, "m_value": 0.9},
+                        "baseAttackTime": {"m_defined": True, "m_value": 3.0},
+                        "massLevel": {"m_defined": True, "m_value": 2},
+                    },
+                },
+            }
+        ],
     }
     return handbook, database
 
 
 def _normalized_level_keys() -> set[str]:
-    """Normalized level keys the §V30 bridge really emits from a real-shaped input."""
+    """Normalized level keys the §V30 bridge really emits from a real-shaped input.
+
+    The UNION over every emitted level of every enemy, not one level of one enemy: a key
+    can be conditional on the source's value (``attackRangeDeclaredNone`` exists only where
+    the radius is the sentinel), and reading a single level would then report a live key as
+    unemitted -- or hide one that is.
+    """
     _, database_norm = normalize_enemy_sources(*_real_shaped_sources())
-    levels = database_norm["enemies"]["enemy_1007_slime"]["levels"]
-    return set(levels[0])
+    return {
+        key
+        for entry in database_norm["enemies"].values()
+        for level in entry["levels"]
+        for key in level
+    }
 
 
 # --- §V113 (a): every allowlisted key names its upstream home -----------------
@@ -193,7 +241,7 @@ def test_v113c_retired_key_yields_no_value_from_a_real_shaped_handbook() -> None
     """
     handbook, database = _real_shaped_sources()
     parsed = parse_enemies(*normalize_enemy_sources(handbook, database))
-    assert len(parsed) == 1
+    assert [enemy.game_id for enemy in parsed] == ["enemy_1007_slime", "enemy_1404_msnip"]
     assert ENEMY_KEY_HOMES["attackType"].status == "retired"
     assert parsed[0].attack_type is None
     # ...and the field that REPLACED it does yield a value from the same entry, which is
@@ -213,10 +261,19 @@ def test_v113a_revived_level_keys_reach_the_parsed_level() -> None:
     empty. This one ends where the INSERT reads.
     """
     handbook, database = _real_shaped_sources()
-    level = parse_enemies(*normalize_enemy_sources(handbook, database))[0].levels[0]
+    parsed = parse_enemies(*normalize_enemy_sources(handbook, database))
+    level = parsed[0].levels[0]
     assert level.attack_range == 2.5
     assert level.targeting == "RANGED"
     assert level.immunities == ["STUN"]
+    # ...and the enemy whose radius the source DENIED reaches the INSERT carrying that
+    # answer rather than an absence indistinguishable from silence (§T211/§V114).
+    denied = parsed[1].levels[0]
+    assert ENEMY_KEY_HOMES["attackRangeDeclaredNone"].status == "live"
+    assert denied.attack_range is None  # §V103: the -1.0 mask is not a distance
+    assert denied.attack_range_declared_none is True
+    # The pair is what is decidable, so the slime's answer must read the other way.
+    assert level.attack_range_declared_none is False
 
 
 # --- §V113 (b): a registered rule that cannot fire is not coverage -------------

@@ -201,6 +201,109 @@ def test_ranged_arts_no_targeting_at_all_is_a_conflict_not_a_conclusion() -> Non
     assert any("no attack reach" in w for w in result.warnings)
 
 
+# §T211/§V114 (B161): an absent radius is not always a missing field. Upstream's -1.0
+# sentinel is an ANSWER ("no attack radius") that §V103 keeps out of the distance column,
+# so the rule reads the flag BEFORE targeting -- otherwise it publishes a true conclusion
+# under the false reason "attack_range missing" for the 13 en / 16 cn arts enemies that
+# carry the sentinel AND declare RANGED|ALL.
+
+
+def test_ranged_arts_denied_radius_conflicting_with_targeting_warns_and_omits() -> None:
+    result = analyze_stage(
+        ctx(
+            occ(
+                "enemy_1404_msnip",
+                damage_types=("MAGIC",),
+                attack_range=None,
+                attack_range_declared_none=True,
+                targeting="RANGED",
+            )
+        )
+    )
+    # §V26: two typed source fields disagree -> omit the conclusion, report the conflict.
+    assert result.observations == ()
+    warning = next(w for w in result.warnings if "enemy_1404_msnip" in w)
+    assert "declares no attack radius" in warning
+    assert "conflicting source fields" in warning
+    # ...and the false reason is gone: nothing calls a cell the source FILLED "missing".
+    assert "missing" not in warning
+
+
+def test_ranged_arts_denied_radius_alone_neither_concludes_nor_warns() -> None:
+    # The source answered "no attack radius" and said nothing else. That is an answer, not
+    # a conflict and not an absence, so it earns neither an observation nor a warning --
+    # and above all not the 0.6 inference arm the old code would have taken.
+    result = analyze_stage(
+        ctx(
+            occ(
+                "enemy_denied",
+                damage_types=("MAGIC",),
+                attack_range=None,
+                attack_range_declared_none=True,
+                targeting=None,
+            )
+        )
+    )
+    assert result.observations == ()
+    assert result.warnings == ()
+
+
+def test_ranged_arts_denied_radius_with_melee_targeting_is_silent() -> None:
+    # Both typed fields agree that it has no reach -- nothing to conclude, nothing to warn.
+    result = analyze_stage(
+        ctx(
+            occ(
+                "enemy_denied_melee",
+                damage_types=("MAGIC",),
+                attack_range=None,
+                attack_range_declared_none=True,
+                targeting="MELEE",
+            )
+        )
+    )
+    assert result.observations == ()
+    assert result.warnings == ()
+
+
+def test_ranged_arts_denied_radius_with_no_targeting_keeps_the_no_reach_conflict() -> None:
+    # The arts-damage-versus-no-reach conflict is the same finding whether the radius was
+    # denied or never stated, so the denial must not silence it (§V37: one wording).
+    result = analyze_stage(
+        ctx(
+            occ(
+                "enemy_inert_denied",
+                damage_types=("MAGIC",),
+                attack_range=None,
+                attack_range_declared_none=True,
+                targeting="NONE",
+            )
+        )
+    )
+    assert result.observations == ()
+    assert any("no attack reach" in w for w in result.warnings)
+
+
+def test_ranged_arts_unstated_radius_still_reads_targeting() -> None:
+    # The regression control for the arm above: when the source never stated a radius, the
+    # 0.8 targeting conclusion stands and its "missing" limitation is now TRUE by
+    # construction -- the denied class can no longer reach it.
+    obs = _obs_by_tag(
+        analyze_stage(
+            ctx(
+                occ(
+                    "enemy_unstated",
+                    damage_types=("MAGIC",),
+                    attack_range=None,
+                    attack_range_declared_none=False,
+                    targeting="RANGED",
+                )
+            )
+        )
+    )["ranged_arts"]
+    assert 0.6 < obs.confidence < 0.9
+    assert any("attack_range missing" in lim for lim in obs.limitations)
+
+
 def test_ranged_arts_missing_range_and_targeting_infers_at_reduced_confidence() -> None:
     obs = _obs_by_tag(
         analyze_stage(

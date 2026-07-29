@@ -57,7 +57,13 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    beside TRANSFORM_VERSION: the same task also taught ``normalization.py`` to emit
 #:    ``attackRange``/``targeting``/``immunities``, three keys this allowlist had already
 #:    admitted while no bridge mapping filled them (the §V113 (a) shape).
-FIELD_POLICY_VERSION = "12"
+#: 13: T211/§V114 (B161) added ``attackRangeDeclaredNone`` to ENEMY_LEVEL_ALLOWLIST: the
+#:    §V103 strip that keeps upstream's ``-1.0`` no-radius mask out of the distance column
+#:    was also erasing the fact that upstream ANSWERED, so "the source said none" and "the
+#:    source said nothing" reached every consumer as one NULL. The strip is unchanged; the
+#:    answer now has a key of its own. New stored bytes (``enemy_levels
+#:    .attack_range_declared_none``), so the bump is what makes §V92 promote them.
+FIELD_POLICY_VERSION = "13"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -88,6 +94,12 @@ ENEMY_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "res",
         "attackInterval",
         "attackRange",
+        # The sibling that carries what the §V103 strip removes: upstream ANSWERED the
+        # radius question with its no-radius sentinel (§V114/B161). Derived by the §V30
+        # bridge from the same ``rangeRadius`` cell, like ``immunities`` is derived from
+        # the nine typed flags -- an allowlist key is a claim about what is READ, and
+        # both of these are read from a real upstream field (§V98/§V113 (a)).
+        "attackRangeDeclaredNone",
         "moveSpeed",
         "weight",
         "lifePointReduction",
@@ -181,6 +193,15 @@ ENEMY_KEY_HOMES: Mapping[str, SourceKeyHome] = {
         "enemy_levels.attack_range 1757/4343 (was 0/4343); upstream defines 1170/2036 en of "
         "which 420 are the -1.0 no-radius sentinel §V103 keeps out of a distance column, so "
         "the stored column carries 0 negatives",
+    ),
+    "attackRangeDeclaredNone": SourceKeyHome(
+        "enemyData.rangeRadius.m_value == -1.0 (the no-radius sentinel §V103 strips)",
+        "live",
+        "enemy_levels.attack_range_declared_none 1137/4343 -- the ANSWER the strip used to "
+        "erase (§V114/B161), while attack_range stays 1757/4343 with 0 negatives (§V103 "
+        "unchanged). The split it makes readable: of the arts enemies with a NULL radius "
+        "declaring applyWay RANGED|ALL (29 en / 32 cn), 13 en / 16 cn DENIED the radius "
+        "and 16 en / 16 cn never stated one",
     ),
     "targeting": SourceKeyHome(
         "enemyData.applyWay.m_value",

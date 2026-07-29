@@ -154,6 +154,11 @@ class EnemyOccurrenceFacts:
     variant_id: str | None
     attack_range: float | None = None
     targeting: str | None = None
+    #: §V114/B161: the source's own answer behind an absent ``attack_range`` -- ``True``
+    #: when it DECLARED no attack radius (its sentinel), ``False`` when it declared a
+    #: radius or said nothing. Carried for the same §V101 reason as the two above: the
+    #: ranged-arts rule reads it, so a client must be able to look it up.
+    attack_range_declared_none: bool = False
 
 
 @dataclass(frozen=True)
@@ -395,6 +400,7 @@ def analyze_stage(
                 # so those paths resolve on this response.
                 attack_range=enemy.attack_range,
                 targeting=enemy.targeting,
+                attack_range_declared_none=enemy.attack_range_declared_none,
             )
         )
         threat_inputs.append(
@@ -407,6 +413,7 @@ def analyze_stage(
                 defense=enemy.def_,
                 res=enemy.res,
                 attack_range=enemy.attack_range,
+                attack_range_declared_none=enemy.attack_range_declared_none,
                 targeting=enemy.targeting,
                 first_spawn_time=enemy.first_spawn_time,
                 last_spawn_time=enemy.last_spawn_time,

@@ -36,6 +36,13 @@ class ParsedEnemyLevel:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
+    #: The ANSWER behind an absent ``attack_range`` (§V114/B161): ``True`` = upstream
+    #: DECLARED no attack radius (its ``-1.0`` sentinel, which §V103 keeps out of the
+    #: distance column), ``False`` = it did not -- either it gave a radius, which
+    #: ``attack_range`` carries, or it said nothing at all. So the decidable state is the
+    #: PAIR; ``attack_range is not None`` and this being ``True`` is unreachable, because
+    #: the bridge sets the flag exactly where it deletes the radius.
+    attack_range_declared_none: bool
     move_speed: float | None
     weight: int | None
     life_point_reduction: int | None
@@ -112,6 +119,7 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
                     res=as_int(kept.get("res")),
                     attack_interval=as_float(kept.get("attackInterval")),
                     attack_range=as_float(kept.get("attackRange")),
+                    attack_range_declared_none=kept.get("attackRangeDeclaredNone") is True,
                     move_speed=as_float(kept.get("moveSpeed")),
                     weight=as_int(kept.get("weight")),
                     life_point_reduction=as_int(kept.get("lifePointReduction")),
@@ -189,9 +197,10 @@ def insert_enemies(
                 conn.execute(
                     "INSERT INTO enemy_levels "
                     "(enemy_pk, level_variant, hp, atk, def, res, attack_interval, "
-                    "attack_range, move_speed, weight, life_point_reduction, block_behavior, "
+                    "attack_range, attack_range_declared_none, move_speed, weight, "
+                    "life_point_reduction, block_behavior, "
                     "targeting, immunities_json, abilities_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         enemy_pk,
                         level.level_variant,
@@ -201,6 +210,7 @@ def insert_enemies(
                         level.res,
                         level.attack_interval,
                         level.attack_range,
+                        int(level.attack_range_declared_none),
                         level.move_speed,
                         level.weight,
                         level.life_point_reduction,

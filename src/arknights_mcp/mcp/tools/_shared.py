@@ -253,6 +253,24 @@ ENEMY_DEAD_FIELD_NOTE = (
 )
 
 
+#: §V114/§V26 (B161): the enemy's source record ANSWERED the attack-radius question --
+#: with the game data's own "no attack radius" marker -- so the absent ``attack_range`` is
+#: not a gap in the data and must not be reported as one. The generic absent-field
+#: sentence would say the source "carried no such data", which is false here and is the
+#: reason the field needs a note of its own. What the marker means for the enemy's actual
+#: reach is deliberately NOT stated: no upstream field settles it, and several enemies
+#: carrying it (``enemy_1404_msnip``, a sniper) plainly attack from a distance, so the
+#: note reports what the source DID and stops there (§V114 c). Client-facing text, so no
+#: internal cites/jargon (§V71 b).
+ATTACK_RANGE_DENIED_NOTE = (
+    "This enemy's game data states that it has no base attack radius, rather than leaving "
+    "the radius unstated, so attack_range is absent by the source's own answer and not for "
+    "lack of data (attack_range_declared_none marks the level variants where it answered). "
+    "The data does not say what that means for the enemy's reach in combat, so no reach is "
+    "reported either way."
+)
+
+
 #: §V104/§V71 (e) (B142): the scale-bearing enemy stats. ``attack_interval`` already
 #: stated its unit while ``res`` / ``move_speed`` / ``weight`` -- read on the SAME stat
 #: block -- stated none, so a client could only guess whether ``res: 80`` was a percentage

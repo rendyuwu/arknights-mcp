@@ -97,6 +97,11 @@ _ENEMY_IMMUNITY_MAP: dict[str, str] = {
 #: and the field allowlist would drop it regardless (§V18).
 _IMMUNITY_FLAGS_KEY = "_immunityFlags"
 
+#: Normalized key recording that upstream ANSWERED the attack-radius question with its
+#: no-radius sentinel (§V114; B161). Emitted by :func:`_finalize_level` exactly where it
+#: deletes the sentinel from ``attackRange``, so the two are never both present.
+_RANGE_DECLARED_NONE_KEY = "attackRangeDeclaredNone"
+
 
 def _m_value(wrapped: Any) -> Any:
     """Unwrap a real ``{"m_defined": ..., "m_value": ...}`` cell to its value.
@@ -257,6 +262,22 @@ def _finalize_level(level: dict[str, Any]) -> None:
       level that DEFINES the sentinel has answered the question: dropping it earlier
       would leave the key missing at the delta step, and the level would then inherit
       the base's real radius (§V44) -- turning "no range" into a fabricated reach.
+
+      The strip removes a VALUE; it must not remove the fact that upstream ANSWERED
+      (§V114/B161). So the sentinel is replaced by :data:`_RANGE_DECLARED_NONE_KEY`
+      rather than dropped: without it, "the source said none" and "the source said
+      nothing" arrive downstream as one NULL, and every consumer calling that cell
+      *missing* is wrong about the first class -- which is what let ``ranged_arts``
+      publish 13 en / 16 cn enemies under the reason "attack_range missing" when the
+      radius had in fact been DENIED. Running after the delta step matters here too:
+      a higher level that inherits the base's ``-1.0`` inherits the base's ANSWER, so
+      the flag lands on every level the sentinel reaches.
+
+      What the sentinel MEANS stays unverified and is not encoded (§V114 c) --
+      ``enemy_1404_msnip`` is a sniper, so ``-1.0`` plausibly says "no BASE attack
+      radius" rather than "cannot strike", and no upstream field settles it. A
+      non-numeric radius is dropped WITHOUT the flag: that is a shape this bridge
+      cannot read, not an answer the source gave.
     * ``immunities`` -- the merged ``{token: bool}`` flags become the list §V67
       describes: ``[]`` when the source DEFINED flags and every one is false
       (confirmed none), and the key is ABSENT when neither this level nor its base
@@ -267,6 +288,7 @@ def _finalize_level(level: dict[str, Any]) -> None:
     if isinstance(attack_range, int | float) and not isinstance(attack_range, bool):
         if attack_range < 0:
             del level["attackRange"]
+            level[_RANGE_DECLARED_NONE_KEY] = True
     elif "attackRange" in level:
         del level["attackRange"]  # a non-numeric radius is not a distance either
 

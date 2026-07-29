@@ -28,6 +28,7 @@ from arknights_mcp.mcp.tools._enum_legend import (
     attach_enum_legend,
 )
 from arknights_mcp.mcp.tools._shared import (
+    ATTACK_RANGE_DENIED_NOTE,
     ENEMY_CLASS_NOTE,
     ENEMY_DEAD_FIELD_NOTE,
     ENEMY_STAT_SCALE_NOTE,
@@ -89,6 +90,15 @@ _LEVEL_OPTIONAL_FIELDS: tuple[str, ...] = (
     "abilities",
 )
 
+#: §V114 (B161): the flag that says an absent ``attack_range`` is an ANSWER, not a gap.
+#: Deliberately NOT in the omit table above: that table drives the absent-field limitation
+#: too, and this field's absence is never a gap to name -- a level without it either
+#: carries a radius or was never asked. It is emitted only when true, for the same §V67
+#: reason the table exists (a ``false`` on every one of 4343 level rows would be bytes
+#: that say nothing), and its presence is what re-routes ``attack_range``'s own absence
+#: away from the "not present in source" sentence.
+_RANGE_DENIED_FIELD = "attack_range_declared_none"
+
 #: §V113 (B160 (c)): the two per-level fields NO real source fills. They stay in the
 #: omit table above -- the day a source carries one it must reach the wire -- but their
 #: absence is reported by :data:`ENEMY_DEAD_FIELD_NOTE`, which names the true (corpus-
@@ -125,6 +135,10 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
         value = getattr(level, key)
         if value is not None:
             out[key] = value
+    # §V114/B161: emitted only on the variants where the source answered "no radius";
+    # a false flag is not a fact about this level, it is the absence of one.
+    if level.attack_range_declared_none:
+        out[_RANGE_DENIED_FIELD] = True
     return out
 
 
@@ -158,6 +172,12 @@ def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
             continue
         if name in _DEAD_BY_DATA_LEVEL_FIELDS:
             dead_absent = True
+        elif name == "attack_range" and any(lv.attack_range_declared_none for lv in enemy.levels):
+            # §V114 (b)/B161: the source FILLED this cell -- with its "no attack radius"
+            # answer, which §V103 keeps out of a distance column. Calling it "not present
+            # in this entity's source data" would be false, so it takes the note that
+            # says what the source actually did instead of joining the absent list.
+            standing.append(ATTACK_RANGE_DENIED_NOTE)
         else:
             absent.append(name)
     if dead_absent:

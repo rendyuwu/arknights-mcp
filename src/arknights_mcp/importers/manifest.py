@@ -48,7 +48,13 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: allowlist admitted while nothing mapped them, so the columns were 100% NULL on every
 #: build ever promoted. ``damageType`` is imported beside them (a policy change too, hence
 #: both versions move). Every enemy level row imports different bytes.
-TRANSFORM_VERSION = "6"
+#:
+#: ``7`` (B161/§V114): the §V103 sentinel strip now records that upstream ANSWERED before
+#: it removes the value, so a level whose ``rangeRadius`` is the ``-1.0`` no-radius mask
+#: imports ``attack_range_declared_none = 1`` instead of an ``attack_range`` NULL
+#: indistinguishable from "never defined". The strip itself is unchanged (no negative is
+#: stored as a distance, then or now); what changed is that the answer survives it.
+TRANSFORM_VERSION = "7"
 
 
 def _now_iso() -> str:

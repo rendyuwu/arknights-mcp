@@ -42,7 +42,10 @@ def test_field_policy_version_present() -> None:
     # 12: T210/§V113 (B160) added `damageType` -- the enemy's damage kind moved
     #    upstream from the now-always-null `attackType` scalar to a typed LIST, and
     #    42 enemies deal PHYSIC *and* MAGIC, so no scalar could carry it.
-    assert FIELD_POLICY_VERSION == "12"
+    # 13: T211/§V114 (B161) added `attackRangeDeclaredNone` -- the §V103 strip that keeps
+    #    upstream's -1.0 no-radius mask out of the distance column was erasing the fact
+    #    that the source ANSWERED, so "said none" and "said nothing" arrived as one NULL.
+    assert FIELD_POLICY_VERSION == "13"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

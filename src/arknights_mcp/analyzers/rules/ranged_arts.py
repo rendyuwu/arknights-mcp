@@ -10,14 +10,22 @@ Reads three typed fields, in a fixed order of authority (§V26, §T210/B160):
 * ``attack_range`` -- a measured radius. At or beyond :data:`_RANGED_MIN` it is the
   authoritative answer; a shorter one means the enemy has arts damage but no reach,
   which is not a ranged-arts threat and is skipped.
-* ``targeting`` -- upstream's own ``applyWay`` token, read when the radius is absent
-  and BEFORE any inference. This ordering is the rule (§T210 (b)): counted over the
-  pinned EN snapshot, 383 enemies are arts-capable -- 259 carry a radius >= 1, 47 are
+* ``attack_range_declared_none`` -- whether the ABSENCE of that radius is an answer.
+  Upstream's ``-1.0`` sentinel says "this enemy has no attack radius"; §V103 keeps it out
+  of the distance column, so before §T211 it arrived here as the same NULL as "never
+  stated" (§V114/B161). It is read BEFORE ``targeting``, because a rule that concludes
+  from ``targeting`` here publishes a true conclusion under a false reason -- "attack_range
+  missing" for a cell the source FILLED -- on the 13 EN / 16 CN arts enemies that carry the
+  sentinel AND declare ``applyWay: RANGED|ALL``. Two typed fields disagreeing is a §V26
+  conflict, so those are warned and omitted, exactly like the ``targeting: NONE`` case.
+* ``targeting`` -- upstream's own ``applyWay`` token, read when the radius is absent and
+  unstated, and BEFORE any inference. This ordering is the rule (§T210 (b)): counted over
+  the pinned EN snapshot, 383 enemies are arts-capable -- 259 carry a radius >= 1, 47 are
   at melee range, and 77 carry no radius at all. **55 of those 77 declare
   ``applyWay: MELEE``**, so falling straight from "no radius" to the §V26 inference
   would have published 55 enemies as ranged threats against the source's own word.
 
-Only when all three leave reach undecided does the rule infer it at reduced
+Only when all four leave reach undecided does the rule infer it at reduced
 confidence plus a limitation (§V26). One enemy across several level variants counts
 once (§V35). The summary states a fact, not a counter (§V7).
 """
@@ -81,6 +89,23 @@ class RangedArtsRule:
                 conf = _CONF_RANGED
             elif rng is not None:
                 continue  # arts but melee range -> not a ranged-arts threat
+            elif occ.attack_range_declared_none:
+                # §V114/B161: the radius is not missing, it was DENIED -- the source
+                # answered "no attack radius" and §V103 kept that mask out of the distance
+                # column. So no reach may be concluded here, and no limitation may call
+                # the cell missing. When another typed field disagrees, that disagreement
+                # is the §V26 finding: warn, omit, and say what each field stated -- never
+                # what the sentinel might mean (§V114 c leaves that unverified).
+                if targeting in _RANGED_TARGETING:
+                    warnings.append(
+                        f"{occ.game_id}: deals {arts} damage; the source declares no attack "
+                        f"radius for it yet targeting={occ.targeting!r} states it strikes "
+                        "beyond melee; conflicting source fields, omitted from ranged-arts "
+                        "conclusion"
+                    )
+                elif targeting in _NO_TARGETING:
+                    warnings.append(_no_reach_warning(occ.game_id, arts, occ.targeting))
+                continue
             elif targeting in _RANGED_TARGETING:
                 deciding_field, deciding_value = "targeting", occ.targeting
                 note = "arts damage; the source states it strikes beyond melee"
@@ -94,10 +119,7 @@ class RangedArtsRule:
             elif targeting in _NO_TARGETING:
                 # §V26 conflicting typed fields: it deals arts damage yet states no
                 # attack targeting at all. Omit the conclusion, say why.
-                warnings.append(
-                    f"{occ.game_id}: deals {arts} damage but targeting={occ.targeting!r} "
-                    "states no attack reach; omitted from ranged-arts conclusion"
-                )
+                warnings.append(_no_reach_warning(occ.game_id, arts, occ.targeting))
                 continue
             else:
                 deciding_field, deciding_value = "damage_types", arts
@@ -140,6 +162,20 @@ class RangedArtsRule:
             ),
             warnings=tuple(warnings),
         )
+
+
+def _no_reach_warning(game_id: str, arts: str, targeting: str | None) -> str:
+    """The §V26 "arts damage but no attack reach" conflict, one home (§V37).
+
+    Reached from two arms -- a radius that was never stated, and one the source DENIED --
+    because the conflict is the same either way: the enemy deals arts damage while
+    ``targeting`` states it reaches nothing. Wording it once keeps the two arms from
+    drifting into two descriptions of one finding.
+    """
+    return (
+        f"{game_id}: deals {arts} damage but targeting={targeting!r} "
+        "states no attack reach; omitted from ranged-arts conclusion"
+    )
 
 
 def _arts_token(damage_types: tuple[str, ...] | None) -> str | None:

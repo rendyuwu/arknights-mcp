@@ -465,6 +465,13 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         out["attack_type"] = occ.attack_type
     if occ.attack_range is not None:
         out["attack_range"] = occ.attack_range
+    # §V114/B161: an absent attack_range that the source ANSWERED ("no attack radius")
+    # rather than left unstated. Emitted only where it answered -- a false flag says
+    # nothing -- and it rides here because the rule reads it: when it conflicts with
+    # targeting the analysis warns instead of concluding, and the warning names a field
+    # this response must therefore carry.
+    if occ.attack_range_declared_none:
+        out["attack_range_declared_none"] = True
     if occ.targeting is not None:
         out["targeting"] = occ.targeting
     # §V67/B58: [] = the source confirms none; key absent = the source carried no field.

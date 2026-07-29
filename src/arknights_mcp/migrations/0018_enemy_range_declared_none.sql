@@ -1,0 +1,39 @@
+-- 0018 the sentinel's ANSWER gets a home (SPEC §T211; §V114/§V103/§V67; B161).
+--
+-- Upstream writes `rangeRadius.m_value = -1.0` for "this enemy has no attack radius".
+-- §V103 keeps that mask OUT of `attack_range`, which is a distance column -- correct, and
+-- unchanged here (0 negatives are stored, on this migration or any other). But the strip
+-- also erased the fact that upstream ANSWERED: `attack_range IS NULL` came to mean two
+-- different things at once -- the source SAID none (`m_defined:true, m_value:-1.0`) and
+-- the source said NOTHING (never defined) -- and every downstream sentence calling that
+-- cell "missing" is false for the first class. Counted on the build before this column:
+-- 29 EN / 32 CN arts enemies have a NULL radius while declaring `applyWay: RANGED|ALL`,
+-- of which 13 EN / 16 CN carry the explicit sentinel, so `threat.ranged_arts` published a
+-- true conclusion under the false reason "attack_range missing" for those.
+--
+-- §V67 is the precedent and also the reason a new column is needed: a LIST field says
+-- "confirmed none" with `[]` and "not in source" by being absent, but a SCALAR has no
+-- `[]`, so its confirmed-none arm needs a home of its own. This is that home.
+--
+-- It is a FLAG, not a nullable tri-state: `1` = the source declared the no-radius
+-- sentinel at this level (or inherited it from the level it deltas over, §V44), `0` = it
+-- did not -- either it gave a radius, which `attack_range` carries, or it said nothing.
+-- So the decidable state is the PAIR: (2.5, 0) measured | (NULL, 1) declared none |
+-- (NULL, 0) unstated. (non-NULL, 1) is unreachable by construction -- the importer sets
+-- the flag exactly where it deletes the radius -- and a build-side test pins that.
+-- NOT NULL DEFAULT 0 mirrors `enemies.is_boss`/`is_elite` in this same schema and keeps
+-- the new column from re-introducing a NULL that means two things, which is the whole
+-- bug. Rows of a pre-0018 build take the default, which is what they meant.
+--
+-- What the sentinel MEANS for the enemy's reach stays UNVERIFIED and is not encoded here
+-- (§V114 c): `enemy_1404_msnip` is a sniper, so `-1.0` plausibly says "no BASE attack
+-- radius" rather than "cannot strike", and no upstream field states which. The column
+-- therefore records what the SOURCE DID, and the name says exactly that.
+--
+-- No index: nothing looks an enemy up BY this flag -- it is read from an already-resolved
+-- enemy/stage row -- and an index added before its query is write amplification
+-- (§V94/B122). No new provenance FK: it is one more field of the same enemy_database
+-- record the level's enemy already points at (§V17).
+ALTER TABLE enemy_levels
+    ADD COLUMN attack_range_declared_none INTEGER NOT NULL DEFAULT 0
+    CHECK (attack_range_declared_none IN (0, 1));

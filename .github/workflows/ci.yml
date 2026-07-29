@@ -92,7 +92,8 @@ jobs:
             tests/contract/test_template_truncation.py \
             tests/contract/test_zone_event_search.py \
             tests/contract/test_skill_enum_encoding.py \
-            tests/contract/test_enemy_substrate.py -q
+            tests/contract/test_enemy_substrate.py \
+            tests/contract/test_sentinel_answer.py -q
 
   cn-cross-validate:
     # SPEC §T69 / §C: CI-only kengxxiao_gamedata CN cross-validator. Fetches a

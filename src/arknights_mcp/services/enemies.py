@@ -46,7 +46,12 @@ class EnemyLevelFacts:
     ``targeting`` is a plain token (upstream ``applyWay``: MELEE/RANGED/ALL/NONE), so
     it needs no decode. ``immunities`` is the nine typed upstream flags folded into
     one list (§V67): ``[]`` = the source defined them and the enemy resists none,
-    absent = the source defined none of them (§T210)."""
+    absent = the source defined none of them (§T210).
+
+    ``attack_range_declared_none`` is the scalar counterpart of that list rule (§V114):
+    a list says "confirmed none" with ``[]``, a scalar has no ``[]``, so the answer needs
+    a field of its own. ``True`` = the source stated this enemy has no attack radius,
+    ``False`` = it stated a radius (in ``attack_range``) or stated nothing."""
 
     level_variant: int
     hp: int | None
@@ -55,6 +60,7 @@ class EnemyLevelFacts:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
+    attack_range_declared_none: bool
     move_speed: float | None
     weight: int | None
     life_point_reduction: int | None
@@ -121,6 +127,7 @@ def _level_facts(level: EnemyLevelRow) -> EnemyLevelFacts:
         res=level.res,
         attack_interval=level.attack_interval,
         attack_range=level.attack_range,
+        attack_range_declared_none=level.attack_range_declared_none,
         move_speed=level.move_speed,
         weight=level.weight,
         life_point_reduction=level.life_point_reduction,

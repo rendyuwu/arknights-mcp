@@ -40,6 +40,7 @@
       "atk": 240,
       "attack_interval": 1.6,
       "attack_range": 1.1,
+      "attack_range_declared_none": false,
       "attack_type": null,
       "damage_types": [
         "PHYSIC"

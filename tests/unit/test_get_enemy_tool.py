@@ -171,6 +171,97 @@ def test_present_scalars_still_emitted_on_the_wire(conn: sqlite3.Connection) -> 
     assert not [lim for lim in env.limitations if "not present in this entity" in lim]
 
 
+def _absent_fields_named(limitations: tuple[str, ...]) -> list[str]:
+    """The field names inside the "not present in this entity's source data" sentence."""
+    marker = "not present in this entity's source data: "
+    for lim in limitations:
+        if marker in lim:
+            return [f.strip() for f in lim.split(marker, 1)[1].split(".", 1)[0].split(",")]
+    return []
+
+
+def _level(**kw: object) -> EnemyLevelFacts:
+    """A level variant with every field absent unless a test opts into it."""
+    base: dict[str, object] = {
+        "level_variant": 0,
+        "hp": 100,
+        "atk": 10,
+        "def_": 0,
+        "res": 0,
+        "attack_interval": None,
+        "attack_range": None,
+        "attack_range_declared_none": False,
+        "move_speed": None,
+        "weight": None,
+        "life_point_reduction": None,
+        "block_behavior": None,
+        "targeting": None,
+        "immunities": None,
+        "abilities": None,
+    }
+    base.update(kw)
+    return EnemyLevelFacts(**base)  # type: ignore[arg-type]
+
+
+def _facts(*levels: EnemyLevelFacts) -> EnemyFacts:
+    return EnemyFacts(
+        server="en",
+        game_id="enemy_1404_msnip",
+        display_name="Sniper",
+        enemy_class="ELITE",
+        is_boss=False,
+        is_elite=True,
+        attack_type=None,
+        damage_types=("MAGIC",),
+        motion_type="WALK",
+        levels=levels,
+        provenance=EnemyProvenance(snapshot_id="en:x", imported_at="2026-07-29T00:00:00+00:00"),
+    )
+
+
+def test_declared_no_radius_is_emitted_and_not_reported_as_missing_data() -> None:
+    # §T211/§V114 (B161): the source ANSWERED "no attack radius", so attack_range is
+    # absent by that answer -- not for lack of data. The generic absent-field sentence
+    # would be false here, which is exactly the wrong reason B161 found on the wire.
+    enemy = _facts(_level(attack_range=None, attack_range_declared_none=True, targeting="RANGED"))
+    level = _enemy_to_dict(enemy, image_refs_enabled=False)["levels"][0]  # type: ignore[index]
+    assert level["attack_range_declared_none"] is True  # type: ignore[index]
+    assert "attack_range" not in level  # §V103/§V67: no mask, no null
+    limitations = _enemy_absent_field_limitations(enemy)
+    assert any("states that it has no base attack radius" in lim for lim in limitations)
+    # ...and attack_range is NOT in the list of fields the source is said to have omitted
+    # (immunities is genuinely absent here, so the sentence still exists to be checked).
+    named = _absent_fields_named(limitations)
+    assert named == ["immunities"], named
+
+
+def test_unstated_radius_still_reads_as_an_absent_field() -> None:
+    # The control: with no answer from the source, attack_range IS a gap and keeps the
+    # absent-field sentence -- the note replaces it only where the source spoke.
+    enemy = _facts(_level(attack_range=None, attack_range_declared_none=False))
+    level = _enemy_to_dict(enemy, image_refs_enabled=False)["levels"][0]  # type: ignore[index]
+    assert "attack_range_declared_none" not in level  # a false flag is not a fact
+    limitations = _enemy_absent_field_limitations(enemy)
+    assert _absent_fields_named(limitations) == ["attack_range", "targeting", "immunities"]
+    assert not any("states that it has no base attack radius" in lim for lim in limitations)
+
+
+def test_a_mixed_enemy_keeps_the_answer_on_the_variant_that_gave_it() -> None:
+    # One variant denies a radius, another measures one: the enemy is not missing the
+    # field at all, so no absence sentence -- and the flag stays on the denying variant
+    # only (§V67 per-variant omission, the pre-existing B58 convention).
+    enemy = _facts(
+        _level(attack_range=None, attack_range_declared_none=True),
+        _level(level_variant=1, attack_range=2.5),
+    )
+    levels = _enemy_to_dict(enemy, image_refs_enabled=False)["levels"]  # type: ignore[index]
+    assert levels[0]["attack_range_declared_none"] is True  # type: ignore[index]
+    assert "attack_range_declared_none" not in levels[1]  # type: ignore[operator]
+    assert levels[1]["attack_range"] == 2.5  # type: ignore[index]
+    named = _absent_fields_named(_enemy_absent_field_limitations(enemy))
+    assert "attack_range" not in named
+
+
 def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
     # §V67/B98 (T180): an enemy whose source omits damage_types + every per-level
     # attack_range/targeting emits NONE of those keys; the absent-field limitation
@@ -183,6 +274,7 @@ def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
         res=0,
         attack_interval=None,
         attack_range=None,
+        attack_range_declared_none=False,  # nothing was said, so nothing was answered
         move_speed=None,
         weight=None,
         life_point_reduction=None,

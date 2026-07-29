@@ -46,6 +46,12 @@ class EnemyLevelRow:
     ``applyWay`` is one token, not a structure (§V99). ``immunities``/``abilities``
     stay JSON strings here (allowlisted + sanitized at import, §V18/§V31) and are
     decoded in the service.
+
+    ``attack_range`` and ``attack_range_declared_none`` are read as a PAIR (§V114/B161):
+    a radius, or no radius with the source's own statement of which kind of "no" it is --
+    DECLARED none (its ``-1.0`` sentinel) versus never stated. Reading the radius alone
+    cannot tell them apart, which is what made an absent radius report as "missing" for
+    the enemies whose source had in fact answered.
     """
 
     level_variant: int
@@ -55,6 +61,7 @@ class EnemyLevelRow:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
+    attack_range_declared_none: bool
     move_speed: float | None
     weight: int | None
     life_point_reduction: int | None
@@ -78,6 +85,7 @@ _ENEMY_SQL = (
 # Level variants ordered by variant so the emitted stat block is deterministic.
 _LEVELS_SQL = (
     "SELECT level_variant, hp, atk, def, res, attack_interval, attack_range, "
+    "attack_range_declared_none, "
     "move_speed, weight, life_point_reduction, block_behavior, "
     "targeting, immunities_json, abilities_json "
     "FROM enemy_levels WHERE enemy_pk = ? "
@@ -125,6 +133,7 @@ def _to_enemy_level_row(row: Any) -> EnemyLevelRow:
         res,
         attack_interval,
         attack_range,
+        attack_range_declared_none,
         move_speed,
         weight,
         life_point_reduction,
@@ -141,6 +150,7 @@ def _to_enemy_level_row(row: Any) -> EnemyLevelRow:
         res=res,
         attack_interval=attack_interval,
         attack_range=attack_range,
+        attack_range_declared_none=bool(attack_range_declared_none),
         move_speed=move_speed,
         weight=weight,
         life_point_reduction=life_point_reduction,

@@ -66,6 +66,7 @@
       "atk": 320,
       "attack_interval": 2.0,
       "attack_range": 0.0,
+      "attack_range_declared_none": false,
       "attack_type": null,
       "damage_types": [
         "PHYSIC"
@@ -93,6 +94,7 @@
       "atk": 260,
       "attack_interval": 1.6,
       "attack_range": 1.2,
+      "attack_range_declared_none": false,
       "attack_type": null,
       "damage_types": [
         "MAGIC"

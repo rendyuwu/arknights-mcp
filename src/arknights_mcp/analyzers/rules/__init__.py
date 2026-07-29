@@ -41,7 +41,9 @@ THREAT_RULES: tuple[ThreatRule, ...] = tuple(_RULES)
 RULE_DECIDING_FIELDS: dict[str, frozenset[str]] = {
     "threat.aerial": frozenset({"motion_type"}),
     "threat.def_res_skew": frozenset({"defense", "res"}),
-    "threat.ranged_arts": frozenset({"damage_types", "attack_range", "targeting"}),
+    "threat.ranged_arts": frozenset(
+        {"damage_types", "attack_range", "attack_range_declared_none", "targeting"}
+    ),
     "threat.pressure_spike": frozenset({"total_count", "first_spawn_time", "last_spawn_time"}),
     "threat.lane_route": frozenset({"route_count"}),
     "threat.tiles_deploy": frozenset({"tiles"}),

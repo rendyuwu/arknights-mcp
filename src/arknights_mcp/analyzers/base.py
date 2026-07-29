@@ -51,6 +51,12 @@ class EnemyOccurrence:
     defense: int | None = None
     res: int | None = None
     attack_range: float | None = None
+    #: §V114 (B161): ``True`` when the source DECLARED this enemy has no attack radius
+    #: (its ``-1.0`` sentinel, kept out of the distance column by §V103), ``False`` when
+    #: it declared a radius or said nothing. Read BEFORE ``targeting``, because an absent
+    #: ``attack_range`` alone cannot tell a denied radius from an unstated one, and a rule
+    #: must not report a cell the source FILLED as missing.
+    attack_range_declared_none: bool = False
     #: Upstream ``applyWay``: MELEE / RANGED / ALL / NONE, the enemy's own statement
     #: of what it can reach. Read BEFORE any inference about reach (§T210 (b)).
     targeting: str | None = None

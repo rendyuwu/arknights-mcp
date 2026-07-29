@@ -88,6 +88,10 @@ class StageEnemyRow:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
+    #: §V114/B161: whether the source DECLARED no attack radius (its ``-1.0`` sentinel)
+    #: rather than leaving one unstated -- the two are the same NULL in ``attack_range``,
+    #: and the threat rule must not call a declared "none" a missing field.
+    attack_range_declared_none: bool
     move_speed: float | None
     weight: int | None
     targeting: str | None
@@ -191,6 +195,7 @@ _OCCURRENCES_SQL = (
     "COALESCE(v.hp, el.hp), COALESCE(v.atk, el.atk), "
     'COALESCE(v."def", el."def"), COALESCE(v.res, el.res), '
     "COALESCE(v.attack_interval, el.attack_interval), el.attack_range, "
+    "COALESCE(el.attack_range_declared_none, 0), "
     "COALESCE(v.move_speed, el.move_speed), COALESCE(v.weight, el.weight), "
     "el.targeting, v.variant_id "
     "FROM stage_enemies se "
@@ -318,6 +323,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         res,
         attack_interval,
         attack_range,
+        attack_range_declared_none,
         move_speed,
         weight,
         targeting,
@@ -343,6 +349,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         res=res,
         attack_interval=attack_interval,
         attack_range=attack_range,
+        attack_range_declared_none=bool(attack_range_declared_none),
         move_speed=move_speed,
         weight=weight,
         targeting=targeting,

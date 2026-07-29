@@ -8,6 +8,8 @@ already-normalized (synthetic) input so the minimal fixture path is unaffected.
 
 from __future__ import annotations
 
+from typing import Any
+
 from arknights_mcp.importers.enemy_normalization import normalize_enemy_sources
 from arknights_mcp.importers.normalization import (
     normalize_level,
@@ -173,6 +175,104 @@ def test_defined_zero_stat_is_kept_not_treated_as_unset() -> None:
     _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
     slime = database["enemies"]["enemy_1007_slime"]["levels"][0]
     assert slime["res"] == 0  # magicResistance m_defined:true m_value:0 → kept
+
+
+# --- §V114/B161: the sentinel strip keeps the source's ANSWER --------------------
+#
+# §V103 keeps upstream's ``rangeRadius: -1.0`` out of ``attackRange`` -- it is a mask
+# meaning "no attack radius", not a distance. But deleting it also deleted the fact that
+# upstream ANSWERED, so the remaining absence meant two things at once: the source said
+# none, and the source said nothing. Counted on the build before this column existed, 29
+# en / 32 cn arts enemies had a NULL radius while declaring ``applyWay: RANGED|ALL``, and
+# only 13 en / 16 cn of those carried the sentinel -- so the conflict was invisible and
+# the rest were correctly unstated.
+
+
+def _sentinel_database(*, base_radius: float, level_2_cell: Any | None = None) -> dict[str, Any]:
+    """One enemy whose level 0 carries ``base_radius``, plus an optional level-2 delta."""
+    levels: list[dict[str, Any]] = [
+        {
+            "level": 0,
+            "enemyData": {
+                "applyWay": {"m_defined": True, "m_value": "RANGED"},
+                "rangeRadius": {"m_defined": True, "m_value": base_radius},
+                "attributes": {"maxHp": {"m_defined": True, "m_value": 2400}},
+                "motion": {"m_defined": True, "m_value": "WALK"},
+            },
+        }
+    ]
+    if level_2_cell is not None:
+        levels.append(
+            {
+                "level": 2,
+                "enemyData": {
+                    "rangeRadius": level_2_cell,
+                    "attributes": {"maxHp": {"m_defined": True, "m_value": 9000}},
+                },
+            }
+        )
+    return {"enemy_1404_msnip": levels}
+
+
+def _sentinel_levels(**kwargs: Any) -> list[dict[str, Any]]:
+    _, database = normalize_enemy_sources(REAL_HANDBOOK, _sentinel_database(**kwargs))
+    levels: list[dict[str, Any]] = database["enemies"]["enemy_1404_msnip"]["levels"]
+    return levels
+
+
+def test_no_radius_sentinel_is_stripped_but_its_answer_is_kept() -> None:
+    """§V103 still removes the mask; §V114 keeps the fact that the source answered."""
+    level = _sentinel_levels(base_radius=-1.0)[0]
+    assert "attackRange" not in level  # §V103: -1.0 is not a distance
+    assert level["attackRangeDeclaredNone"] is True
+
+
+def test_a_real_radius_declares_nothing_about_having_none() -> None:
+    """The flag marks the ANSWER "none", never the presence of a radius (§V99)."""
+    level = _sentinel_levels(base_radius=2.5)[0]
+    assert level["attackRange"] == 2.5
+    assert "attackRangeDeclaredNone" not in level
+
+
+def test_a_never_defined_radius_is_not_an_answer() -> None:
+    """The class the flag exists to separate: the source stated nothing at all.
+
+    Both this and the sentinel leave ``attackRange`` absent -- that identity is the bug
+    (B161). The flag is what tells them apart, so its ABSENCE here is the assertion.
+    """
+    _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
+    level = database["enemies"]["enemy_1007_slime"]["levels"][0]
+    assert "attackRange" not in level
+    assert "attackRangeDeclaredNone" not in level
+
+
+def test_a_level_inheriting_the_sentinel_inherits_the_answer() -> None:
+    """§V44 + §V114: the strip runs AFTER the delta merge, in both directions.
+
+    A level that leaves ``rangeRadius`` ``m_defined:false`` inherits its base's cell. When
+    that cell is the sentinel, the level's own answer is "no radius" -- so it must carry
+    the flag, not fall back to looking unstated. (Running the strip EARLIER would be worse
+    still: the key would be missing at the delta step and the level would inherit a real
+    radius it never had -- the §T210 fabricated-reach case.)
+    """
+    levels = _sentinel_levels(base_radius=-1.0, level_2_cell={"m_defined": False, "m_value": 0.0})
+    assert [lvl["attackRangeDeclaredNone"] for lvl in levels] == [True, True]
+    assert all("attackRange" not in lvl for lvl in levels)
+
+
+def test_a_level_that_redefines_a_real_radius_over_the_sentinel_carries_no_answer() -> None:
+    """The other direction: a higher level that states a radius overrides the denial."""
+    levels = _sentinel_levels(base_radius=-1.0, level_2_cell={"m_defined": True, "m_value": 3.0})
+    assert levels[0]["attackRangeDeclaredNone"] is True
+    assert levels[1]["attackRange"] == 3.0
+    assert "attackRangeDeclaredNone" not in levels[1]
+
+
+def test_a_non_numeric_radius_is_dropped_without_claiming_an_answer() -> None:
+    """A shape the bridge cannot read is not a statement the source made (§V114 a)."""
+    levels = _sentinel_levels(base_radius="far")  # type: ignore[arg-type]
+    assert "attackRange" not in levels[0]
+    assert "attackRangeDeclaredNone" not in levels[0]
 
 
 def test_enemy_sources_idempotent_on_normalized_input() -> None:

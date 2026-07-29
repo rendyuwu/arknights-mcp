@@ -16,6 +16,7 @@ from arknights_mcp.importers.enemies import (
     insert_enemies,
     parse_enemies,
 )
+from arknights_mcp.importers.enemy_normalization import normalize_enemy_sources
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
@@ -147,6 +148,85 @@ def test_insert_enemies_and_levels(tmp_path: Path) -> None:
     assert drone[0] == "FLY"
     assert drone[1] == 1
     assert drone[2] is not None  # V17: provenance attached
+
+
+def test_declared_no_radius_reaches_the_column_as_an_answer(tmp_path: Path) -> None:
+    """§T211/§V114 (B161): the sentinel's ANSWER survives the strip all the way to SQL.
+
+    Driven from the REAL upstream shape through the §V30 bridge, not from an
+    already-normalized dict: the flag is derived by the bridge from ``rangeRadius``, so a
+    normalized-input test would assert the parser copies a key the real path never
+    produces -- B160's exact blind spot.
+    """
+    handbook = {
+        "enemyData": {
+            "enemy_1404_msnip": {
+                "enemyId": "enemy_1404_msnip",
+                "name": "Sniper",
+                "enemyLevel": "ELITE",
+                "damageType": ["MAGIC"],
+            }
+        }
+    }
+    database = {
+        "enemy_1404_msnip": [
+            {
+                "level": 0,
+                "enemyData": {
+                    "applyWay": {"m_defined": True, "m_value": "RANGED"},
+                    "rangeRadius": {"m_defined": True, "m_value": -1.0},
+                    "motion": {"m_defined": True, "m_value": "WALK"},
+                    "attributes": {"maxHp": {"m_defined": True, "m_value": 2400}},
+                },
+            }
+        ]
+    }
+    conn = build_database(tmp_path / "cand.sqlite")
+    snapshot_id = _seed_snapshot(conn)
+    insert_enemies(
+        conn,
+        parse_enemies(*normalize_enemy_sources(handbook, database)),
+        server="en",
+        snapshot_id=snapshot_id,
+        handbook_source_path="gamedata/excel/enemy_handbook_table.json",
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT attack_range, attack_range_declared_none FROM enemy_levels"
+    ).fetchone()
+    assert row == (None, 1)  # §V103 keeps the mask out; §V114 keeps the answer
+
+
+def test_a_stored_radius_never_coexists_with_a_declared_none(tmp_path: Path) -> None:
+    """The pair is the decidable state, so one impossible corner must stay impossible.
+
+    ``(attack_range non-NULL, flag=1)`` would say the source both gave a radius and denied
+    one. It cannot arise -- the bridge sets the flag exactly where it deletes the radius --
+    and this is the assertion that keeps a future edit from splitting the two apart.
+    """
+    conn = build_database(tmp_path / "cand.sqlite")
+    snapshot_id = _seed_snapshot(conn)
+    insert_enemies(
+        conn,
+        parse_enemies(HANDBOOK, DATABASE),
+        server="en",
+        snapshot_id=snapshot_id,
+        handbook_source_path="gamedata/excel/enemy_handbook_table.json",
+    )
+    conn.commit()
+    contradictions = conn.execute(
+        "SELECT COUNT(*) FROM enemy_levels "
+        "WHERE attack_range IS NOT NULL AND attack_range_declared_none = 1"
+    ).fetchone()[0]
+    assert contradictions == 0
+    # ...and an ordinary import leaves the flag off rather than NULL (the column is the
+    # one place a NULL must not come back to mean two things).
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM enemy_levels WHERE attack_range_declared_none IS NULL"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_name_is_sanitized(tmp_path: Path) -> None:
