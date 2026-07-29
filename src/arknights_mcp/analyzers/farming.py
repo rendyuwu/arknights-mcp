@@ -130,14 +130,24 @@ _HOISTED_LIMITATIONS: tuple[tuple[str, str], ...] = (
 class RankingRow:
     """One ranked entity in a compacted farming observation (§V66.1/§T129).
 
-    ``id`` is the entity's stable reference into the SIBLING facts list the tool
-    already emits -- a drop's ``item_game_id`` in the stage view, a stage's
-    ``stage_game_id`` in the item comparison (§V68/B57: the UNAMBIGUOUS id, never the
-    ``stage_code`` alone, which the normal + tough variants share) -- so a client joins
-    on it to read the ``sanity_cost`` / ``drop_rate`` / ``sample_size`` carried there;
-    those numbers are NOT re-copied here (§V66.1). ``name`` is the display label shown
-    alongside the id: the item's display name in the stage view, the stage's
-    ``stage_code`` in the item comparison (§V68 "display stage_code alongside").
+    ``id`` and ``name`` are INTERNAL slots, not wire keys. ``id`` is the entity's stable
+    reference into the SIBLING facts list the tool already emits -- a drop's
+    ``item_game_id`` in the stage view, a stage's ``stage_game_id`` in the item comparison
+    (§V68/B57: the UNAMBIGUOUS id, never the ``stage_code`` alone, which the normal + tough
+    variants share) -- so a client joins on it to read the ``sanity_cost`` /
+    ``drop_rate`` / ``sample_size`` carried there; those numbers are NOT re-copied here
+    (§V66.1). ``name`` is the display label the tool shows alongside: the item's display
+    name in the stage view, the stage's ``stage_code`` in the item comparison.
+
+    §V100/B134: these two generic names must NOT reach the wire. They used to -- both
+    emitters re-keyed onto a bare ``id`` + ``name``, so one shape carried an ITEM id and
+    an item display name in one tool and a STAGE id and a stage CODE in its sibling, and
+    a client rendering the table mislabelled its own column. Each emitter now emits the
+    entity-prefixed keys instead (``item_game_id`` / ``item_display_name`` and
+    ``stage_game_id`` / ``stage_code``), so the referent is readable from the key. The
+    slots stay generic here because this dataclass is the ranking's shared analyzer-side
+    shape; the naming rule belongs to the emit site, and a contract test walks every
+    registered tool's ``ranking`` rows to keep it there.
     ``sanity_per_item`` is the derived ranking figure (not present in the sibling
     list). ``confidence`` is populated ONLY when this row deviates from the
     observation-level baseline (:data:`_CONF_STABLE`) -- a thin sample or an expired

@@ -61,7 +61,7 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.mcp.tools._stage_selector import (
     STAGE_SELECTOR_NOTE,
-    stage_ambiguity_action,
+    stage_ambiguity_drop_hint,
     stage_ambiguity_limitation,
 )
 from arknights_mcp.models.common import tool_input_schema
@@ -94,17 +94,32 @@ _TOOL_DESCRIPTION = (
     "list with a warning naming it. If nothing was rankable the full raw drops list "
     "is returned with the warnings. Without the flag the "
     "raw drops list is returned. "
+    "An item's rarity is its tier as an integer, 1 to 5, where 1 is T1. "
     "The response's enum_legend gives the values of item_type. Those are facts and "
     "observations only, never a best-farm or mandatory verdict. A drop past its expiry "
     "is still returned, flagged data_stale. A re-sync of the penguin source refreshes "
     "the cache. en/cn are never mixed."
 )
 
-_NOT_FOUND_MESSAGE = "no drop data matched the given region and stage"
+#: §V106 (a): the stage itself does not exist -- a LOOKUP miss, so it stays an error.
+_NOT_FOUND_MESSAGE = "no stage matched the given region and stage_code/game_id"
 _NOT_FOUND_ACTION = (
     "verify the server and stage_code/game_id (use search_stages to find the stage), or "
     "ask the server admin to run `arknights-mcp sync --server all` to fetch the penguin "
     "drop cache"
+)
+#: §V106 (b)/B147: the stage RESOLVED and only the drop set is empty. That is a delivered
+#: answer, so it ships ``ok`` + an empty ``drops`` with the why here instead of the
+#: ``not_found`` that reported a well-formed question as a failed request. The retry
+#: guidance is MOVED from the old ``suggested_action``, not dropped (§V111 b), and T195's
+#: shared-stage_code alternates still ride alongside it -- on the 2026-07-28 build 206
+#: shared codes have a first-pick stage with no drops beside a sibling that has them, so
+#: the alternates are what stop the silent pick from inventing the absence (§V102).
+_STAGE_NO_DROPS_LIMITATION = (
+    "The Penguin Statistics cache lists no drops for this stage. That is what the cache "
+    "records, not a claim that the stage drops nothing: a stage nobody has submitted runs "
+    "for has no cached rates. Call get_data_status to check the cache's freshness, or ask "
+    "the server admin to run `arknights-mcp sync --server all` to refresh it."
 )
 _STALE_LIMITATION = (
     "one or more drop rates are past their cache expiry; the figures are stale, not "
@@ -204,22 +219,23 @@ def _efficiency_row(
     The stage-view mirror of :func:`_item_efficiency_row` (§T161/B82): in efficiency
     mode the ranking is the SINGLE list for the RANKED items -- each ranked drop's raw
     facts fold into its ranking row rather than being duplicated in the sibling
-    ``drops`` list (which listed the same items twice, B95). The row is the
-    :func:`_drop_identity` fields (the §V55 evidence -- ``drop_rate`` / ``times`` --
-    and rarity/type identity) re-keyed by the unambiguous ``id`` = ``item_game_id``
-    with the display name as ``name`` (§V68/§V69), plus the derived
-    ``sanity_per_item``. The stage-level ``sanity_cost`` is NOT repeated per row -- it
-    rides the parent ``stage`` block once (§V66/§V77, unlike the item view where it
-    varies per stage). ``drop`` is joined to ``row`` by id in :func:`_shape`, so the
-    pairing can never silently drift with ordering.
+    ``drops`` list (which listed the same items twice, B95). The row is exactly the
+    :func:`_drop_identity` fields (the §V55 evidence -- ``drop_rate`` / ``times`` -- and
+    the rarity/type identity) plus the derived ``sanity_per_item``. The stage-level
+    ``sanity_cost`` is NOT repeated per row -- it rides the parent ``stage`` block once
+    (§V66/§V77, unlike the item view where it varies per stage). ``drop`` is joined to
+    ``row`` by id in :func:`_shape`, so the pairing can never silently drift with
+    ordering.
+
+    §V100/B134: the identity keys are emitted AS-IS -- ``item_game_id`` +
+    ``item_display_name``. They used to be re-keyed to a generic ``id`` + ``name``, and
+    the sibling ``get_item_drops`` ranking re-keyed a STAGE id and a stage CODE onto
+    those same two names, so one shape carried flipped referents across two tools and an
+    LLM mislabelled the very column it was rendering. Entity-prefixed keys make the
+    referent readable from the key alone, so the re-key is simply gone, not remapped.
     """
-    identity = _drop_identity(drop)
-    out: dict[str, object] = {"id": identity.pop("item_game_id")}
-    name = identity.pop("item_display_name", None)
-    out.update(identity)
+    out = _drop_identity(drop)
     out["sanity_per_item"] = row.sanity_per_item
-    if name is not None:  # §V67: display name omitted when absent, never null
-        out["name"] = name
     return _apply_ranked_markers(out, deviation, expired=drop.expired, row=row)
 
 
@@ -227,8 +243,10 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 envelope (§V5 region + provenance).
 
     ``ok`` and ``data_stale`` both deliver the drop facts (a stale drop is flagged,
-    not withheld, §V53); ``not_found`` (absent stage or no drop cache) fails to a
-    §V24 error envelope with a suggested admin action. The efficiency observations
+    not withheld, §V53). ``not_found`` is now reserved for an absent STAGE -- a §V106 (a)
+    lookup miss -- and fails to a §V24 error envelope with a suggested admin action; a
+    stage that resolves with an empty drop cache is an ``ok`` carrying ``drops: []`` and
+    the limitation that says why (§V106 b/B147). The efficiency observations
     ride only when ``include_efficiency`` produced them, each keeping its five §V6
     fields (§V55). Envelope provenance is the stage's game-data region attribution
     (§V5), distinct from the penguin drop chain (§V54).
@@ -248,14 +266,12 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     the flag (or when nothing was rankable) all raw ``drops`` facts are emitted.
     """
     if result.status == "not_found" or result.stage is None:
-        # §V102/§V24 (B139): a stage_code shared by several stages can make "no drop
-        # data" an artefact of the silent pick rather than of the cache, so the action
-        # names the alternates -- a retryable handle instead of a dead end.
-        return error(
-            "not_found",
-            _NOT_FOUND_MESSAGE,
-            suggested_action=stage_ambiguity_action(result.ambiguity, _NOT_FOUND_ACTION),
-        )
+        # §V106 (a): the only remaining ``not_found`` is a real LOOKUP miss -- no stage
+        # under this region + selector. A stage that RESOLVES with an empty drop cache
+        # now falls through to the ``ok`` path below (§V106 b/B147), which is also where
+        # T195's shared-stage_code alternates moved: a code that matched nothing carries
+        # no ambiguity by construction, so there are no alternates to name here.
+        return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     shared_prov, deviations = hoist_drop_provenance([_drop_provenance_row(d) for d in result.drops])
 
@@ -285,7 +301,12 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
         if drop.expired:
             row["expired"] = True  # §V67: emitted only when true (default = fresh)
         drops.append(row)
-    if drops:
+    # §V67/§V106 (b): an empty ``drops`` means two different things and the key has to
+    # tell them apart. When the cache genuinely holds nothing for this stage the list is
+    # emitted as ``[]`` -- a CONFIRMED none, the empty collection §V106 (b) requires
+    # beside its limitation. When every drop folded into a ranking row instead, the facts
+    # did not vanish, they moved, so the key is ABSENT rather than a false "none".
+    if drops or not result.drops:
         data["drops"] = drops
 
     if result.analyzer_version is not None:
@@ -316,6 +337,19 @@ def _shape(result: StageDropsResult) -> ResponseEnvelope:
     # §V102 (b)/B139: the shared-stage_code disclosure leads -- which stage these drop
     # rates belong to decides whether the numbers answer the question that was asked.
     limitations: tuple[str, ...] = stage_ambiguity_limitation(result.ambiguity)
+    # §V106 (b)/B147: the stage resolved and the cache holds nothing for it. The why + the
+    # next step ride a limitation on a delivered ``ok``, where they used to be the body of
+    # a ``not_found``. The T195 alternates above stay AHEAD of it: which stage this empty
+    # answer is about decides whether the emptiness answers the question that was asked.
+    if not result.drops:
+        # T195/§V102: when the code was shared, the alternates ride too -- the sibling
+        # under the same code may be the stage that actually holds the drop data, and
+        # that retry is the whole reason this disclosure exists.
+        limitations = (
+            *limitations,
+            _STAGE_NO_DROPS_LIMITATION,
+            *stage_ambiguity_drop_hint(result.ambiguity),
+        )
     if result.stale:
         limitations = (*limitations, _STALE_LIMITATION)
     # §V104 (b)/(c): every drop row carries item_type, so its STATIC domain + the
@@ -398,6 +432,7 @@ _ITEM_TOOL_DESCRIPTION = (
     "returned with warnings naming the exclusions. Without the flag the raw stages list "
     "is returned and "
     "paged on its own. "
+    "The item's rarity is its tier as an integer, 1 to 5, where 1 is T1. "
     "The response's enum_legend gives the values of item_type. "
     "That ranking is an ordering and evidence, never a "
     "best-farm or mandatory verdict. Stage availability, first-clear bonuses, and "
@@ -418,15 +453,18 @@ _ITEM_NOT_FOUND_ACTION = (
 )
 # §V60/B91: a RESOLVED item with zero stage-drop cache is NOT an unknown-item miss -- it is
 # a craft/synthesis-only (Workshop) or otherwise non-farmed material that has no stage drop
-# to fetch, so an admin re-sync would add nothing. A DISTINCT message + a freshness
+# to fetch, so an admin re-sync would add nothing. A DISTINCT sentence + a freshness
 # self-check pointer (get_data_status, MCP-callable, §V71(a)) rather than the sync action,
 # which would misread as "the cache is unsynced" for a row that will never exist.
-_ITEM_NO_DROPS_MESSAGE = "the item exists but the penguin cache lists no stage that drops it"
-_ITEM_NO_DROPS_ACTION = (
-    "this item is not farmed from a stage -- it is obtained by synthesis (workshop) or "
-    "another non-drop source, so there is no observed drop rate to report and a re-sync "
-    "would not add one; call get_data_status to confirm the penguin cache is fresh if you "
-    "expected a drop"
+# §V106 (b)/B147: since the item RESOLVED, the lookup succeeded and only the comparison set
+# is empty, so this ships as a limitation on an ``ok`` envelope rather than as the body of
+# a ``not_found``. B91's two-way split is untouched -- only the status moved; the wording
+# and the get_data_status pointer are the same two facts, MOVED not deleted (§V111 b).
+_ITEM_NO_DROPS_LIMITATION = (
+    "This item exists but the Penguin Statistics cache lists no stage that drops it. It is "
+    "obtained by synthesis (workshop) or another non-drop source, so there is no observed "
+    "drop rate to report and a re-sync would not add one. Call get_data_status to confirm "
+    "the penguin cache is fresh if you expected a drop."
 )
 
 
@@ -474,21 +512,24 @@ def _item_efficiency_row(
     In efficiency mode the ranking is the SINGLE per-stage list -- the raw drop facts are
     folded into the ranking row rather than duplicated in a sibling ``stages`` list (which
     doubled the payload, B82). So this row carries both the §V55 evidence (``sanity_cost``
-    / ``drop_rate`` / ``times`` -- the sample size) and the derived ``sanity_per_item``,
-    keyed by the unambiguous ``id`` = ``stage_game_id`` with the ``stage_code`` shown
-    alongside as ``name`` (§V68). ``stage`` is joined to ``row`` by id in
-    :func:`_shape_item`, so the pairing can never silently drift with ordering.
+    / ``drop_rate`` / ``times`` -- the sample size) and the derived ``sanity_per_item``.
+    ``stage`` is joined to ``row`` by id in :func:`_shape_item`, so the pairing can never
+    silently drift with ordering.
 
-    The row is the :func:`_item_stage_drop_identity` fields re-keyed, plus the derived
-    figure and the shared :func:`_apply_ranked_markers` deviation trailer.
+    §V100/B134: the identity keys are emitted AS-IS -- ``stage_game_id`` +
+    ``stage_code``. They used to be re-keyed to a generic ``id`` + ``name``, which was
+    doubly wrong: the sibling ``get_stage_drops`` ranking put an ITEM id and an item
+    display name under those same two names (flipped referents, one shape), and the
+    ``name`` here was never a name at all -- ``"1-7"`` is the stage's CODE, not its
+    display name ("The Tyrant"). §V100 requires a ``*_name`` key to carry a display name
+    and a code to live in a ``*_code``, so the code keeps its own honest key and no
+    ``*_name`` is invented for a value the comparison never loads.
+
+    The row is the :func:`_item_stage_drop_identity` fields plus the derived figure and
+    the shared :func:`_apply_ranked_markers` deviation trailer.
     """
-    identity = _item_stage_drop_identity(stage)
-    out: dict[str, object] = {"id": identity.pop("stage_game_id")}
-    name = identity.pop("stage_code", None)
-    out.update(identity)
+    out = _item_stage_drop_identity(stage)
     out["sanity_per_item"] = row.sanity_per_item
-    if name is not None:  # §V67: display name omitted when absent, never null
-        out["name"] = name
     return _apply_ranked_markers(out, deviation, expired=stage.expired, row=row)
 
 
@@ -496,13 +537,13 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     """Map the item-comparison domain result to a typed §V23 envelope (§V5/§V19/§V60).
 
     ``ok`` and ``data_stale`` both deliver the per-stage drop facts (an expired stage
-    is flagged and downgraded, not dropped from the ranking, §V60); ``not_found``
-    fails to a §V24 error envelope whose message + suggested_action split the two
-    reasons (§V60/B91): an UNKNOWN item (``result.item is None``) points at
-    ``search_entities`` + an admin re-sync, while a RESOLVED item with zero stage-drop
-    cache (``result.item`` set -- a craft/synthesis-only material) gets a distinct
-    "exists but no observed drop" message pointing ``get_data_status`` (a freshness
-    self-check), never the re-sync that would add no drop. The ranked efficiency
+    is flagged and downgraded, not dropped from the ranking, §V60). B91's two reasons
+    stay split, now across two statuses (§V106): an UNKNOWN item (``result.item is
+    None``) is a lookup miss -> ``not_found`` pointing at ``search_entities`` + an admin
+    re-sync, while a RESOLVED item with zero stage-drop cache (a craft/synthesis-only
+    material) is a set query that came back empty -> ``ok`` with ``stages: []`` and the
+    distinct "exists but no observed drop" limitation pointing ``get_data_status`` (a
+    freshness self-check), never the re-sync that would add no drop. The ranked efficiency
     observations ride only when
     ``include_efficiency`` produced them, each keeping its five §V6 fields (§V55),
     alongside the mandatory §V60 comparison caveats. Envelope provenance is the item's
@@ -524,13 +565,10 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     ``stages_page``. Whichever list is emitted is paged (§V22/§V19, B21).
     """
     if result.status == "not_found" or result.item is None:
-        if result.item is not None:
-            # §V60/B91: the item RESOLVED but has no stage-drop cache -- a craft/synthesis-only
-            # material with no drop row to fetch. A distinct message + a freshness self-check
-            # pointer, never the admin re-sync action (which would read as "cache unsynced").
-            return error(
-                "not_found", _ITEM_NO_DROPS_MESSAGE, suggested_action=_ITEM_NO_DROPS_ACTION
-            )
+        # §V106 (a): the only remaining ``not_found`` is an UNKNOWN item -- the game_id
+        # resolves to no ``items`` row, so the lookup itself missed. A RESOLVED item with
+        # an empty comparison falls through to the ``ok`` path below (§V106 b/B147),
+        # keeping B91's distinct wording as a limitation there.
         return error("not_found", _ITEM_NOT_FOUND_MESSAGE, suggested_action=_ITEM_NOT_FOUND_ACTION)
 
     shared_prov, deviations = hoist_drop_provenance(
@@ -599,6 +637,11 @@ def _shape_item(result: ItemDropsResult) -> ResponseEnvelope:
     # never drops one); the comparison is region-scoped (§V5), so every provenance row
     # shares the item's region.
     limitations: tuple[str, ...] = (_STALE_LIMITATION,) if result.stale else ()
+    # §V106 (b)/B91: the item resolved and the comparison is empty. The distinct
+    # craft/synthesis wording + the get_data_status pointer ride here now, where they used
+    # to be a ``not_found`` body -- the split B91 asked for, one status later.
+    if not result.stages:
+        limitations = (*limitations, _ITEM_NO_DROPS_LIMITATION)
     # §V104 (b)/(c): the item block carries item_type, so its STATIC domain + the
     # source-defined "may grow" caveat ride the response, not the description (§V111 a).
     limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_ITEM_TOOL_NAME], limitations)

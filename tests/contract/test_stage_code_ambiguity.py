@@ -166,8 +166,11 @@ def test_unique_code_stays_silent(conn: sqlite3.Connection) -> None:
 
 def test_drop_divergent_groups_exist_and_are_disclosed(conn: sqlite3.Connection) -> None:
     # 206 shared codes on this build resolve to a stage with no drop cache while a
-    # sibling under the same code has one, so the not_found says nothing about the code
+    # sibling under the same code has one, so the empty answer says nothing about the code
     # the client asked about. Count them from the table, then drive the tool on one.
+    # §V106 (b): the stage RESOLVED, so the answer is an ``ok`` with an empty ``drops`` --
+    # the alternates that make it retryable now ride a limitation instead of the
+    # suggested_action an ``ok`` envelope has no room for (§V111 b, text moved not cut).
     with_drops = {int(pk) for (pk,) in conn.execute("SELECT DISTINCT stage_pk FROM stage_drops")}
     divergent: list[tuple[str, str, list[str]]] = []
     for server in ("en", "cn"):
@@ -178,10 +181,11 @@ def test_drop_divergent_groups_exist_and_are_disclosed(conn: sqlite3.Connection)
 
     server, code, alternates = divergent[0]
     env = build_get_stage_drops_spec(lambda: conn).handler(server=server, stage_code=code)
-    assert env.status == "not_found"
-    action = env.to_dict()["data"]["suggested_action"]  # type: ignore[index]
-    assert f"the stage_code {code} is also used by" in action
-    assert alternates[0] in action
+    assert env.status == "ok"
+    assert env.to_dict()["data"]["drops"] == []  # type: ignore[index]
+    hint = next(lim for lim in env.limitations if "may be the stage that holds" in lim)
+    assert f"The stage_code {code} is also used by" in hint
+    assert alternates[0] in hint
 
 
 def test_resolution_is_deterministic_across_every_shared_code(conn: sqlite3.Connection) -> None:

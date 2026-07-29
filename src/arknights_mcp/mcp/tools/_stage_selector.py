@@ -87,20 +87,29 @@ def stage_ambiguity_limitation(ambiguity: StageAmbiguity | None) -> tuple[str, .
     )
 
 
-def stage_ambiguity_action(ambiguity: StageAmbiguity | None, action: str) -> str:
-    """Extend a ``not_found`` suggested action with the alternates a shared code hid.
+def stage_ambiguity_drop_hint(ambiguity: StageAmbiguity | None) -> tuple[str, ...]:
+    """Name the alternates that may hold the drops a shared code hid (§V102/§V24; T195).
 
-    §V102/§V24: ``get_stage_drops`` reports ``not_found`` for a stage that resolved fine
-    but holds no drop cache, and a shared stage_code can make that verdict an artefact of
-    the pick rather than of the data -- on the 2026-07-28 build 206 shared codes have a
-    first-by-order stage with no drops while a sibling under the SAME code has them (cn
-    "10-10" picks ``easy_10-09`` over ``main_10-09`` / ``tough_10-09``). Naming the
-    alternates turns a dead end into the one retry that works. Returns ``action``
-    unchanged when the selector was unambiguous. Client-facing text (§V71 b)."""
+    ``get_stage_drops`` can answer "no drops" for a stage that resolved fine, and a shared
+    stage_code makes that answer an artefact of the PICK rather than of the data -- on the
+    2026-07-28 build 206 shared codes have a first-by-order stage with no drops while a
+    sibling under the SAME code has them (cn "10-10" picks ``easy_10-09`` over
+    ``main_10-09`` / ``tough_10-09``). Naming the alternates turns a dead end into the one
+    retry that works.
+
+    This text was T195's ``not_found`` ``suggested_action``. §V106 (b) made that answer an
+    ``ok`` (the stage resolved; only the drop SET is empty), which leaves an ``ok``
+    envelope with no ``suggested_action`` field to carry it -- so it MOVED to the
+    limitation surface rather than being dropped (§V111 b). It is deliberately separate
+    from :func:`stage_ambiguity_limitation`, which discloses the pick on EVERY shared-code
+    response; this one adds the drops-specific retry and rides only the empty answer.
+
+    Returns an empty tuple when the selector was unambiguous. Client-facing text (§V71 b).
+    """
     if ambiguity is None:
-        return action
+        return ()
     return (
-        f"{action}; the stage_code {ambiguity.stage_code} is also used by "
+        f"The stage_code {ambiguity.stage_code} is also used by "
         f"{_alternates_phrase(ambiguity)}, which may be the stage that holds the drop "
-        "data -- retry with one of those game_ids"
+        "data -- retry with one of those game_ids.",
     )

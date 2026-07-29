@@ -32,10 +32,10 @@
                   }
                 ],
                 "description": "Increases ATK to {atk_scale:0%} when attacking.",
-                "requiredPotentialRank": 0,
-                "unlockCondition": {
+                "required_potential_rank": 0,
+                "unlock_condition": {
                   "level": 1,
-                  "phase": "PHASE_2"
+                  "phase": 2
                 }
               }
             ]
@@ -64,11 +64,11 @@
                   }
                 ],
                 "description": "Adds a {prob:0%} chance to recover extra SP on attack.",
-                "requiredPotentialRank": 0,
-                "talentIndex": 0,
-                "unlockCondition": {
+                "required_potential_rank": 0,
+                "talent_index": 0,
+                "unlock_condition": {
                   "level": 1,
-                  "phase": "PHASE_2"
+                  "phase": 2
                 }
               }
             ],

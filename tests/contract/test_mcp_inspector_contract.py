@@ -98,19 +98,30 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "get_data_sources": {},
 }
 
-#: One well-formed-but-unmatched call per tool -> the typed ``not_found`` status.
-#: The data-metadata tools have no ``not_found`` archetype: they report the active
-#: build's own posture, so a well-formed call always yields a delivered status
-#: (``ok``/``data_stale``), never a missing entity -- they are absent from this map.
+#: One call per tool whose target does not exist -> the typed ``not_found`` status.
+#: §V106 (a): this is the LOOKUP archetype -- a named entity that is absent. The data
+#: metadata tools have no such archetype (they report the active build's own posture, so a
+#: well-formed call always yields a delivered status), and neither do the SEARCH tools,
+#: whose empty answer is a §V106 (b) set-query result asserted in
+#: :data:`_EMPTY_SET_CALLS` instead. Both are absent from this map.
 _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
-    "search_entities": {"query": "zzzznotanentity"},
-    "search_stages": {"query": "zzzznotastage"},
     "get_stage": {"server": "en", "stage_code": "99-99"},
     "get_enemy": {"server": "en", "game_id": "enemy_9999_ghost"},
     "get_operator": {"server": "en", "game_id": "char_999_ghost"},
     "compare_operator_modules": {"server": "en", "game_id": "char_999_ghost"},
     "analyze_stage": {"server": "en", "stage_code": "99-99"},
     "get_stage_drops": {"server": "en", "stage_code": "99-99"},
+    "get_item_drops": {"server": "en", "game_id": "nosuchitem"},
+}
+
+#: §V106 (b): one well-formed call per SET-query tool whose answer is legitimately empty.
+#: B147's defect was that these answered ``not_found`` while ``get_announcements`` answered
+#: ``ok`` + ``[]`` for the same shape of question, so a client branching on ``status`` read
+#: one as failure and the other as success. Both archetypes are pinned side by side here
+#: so a future tool cannot quietly rejoin the wrong one.
+_EMPTY_SET_CALLS: dict[str, dict[str, object]] = {
+    "search_entities": {"query": "zzzznotanentity"},
+    "search_stages": {"query": "zzzznotastage"},
 }
 
 
@@ -237,7 +248,10 @@ def test_data_status_provenance_single_carrier(registry: ToolRegistry) -> None:
         assert entry["imported_at"]
         # Extras stay on the row; null commit/version keys are scrubbed (§V67).
         assert snap["source_id"]
-        assert "age_days" in snap and "status" in snap
+        # §V99 (T198): the row's lifecycle state is ``import_status`` -- bare ``status``
+        # is the envelope's result status, a different axis in the same payload.
+        assert "age_days" in snap and "import_status" in snap
+        assert "status" not in snap
         assert "commit_sha" not in snap and "upstream_version" not in snap
 
 
@@ -255,6 +269,24 @@ def test_not_found_call_returns_typed_status(registry: ToolRegistry, name: str) 
     # §V24: a not_found points at an admin action, never a query-time download/scrape.
     action = str(data.get("suggested_action", ""))
     assert "download" not in action.lower() and "scrape" not in action.lower()
+
+
+@pytest.mark.parametrize("name", sorted(_EMPTY_SET_CALLS))
+def test_empty_set_call_returns_ok_with_an_empty_collection(
+    registry: ToolRegistry, name: str
+) -> None:
+    # §V106 (b)/B147: an empty answer to a well-formed set query is a DELIVERED result --
+    # ``ok``, an empty collection, and a limitation carrying the why. No ``message`` key,
+    # because this is not an error envelope.
+    env = _call(registry, name, **_EMPTY_SET_CALLS[name])
+    assert env.status == "ok"
+    data = env.to_dict()["data"]
+    assert isinstance(data, dict)
+    assert data["results"] == []
+    assert "message" not in data
+    assert env.limitations, "an empty set must say why it is empty"
+    # §V24: the guidance never hints a query-time download/scrape either.
+    assert all("download" not in lim.lower() for lim in env.limitations)
 
 
 # --- ambiguous -> exactly-one-selector guard + §V23 vocabulary -----------------
@@ -444,7 +476,11 @@ def test_data_status_data_stale_keeps_full_posture_body(tmp_path: Path) -> None:
     assert isinstance(data, dict)
     # Full posture body, not the error {message} shape.
     assert "message" not in data
-    assert data["status"] == "data_stale"
+    # §V99/§V66 (B148, T198): the verdict is read from the ENVELOPE. The ``data`` echoes of
+    # ``status``/``analyzer_version`` are gone, and the DB migration id is keyed
+    # ``db_schema_version`` so it no longer collides with the envelope's ``schema_version``.
+    assert "status" not in data and "analyzer_version" not in data
+    assert "schema_version" not in data and "db_schema_version" in data
     assert data["snapshots"] == []
     assert data["warnings"]  # names the empty-build condition
     assert data["suggested_action"]  # names the admin action (sync/import)

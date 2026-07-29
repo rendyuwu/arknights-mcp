@@ -149,8 +149,67 @@ def test_adr_0012_indexed_in_readme() -> None:
     assert ADR_0012 in readme, "ADR 0012 not linked from the ADR index"
 
 
-def test_schema_version_matches_flipped_v02() -> None:
-    # The flip is the operative half of T150: the constant and the ADR agree.
+# ---------------------------------------------------------------------------
+# T198: ADR 0017 — response-shape v0.3. The five §B fixes each filed "BREAKING ->
+# the T198 bump" land together under ONE coordinated schema_version flip. Like
+# 0011/0012 it is a §V21-mandated wire-contract ADR (it reverses no founder
+# decision), so it is checked on its own for shape + the invariants it
+# coordinates (§V21/§V99/§V100/§V71/§V106).
+#
+# Unlike 0012/0013/0014 it OPENS a version rather than folding into v0.2: those
+# folds rested on ADR 0012's "no external release while T146 is pending" gate,
+# and T146 has landed. The ADR has to say so, or the next reader reads the fold
+# precedent as a standing rule and mutates a released shape.
+# ---------------------------------------------------------------------------
+
+ADR_0017 = "0017-response-shape-v0.3.md"
+
+#: The invariants T198 coordinates under the single 0.2 -> 0.3 bump.
+ADR_0017_INVARIANT_CITES = ["V21", "V99", "V100", "V71", "V106"]
+
+
+def test_adr_0017_present() -> None:
+    assert (ADR_DIR / ADR_0017).is_file(), f"missing ADR: {ADR_0017}"
+
+
+def test_adr_0017_shape() -> None:
+    text = (ADR_DIR / ADR_0017).read_text(encoding="utf-8")
+    assert "Status:" in text and "Accepted" in text
+    assert "## Context" in text
+    assert "## Decision" in text
+    assert "## Consequences" in text
+
+
+def test_adr_0017_cites_coordinated_invariants() -> None:
+    text = (ADR_DIR / ADR_0017).read_text(encoding="utf-8")
+    for inv in ADR_0017_INVARIANT_CITES:
+        assert f"§{inv}" in text, f"ADR 0017 does not cite §{inv}"
+
+
+def test_adr_0017_records_the_single_coordinated_bump() -> None:
+    # The whole point of T198 (and B69's lesson): ONE tracked flip for the whole
+    # set, recorded here rather than as a footnote in the last bundle member.
+    text = (ADR_DIR / ADR_0017).read_text(encoding="utf-8")
+    assert "schema_version" in text.lower()
+    assert "0.2" in text and "0.3" in text
+
+
+def test_adr_0017_justifies_opening_a_version_instead_of_folding() -> None:
+    # ADRs 0011-0014 folded into the unreleased v0.2 line on ADR 0012's release
+    # gate. Minting 0.3 reverses that precedent, so the reason -- the T146 gate is
+    # discharged -- must be ON the record, not inferred by whoever reads it next.
+    text = (ADR_DIR / ADR_0017).read_text(encoding="utf-8")
+    assert "T146" in text
+    assert "0014" in text, "ADR 0017 does not name the fold precedent it departs from"
+
+
+def test_adr_0017_indexed_in_readme() -> None:
+    readme = (ADR_DIR / "README.md").read_text(encoding="utf-8")
+    assert ADR_0017 in readme, "ADR 0017 not linked from the ADR index"
+
+
+def test_schema_version_matches_flipped_v03() -> None:
+    # The flip is the operative half of T198: the constant and the ADR agree.
     from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 
-    assert SCHEMA_VERSION == "0.2"
+    assert SCHEMA_VERSION == "0.3"

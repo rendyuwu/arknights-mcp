@@ -18,9 +18,11 @@ Two invariants are load-bearing here:
   it again. A malformed request is *rejected* (the ``ValidationError`` propagates
   as a protocol-level error), never silently widened into a bulk dump.
 * **§V23** -- every delivered result is a typed-status envelope
-  (``ok``/``not_found``); a database failure or any unexpected error fails closed
-  to a fixed, path/trace-free envelope (``database_unavailable``/``internal_error``),
-  never a leaked exception.
+  (``ok`` for any delivered set, including an empty one -- §V106 (b): a search is a
+  set query, so zero hits is an ``ok`` with an empty ``results`` and a limitation
+  carrying the why, never ``not_found``). A database failure or any unexpected error
+  fails closed to a fixed, path/trace-free envelope
+  (``database_unavailable``/``internal_error``), never a leaked exception.
 
 Search hits are region-tagged *locators* (the ``server`` field on each row keeps
 en/cn from mixing, §V5); a client fetches full facts + provenance through the
@@ -56,7 +58,7 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 #: Search-coverage + region-order notes shared by both sibling search descriptions
 #: (§V75: same rule stated in both, one home §V37; short client-facing sentences,
 #: §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) -- say so where
-#: the client reads, instead of letting a ja query die as a bare not_found;
+#: the client reads, instead of letting a ja query die as an unexplained empty set;
 #: zone display names ARE indexed as stage aliases (T179), so a zone name surfaces
 #: that zone's stages, and so does the EVENT TITLE those zones belong to (§V110/T205 --
 #: a separate string from a separate file, ``activity_table``; before it was imported
@@ -72,7 +74,7 @@ SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 #: listed en before cn (search_stages lists exact stage-code matches ahead of the
 #: region order), so the ``results[0]`` grab is predictable and the escape hatch
 #: (server filter / per-row server field) is named. The en/cn-only clause is one
-#: constant because the not_found actions repeat it -- one home, three readers.
+#: constant because both empty-result limitations repeat it -- one home, three readers.
 _EN_CN_ONLY_CLAUSE = "names are indexed in English and Chinese only"
 #: §V84/§V111 (§T207): this block was 788 chars and BYTE-IDENTICAL in both search
 #: descriptions -- exactly the ">=500-char identical block across >=2 tool descriptions"
@@ -162,17 +164,33 @@ _STAGES_TOOL_DESCRIPTION = (
     + _ZONE_EVENT_NOTE
 )
 
-#: Fixed, safe copy for the typed ``not_found`` envelopes (§V23 -- no query echo,
-#: no stack trace, no local path). The shared DB-unavailable/internal fail-closed
-#: copy + guard live in ``_shared.run_guarded`` (one failure mode, one home §V37).
-_ENTITIES_NOT_FOUND_MESSAGE = "no indexed entity matched the search query"
-_ENTITIES_NOT_FOUND_ACTION = (
-    "broaden the query, drop the server/entity_type filter, or check the spelling; "
-    + _EN_CN_ONLY_CLAUSE
+#: §V106 (b)/B147: a search is a SET QUERY, so zero hits is an ``ok`` result with an
+#: empty ``results`` list -- not ``not_found``, which reports a well-formed question as a
+#: failed request and made a client branching on ``status`` treat "no name matched
+#: 'Amyia'" as a failure while treating "no announcements in this window" as a success.
+#: The wording that used to be the error ``message`` + ``suggested_action`` is MOVED here
+#: rather than dropped (§V111 b): the reason and the retry guidance still reach the
+#: client, now as the limitation an ``ok`` envelope carries. Same home as the shipped
+#: ``get_announcements`` precedent (T206), which folds its action into the limitation
+#: string rather than adding a ``suggested_action`` key to an ``ok`` payload.
+#: Fixed, safe copy (§V23 -- no query echo, no stack trace, no local path); no internal
+#: cites or jargon (§V71 b). The shared DB-unavailable/internal fail-closed copy + guard
+#: live in ``_shared.run_guarded`` (one failure mode, one home §V37).
+_ENTITIES_NO_MATCH_LIMITATION = (
+    "No indexed entity matched the search query. Broaden the query, drop the "
+    "server/entity_type filter, or check the spelling; " + _EN_CN_ONLY_CLAUSE + "."
 )
-_STAGES_NOT_FOUND_MESSAGE = "no indexed stage matched the search query"
-_STAGES_NOT_FOUND_ACTION = (
-    "broaden the query, drop the server filter, or check the stage code; " + _EN_CN_ONLY_CLAUSE
+_STAGES_NO_MATCH_LIMITATION = (
+    "No indexed stage matched the search query. Broaden the query, drop the server "
+    "filter, or check the stage code; " + _EN_CN_ONLY_CLAUSE + "."
+)
+#: The OTHER empty case (§V106 b): the query passed the input model but held no letters
+#: or digits, so no search expression could be built at all. A distinct sentence, because
+#: reporting it as "nothing matched" would tell the client its query ran and failed when
+#: in fact it never ran. Shared by both tools -- one wording, one home (§V37).
+_NO_SEARCHABLE_TOKENS_LIMITATION = (
+    "The query contains no letters or digits, so there was nothing to search for. "
+    "Retry with a name, a stage code, or a game id."
 )
 
 #: Fixed, safe copy for the §V50 region-availability verdicts, shared by both
@@ -238,24 +256,24 @@ def _guarded_search(
     run: SearchRunner,
     *,
     tool_name: str,
-    not_found_message: str,
-    not_found_action: str,
+    no_match_limitation: str,
 ) -> ResponseEnvelope:
     """Run a search service call and map it to a typed §V23 envelope.
 
     Shared by ``search_entities`` and ``search_stages``: the only per-tool
-    variation is the runner (which service + params), the ``not_found`` copy, and the
+    variation is the runner (which service + params), the empty-result copy, and the
     ``tool_name`` the §V104 legend fields are keyed on. The connection acquisition +
     fail-closed error handling is delegated to the shared :func:`run_guarded` (§V37);
-    here we own only the search-specific ``ok`` locator shaping and the ``not_found``
-    mapping.
+    here we own only the search-specific locator shaping and the §V106 empty-set
+    limitation.
     """
 
     def shape(result: SearchResult) -> ResponseEnvelope:
         # §V50/§V24: the service gates region availability before asserting
         # absence, so an unsupported region or an empty region index surfaces as a
-        # typed region verdict -- never a bare ``not_found`` that would wrongly
-        # claim the entity is absent from a region that simply has no data (B42).
+        # typed region verdict -- never an empty ``ok`` that would wrongly claim the
+        # entity is absent from a region that simply has no data (B42). §V106 keeps
+        # these two as REAL errors, fired BEFORE the empty-set rule below.
         if result.status == "unsupported_server":
             return error(
                 "unsupported_server",
@@ -264,8 +282,6 @@ def _guarded_search(
             )
         if result.status == "data_stale":
             return error("data_stale", _DATA_STALE_MESSAGE, suggested_action=_DATA_STALE_ACTION)
-        if result.status == "not_found":
-            return error("not_found", not_found_message, suggested_action=not_found_action)
         data: dict[str, object] = {
             "query": result.query,
             "count": len(result.hits),
@@ -280,6 +296,13 @@ def _guarded_search(
         limitations = attach_enum_legend(
             data, TOOL_ENUM_LEGEND_FIELDS[tool_name] if emits_difficulty else (), ()
         )
+        # §V106 (b): an empty set is a delivered answer, so the WHY rides a limitation
+        # instead of an error body. The two empty cases carry different sentences -- a
+        # query that ran and matched nothing is not a query that could not run at all.
+        if result.empty_reason == "no_match":
+            limitations = (*limitations, no_match_limitation)
+        elif result.empty_reason == "no_searchable_tokens":
+            limitations = (*limitations, _NO_SEARCHABLE_TOKENS_LIMITATION)
         return ok(data, limitations=limitations)
 
     return run_guarded(get_conn, run, shape)
@@ -311,8 +334,7 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 limit=parsed.limit,
             ),
             tool_name=_ENTITIES_TOOL_NAME,
-            not_found_message=_ENTITIES_NOT_FOUND_MESSAGE,
-            not_found_action=_ENTITIES_NOT_FOUND_ACTION,
+            no_match_limitation=_ENTITIES_NO_MATCH_LIMITATION,
         )
 
     return ToolSpec(
@@ -345,8 +367,7 @@ def build_search_stages_spec(get_conn: ConnectionProvider) -> ToolSpec:
                 limit=parsed.limit,
             ),
             tool_name=_STAGES_TOOL_NAME,
-            not_found_message=_STAGES_NOT_FOUND_MESSAGE,
-            not_found_action=_STAGES_NOT_FOUND_ACTION,
+            no_match_limitation=_STAGES_NO_MATCH_LIMITATION,
         )
 
     return ToolSpec(

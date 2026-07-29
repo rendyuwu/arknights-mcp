@@ -40,8 +40,10 @@ def test_ok_envelope_stamps_schema_version_first() -> None:
 
 def test_schema_version_is_stable_string() -> None:
     # A change here is a breaking wire-contract change (§V21 -> bump + ADR).
-    # v0.2 = the coordinated M13 + M14 reshape (ADR 0011 folded + ADR 0012).
-    assert SCHEMA_VERSION == "0.2"
+    # v0.3 = the coordinated T198 reshape (ADR 0017): item rarity as a 1-indexed int,
+    # entity-prefixed ranking keys, snake_case change bundles with one phase encoding,
+    # empty-set queries answering ok, and the get_data_status key collisions.
+    assert SCHEMA_VERSION == "0.3"
 
 
 def test_field_order_matches_interface_contract() -> None:

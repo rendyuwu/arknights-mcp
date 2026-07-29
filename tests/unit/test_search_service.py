@@ -69,10 +69,14 @@ def test_search_by_stage_code(conn: sqlite3.Connection) -> None:
     assert stage.stage_code == "4-4"
 
 
-def test_no_match_is_not_found(conn: sqlite3.Connection) -> None:
+def test_no_match_is_an_empty_ok_with_a_reason(conn: sqlite3.Connection) -> None:
+    # §V106 (b)/B147: a search is a SET query, so zero hits is a delivered empty answer,
+    # not a failed request. The typed reason is what lets the tool say WHY without the
+    # domain owning any client-facing wording (§V71 b).
     result = search_entities(conn, query="zzzznotanentity")
-    assert result.status == "not_found"
+    assert result.status == "ok"
     assert result.hits == ()
+    assert result.empty_reason == "no_match"
 
 
 # --- region scoping (§V5) -----------------------------------------------------
@@ -112,11 +116,14 @@ def test_unsupported_region_is_unsupported_server(conn: sqlite3.Connection) -> N
     assert search_stages(conn, query="4-4", server="jp").status == "unsupported_server"
 
 
-def test_supported_region_with_snapshot_still_asserts_absence(conn: sqlite3.Connection) -> None:
-    # §V50: ``not_found`` is legitimate once the region index is confirmed present --
-    # an en snapshot exists, so a genuinely-absent en entity is ``not_found``.
+def test_supported_region_with_snapshot_reports_a_real_absence(conn: sqlite3.Connection) -> None:
+    # §V50/§V106: once the region index is confirmed present, absence is a real answer --
+    # and since T198 that answer is ``ok`` + ``no_match``, never a ``data_stale`` gate.
+    # The distinction is the point of §V50: "this region has no data" and "this region has
+    # data and none of it matched" must not arrive as the same status.
     result = search_entities(conn, query="zzzznotanentity", server="en")
-    assert result.status == "not_found"
+    assert result.status == "ok"
+    assert result.empty_reason == "no_match"
 
 
 def test_empty_index_unscoped_search_is_data_stale(tmp_path: Path) -> None:
@@ -144,8 +151,12 @@ def test_entity_type_filter(conn: sqlite3.Connection) -> None:
 
 
 def test_query_metacharacters_are_safe(conn: sqlite3.Connection) -> None:
-    # A query of only FTS metacharacters holds no word token -> nothing to search.
-    assert search_entities(conn, query="*:^()").status == "not_found"
+    # A query of only FTS metacharacters holds no word token -> nothing to search. That
+    # is its OWN empty case (§V106 b): the query never ran, so it must not be reported as
+    # a query that ran and matched nothing.
+    metacharacters = search_entities(conn, query="*:^()")
+    assert metacharacters.status == "ok"
+    assert metacharacters.empty_reason == "no_searchable_tokens"
     # A stray FTS operator / paren is stripped; the real token still matches and
     # the MATCH never sees an injected operator or syntax error (§V2/§V18).
     assert any(h.game_id == "enemy_1105_drone" for h in search_entities(conn, query="drone)").hits)

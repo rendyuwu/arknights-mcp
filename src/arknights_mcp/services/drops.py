@@ -62,8 +62,12 @@ from arknights_mcp.services.stages import (
 )
 
 #: Typed outcome of a drop lookup. ``data_stale`` is reported when at least one
-#: served drop is past its ``expires_at`` (§V53); ``not_found`` when the stage is
-#: absent OR the stage has no drop cache (§V24).
+#: served drop is past its ``expires_at`` (§V53); ``not_found`` ONLY when the stage
+#: itself is absent -- a LOOKUP of a named entity that does not exist (§V106 a).
+#: A stage that RESOLVES but has no drop cache is a SET QUERY that came back empty,
+#: which is ``ok`` + an empty ``drops`` + a limitation carrying the why (§V106 b): an
+#: empty answer to a well-formed question is not an error, and a client branching on
+#: ``status`` must not read "this stage has no cached drops" as a failed request (B147).
 StageDropsStatus = Literal["ok", "data_stale", "not_found"]
 
 
@@ -78,7 +82,9 @@ class DropFacts:
 
     item_game_id: str
     item_display_name: str | None
-    item_rarity: str | None
+    #: §V99/B133: the 1-indexed item TIER, not the 0-indexed string penguin stores.
+    #: See :func:`_item_rarity_tier`.
+    item_rarity: int | None
     item_type: str | None
     region: str
     quantity: int | None
@@ -120,18 +126,24 @@ class StageDropsResult:
     analyzer_version: str | None
     stale: bool
     #: §V102 (§T195): set when the requested ``stage_code`` matched more than one stage.
-    #: Carried on the ``not_found`` result too, unlike the sibling stage tools: this tool
-    #: reports not_found for a resolved stage that simply has no drop cache, and on the
+    #: Carried on the EMPTY-drops result too, unlike the sibling stage tools: on the
     #: 2026-07-28 build 206 shared codes have a first-by-stage_pk stage with NO drops
     #: while a sibling under the same code HAS them (cn "10-10" picks ``easy_10-09`` over
     #: ``main_10-09``/``tough_10-09``) -- so the silent pick, not the data, produced the
-    #: "no drops" answer, and the alternates belong in the suggested action (§V24/§V102).
+    #: "no drops" answer, and the alternates belong in the disclosure (§V24/§V102). Since
+    #: T198 that empty answer is ``ok`` + an empty ``drops`` rather than ``not_found``
+    #: (§V106 b), so the alternates ride a limitation instead of a suggested action; the
+    #: fact they disclose, and the reason it is load-bearing, are unchanged.
     ambiguity: StageAmbiguity | None = None
 
 
 #: Typed outcome of an item->stage drop comparison (§T103). ``data_stale`` when at
-#: least one served stage drop is past its ``expires_at`` (§V53); ``not_found`` when
-#: the item is absent OR has no drop cache in any stage (§V24/§V60).
+#: least one served stage drop is past its ``expires_at`` (§V53); ``not_found`` ONLY
+#: when the item is absent -- a LOOKUP of a game_id that resolves to nothing (§V106 a).
+#: A RESOLVED item with no drop cache in any stage is a SET QUERY that came back empty
+#: (§V106 b): ``ok`` + empty ``stages`` + the distinct B91 limitation. Only the STATUS
+#: moved -- B91's two-way message split is preserved, because the item DID resolve, so
+#: the lookup succeeded and only the comparison is empty.
 ItemDropsStatus = Literal["ok", "data_stale", "not_found"]
 
 
@@ -147,7 +159,9 @@ class ItemFacts:
     server: str
     game_id: str
     display_name: str | None
-    rarity: str | None
+    #: §V99/B133: the 1-indexed item TIER (see :func:`_item_rarity_tier`), the same
+    #: type and the same numeric base as the sibling ``operators.rarity`` star count.
+    rarity: int | None
     item_type: str | None
 
 
@@ -243,12 +257,42 @@ def _is_expired(expires_at: str, now: datetime) -> bool:
     return now >= parsed
 
 
+def _item_rarity_tier(rarity: str | None) -> int | None:
+    """The 1-indexed item TIER for a stored 0-indexed rarity string (§V99/B133).
+
+    One wire key must carry one JSON type and one numeric base across every entity type
+    that emits it (§V99). It did not: penguin stores ``items.rarity`` as 0-INDEXED TEXT
+    (``"0"`` = T1 ... ``"4"`` = T5 -- Orirock ``"0"``, Orirock Cube ``"1"``, D32 Steel
+    ``"4"``) while the sibling ``operators.rarity`` is a 1-INDEXED INTEGER star count
+    (1..6), so ``rarity`` differed in BOTH type and base with neither documented, and a
+    client could not tell a 1-star operator from a T2 material by the field alone (B133).
+    Both now emit the number a player actually sees: an int, 1-indexed, so §V99's "same
+    type AND same base, else rename one" holds without renaming either key. The scale is
+    stated in each emitting tool's description rather than left to game knowledge.
+
+    This is a READ-side bridge only: the importer keeps what penguin sent, so no stored
+    byte changes and no rebuild is owed (§V92 untouched). Applied at the single §V37
+    shaping home both drop directions already funnel through (:func:`_drop_facts` and
+    :func:`_item_facts`), so the two views can never disagree on the scale.
+
+    ``None`` when the source carried nothing, or when the value is not an integer at all
+    -- an unreadable rarity is ABSENT (§V67 omits the key), never a fabricated tier
+    (§V26: never guess a fact the source did not state).
+    """
+    if rarity is None:
+        return None
+    try:
+        return int(rarity) + 1
+    except ValueError:
+        return None
+
+
 def _drop_facts(row: StageDropRow, now: datetime) -> DropFacts:
     """Shape a repository row into the typed, region-attributed drop fact (§V5/§V54)."""
     return DropFacts(
         item_game_id=row.item_game_id,
         item_display_name=row.item_display_name,
-        item_rarity=row.item_rarity,
+        item_rarity=_item_rarity_tier(row.item_rarity),
         item_type=row.item_type,
         region=row.region,
         quantity=row.quantity,
@@ -311,13 +355,25 @@ def get_stage_drops(
 
     drop_rows = DropRepository(conn).drops_for_stage(stage.stage_pk)
     if not drop_rows:
-        # A stage with no drop cache asserts no drop fact -- report it as absent with
-        # a suggested admin action (§V24), rather than an empty ``ok`` that reads as
-        # "this stage drops nothing". The tool maps this to a not_found envelope.
-        # §V102: the ambiguity rides along, because a shared stage_code makes this the
-        # ONE path where the silent pick can invent the absence -- the stage that has
-        # the drops may be an alternate under the very code the client asked for.
-        return _not_found(server, ambiguity)
+        # §V106 (b)/B147: the stage RESOLVED, so the lookup succeeded and only the drop
+        # SET came back empty -- ``ok`` with an empty ``drops``, never ``not_found``
+        # (which would report a well-formed question as a failed request). The stage is
+        # returned so the tool can state which stage the empty answer is about and
+        # attach the §V26 limitation carrying the why + the next step.
+        # §V102: the ambiguity still rides along, because a shared stage_code makes this
+        # the ONE path where the silent pick can invent the absence -- the stage that
+        # has the drops may be an alternate under the very code the client asked for.
+        return StageDropsResult(
+            status="ok",
+            server=stage.server,
+            stage=_stage_facts(stage),
+            drops=(),
+            observation=None,
+            warnings=(),
+            analyzer_version=None,
+            stale=False,
+            ambiguity=ambiguity,
+        )
 
     facts = tuple(_drop_facts(row, clock) for row in drop_rows)
     stale = any(f.expired for f in facts)
@@ -377,7 +433,7 @@ def _item_facts(item: ItemRow) -> ItemFacts:
         server=item.server,
         game_id=item.game_id,
         display_name=item.display_name,
-        rarity=item.rarity,
+        rarity=_item_rarity_tier(item.rarity),
         item_type=item.item_type,
     )
 
@@ -400,19 +456,26 @@ def _item_stage_drop_facts(row: ItemStageDropRow, now: datetime) -> ItemStageDro
     )
 
 
-def _item_not_found(server: str, item: ItemFacts | None = None) -> ItemDropsResult:
-    """A ``not_found`` item comparison (§V60/§V24).
+def _item_empty(
+    server: str, item: ItemFacts | None = None, *, status: ItemDropsStatus = "not_found"
+) -> ItemDropsResult:
+    """An item comparison carrying no stages (§V60/§V24/§V106).
 
-    ``item`` is ``None`` when the game_id resolves to no ``items`` row (an UNKNOWN
-    item); it carries the resolved identity when the item EXISTS but has 0 stage-drop
-    cache -- a craft/synthesis-only (Workshop) or otherwise non-farmed material that
-    will never have a penguin drop row. Both are ``not_found`` on the wire, but the
-    tool reads which reason from whether ``item`` is set, so it can point a resolved
-    zero-drop item at ``get_data_status`` (a freshness self-check) instead of an admin
-    re-sync that would add nothing (B91).
+    Two different outcomes share this shape, and ``item`` is what tells them apart:
+
+    * ``item is None`` -- the game_id resolves to no ``items`` row. An UNKNOWN item is a
+      LOOKUP miss, so it stays ``not_found`` (§V106 a) and the tool points at
+      ``search_entities`` + an admin re-sync.
+    * ``item`` set -- the item EXISTS but has 0 stage-drop cache: a craft/synthesis-only
+      (Workshop) or otherwise non-farmed material that will never have a penguin drop
+      row. The lookup SUCCEEDED and only the comparison SET is empty, so the caller
+      passes ``status="ok"`` (§V106 b/B147). B91's split is untouched by that move -- the
+      tool still emits the distinct "exists but no observed stage drop" text pointing at
+      ``get_data_status`` (a freshness self-check) rather than the re-sync that would add
+      nothing; only the status changed.
     """
     return ItemDropsResult(
-        status="not_found",
+        status=status,
         server=server,
         item=item,
         stages=(),
@@ -465,11 +528,12 @@ def get_item_drops(
     with the stage's ``sanity_cost`` + ``stage_code`` + penguin provenance (§V54).
     Read-only; parameterized SQL only (§V2); never a query-time penguin fetch (§V52).
 
-    An absent item, or an item with no drop cache in any stage, is a ``not_found``
-    (§V24), never a query-time download fallback. The two reasons are distinguished so
-    the tool can point the right next step (§V60/B91): an UNKNOWN item returns
-    ``item=None``; a RESOLVED item with 0 drop cache (a craft/synthesis-only material)
-    carries its resolved identity on the ``not_found`` result. A stage drop served past
+    Neither empty outcome is ever a query-time download fallback (§V24), and the two are
+    distinguished so the tool can point the right next step (§V60/B91): an UNKNOWN item
+    returns ``item=None`` and stays ``not_found`` (§V106 a -- the lookup missed); a
+    RESOLVED item with 0 drop cache (a craft/synthesis-only material) carries its
+    resolved identity and returns ``ok`` with an empty ``stages`` (§V106 b -- the lookup
+    succeeded, only the comparison set is empty). A stage drop served past
     its ``expires_at`` is still returned
     but flagged, and the status is ``data_stale`` (§V53) -- expired figures are
     downgraded, never dropped from the comparison (§V60). When ``include_efficiency``
@@ -497,17 +561,18 @@ def get_item_drops(
     repo = DropRepository(conn)
     item = repo.item_by_game_id(server, game_id)
     if item is None:
-        return _item_not_found(server)
+        return _item_empty(server)
 
     drop_rows = repo.drops_for_item(item.item_pk, server)
     if not drop_rows:
         # The item RESOLVED but has no drop cache -- a craft/synthesis-only or otherwise
-        # non-farmed material (§V60/B91). Report it not_found (never an empty ``ok`` that
-        # reads as "drops nothing"), but carry the resolved identity so the tool points a
+        # non-farmed material (§V60/B91). §V106 (b)/B147: the lookup succeeded, so this is
+        # a SET QUERY with 0 hits -> ``ok`` + an empty ``stages``, not ``not_found``. The
+        # resolved identity is carried so the tool keeps B91's distinct wording -- a
         # freshness self-check (`get_data_status`) rather than an admin re-sync that would
-        # add nothing -- a synthesis-only mat has no stage drop to fetch. Distinct from an
-        # UNKNOWN item (item is None above), which keeps the search_entities + sync action.
-        return _item_not_found(server, item=_item_facts(item))
+        # add nothing, since a synthesis-only mat has no stage drop to fetch. Distinct
+        # from an UNKNOWN item (item is None above), which stays a §V106 (a) lookup miss.
+        return _item_empty(server, item=_item_facts(item), status="ok")
 
     # The FULL set drives the stale verdict + provenance + (below) the ranking, so
     # neither ever depends on which page was requested (§V22/§V19, B21).

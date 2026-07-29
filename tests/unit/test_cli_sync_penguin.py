@@ -201,9 +201,13 @@ def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
         # The game data promoted (the stage exists) but no drop cache was written.
         assert conn.execute("SELECT COUNT(*) FROM stages WHERE server='en'").fetchone()[0] >= 1
         assert conn.execute("SELECT COUNT(*) FROM stage_drops").fetchone()[0] == 0
-        # get_stage_drops reports the stage has no drop cache (not_found), never fresh.
+        # get_stage_drops reports the stage has no drop cache, never fresh figures.
+        # §V106 (b): the stage itself imported fine, so the empty drop set is an ``ok``
+        # with no drops -- the tool layer attaches the limitation that says why.
         result = get_stage_drops(conn, server="en", stage_code="4-4")
-    assert result.status == "not_found"
+    assert result.status == "ok"
+    assert result.drops == ()
+    assert result.stage is not None
 
 
 # --- a non-adapter/non-importer error in the penguin path still fails open (§V58) ---
@@ -266,7 +270,12 @@ def test_sync_all_rolls_back_only_failing_region(tmp_path: Path) -> None:
         en = get_stage_drops(conn, server="en", stage_code="4-4")
         cn = get_stage_drops(conn, server="cn", stage_code="4-4")
     assert en.status == "ok"
-    assert cn.status == "not_found"
+    assert en.drops != ()
+    # cn's drop import rolled back, so cn has the stage but no drops (§V106 b: ``ok`` with
+    # an empty set). The en/cn asymmetry -- which is what this test is about -- is read
+    # from the drops, not from the status.
+    assert cn.status == "ok"
+    assert cn.drops == ()
 
 
 # --- disabled penguin is never fetched (§V58 opt-in) --------------------------------

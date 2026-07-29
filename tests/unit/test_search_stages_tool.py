@@ -267,20 +267,24 @@ def test_v80_tough_and_easy_prefix_locators_truthful(tmp_path: Path) -> None:
 # --- §V23 typed envelope: not_found -------------------------------------------
 
 
-def test_not_found_envelope(conn: sqlite3.Connection) -> None:
+def test_empty_result_is_ok_with_an_empty_list_and_a_reason(conn: sqlite3.Connection) -> None:
+    # §V106 (b)/B147: the sibling rule, stated identically here -- both search tools must
+    # answer an empty set the same way, which is exactly what B147 found they did not do.
     env = _handler(conn)(query="zzzznotastage")
-    assert env.status == "not_found"
-    data = env.to_dict()["data"]
-    assert isinstance(data, dict)
-    assert data["message"] == "no indexed stage matched the search query"
-    assert "suggested_action" in data
-    # §V24: a not_found never suggests a query-time download/scrape.
-    assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
+    assert env.status == "ok"
+    assert env.to_dict()["data"] == {"query": "zzzznotastage", "count": 0, "results": []}
+    assert any("No indexed stage matched" in lim for lim in env.limitations)
+    # §V24: an empty answer never suggests a query-time download/scrape.
+    assert all("download" not in lim.lower() for lim in env.limitations)
 
 
-def test_metacharacter_only_query_is_not_found(conn: sqlite3.Connection) -> None:
-    # A query of only FTS metacharacters holds no word token -> nothing to search.
-    assert _handler(conn)(query="*:^()").status == "not_found"
+def test_metacharacter_only_query_reports_its_own_empty_reason(conn: sqlite3.Connection) -> None:
+    # A query of only FTS metacharacters holds no word token -> nothing to search, which
+    # is a different empty case from a search that ran and matched nothing (§V106 b).
+    env = _handler(conn)(query="*:^()")
+    assert env.status == "ok"
+    assert any("no letters or digits" in lim for lim in env.limitations)
+    assert all("No indexed stage matched" not in lim for lim in env.limitations)
 
 
 # --- §V19: bounded window -----------------------------------------------------
@@ -391,10 +395,9 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "Pass server" in desc
 
 
-def test_not_found_action_states_encn_only(conn: sqlite3.Connection) -> None:
-    # B97: the not_found escape hatch carries the en/cn-names-only coverage note.
+def test_empty_limitation_states_encn_only(conn: sqlite3.Connection) -> None:
+    # B97: the empty-result escape hatch carries the en/cn-names-only coverage note. It
+    # rides the ``ok`` limitation since T198 (§V106 b), not a not_found suggested_action.
     env = _handler(conn)(query="zzzznotastage")
-    assert env.status == "not_found"
-    data = env.to_dict()["data"]
-    assert isinstance(data, dict)
-    assert "English and Chinese only" in data["suggested_action"]  # type: ignore[operator]
+    assert env.status == "ok"
+    assert any("English and Chinese only" in lim for lim in env.limitations)

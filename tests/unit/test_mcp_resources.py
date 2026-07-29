@@ -278,7 +278,11 @@ def test_status_other_region_has_no_snapshots(resources: ResourceRegistry) -> No
     # §V5: a region with no active snapshot is data_stale for that region -- the
     # global "ok" verdict (en is present) must not leak into the cn view.
     assert body["status"] == "data_stale"
-    assert body["data"]["status"] == "data_stale"  # type: ignore[index]
+    # §V99/§V66 (B148, T198): the verdict lives on the ENVELOPE only. The ``data.status``
+    # echo is gone -- it duplicated the envelope carrier and shared its name with the
+    # snapshot rows' own lifecycle state, in the same payload.
+    assert "status" not in body["data"]  # type: ignore[operator]
+    assert "analyzer_version" not in body["data"]  # type: ignore[operator]
     assert body["data"]["warnings"]  # type: ignore[index]
 
 

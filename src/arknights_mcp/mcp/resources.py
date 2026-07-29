@@ -323,11 +323,13 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
                 env_status = "data_stale" if status.status == "data_stale" else "ok"
                 warnings = status.warnings
                 suggested_action = status.suggested_action
-            # Reuse the service's serialization (§V37) and override the region-scoped
-            # keys, rather than re-enumerating the status fields.
-            data = dict(status.to_dict())
+            # Reuse the service's enveloped projection (§V37/§V99 -- ``db_schema_version``
+            # for the DB migration id, no ``status``/``analyzer_version`` echo, B148) and
+            # override only the region-scoped keys, rather than re-enumerating the status
+            # fields. The region verdict now travels ONLY as the envelope status, which
+            # was always the field a client should branch on.
+            data = status.to_envelope_data()
             data["server"] = server
-            data["status"] = env_status
             # §V66/B78: the envelope ``provenance`` carries ``imported_at`` here too;
             # each snapshot row keeps the source/commit/version/age extras PLUS its
             # ``snapshot_id`` join key (§V87 -- one region holds several active

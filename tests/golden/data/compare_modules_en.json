@@ -37,10 +37,10 @@
                   "value": 1.1
                 }
               ],
-              "requiredPotentialRank": 0,
-              "unlockCondition": {
+              "required_potential_rank": 0,
+              "unlock_condition": {
                 "level": 1,
-                "phase": "PHASE_2"
+                "phase": 2
               }
             }
           ]
@@ -70,11 +70,11 @@
                 }
               ],
               "description": "Adds a {prob:0%} chance to recover extra SP on attack.",
-              "requiredPotentialRank": 0,
-              "talentIndex": 0,
-              "unlockCondition": {
+              "required_potential_rank": 0,
+              "talent_index": 0,
+              "unlock_condition": {
                 "level": 1,
-                "phase": "PHASE_2"
+                "phase": 2
               }
             }
           ],
@@ -165,7 +165,7 @@
       "evidence": [
         {
           "count": null,
-          "field": "talent_changes.talentIndex",
+          "field": "talent_changes.talent_index",
           "note": "module level 2",
           "ref": "uniequip_002_amiya",
           "value": 0

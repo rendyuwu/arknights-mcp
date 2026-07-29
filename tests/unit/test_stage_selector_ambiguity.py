@@ -48,7 +48,7 @@ from arknights_mcp.mcp.tools._shared import LEVEL_VARIANT_NOTE
 from arknights_mcp.mcp.tools._stage_selector import (
     MAX_LISTED_ALTERNATES,
     STAGE_SELECTOR_NOTE,
-    stage_ambiguity_action,
+    stage_ambiguity_drop_hint,
     stage_ambiguity_limitation,
 )
 from arknights_mcp.mcp.tools.drops import build_get_stage_drops_spec
@@ -212,32 +212,40 @@ def test_game_id_lookup_carries_no_disclosure(shared_code_conn: sqlite3.Connecti
 # --- §V24/§V102: the drops dead end names a retryable handle --------------------
 
 
-def test_drops_not_found_names_the_alternates(tmp_path: Path) -> None:
+def test_drops_empty_answer_names_the_alternates(tmp_path: Path) -> None:
     # On the shipped build 206 shared codes have a first-by-order stage with NO drops
     # while a sibling under the SAME code HAS them, so "no drop data" was an artefact of
     # the silent pick. Seed exactly that: the picked stage has no cache, the sibling does.
+    #
+    # §V106 (b) moved this answer from ``not_found`` to ``ok`` + an empty ``drops``, which
+    # leaves no ``suggested_action`` field to carry the alternates -- so they MOVED to the
+    # limitation surface (§V111 b: move a mandated fact, never delete it). The retry this
+    # discloses is the entire point of T195 and must survive the status change.
     path = _candidate(tmp_path, ambiguous=True)
     seed_item_across_stages(
         path, [StageDropSeed(stage_code="4-4", stage_game_id="zz_sibling_4-4", sanity_cost=18)]
     )
     conn = open_read_only(path)
     env = build_get_stage_drops_spec(lambda: conn).handler(server="en", stage_code="4-4")
-    assert env.status == "not_found"
-    action = env.to_dict()["data"]["suggested_action"]  # type: ignore[index]
-    assert VARIANT_GAME_ID in action
-    assert "zz_sibling_4-4" in action
-    assert "retry with one of those game_ids" in action
+    assert env.status == "ok"
+    assert env.to_dict()["data"]["drops"] == []  # type: ignore[index]
+    hint = next(lim for lim in env.limitations if "retry with one of those game_ids" in lim)
+    assert VARIANT_GAME_ID in hint
+    assert "zz_sibling_4-4" in hint
+    assert "may be the stage that holds the drop data" in hint
 
 
-def test_drops_not_found_action_is_unchanged_when_the_code_is_unique(
+def test_drops_empty_answer_adds_no_alternates_when_the_code_is_unique(
     unique_code_conn: sqlite3.Connection,
 ) -> None:
+    # An unambiguous selector carries no noise: the empty answer still says WHY it is
+    # empty, but nothing claims a sibling stage might hold the data.
     env = build_get_stage_drops_spec(lambda: unique_code_conn).handler(
         server="en", stage_code="4-4"
     )
-    assert env.status == "not_found"
-    action = env.to_dict()["data"]["suggested_action"]  # type: ignore[index]
-    assert "is also used by" not in action
+    assert env.status == "ok"
+    assert all("is also used by" not in lim for lim in env.limitations)
+    assert any("lists no drops" in lim for lim in env.limitations)
 
 
 # --- §V22/§V66: the alternates list is bounded, the count stays exact -----------
@@ -272,8 +280,10 @@ def test_capped_read_is_reported_as_open_ended() -> None:
 
 
 def test_no_ambiguity_emits_nothing() -> None:
+    # Both disclosures are silent on an unambiguous selector -- a game_id lookup, or a
+    # code matching exactly one stage, carries no alternates and so no noise.
     assert stage_ambiguity_limitation(None) == ()
-    assert stage_ambiguity_action(None, "do the thing") == "do the thing"
+    assert stage_ambiguity_drop_hint(None) == ()
 
 
 def test_difficulty_is_omitted_when_the_stage_has_none() -> None:

@@ -45,6 +45,12 @@ class SnapshotStatus:
     status: str
 
     def to_dict(self) -> dict[str, object]:
+        # §V99: the emitted key is ``import_status``, never ``status``. This row's
+        # ``"imported"`` is a SNAPSHOT LIFECYCLE state, while the envelope's ``status``
+        # is the tool's §V23 result status -- one name for two unrelated axes in one
+        # response is the same namespace collision B148 caught on ``schema_version``
+        # a few keys away. The dataclass attribute keeps its short name; only the wire
+        # (and the CLI ``--json`` that shares this projection) is disambiguated.
         return {
             "server": self.server,
             "source_id": self.source_id,
@@ -53,7 +59,7 @@ class SnapshotStatus:
             "upstream_version": self.upstream_version,
             "imported_at": self.imported_at,
             "age_days": self.age_days,
-            "status": self.status,
+            "import_status": self.status,
         }
 
     def to_provenance_extras(self, *, include_server: bool = False) -> dict[str, object]:
@@ -73,6 +79,9 @@ class SnapshotStatus:
         rather than emitted null (§V67 -- ``age_days`` is None when ``imported_at``
         does not parse). ``to_dict`` keeps the full row for the CLI
         ``status``/``--json``, which has no envelope provenance.
+
+        §V99: the lifecycle state is keyed ``import_status`` here as well, matching
+        :meth:`to_dict` -- one vocabulary across the tool, the resource, and the CLI.
         """
         extras: dict[str, object] = {"source_id": self.source_id, "snapshot_id": self.snapshot_id}
         if include_server:
@@ -83,7 +92,7 @@ class SnapshotStatus:
             extras["upstream_version"] = self.upstream_version
         if self.age_days is not None:
             extras["age_days"] = self.age_days
-        extras["status"] = self.status
+        extras["import_status"] = self.status
         return extras
 
 
@@ -103,9 +112,19 @@ class DataStatus:
     generated_at: str
 
     def to_dict(self) -> dict[str, object]:
+        """The full status body, for a caller with no envelope (the CLI ``--json``).
+
+        §V99/B148: the DB migration id is keyed ``db_schema_version``, never
+        ``schema_version``. That name belongs to the response-contract version stamped on
+        every MCP envelope, and this field is an unrelated axis -- the active build's
+        migration (``"0018_enemy_range_declared_none"``). Both used to ship as
+        ``schema_version`` in ONE ``get_data_status`` response, undocumented, so a client
+        could not tell which of the two governed. The CLI has no envelope and so no
+        collision, but it reads the same name for the same fact (§V37: one vocabulary).
+        """
         return {
             "status": self.status,
-            "schema_version": self.schema_version,
+            "db_schema_version": self.schema_version,
             "analyzer_version": self.analyzer_version,
             "mode": self.mode,
             "snapshots": [s.to_dict() for s in self.snapshots],
@@ -115,6 +134,22 @@ class DataStatus:
             "suggested_action": self.suggested_action,
             "generated_at": self.generated_at,
         }
+
+    def to_envelope_data(self) -> dict[str, object]:
+        """The status body for an MCP ``data`` payload (§V99/§V66; B148).
+
+        :meth:`to_dict` minus the two fields the envelope already carries. A
+        ``get_data_status`` response shipped ``status`` and ``analyzer_version`` at BOTH
+        levels -- pure duplication, and §V66 is explicit that the envelope is the sole
+        carrier. Dropping them here rather than at each call site is what keeps the tool
+        and the ``arknights://status/{server}`` resource from re-forking the projection
+        (§V37/§V34): both build their payload from this one method and override only the
+        region-scoped keys they genuinely differ on.
+        """
+        data = self.to_dict()
+        del data["status"]
+        del data["analyzer_version"]
+        return data
 
 
 def _age_days(imported_at: str, now: datetime) -> int | None:

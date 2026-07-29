@@ -83,9 +83,19 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     # view (§V77). to_dict stays full for the CLI, which has no envelope provenance.
     assert snap.commit_sha is None and snap.upstream_version is None
     extras = snap.to_provenance_extras()
-    assert extras.keys() == {"source_id", "snapshot_id", "age_days", "status"}
+    # §V99 (T198): the lifecycle state is keyed ``import_status``. Bare ``status`` is the
+    # envelope's §V23 result status, and one name for two unrelated axes in one response
+    # is the collision B148 caught on ``schema_version`` a few keys away.
+    assert extras.keys() == {"source_id", "snapshot_id", "age_days", "import_status"}
+    assert "status" not in extras
     with_server = snap.to_provenance_extras(include_server=True)
-    assert with_server.keys() == {"server", "source_id", "snapshot_id", "age_days", "status"}
+    assert with_server.keys() == {
+        "server",
+        "source_id",
+        "snapshot_id",
+        "age_days",
+        "import_status",
+    }
     assert with_server["server"] == "en"
     assert with_server["snapshot_id"] == snap.snapshot_id
     assert {"server", "snapshot_id", "imported_at"} <= snap.to_dict().keys()

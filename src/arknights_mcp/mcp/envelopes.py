@@ -43,10 +43,22 @@ from arknights_mcp.mcp.payload_hygiene import clean_payload
 #: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
 #: ``ANALYZER`` versions). Additive optional fields do not bump it.
-#: v0.2 = the single coordinated M13 + M14 breaking reshape (ADR 0011 + ADR 0012):
-#: ranked-single efficiency obs, hoisted provenance, snake_case fields, digested
-#: routes, string-grid tiles, hoisted skill templates. One bump for the whole set.
-SCHEMA_VERSION = "0.2"
+#:
+#: v0.2 was the single coordinated M13 + M14 breaking reshape (ADR 0011 + 0012, widened
+#: by 0013 + 0014): ranked-single efficiency obs, hoisted provenance, snake_case fields,
+#: digested routes, string-grid tiles, hoisted skill templates.
+#:
+#: v0.3 (T198, ADR 0017) is the next such set -- again ONE bump for the whole thing,
+#: because B69's lesson is that a breaking reshape landing without its coordinated flip
+#: leaves a stale tag on a reshaped payload, and that the flip has to be a TRACKED task
+#: rather than a footnote in the last bundle member. Its members:
+#:   * item ``rarity`` -> int on the same 1-indexed base as operator rarity (§V99/B133)
+#:   * ranking rows entity-prefixed, a code in ``*_code`` (§V100/B134)
+#:   * change-bundle keys snake_case + one unlock-phase encoding (§V71 d/B140)
+#:   * empty SET query -> ``ok`` + empty collection + limitation (§V106/B147)
+#:   * ``get_data_status``: ``db_schema_version`` / ``import_status``, echoes dropped
+#:     (§V99/B148)
+SCHEMA_VERSION = "0.3"
 
 #: §V22 default response cap. The serialized envelope (as emitted by
 #: :meth:`ResponseEnvelope.to_dict` -> JSON) must stay under this size, measured

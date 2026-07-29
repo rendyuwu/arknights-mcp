@@ -125,27 +125,37 @@ def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
 
 def test_entity_type_filter(conn: sqlite3.Connection) -> None:
     assert _handler(conn)(query="drone", entity_type="enemy").status == "ok"
-    assert _handler(conn)(query="drone", entity_type="stage").status == "not_found"
+    filtered_out = _handler(conn)(query="drone", entity_type="stage")
+    # §V106 (b): the filter excluded everything, which is an empty ANSWER, not a failure.
+    assert filtered_out.status == "ok"
+    assert filtered_out.to_dict()["data"] == {"query": "drone", "count": 0, "results": []}
 
 
-# --- §V23 typed envelope: not_found -------------------------------------------
+# --- §V106 (b) typed envelope: an empty set is a delivered ``ok`` --------------
 
 
-def test_not_found_envelope(conn: sqlite3.Connection) -> None:
+def test_empty_result_is_ok_with_an_empty_list_and_a_reason(conn: sqlite3.Connection) -> None:
+    # B147: this used to be ``not_found``, so a client branching on status read "no name
+    # matched" as a failed request while reading get_announcements' empty window as a
+    # success. The reason + retry guidance MOVED from the error body to the limitation
+    # (§V111 b) -- nothing a client could read before was dropped.
     env = _handler(conn)(query="zzzznotanentity")
-    assert env.status == "not_found"
+    assert env.status == "ok"
     data = env.to_dict()["data"]
-    assert isinstance(data, dict)
-    assert data["message"] == "no indexed entity matched the search query"
-    assert "suggested_action" in data
-    # §V24: a not_found never suggests a query-time download/scrape.
-    assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
+    assert data == {"query": "zzzznotanentity", "count": 0, "results": []}
+    assert any("No indexed entity matched" in lim for lim in env.limitations)
+    # §V24: an empty answer never suggests a query-time download/scrape either.
+    assert all("download" not in lim.lower() for lim in env.limitations)
 
 
-def test_metacharacter_only_query_is_not_found(conn: sqlite3.Connection) -> None:
-    # A query of only FTS metacharacters holds no word token -> nothing to search.
-    # §V50: the region index is present (en snapshot), so absence is assertable.
-    assert _handler(conn)(query="*:^()").status == "not_found"
+def test_metacharacter_only_query_reports_its_own_empty_reason(conn: sqlite3.Connection) -> None:
+    # A query of only FTS metacharacters holds no word token -> nothing to search. §V106
+    # (b) still makes it an ``ok``, but with a DIFFERENT sentence: telling the client its
+    # query matched nothing would claim a search ran that never did.
+    env = _handler(conn)(query="*:^()")
+    assert env.status == "ok"
+    assert any("no letters or digits" in lim for lim in env.limitations)
+    assert all("No indexed entity matched" not in lim for lim in env.limitations)
 
 
 # --- §V50/§V24 region availability gate (B42) ---------------------------------
@@ -312,11 +322,11 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
     assert "search_stages" in desc
 
 
-def test_ja_query_not_found_action_states_encn_only(conn: sqlite3.Connection) -> None:
-    # B97: a Japanese-name query dies as not_found; the suggested action must say
-    # names are indexed in English and Chinese only, not just "check the spelling".
+def test_ja_query_empty_limitation_states_encn_only(conn: sqlite3.Connection) -> None:
+    # B97: a Japanese-name query comes back empty; the guidance must say names are indexed
+    # in English and Chinese only, not just "check the spelling". §V106 moved that text
+    # from the not_found suggested_action to the ``ok`` limitation; the requirement on it
+    # is unchanged -- a ja query must still learn WHY it can never match.
     env = _handler(conn)(query="シルバーアッシュ")
-    assert env.status == "not_found"
-    data = env.to_dict()["data"]
-    assert isinstance(data, dict)
-    assert "English and Chinese only" in data["suggested_action"]  # type: ignore[operator]
+    assert env.status == "ok"
+    assert any("English and Chinese only" in lim for lim in env.limitations)

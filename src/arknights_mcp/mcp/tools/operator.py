@@ -93,6 +93,7 @@ _TOOL_DESCRIPTION = (
     "inside data; the envelope carries it either way. To compare one operator's modules "
     "across their upgrade levels side by side, or for evidence-backed module "
     "observations, use compare_operator_modules instead. en/cn are never mixed. "
+    "The operator's rarity is their star count as an integer, 1 to 6. "
     "The response's enum_legend gives the values of profession and position, and of a "
     "skill's skill_type, sp_type, and duration_type. A skill's effect template rides the "
     "skill when it is the same at every level, and the level when the wording differs. "

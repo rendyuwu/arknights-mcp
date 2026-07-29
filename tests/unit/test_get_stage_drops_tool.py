@@ -151,16 +151,25 @@ def test_wrong_region_is_not_found(fresh_conn: sqlite3.Connection) -> None:
     assert _handler(fresh_conn)(server="cn", stage_code="4-4").status == "not_found"
 
 
-def test_stage_without_drops_is_not_found(bare_conn: sqlite3.Connection) -> None:
-    # §V24: a stage with no drop cache reports absent + a suggested admin action,
-    # never an empty ``ok`` that reads as "this stage drops nothing".
+def test_stage_without_drops_is_an_empty_ok(bare_conn: sqlite3.Connection) -> None:
+    # §V106 (b)/B147: the stage RESOLVED and only the drop set is empty, so this is a
+    # delivered answer -- ``ok`` with ``drops: []`` (a CONFIRMED none, §V67) and the why
+    # on a limitation. It used to be ``not_found``, which reported a well-formed question
+    # as a failed request. §V106 (a) is asserted alongside so the two cannot collapse into
+    # one status again: an ABSENT stage is still a lookup miss.
     env = _handler(bare_conn)(server="en", stage_code="4-4")
-    assert env.status == "not_found"
+    assert env.status == "ok"
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    action = data["suggested_action"]
+    assert data["drops"] == []
+    assert data["stage"]["stage_code"] == "4-4"  # type: ignore[index]
+    limitation = next(lim for lim in env.limitations if "lists no drops" in lim)
+    # The wording must not read as a claim about the game, only about the cache.
+    assert "not a claim that the stage drops nothing" in limitation
     # §V24: never a query-time download/scrape fallback.
-    assert "download" not in str(action).lower() and "scrape" not in str(action).lower()
+    assert "download" not in limitation.lower() and "scrape" not in limitation.lower()
+    # §V106 (a): an absent stage is a real lookup miss and stays typed as one.
+    assert _handler(bare_conn)(server="en", stage_code="99-99").status == "not_found"
 
 
 # --- §V53 expiry -> data_stale ------------------------------------------------
@@ -202,8 +211,12 @@ def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 1
     row = ranking[0]
-    assert row["id"] == "sugar"  # §V68: the unambiguous item game_id
-    assert row["name"] == "Sugar"  # §V69: display name paired alongside the id
+    # §V100/B134: entity-PREFIXED keys, so the referent is readable from the key alone.
+    # A generic ``id``/``name`` here is what let the sibling get_item_drops put a STAGE id
+    # and a stage CODE under the same two names.
+    assert row["item_game_id"] == "sugar"  # §V68: the unambiguous item game_id
+    assert row["item_display_name"] == "Sugar"  # §V69: display name paired with the id
+    assert "id" not in row and "name" not in row
     assert row["sanity_per_item"] == 72.0  # 18 / 0.25
     assert row["quantity"] == 1250 and row["times"] == 5000
     assert row["drop_rate"] == 0.25  # §V76: 4dp on the wire
@@ -278,7 +291,7 @@ def test_partial_ranking_keeps_unrankable_drop_raw(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     assert set(data) == {"stage", "drop_provenance", "drops", "efficiency", "enum_legend"}
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
-    assert [r["id"] for r in ranking] == ["sugar"]
+    assert [r["item_game_id"] for r in ranking] == ["sugar"]
     drops = data["drops"]
     assert isinstance(drops, list)
     assert [d["item_game_id"] for d in drops] == ["zerodrop"]

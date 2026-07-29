@@ -311,8 +311,8 @@ def test_distinct_evidence_values_stay_separate_rows() -> None:
     module = _token_module((ModuleTalentChange(talent_index=0), ModuleTalentChange(talent_index=1)))
     talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
     assert [(ev.field, ev.value) for ev in talent.evidence] == [  # type: ignore[attr-defined]
-        ("talent_changes.talentIndex", 0),
-        ("talent_changes.talentIndex", 1),
+        ("talent_changes.talent_index", 0),
+        ("talent_changes.talent_index", 1),
     ]
     assert all(ev.count is None for ev in talent.evidence)  # type: ignore[attr-defined]
 

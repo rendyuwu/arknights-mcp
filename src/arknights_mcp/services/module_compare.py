@@ -37,11 +37,13 @@ from arknights_mcp.analyzers import (
     analyze_modules,
 )
 from arknights_mcp.db.repositories.operators import OperatorRepository
+from arknights_mcp.services.effect_changes import (
+    dedup_and_label_changes,
+    hoist_uniform_changes,
+)
 from arknights_mcp.services.operators import (
     OperatorProvenance,
     cost_item_ids,
-    dedup_and_label_changes,
-    hoist_uniform_changes,
     hoist_uniform_template,
     pair_cost_item_names,
     shape_blackboard,

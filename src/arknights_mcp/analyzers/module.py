@@ -234,7 +234,10 @@ def _talent_observation(module: ModuleInput) -> Observation | None:
             evidence.append(
                 EvidenceItem(
                     ref=module.game_id,
-                    field="talent_changes.talentIndex",
+                    # §V101/§V71 (d): the path is the one the wire really carries, so it
+                    # moved with the T198 rename -- the emitted key is ``talent_index``
+                    # now, and a stale camelCase path here would resolve to nothing.
+                    field="talent_changes.talent_index",
                     value=idx,
                     note=f"module level {level.level}",
                 )

@@ -195,12 +195,13 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
     assert result.item is None and result.stages == ()
 
 
-def test_item_with_no_drop_cache_is_not_found(tmp_path: Path) -> None:
-    # An item that exists but has no stage_drops rows still reports not_found (§V24) --
-    # there is no comparison to rank -- but the service CARRIES the resolved identity on
-    # the result (§V60/B91), distinct from an UNKNOWN item (which returns item=None), so
-    # the tool can point a craft/synthesis-only material at a freshness self-check rather
-    # than an admin re-sync that would add no drop.
+def test_item_with_no_drop_cache_is_an_empty_ok(tmp_path: Path) -> None:
+    # §V106 (b)/B147: an item that EXISTS but has no stage_drops rows is a set query that
+    # came back empty -- the lookup succeeded, so the status is ``ok``, not ``not_found``.
+    # The service still CARRIES the resolved identity (§V60/B91), distinct from an UNKNOWN
+    # item (which returns item=None), so the tool can point a craft/synthesis-only
+    # material at a freshness self-check rather than an admin re-sync that adds no drop.
+    # B91's split survives the status change; that is the whole point of carrying ``item``.
     path = _candidate(tmp_path)
     conn0 = sqlite3.connect(str(path))
     try:
@@ -225,12 +226,13 @@ def test_item_with_no_drop_cache_is_not_found(tmp_path: Path) -> None:
         conn0.close()
     conn = open_read_only(path)
     result = get_item_drops(conn, server="en", game_id="orphan")
-    assert result.status == "not_found"
+    assert result.status == "ok"
     assert result.stages == ()
-    # §V60/B91: the resolved identity rides the not_found result (a craft-only material),
-    # so the tool can distinguish it from an UNKNOWN item (item=None).
+    # §V60/B91: the resolved identity rides the empty result (a craft-only material), so
+    # the tool can distinguish it from an UNKNOWN item (item=None), which stays not_found.
     assert result.item is not None
     assert result.item.game_id == "orphan"
+    assert get_item_drops(conn, server="en", game_id="nosuchitem").status == "not_found"
 
 
 # --- §V2: read-only ------------------------------------------------------------

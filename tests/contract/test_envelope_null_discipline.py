@@ -31,18 +31,24 @@ the same commit that adds it.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from tests.support.drops import seed_stage_drop
+from tests.support.tool_calls import (
+    BUILD_CALLS,
+    FIXTURE_CALLS,
+    active_build,
+    assert_every_tool_is_covered,
+    registry_for,
+    serialized_envelopes,
+)
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.tool_registry import ToolRegistry
-from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -57,99 +63,10 @@ MANIFEST = REPO_ROOT / "data" / "current.json"
 #: justification -- it is not a place to park a regression.
 _ALLOWED_NULL_PATHS: frozenset[str] = frozenset()
 
-#: Every registered tool, with the calls this guard drives it through. Keyed by tool name
-#: so :func:`test_every_registered_tool_is_covered` can fail on a tool that is registered
-#: but unlisted. Include flags are ON wherever a tool has them: an opt-in section that is
-#: off emits nothing, and B135's own ``map.map_version`` lives behind ``include_map``.
-_FIXTURE_CALLS: dict[str, tuple[dict[str, object], ...]] = {
-    "search_entities": ({"query": "drone"}, {"query": "4-4", "entity_type": "stage"}),
-    "search_stages": ({"query": "4-4"},),
-    "get_stage": (
-        {
-            "server": "en",
-            "stage_code": "4-4",
-            "include_map": True,
-            "include_routes": True,
-            "include_spawns": True,
-            "include_map_image": True,
-        },
-    ),
-    "get_enemy": ({"server": "en", "game_id": "enemy_1007_slime"},),
-    "get_operator": (
-        {
-            "server": "en",
-            "game_id": "char_002_amiya",
-            "include_skills": True,
-            "include_talents": True,
-            "include_modules": True,
-            "include_phases": True,
-            "include_provenance": True,
-        },
-    ),
-    "compare_operator_modules": ({"server": "en", "game_id": "char_002_amiya"},),
-    "analyze_stage": ({"server": "en", "stage_code": "4-4", "depth": "detailed"},),
-    "get_stage_drops": ({"server": "en", "stage_code": "4-4", "include_efficiency": True},),
-    "get_item_drops": ({"server": "en", "game_id": "sugar", "include_efficiency": True},),
-    "get_announcements": ({"server": "en"},),
-    "get_banners": ({"server": "en"},),
-    "get_data_status": ({},),
-    "get_data_sources": ({},),
-}
-
-#: The promoted-build arm. Same tools, but pointed at the rows that carry the absences a
-#: hand-built fixture does not have: ``guide_01`` (no display name), ``st_07-04``,
-#: ``char_4162_cathy`` (talents with no name), Amiya (a talent variant with no blackboard).
-_BUILD_CALLS: dict[str, tuple[dict[str, object], ...]] = {
-    **_FIXTURE_CALLS,
-    "get_stage": (
-        {
-            "server": "en",
-            "game_id": "main_04-04",
-            "include_map": True,
-            "include_routes": True,
-            "include_spawns": True,
-            "include_map_image": True,
-        },
-        {"server": "en", "game_id": "guide_01"},
-        {"server": "en", "game_id": "st_07-04"},
-    ),
-    "get_operator": (
-        {
-            "server": "en",
-            "game_id": "char_002_amiya",
-            "include_skills": True,
-            "include_talents": True,
-            "include_modules": True,
-            "include_phases": True,
-            "include_provenance": True,
-        },
-        {
-            "server": "en",
-            "game_id": "char_4162_cathy",
-            "include_skills": True,
-            "include_talents": True,
-            "include_modules": True,
-        },
-    ),
-    "search_stages": ({"query": "4-4"}, {"query": "Lone Trail"}),
-    "analyze_stage": ({"server": "en", "game_id": "main_04-04", "depth": "detailed"},),
-    "get_stage_drops": ({"server": "en", "game_id": "main_04-04", "include_efficiency": True},),
-    "get_item_drops": ({"server": "en", "game_id": "30012", "include_efficiency": True},),
-}
-
-
-def _active_build() -> Path | None:
-    """The promoted build's path, or ``None`` when nothing is promoted."""
-    if not MANIFEST.is_file():
-        return None
-    filename = json.loads(MANIFEST.read_text(encoding="utf-8")).get("database_filename")
-    if not filename:
-        return None
-    path = REPO_ROOT / "data" / "builds" / str(filename)
-    return path if path.is_file() else None
-
-
-BUILD = _active_build()
+#: The registry-driven call sets live in ``tests.support.tool_calls`` (§V37): three
+#: sweeps now share them, and a second copy would drift exactly where nobody is
+#: looking -- which is the failure this guard exists to prevent.
+BUILD = active_build()
 
 
 def null_paths(node: object, path: str = "$") -> Iterator[str]:
@@ -173,25 +90,11 @@ def null_paths(node: object, path: str = "$") -> Iterator[str]:
                 yield from null_paths(value, f"{path}[]")
 
 
-def _registry_for(conn: sqlite3.Connection) -> ToolRegistry:
-    return build_tool_registry(
-        lambda: conn,
-        registry=load_source_registry(REGISTRY),
-        mode="local",
-        image_refs_enabled=True,
-    )
-
-
 def _sweep(registry: ToolRegistry, calls: dict[str, tuple[dict[str, object], ...]]) -> list[str]:
     """Every ``(tool, path)`` pair that reached the wire as null, deduplicated."""
     found: set[str] = set()
-    for name in registry.names():
-        for params in calls[name]:
-            envelope = registry.get(name).handler(**params)
-            # Round-trip through JSON: this is the transport's own serialization, so the
-            # guard cannot pass on a shape only the in-process dataclass has.
-            body = json.loads(json.dumps(envelope.to_dict()))
-            found |= {f"{name} {p}" for p in null_paths(body)}
+    for name, body in serialized_envelopes(registry, calls):
+        found |= {f"{name} {p}" for p in null_paths(body)}
     return sorted(found - _ALLOWED_NULL_PATHS)
 
 
@@ -222,17 +125,12 @@ def test_every_registered_tool_is_covered(fixture_conn: sqlite3.Connection) -> N
     through a covered tool" but "a whole tool was never swept", which is how four rollouts
     left five live nulls behind.
     """
-    registered = set(_registry_for(fixture_conn).names())
-    assert registered - set(_FIXTURE_CALLS) == set(), "a registered tool has no null-sweep call"
-    assert registered - set(_BUILD_CALLS) == set()
-    # And the reverse: a call set for a tool that no longer exists is dead weight that
-    # would silently shrink the sweep.
-    assert set(_FIXTURE_CALLS) - registered == set()
+    assert_every_tool_is_covered(registry_for(fixture_conn))
 
 
 def test_no_tool_emits_a_null_leaf_on_the_fixture_corpus(fixture_conn: sqlite3.Connection) -> None:
     """§V67 over the offline corpus -- runs on every ``pytest -q``."""
-    assert _sweep(_registry_for(fixture_conn), _FIXTURE_CALLS) == []
+    assert _sweep(registry_for(fixture_conn), FIXTURE_CALLS) == []
 
 
 def test_the_sweep_actually_reaches_nested_and_list_leaves(
@@ -273,4 +171,4 @@ def test_no_tool_emits_a_null_leaf_on_the_promoted_build() -> None:
     """
     assert BUILD is not None
     with open_read_only(BUILD) as conn:
-        assert _sweep(_registry_for(conn), _BUILD_CALLS) == []
+        assert _sweep(registry_for(conn), BUILD_CALLS) == []

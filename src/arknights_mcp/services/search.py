@@ -34,17 +34,32 @@ _MAX_TOKENS = 16
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 #: Typed outcome (a subset of the §V23 status vocabulary wired into the tool
-#: envelope in §T32). ``not_found`` == the region index is present but the
-#: well-formed query matched nothing; ``unsupported_server`` / ``data_stale`` are
-#: the §V50 region-availability verdicts returned *before* asserting absence. The
-#: extra-locale (ja/ko) axis and its ``locale_unavailable`` / ``locale_not_applicable``
-#: verdicts are RETIRED (§V57, T156 -- founder 2026-07-23, EN+CN only).
+#: envelope in §T32). ``unsupported_server`` / ``data_stale`` are the §V50
+#: region-availability verdicts returned *before* absence is asserted at all.
+#:
+#: There is no ``not_found`` here (§V106/B147): a search is a SET QUERY, and a
+#: well-formed query that matched nothing is an ``ok`` result with an empty ``hits``
+#: plus a limitation carrying the why -- an empty answer to a well-formed question is
+#: not an error, and a client branching on ``status`` must not read "no name matched
+#: 'Amyia'" as a failure while reading "no announcements in this window" as a success.
+#: The §V50 gates above are REAL errors and still fire first.
+#:
+#: The extra-locale (ja/ko) axis and its ``locale_unavailable`` /
+#: ``locale_not_applicable`` verdicts are RETIRED (§V57, T156 -- founder 2026-07-23,
+#: EN+CN only).
 SearchStatus = Literal[
     "ok",
-    "not_found",
     "unsupported_server",
     "data_stale",
 ]
+
+#: Why an ``ok`` search came back with no hits (§V106 b). ``None`` on a non-empty
+#: result. The tool turns this into the client-facing limitation, so the DOMAIN records
+#: the reason and the wire wording stays in one place at the tool layer (§V37/§V71 b).
+#: ``no_match`` == the query tokenized fine and the FTS index simply had nothing;
+#: ``no_searchable_tokens`` == tokenization stripped the query to nothing (a query of
+#: punctuation alone), which is a different why and must not be reported as the first.
+EmptyReason = Literal["no_match", "no_searchable_tokens"]
 
 #: §V5 supported regions as a runtime set, derived from the single ``Region``
 #: literal home (§V37) so the search gate and the input model never diverge.
@@ -96,6 +111,10 @@ class SearchResult:
     status: SearchStatus
     query: str
     hits: tuple[SearchHit, ...]
+    #: §V106 (b): why an ``ok`` result carries no hits, so the tool can say which of the
+    #: two empty cases it is. Always ``None`` when ``hits`` is non-empty, and on a §V50
+    #: gate verdict (those carry their own typed status + copy).
+    empty_reason: EmptyReason | None = None
 
 
 def _match_expression(query: str) -> str | None:
@@ -159,8 +178,9 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
     """Map repository rows to region-tagged hits + a typed status (§V5/§V23).
 
     Single home (§V37) for the row -> :class:`SearchHit` shaping shared by
-    :func:`search_entities` and :func:`search_stages`; ``not_found`` == the query
-    was well-formed but the FTS match returned nothing.
+    :func:`search_entities` and :func:`search_stages`. A well-formed query that matched
+    nothing is ``ok`` with empty ``hits`` and ``empty_reason="no_match"`` (§V106 b) --
+    the set query succeeded and returned an empty set, which is not an error (B147).
     """
     hits = tuple(
         SearchHit(
@@ -179,7 +199,12 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
         )
         for row in rows
     )
-    return SearchResult(status="ok" if hits else "not_found", query=query, hits=hits)
+    return SearchResult(
+        status="ok",
+        query=query,
+        hits=hits,
+        empty_reason=None if hits else "no_match",
+    )
 
 
 def search_entities(
@@ -212,7 +237,10 @@ def search_entities(
         return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
-        return SearchResult(status="not_found", query=query, hits=())
+        # §V106 (b): the query survived the model gate but tokenized to nothing (all
+        # punctuation), so there is no MATCH expression to run. Still a set query with an
+        # empty answer -- ``ok`` with its OWN reason, never conflated with a real miss.
+        return SearchResult(status="ok", query=query, hits=(), empty_reason="no_searchable_tokens")
 
     repo = SearchRepository(conn)
     rows = repo.search(match, server=server, entity_type=entity_type, limit=bounded)
@@ -243,7 +271,10 @@ def search_stages(
         return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
-        return SearchResult(status="not_found", query=query, hits=())
+        # §V106 (b): the query survived the model gate but tokenized to nothing (all
+        # punctuation), so there is no MATCH expression to run. Still a set query with an
+        # empty answer -- ``ok`` with its OWN reason, never conflated with a real miss.
+        return SearchResult(status="ok", query=query, hits=(), empty_reason="no_searchable_tokens")
 
     repo = SearchRepository(conn)
     rows = repo.search_stages(match, exact_code=query, server=server, limit=bounded)

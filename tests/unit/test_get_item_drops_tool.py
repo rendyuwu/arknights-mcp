@@ -164,8 +164,11 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 3
     # §V60: ranked ascending by sanity per item -> stage a-1 (12) first, b-2 (120) last.
-    # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
-    assert [row["name"] for row in ranking] == ["a-1", "4-4", "b-2"]
+    # §V68/B57 + §V100/B134: the row id is the unambiguous stage_game_id and the code
+    # rides in ``stage_code``. It used to ride in a generic ``name`` -- but "a-1" is a
+    # CODE, not a display name, and the sibling get_stage_drops put an item display name
+    # under that same key, so one shape carried two referents.
+    assert [row["stage_code"] for row in ranking] == ["a-1", "4-4", "b-2"]
     assert [row["sanity_per_item"] for row in ranking] == [12.0, 72.0, 120.0]
     # §T161/B82: the ranking SUBSUMES the stage rows -- no separate stages list is
     # emitted, and each ranking row folds the raw drop facts (§V55 evidence:
@@ -173,8 +176,11 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     assert "stages" not in data and "stages_page" not in data
     for row in ranking:
         assert {"sanity_cost", "drop_rate", "times", "quantity"} <= set(row)
-    # §V68: the row id is the unambiguous stage_game_id, the stage_code rides as name.
-    assert all(row["id"] != row["name"] for row in ranking)
+    # §V68: the row id is the unambiguous stage_game_id, distinct from the shared code.
+    # §V100: neither generic key survives -- a client cannot be handed ``id``/``name``
+    # whose referent depends on which of the two sibling tools it called.
+    assert all(row["stage_game_id"] != row["stage_code"] for row in ranking)
+    assert all("id" not in row and "name" not in row for row in ranking)
     # Ascending -> the cheapest stage (a-1, sanity_cost 6) is first, with its facts.
     assert ranking[0]["sanity_cost"] == 6 and ranking[0]["drop_rate"] == 0.5
     # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
@@ -217,7 +223,7 @@ def test_include_efficiency_omits_stages_ranking_subsumes(tmp_path: Path) -> Non
     assert len(ranking) == 2
     # §V55 evidence rides each ranking row (facts folded in) + the derived figure.
     cheapest = ranking[0]
-    assert cheapest["name"] == "a-1"
+    assert cheapest["stage_code"] == "a-1"
     assert cheapest["sanity_cost"] == 6
     assert cheapest["times"] == 5000
     assert cheapest["drop_rate"] == 0.5
@@ -250,12 +256,13 @@ def test_v68_normal_and_tough_same_code_get_distinct_joinable_refs(tmp_path: Pat
     assert env.status == "ok"
     data = env.to_dict()["data"]
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
-    refs = [row["id"] for row in ranking]
+    refs = [row["stage_game_id"] for row in ranking]
     # main_10-09 = 18/0.25 = 72, tough_10-09 = 36/0.25 = 144 -> ascending main then tough.
     assert refs == ["main_10-09", "tough_10-09"]
     assert len(set(refs)) == 2  # two DISTINCT refs, not one ambiguous "14-18"
-    # §V68: the shared stage_code rides alongside as the display name, never as the ref.
-    assert all(row["name"] == "14-18" for row in ranking)
+    # §V68/§V100: the shared stage_code rides alongside in its own ``*_code`` key, never
+    # as the ref and never mislabelled as a name.
+    assert all(row["stage_code"] == "14-18" for row in ranking)
     assert "14-18" not in refs
     # §T161/B82: the ranking subsumes the stage rows -- the distinct refs live on the
     # single ranking list (no separate stages list to join to).
@@ -284,7 +291,7 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
     # §V77/§V5 (B79): region stated ONCE on the parent item, never per ranking row; only
     # the en stage is ranked -- the cn stage never leaks in.
-    assert [row["name"] for row in ranking] == ["4-4"]
+    assert [row["stage_code"] for row in ranking] == ["4-4"]
     assert all("region" not in row for row in ranking)
     # §V5: provenance is en-only.
     prov = env.to_dict()["provenance"]
@@ -310,10 +317,10 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert "stages" not in data
     obs = data["efficiency"]["observation"]  # type: ignore[index]
     ranking = obs["ranking"]
-    names = [row["name"] for row in ranking]
+    names = [row["stage_code"] for row in ranking]
     assert "a-1" in names
     # §V53: the expired stage is flagged on its ranking row, not withheld -- still ranked.
-    expired_row = next(row for row in ranking if row["name"] == "a-1")
+    expired_row = next(row for row in ranking if row["stage_code"] == "a-1")
     assert expired_row["expired"] is True
     # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
     assert expired_row["confidence"] < 0.5
@@ -430,7 +437,7 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
     # §V66.1: ONE observation; its ``ranking`` rows are this page of the global ranking.
     # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
     # §V68: the row id is the stage_game_id; assert order by the stage_code display name.
-    assert [row["name"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
+    assert [row["stage_code"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
     # §T161/B82: each ranking row folds the raw drop facts (§V55 evidence).
     assert all(
         {"sanity_cost", "drop_rate", "times"} <= set(r) for r in eff1["observation"]["ranking"]
@@ -443,7 +450,7 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
         efficiency_page={"page": 2, "page_size": 2},
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
     # Page 2 continues the SAME global ranking (not the two lowest of a fresh re-rank).
-    assert [row["name"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
+    assert [row["stage_code"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
     assert eff2["page"]["has_more"] is True
     # §V60/§V66.1: the mandatory comparison caveats ride the observation on every page.
     assert "availability" in " ".join(eff2["observation"]["limitations"]).lower()
@@ -498,7 +505,7 @@ def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) 
     assert page1.status == "data_stale"
     ob1 = page1.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
     rows1 = ob1["ranking"]
-    assert [r["name"] for r in rows1] == ["a-1"]
+    assert [r["stage_code"] for r in rows1] == ["a-1"]
     # The fresh page-1 row carries no marker (item view keys expiry per row, §V60)...
     assert "expired" not in rows1[0] and "confidence" not in rows1[0]
     # ...but the full-set hoisted sentence still rides this page's observation.
@@ -511,7 +518,7 @@ def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) 
     )
     ob2 = page2.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
     rows2 = ob2["ranking"]
-    assert [r["name"] for r in rows2] == ["z-9"]
+    assert [r["stage_code"] for r in rows2] == ["z-9"]
     assert rows2[0]["expired"] is True and rows2[0]["confidence"] < 0.5
     assert any("expired" in lim for lim in ob2["limitations"])
 
@@ -541,30 +548,42 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
     assert "search_entities" in str(action)
 
 
-def test_resolved_item_with_no_drops_is_distinct_not_found(tmp_path: Path) -> None:
+def test_resolved_item_with_no_drops_is_a_distinct_empty_ok(tmp_path: Path) -> None:
     # §V60/B91: an item that RESOLVES but has zero stage-drop cache is a craft/synthesis-only
-    # material -- it will NEVER have a penguin drop row, so the not_found must NOT read like an
-    # unknown-item miss (which points at an admin re-sync). It gets a distinct message + a
-    # freshness self-check pointer (get_data_status), never the re-sync that would add nothing.
+    # material -- it will NEVER have a penguin drop row, so its empty answer must NOT read
+    # like an unknown-item miss (which points at an admin re-sync). It gets a distinct
+    # sentence + a freshness self-check pointer (get_data_status), never the re-sync that
+    # would add nothing.
+    #
+    # §V106 (b)/B147 moved only the STATUS: the item resolved, so the lookup succeeded and
+    # the empty comparison is an ``ok``. B91's two-way split is what this test guards, and
+    # it must survive that move intact -- which is why both arms are asserted here.
     path = _candidate(tmp_path)
     seed_item_without_drops(path, item_game_id="30155", item_display_name="Nucleic Crystal Sinter")
     env = _handler(open_read_only(path))(server="en", game_id="30155")
-    assert env.status == "not_found"
+    assert env.status == "ok"
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    message = str(data["message"])
-    action = str(data["suggested_action"])
-    # The message says the item EXISTS (not an unknown-id miss).
-    assert "exists" in message.lower()
+    # §V106 (b): the empty collection is emitted, and the item it is about is named.
+    assert data["stages"] == []
+    assert data["item"]["game_id"] == "30155"  # type: ignore[index]
+    caveat = next(lim for lim in env.limitations if "no stage that drops it" in lim)
+    # The sentence says the item EXISTS (not an unknown-id miss).
+    assert "exists" in caveat.lower()
     # §V60/B91: it points a freshness self-check, NOT the admin re-sync -- a synthesis-only
     # material has no drop to fetch, so the sync action would mislead as "cache unsynced".
-    assert "get_data_status" in action
-    assert "arknights-mcp" not in action  # no admin re-sync command
-    assert "synthesis" in action.lower() or "workshop" in action.lower()
+    assert "get_data_status" in caveat
+    assert "arknights-mcp" not in caveat  # no admin re-sync command
+    assert "synthesis" in caveat.lower() or "workshop" in caveat.lower()
     # §V24: still never a query-time download/scrape fallback.
-    assert "download" not in action.lower() and "scrape" not in action.lower()
-    # Distinct from the UNKNOWN-item action, which points at search_entities.
-    assert "search_entities" not in action
+    assert "download" not in caveat.lower() and "scrape" not in caveat.lower()
+    # Distinct from the UNKNOWN-item arm, which stays a §V106 (a) lookup miss pointing at
+    # search_entities. The two must not converge on one status OR one wording.
+    unknown = _handler(open_read_only(path))(server="en", game_id="nosuchitem")
+    assert unknown.status == "not_found"
+    unknown_action = str(unknown.to_dict()["data"]["suggested_action"])  # type: ignore[index]
+    assert "search_entities" in unknown_action
+    assert "search_entities" not in caveat
 
 
 # --- §V23 typed failures ------------------------------------------------------

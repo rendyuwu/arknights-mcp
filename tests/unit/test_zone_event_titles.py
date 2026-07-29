@@ -289,7 +289,13 @@ def test_get_stage_omits_the_key_when_the_zone_has_no_event(conn: sqlite3.Connec
 def test_snapshot_without_activity_table_still_imports(tmp_path: Path) -> None:
     """§V41/B36: the table is tolerated-absent -- zones simply carry no title."""
     conn = open_read_only(_build(tmp_path, with_activity_table=False))
-    assert search_stages(conn, query="Lone Trail", server="en").status == "not_found"
+    # §V106 (b): the search still runs and still finds nothing, but a zero-hit set query
+    # is an ``ok`` with an empty result -- the typed reason is what proves nothing matched
+    # (rather than the region index being unavailable, which §V50 gates separately).
+    untitled = search_stages(conn, query="Lone Trail", server="en")
+    assert untitled.status == "ok"
+    assert untitled.hits == ()
+    assert untitled.empty_reason == "no_match"
     assert search_stages(conn, query="Dense Fog", server="en").status == "ok"
 
 

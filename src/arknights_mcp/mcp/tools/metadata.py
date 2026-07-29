@@ -87,14 +87,18 @@ def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
         Provenance(server=s.server, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
         for s in status.snapshots
     )
-    # §V66/B78: the envelope ``provenance`` above is the sole carrier of
+    # §V99/§V66 (B148): ``to_envelope_data`` is the §V37 projection for an enveloped
+    # caller -- the DB migration id keyed ``db_schema_version`` (``schema_version`` is
+    # the envelope's own response-contract version, a different axis entirely), and the
+    # ``status``/``analyzer_version`` echoes dropped because the envelope already carries
+    # both. §V66/B78: the envelope ``provenance`` above is likewise the sole carrier of
     # ``imported_at`` -- trimmed from the ``data.snapshots`` rows so it is emitted
     # once, not duplicated per snapshot. The rows DO inline ``server`` AND
     # ``snapshot_id`` (§V87/B96): one region can hold several active snapshots
     # (game data + penguin + announcements), so only ``snapshot_id`` joins a row to
     # its provenance entry without the "row N ↔ provenance N" order contract §V87
     # forbids. Null commit/version/age keys are omitted by the extras view (§V67).
-    data = status.to_dict()
+    data = status.to_envelope_data()
     data["snapshots"] = [s.to_provenance_extras(include_server=True) for s in status.snapshots]
     return build_envelope(
         status.status,
