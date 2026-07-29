@@ -30,11 +30,13 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import (
+    TOOL_ENUM_LEGEND_FIELDS,
+    attach_enum_legend,
+)
 from arknights_mcp.mcp.tools._shared import (
     IMAGE_REFS_PATH_NOTE,
-    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
-    attach_enum_legend,
     attach_image_ref_disclosures,
     page_to_dict,
     run_guarded,

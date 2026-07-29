@@ -37,14 +37,13 @@
   ],
   "occurrences": [
     {
-      "abilities": [
-        "aerial"
-      ],
       "atk": 240,
       "attack_interval": 1.6,
       "attack_range": 1.1,
-      "attack_type": "physical",
-      "block_behavior": "unblockable_flying",
+      "attack_type": null,
+      "damage_types": [
+        "PHYSIC"
+      ],
       "def_": 0,
       "display_name": "侦察机",
       "enemy_class": "ELITE",
@@ -59,6 +58,7 @@
       "move_speed": 1.0,
       "res": 10,
       "route_count": 1,
+      "targeting": "RANGED",
       "total_count": 2,
       "variant_id": null,
       "weight": 1
@@ -73,7 +73,7 @@
     "max_life_points": 3,
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "cn:95aa24a5572b"
+      "snapshot_id": "cn:438a404a0bd2"
     },
     "recommended_level": 35,
     "sanity_cost": 12,

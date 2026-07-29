@@ -15,7 +15,7 @@ real pinned upstreams; here we drive them with the documented real shapes.
 
 from __future__ import annotations
 
-from arknights_mcp.importers.normalization import normalize_kengxxiao_enemy_database
+from arknights_mcp.importers.enemy_normalization import normalize_kengxxiao_enemy_database
 from arknights_mcp.sources.kengxxiao_validator import cross_check_raw_enemy_databases
 
 # The primary source (arknights_assets_gamedata) enemy DB is a top-level id-keyed

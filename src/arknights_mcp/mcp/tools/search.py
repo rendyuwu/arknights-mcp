@@ -34,11 +34,13 @@ from collections.abc import Callable
 
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import (
+    TOOL_ENUM_LEGEND_FIELDS,
+    attach_enum_legend,
+)
 from arknights_mcp.mcp.tools._shared import (
     SEARCH_COVERAGE_POINTER,
-    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
-    attach_enum_legend,
     run_guarded,
 )
 from arknights_mcp.models.common import tool_input_schema

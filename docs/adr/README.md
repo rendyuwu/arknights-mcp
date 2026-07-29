@@ -22,3 +22,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0013](0013-locale-retire.md) | Retire the extra-locale (ja/ko) NAME-alias axis — EN+CN only | founder 2026-07-23 (EN+CN only) | §V57, §V50, §V21, §V37 |
 | [0014](0014-response-shape-v0.2-m16-fold.md) | Response-shape v0.2 (continued) — fold the M16 reshapes into the same unreleased bump | none (§V21-mandated) | §V66, §V22, §V21 |
 | [0015](0015-skin-gallery-import.md) | Skin gallery import — named metadata in, prose and art out; alt-form via tmplId | D5-adjacent (extends 0008/0009) | §V88, §V18, §V16, §V21, §V30, §V63 |
+| [0016](0016-threat-rule-retirement.md) | Retire three threat rules no source can feed; revive `ranged_arts` from the §V30 bridge | D5, D8 | §V113, §V26, §V96, §V67, §V103 |

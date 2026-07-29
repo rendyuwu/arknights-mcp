@@ -13,8 +13,8 @@
           "moveSpeed": 1.0,
           "weight": 1,
           "lifePointReduction": 1,
-          "blockBehavior": "unblockable_flying",
-          "abilities": ["aerial"]
+          "targeting": "RANGED",
+          "immunities": []
         }
       ]
     }

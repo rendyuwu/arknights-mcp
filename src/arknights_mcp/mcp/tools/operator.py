@@ -32,6 +32,7 @@ from collections.abc import Iterable
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import attach_enum_legend
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
@@ -41,7 +42,6 @@ from arknights_mcp.mcp.tools._shared import (
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
     ConnectionProvider,
-    attach_enum_legend,
     attach_image_ref_disclosures,
     has_unnamed_cost_item,
     run_guarded,

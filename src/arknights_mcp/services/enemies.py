@@ -40,8 +40,13 @@ class EnemyProvenance:
 @dataclass(frozen=True)
 class EnemyLevelFacts:
     """One level variant of an enemy: the typed stat block + decoded structural
-    JSON (targeting/immunities/abilities were allowlisted + sanitized at import,
-    §V18/§V31, so decoding re-exposes only vetted data)."""
+    JSON (immunities/abilities were allowlisted + sanitized at import, §V18/§V31, so
+    decoding re-exposes only vetted data).
+
+    ``targeting`` is a plain token (upstream ``applyWay``: MELEE/RANGED/ALL/NONE), so
+    it needs no decode. ``immunities`` is the nine typed upstream flags folded into
+    one list (§V67): ``[]`` = the source defined them and the enemy resists none,
+    absent = the source defined none of them (§T210)."""
 
     level_variant: int
     hp: int | None
@@ -54,7 +59,7 @@ class EnemyLevelFacts:
     weight: int | None
     life_point_reduction: int | None
     block_behavior: str | None
-    targeting: object | None
+    targeting: str | None
     immunities: object | None
     abilities: object | None
 
@@ -73,7 +78,10 @@ class EnemyFacts:
     enemy_class: str | None
     is_boss: bool
     is_elite: bool
+    #: The RETIRED handbook scalar: NULL on every real enemy (§V113 retired arm).
+    #: ``damage_types`` is where the damage kind lives now (§T210/B160).
     attack_type: str | None
+    damage_types: tuple[str, ...] | None
     motion_type: str | None
     levels: tuple[EnemyLevelFacts, ...]
     provenance: EnemyProvenance
@@ -92,6 +100,17 @@ class EnemyDetailResult:
     enemy: EnemyFacts | None
 
 
+def _damage_types(raw: str | None) -> tuple[str, ...] | None:
+    """Decode ``enemies.damage_types_json`` keeping the §V67 missing/empty split:
+    SQL ``NULL`` (or an undecodable fragment) -> ``None`` (the source carried no such
+    key), ``"[]"`` -> ``()`` (present but empty). Decodes through the shared §V37
+    :func:`~arknights_mcp.util.coerce.json_load` home."""
+    data = json_load(raw)
+    if not isinstance(data, list):
+        return None
+    return tuple(str(token) for token in data)
+
+
 def _level_facts(level: EnemyLevelRow) -> EnemyLevelFacts:
     """Shape a level row into typed facts, decoding the stored JSON fragments."""
     return EnemyLevelFacts(
@@ -106,7 +125,7 @@ def _level_facts(level: EnemyLevelRow) -> EnemyLevelFacts:
         weight=level.weight,
         life_point_reduction=level.life_point_reduction,
         block_behavior=level.block_behavior,
-        targeting=json_load(level.targeting_json),
+        targeting=level.targeting,
         immunities=json_load(level.immunities_json),
         abilities=json_load(level.abilities_json),
     )
@@ -126,6 +145,7 @@ def _enemy_facts(enemy: EnemyRow, levels: tuple[EnemyLevelFacts, ...]) -> EnemyF
         is_boss=enemy.is_boss,
         is_elite=enemy.is_elite,
         attack_type=enemy.attack_type,
+        damage_types=_damage_types(enemy.damage_types_json),
         motion_type=enemy.motion_type,
         levels=levels,
         provenance=EnemyProvenance(snapshot_id=enemy.snapshot_id, imported_at=enemy.imported_at),

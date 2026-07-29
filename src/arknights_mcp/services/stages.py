@@ -115,13 +115,18 @@ class EnemyOccurrenceFacts:
     prefab (COALESCE in the repository; §V46); ``None`` for a plain base-enemy
     occurrence.
 
-    ``attack_range`` / ``block_behavior`` / ``abilities`` are the three typed fields the
-    ranged-arts, block-bypass and ability-token rules decide from. They are carried here
-    (§T197/§V101) because those rules cite them as evidence field paths, and a path this
-    response does not emit is one a client cannot look up -- the same defect as the packed
-    ``"def/res"`` pseudo-field (B137), and the same over-promising the ``detailed`` depth
-    was already caught doing in B41. ``abilities is None`` means the source carried no
-    such field; ``()`` means present-but-empty (§V26/B58).
+    ``damage_types`` / ``attack_range`` / ``targeting`` are the typed fields the
+    ranged-arts rule decides from. They are carried here (§T197/§V101) because that rule
+    cites them as evidence field paths, and a path this response does not emit is one a
+    client cannot look up -- the same defect as the packed ``"def/res"`` pseudo-field
+    (B137), and the same over-promising the ``detailed`` depth was already caught doing
+    in B41. ``damage_types is None`` means the source carried no such field; ``()`` means
+    present-but-empty (§V26/B58).
+
+    ``block_behavior`` / ``abilities`` are gone (§T210 (c)): no real source fills either
+    column, so the three rules that decided from them were retired rather than left
+    registered and unable to fire (B160 (c)) -- and a field no rule reads and no build
+    populates is not an occurrence fact, it is a NULL with a name.
     """
 
     game_id: str
@@ -130,7 +135,10 @@ class EnemyOccurrenceFacts:
     is_boss: bool
     is_elite: bool
     motion_type: str | None
+    #: The RETIRED handbook scalar (§V113): NULL on every real enemy. ``damage_types``
+    #: carries the damage kind now (§T210/B160).
     attack_type: str | None
+    damage_types: tuple[str, ...] | None
     level_variant: int
     total_count: int | None
     first_spawn_time: float | None
@@ -145,8 +153,7 @@ class EnemyOccurrenceFacts:
     weight: int | None
     variant_id: str | None
     attack_range: float | None = None
-    block_behavior: str | None = None
-    abilities: tuple[str, ...] | None = None
+    targeting: str | None = None
 
 
 @dataclass(frozen=True)
@@ -206,16 +213,17 @@ class StageAnalysisResult:
     metrics: StageMetrics | None = None
 
 
-def _parse_abilities(raw: str | None) -> tuple[str, ...] | None:
-    """Decode ``enemy_levels.abilities_json`` preserving the §V26 missing/empty
+def _parse_damage_types(raw: str | None) -> tuple[str, ...] | None:
+    """Decode ``enemies.damage_types_json`` preserving the §V26/§V67 missing/empty
     distinction the analyzer relies on: SQL ``NULL`` (or an undecodable fragment)
     -> ``None`` (field absent), ``"[]"`` -> ``()`` (present but empty). Decodes
     through the shared §V37 :func:`~arknights_mcp.util.coerce.json_load` home; only
-    the list/str shaping the analyzer needs is applied on top."""
+    the list/str shaping the analyzer needs is applied on top. 42 real enemies deal
+    both ``PHYSIC`` and ``MAGIC``, which is why the fact is a list at all."""
     data = json_load(raw)
     if not isinstance(data, list):
         return None
-    return tuple(str(a) for a in data)
+    return tuple(str(token) for token in data)
 
 
 def _stage_facts(stage: StageRow) -> StageFacts:
@@ -359,7 +367,7 @@ def analyze_stage(
     for enemy in repo.stage_enemies(stage.stage_pk):
         # §V37: decoded once and handed to BOTH the facts row and the rule input, so the
         # evidence path and the value it names can never be decoded two different ways.
-        abilities = _parse_abilities(enemy.abilities_json)
+        damage_types = _parse_damage_types(enemy.damage_types_json)
         occurrences.append(
             EnemyOccurrenceFacts(
                 game_id=enemy.game_id,
@@ -369,6 +377,7 @@ def analyze_stage(
                 is_elite=enemy.is_elite,
                 motion_type=enemy.motion_type,
                 attack_type=enemy.attack_type,
+                damage_types=damage_types,
                 level_variant=enemy.level_variant,
                 total_count=enemy.total_count,
                 first_spawn_time=enemy.first_spawn_time,
@@ -382,11 +391,10 @@ def analyze_stage(
                 move_speed=enemy.move_speed,
                 weight=enemy.weight,
                 variant_id=enemy.variant_id,
-                # §V101/§T197: the fields the ranged-arts / block-bypass / ability-token
-                # rules cite as evidence paths, so those paths resolve on this response.
+                # §V101/§T197: the fields the ranged-arts rule cites as evidence paths,
+                # so those paths resolve on this response.
                 attack_range=enemy.attack_range,
-                block_behavior=enemy.block_behavior,
-                abilities=abilities,
+                targeting=enemy.targeting,
             )
         )
         threat_inputs.append(
@@ -394,13 +402,12 @@ def analyze_stage(
                 game_id=enemy.game_id,
                 display_name=enemy.display_name,
                 motion_type=enemy.motion_type,
-                attack_type=enemy.attack_type,
-                abilities=abilities,
+                damage_types=damage_types,
                 total_count=enemy.total_count,
                 defense=enemy.def_,
                 res=enemy.res,
                 attack_range=enemy.attack_range,
-                block_behavior=enemy.block_behavior,
+                targeting=enemy.targeting,
                 first_spawn_time=enemy.first_spawn_time,
                 last_spawn_time=enemy.last_spawn_time,
                 route_count=enemy.route_count,

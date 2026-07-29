@@ -4,8 +4,10 @@
       "enemyId": "enemy_cn_drone",
       "name": "侦察机",
       "enemyLevel": "ELITE",
-      "attackType": "physical",
-      "motionType": "FLY"
+      "motionType": "FLY",
+      "damageType": [
+        "PHYSIC"
+      ]
     }
   }
 }

@@ -71,10 +71,17 @@ def test_default_returns_enemy_facts_and_levels(conn: sqlite3.Connection) -> Non
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V104 (b)/§T207: every enemy row carries enemy_class + motion_type, so their static
+    # §V104 (b)/§T207: every enemy row carries enemy_class + motion_type, and §T210 added
+    # three more typed enums (damage_types / targeting / immunities), so their static
     # domains ride the response beside the values instead of the tool description.
     assert set(data) == {"enemy", "enum_legend"}
-    assert set(data["enum_legend"]) == {"enemy_class", "motion_type"}  # type: ignore[arg-type,index]
+    assert set(data["enum_legend"]) == {  # type: ignore[arg-type,index]
+        "enemy_class",
+        "motion_type",
+        "damage_types",
+        "targeting",
+        "immunities",
+    }
     enemy = data["enemy"]
     assert enemy["game_id"] == "enemy_1007_slime"  # type: ignore[index]
     assert enemy["display_name"] == "Originium Slug"  # type: ignore[index]
@@ -89,70 +96,85 @@ def test_default_returns_enemy_facts_and_levels(conn: sqlite3.Connection) -> Non
     assert lvl["def"] == 100
     assert lvl["res"] == 0
     assert lvl["attack_interval"] == 2.0
-    assert lvl["block_behavior"] == "blockable"
+    assert lvl["targeting"] == "MELEE"
     # Structural JSON is decoded back to a Python object (§V18 vetted at import).
-    assert lvl["abilities"] == []
+    assert lvl["immunities"] == []
 
 
-def test_aerial_enemy_abilities_decoded(conn: sqlite3.Connection) -> None:
+def test_aerial_enemy_immunities_decoded(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id="enemy_1105_drone")
     enemy = env.to_dict()["data"]["enemy"]  # type: ignore[index]
     assert enemy["is_elite"] is True
     assert enemy["motion_type"] == "FLY"
+    assert enemy["damage_types"] == ["MAGIC"]
     lvl = enemy["levels"][0]  # type: ignore[index]
     assert lvl["res"] == 10
-    assert lvl["abilities"] == ["aerial"]
+    # §T210: nine typed upstream flags fold into one list; only the set ones are named.
+    assert lvl["immunities"] == ["SILENCE"]
 
 
 # --- §V67/§V26 (B58) null discipline: [] vs absent + absent-field limitation ---
 
 
 def test_absent_list_fields_are_omitted_not_null(conn: sqlite3.Connection) -> None:
-    # §V67: the 4-4 slug confirms no abilities ([]), but the source carries no
-    # immunities/targeting at all -> those keys are OMITTED, never emitted as null, so a
-    # client can tell "confirmed none" ([]) apart from "not in source" (absent, B58).
+    # §V67: the 4-4 slug confirms no immunities ([]), but no source carries abilities or
+    # block_behavior at all -> those keys are OMITTED, never emitted as null, so a client
+    # can tell "confirmed none" ([]) apart from "not in source" (absent, B58).
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     lvl = env.to_dict()["data"]["enemy"]["levels"][0]  # type: ignore[index]
-    assert lvl["abilities"] == []  # confirmed none, present
-    assert "immunities" not in lvl  # not in source -> omitted
-    assert "targeting" not in lvl  # not in source -> omitted
+    assert lvl["immunities"] == []  # confirmed none, present
+    assert "abilities" not in lvl  # not in source -> omitted
+    assert "block_behavior" not in lvl  # not in source -> omitted
 
 
-def test_absent_expected_fields_named_in_limitation(conn: sqlite3.Connection) -> None:
-    # §V67/§V26 (B58): the slug's source omits immunities + targeting, so a standing
-    # limitation names them ("not present in source"); attack_type IS present
-    # ("physical" in the handbook) so it is NOT named.
+def test_dead_by_data_fields_named_with_their_true_scope(conn: sqlite3.Connection) -> None:
+    # §V113/§V26 (B160 c): block_behavior + abilities are absent from EVERY enemy on
+    # every build because no source carries them, so the limitation says so instead of
+    # the per-entity "this entity's source data" phrasing, which would imply some other
+    # enemy has them (§V108). It also explains why an analysis never reports those
+    # threats -- the three rules that read these fields were retired.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     assert env.status == "ok"
     blob = " ".join(env.limitations).lower()
-    assert "immunities" in blob and "targeting" in blob
-    assert "not present" in blob
-    assert "attack_type" not in blob  # present -> not flagged
+    assert "block_behavior" in blob and "abilities" in blob
+    assert "for any enemy" in blob
+    assert "block-bypass" in blob and "crowd-control" in blob and "support-aura" in blob
+
+
+def test_retired_attack_type_routes_to_damage_types(conn: sqlite3.Connection) -> None:
+    # §V113/§V108 (B160 b): the handbook still HAS attackType and upstream fills it on
+    # 0/1585 entries, so its absence is a fact about the game data, not this enemy. The
+    # limitation states that scope and names the field that answers the question.
+    env = _handler(conn)(server="en", game_id="enemy_1007_slime")
+    blob = " ".join(env.limitations)
+    assert "no longer fills the older attack_type field for any enemy" in blob
+    assert "damage_types states an enemy's damage kind" in blob
+    # ...and it is NOT listed as a per-entity absent field, which would double-report it.
+    assert "not present in this entity's source data: attack_type" not in blob
     # §V71: the client-facing limitation carries no internal spec cite/jargon.
     assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
 
 
 def test_present_scalars_still_emitted_on_the_wire(conn: sqlite3.Connection) -> None:
     # §V67/B98 (T180): the omit rule touches ABSENT scalars only -- the fixture slug
-    # carries attack_type/attack_range/block_behavior, so all three emit unchanged
-    # (§V21; a genuine 0.0 is a present value, never dropped) and none is flagged in
-    # the absent-field limitation.
+    # carries damage_types/attack_range/targeting, so all three emit unchanged (§V21; a
+    # genuine 0.0 is a present value, never dropped -- 25 real level rows store exactly
+    # that radius) and none is flagged as an absent field.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     enemy = env.to_dict()["data"]["enemy"]  # type: ignore[index]
     lvl = enemy["levels"][0]  # type: ignore[index]
-    assert enemy["attack_type"] == "physical"
+    assert enemy["damage_types"] == ["PHYSIC"]
     assert lvl["attack_range"] == 0.0  # present zero survives the omit rule
-    assert lvl["block_behavior"] == "blockable"
-    blob = " ".join(env.limitations).lower()
-    assert "attack_type" not in blob
-    assert "attack_range" not in blob
-    assert "block_behavior" not in blob
+    assert lvl["targeting"] == "MELEE"
+    # Nothing this enemy carries is reported as an entity-level gap: the only absence
+    # note it earns is the corpus-wide dead-field one.
+    assert not [lim for lim in env.limitations if "not present in this entity" in lim]
 
 
 def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
-    # §V67/B98 (T180): an enemy whose source omits attack_type + every per-level
-    # attack_range/block_behavior emits NONE of those keys; the absent-field
-    # limitation names all three (sole signal, no null+limitation duplicate).
+    # §V67/B98 (T180): an enemy whose source omits damage_types + every per-level
+    # attack_range/targeting emits NONE of those keys; the absent-field limitation
+    # names all three (sole signal, no null+limitation duplicate).
     lvl = EnemyLevelFacts(
         level_variant=0,
         hp=100,
@@ -177,18 +199,20 @@ def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
         is_boss=False,
         is_elite=False,
         attack_type=None,
+        damage_types=None,
         motion_type="WALK",
         levels=(lvl,),
         provenance=EnemyProvenance(snapshot_id="en:x", imported_at="t"),
     )
     data = _enemy_to_dict(enemy, image_refs_enabled=False)
-    assert "attack_type" not in data
+    assert "attack_type" not in data and "damage_types" not in data
     level = data["levels"][0]  # type: ignore[index]
-    assert "attack_range" not in level and "block_behavior" not in level
-    lim = _enemy_absent_field_limitations(enemy)
-    assert len(lim) == 1
-    blob = lim[0].lower()
-    assert "attack_type" in blob and "attack_range" in blob and "block_behavior" in blob
+    assert "attack_range" not in level and "targeting" not in level
+    absent = next(
+        lim for lim in _enemy_absent_field_limitations(enemy) if "not present in this entity" in lim
+    )
+    blob = absent.lower()
+    assert "damage_types" in blob and "attack_range" in blob and "targeting" in blob
 
 
 def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:

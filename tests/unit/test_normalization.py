@@ -8,8 +8,8 @@ already-normalized (synthetic) input so the minimal fixture path is unaffected.
 
 from __future__ import annotations
 
+from arknights_mcp.importers.enemy_normalization import normalize_enemy_sources
 from arknights_mcp.importers.normalization import (
-    normalize_enemy_sources,
     normalize_level,
     normalize_level_id,
 )

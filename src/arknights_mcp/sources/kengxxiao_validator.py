@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from arknights_mcp.importers.normalization import (
+from arknights_mcp.importers.enemy_normalization import (
     normalize_enemy_database,
     normalize_kengxxiao_enemy_database,
 )

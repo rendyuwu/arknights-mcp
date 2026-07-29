@@ -50,7 +50,14 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    ("Lone Trail") was in no imported field at all -- 120 EN titles unreachable.
 #:    New stored bytes (``zones.event_name``), so the bump is what makes §V92 promote
 #:    the rebuilt content over an unchanged snapshot.
-FIELD_POLICY_VERSION = "11"
+#: 12: T210/§V113 (B160) added ``damageType`` to ENEMY_HANDBOOK_ALLOWLIST: the enemy's
+#:    damage kind moved upstream from ``attackType`` (present and ``null`` on 1585/1585
+#:    real entries) to a typed LIST, and 42 enemies deal both ``PHYSIC`` and ``MAGIC``,
+#:    so the retired scalar could not have carried it even when it was populated. Bumped
+#:    beside TRANSFORM_VERSION: the same task also taught ``normalization.py`` to emit
+#:    ``attackRange``/``targeting``/``immunities``, three keys this allowlist had already
+#:    admitted while no bridge mapping filled them (the §V113 (a) shape).
+FIELD_POLICY_VERSION = "12"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -69,7 +76,7 @@ REGION_TO_NAME_LOCALE: dict[str, str] = {"en": "en", "cn": "zh"}
 # Prose fields (e.g. "description") are intentionally absent and thus excluded.
 
 ENEMY_HANDBOOK_ALLOWLIST: frozenset[str] = frozenset(
-    {"enemyId", "name", "enemyLevel", "attackType", "motionType"}
+    {"enemyId", "name", "enemyLevel", "attackType", "damageType", "motionType"}
 )
 
 ENEMY_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
@@ -116,9 +123,10 @@ class SourceKeyHome:
     * ``not_stored`` -- allowlisted and read, but feeds no column (kept for the
       provenance record only).
 
-    Counts are @pinned ``413a81a3`` (en) + build ``2026-07-28T170428Z-en-cn`` (§B160),
-    never assumed: a field that is populated today is populated by DATA, not by
-    construction (§V96 sibling).
+    Counts are @pinned ``413a81a3`` (en) + build ``2026-07-29T065116Z-en-cn`` -- the
+    first build in which the six B160 columns are not all empty -- never assumed: a
+    field that is populated today is populated by DATA, not by construction (§V96
+    sibling). The "was 0/4343" figures are B160's own, on the last build before §T210.
     """
 
     home: str | None
@@ -144,6 +152,12 @@ ENEMY_KEY_HOMES: Mapping[str, SourceKeyHome] = {
         "retired",
         "attackType null 1585/1585; damageType [PHYSIC] 1022|[MAGIC] 338|[NO_DAMAGE] 180|both 42",
     ),
+    "damageType": SourceKeyHome(
+        "enemyData.<id>.damageType",
+        "live",
+        "enemies.damage_types_json 3294/3879 (en+cn): [PHYSIC] 2123|[MAGIC] 704|"
+        "[NO_DAMAGE] 372|[PHYSIC,MAGIC] 89|[HEAL] 4|[MAGIC,HEAL] 2",
+    ),
     "motionType": SourceKeyHome(
         "enemyData.motion.m_value (enemy_database; absent from the real handbook)",
         "live",
@@ -162,19 +176,29 @@ ENEMY_KEY_HOMES: Mapping[str, SourceKeyHome] = {
     "weight": SourceKeyHome("enemyData.attributes.massLevel.m_value", "live", "4192/4343"),
     "lifePointReduction": SourceKeyHome("enemyData.lifePointReduce.m_value", "live", "3998/4343"),
     "attackRange": SourceKeyHome(
-        "enemyData.rangeRadius.m_value", "bridge_gap", "upstream defined 1170/2036; column 0/4343"
+        "enemyData.rangeRadius.m_value",
+        "live",
+        "enemy_levels.attack_range 1757/4343 (was 0/4343); upstream defines 1170/2036 en of "
+        "which 420 are the -1.0 no-radius sentinel §V103 keeps out of a distance column, so "
+        "the stored column carries 0 negatives",
     ),
     "targeting": SourceKeyHome(
         "enemyData.applyWay.m_value",
-        "bridge_gap",
-        "upstream MELEE 858|RANGED 570|NONE 251|ALL 99; column 0/4343",
+        "live",
+        "enemy_levels.targeting 4249/4343 (was 0/4343): MELEE 2002|RANGED 1319|NONE 669|ALL 259",
     ),
     "immunities": SourceKeyHome(
         "enemyData.attributes.{stun,silence,sleep,frozen,levitate,disarmedCombat,feared,palsy,"
         "attract}Immune.m_value",
-        "bridge_gap",
-        "upstream silenceImmune true 653, stunImmune true 264; column 0/4343",
+        "live",
+        "enemy_levels.immunities_json 3018/4343 (was 0/4343), of which 1205 are [] = the "
+        "source defined the flags and set none; all nine tokens occur",
     ),
+    # The two below stay allowlisted with no home on purpose (§V113's declared-dead
+    # arm): the keys are what a future upstream would arrive under, and this entry is
+    # the counted reason nothing fills them today. Their three consumer rules were
+    # RETIRED in T210 (c) rather than re-grounded on a guess -- see
+    # ``analyzers.rules.RETIRED_RULES`` and ADR 0016.
     "blockBehavior": SourceKeyHome(
         None,
         "no_home",

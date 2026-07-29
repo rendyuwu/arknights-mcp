@@ -39,7 +39,10 @@ def test_field_policy_version_present() -> None:
     # 11: T205/§V110 (B155) added ACTIVITY_ALLOWLIST -- the event TITLE
     #    (activity_table basicInfo[<actId>].name) was in no allowlist at all, so the
     #    name a client searches an event by ("Lone Trail") reached no column.
-    assert FIELD_POLICY_VERSION == "11"
+    # 12: T210/§V113 (B160) added `damageType` -- the enemy's damage kind moved
+    #    upstream from the now-always-null `attackType` scalar to a typed LIST, and
+    #    42 enemies deal PHYSIC *and* MAGIC, so no scalar could carry it.
+    assert FIELD_POLICY_VERSION == "12"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

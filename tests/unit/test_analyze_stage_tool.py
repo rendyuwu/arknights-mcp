@@ -123,7 +123,14 @@ def test_detailed_roster_carries_full_typed_context(conn: sqlite3.Connection) ->
     assert drone["motion_type"] == "FLY"
     assert drone["total_count"] == 2
     assert drone["first_spawn_time"] == 8.0
-    assert {"enemy_class", "attack_type", "level_variant", "route_count"} <= set(drone)
+    assert {"enemy_class", "damage_types", "targeting", "level_variant", "route_count"} <= set(
+        drone
+    )
+    # §T210/§V101: the three fields the ranged-arts rule decides from all resolve on
+    # this response, so an evidence row naming one is a path the client can look up.
+    assert drone["damage_types"] == ["MAGIC"]
+    assert drone["targeting"] == "RANGED"
+    assert drone["attack_range"] == 1.2
 
 
 def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Connection) -> None:
@@ -150,7 +157,7 @@ def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Conne
         assert not (stat_keys & set(occ))
 
 
-def _occurrence(attack_type: str | None) -> EnemyOccurrenceFacts:
+def _occurrence(damage_types: tuple[str, ...] | None) -> EnemyOccurrenceFacts:
     return EnemyOccurrenceFacts(
         game_id="enemy_bare",
         display_name="Bare",
@@ -158,7 +165,8 @@ def _occurrence(attack_type: str | None) -> EnemyOccurrenceFacts:
         is_boss=False,
         is_elite=False,
         motion_type="WALK",
-        attack_type=attack_type,
+        attack_type=None,  # retired upstream: null on 1585/1585 real handbook entries
+        damage_types=damage_types,
         level_variant=0,
         total_count=1,
         first_spawn_time=None,
@@ -175,18 +183,20 @@ def _occurrence(attack_type: str | None) -> EnemyOccurrenceFacts:
     )
 
 
-def test_detailed_occurrence_omits_absent_attack_type() -> None:
-    # §V67/B98 (T180): an absent-in-source attack_type is OMITTED from the detailed
-    # occurrence, never emitted as null; a present one still emits (§V21).
-    assert "attack_type" not in _occurrence_full(_occurrence(None))
-    assert _occurrence_full(_occurrence("physical"))["attack_type"] == "physical"
+def test_detailed_occurrence_omits_absent_damage_types() -> None:
+    # §V67/B98 (T180): an absent-in-source damage_types is OMITTED from the detailed
+    # occurrence, never emitted as null; a present one still emits (§V21). The retired
+    # attack_type is never emitted either way -- no build has ever carried a value.
+    assert "damage_types" not in _occurrence_full(_occurrence(None))
+    assert _occurrence_full(_occurrence(("PHYSIC",)))["damage_types"] == ["PHYSIC"]
+    assert "attack_type" not in _occurrence_full(_occurrence(("PHYSIC",)))
 
 
-def test_detailed_envelope_names_absent_occurrence_attack_type() -> None:
+def test_detailed_envelope_names_absent_occurrence_damage_types() -> None:
     # §V67/B98 follow-through (review-fix): when a detailed occurrence omits an
-    # absent-in-source attack_type, the envelope must NAME the omission (limitation
+    # absent-in-source damage_types, the envelope must NAME the omission (limitation
     # = sole signal, mirroring get_enemy) -- never a silent key drop. standard depth
-    # emits no per-occurrence attack_type at all, so it carries no such caveat.
+    # emits no per-occurrence damage kind at all, so it carries no such caveat.
     stage = StageFacts(
         server="en",
         game_id="bare_stage",
@@ -206,20 +216,23 @@ def test_detailed_envelope_names_absent_occurrence_attack_type() -> None:
         status="ok",
         server="en",
         stage=stage,
-        occurrences=(_occurrence(None), _occurrence("physical")),
+        occurrences=(_occurrence(None), _occurrence(("PHYSIC",))),
         observations=(),
         warnings=(),
         analyzer_version="test",
     )
     detailed = _shape_analysis("detailed", result)
-    assert any("attack_type" in lim.lower() for lim in detailed.limitations)
+    assert any("damage_types" in lim.lower() for lim in detailed.limitations)
+    # §V113/§V108 (B160 b): the retired scalar's own note states the corpus-wide scope
+    # rather than pretending this stage is special.
+    assert any("for any enemy" in lim for lim in detailed.limitations)
     standard = _shape_analysis("standard", result)
-    assert not any("attack_type" in lim.lower() for lim in standard.limitations)
+    assert not any("damage_types" in lim.lower() for lim in standard.limitations)
 
 
 def test_analyze_description_states_field_convention() -> None:
     # §V67 "convention stated in tool descriptions": analyze_stage omits absent
-    # scalars (attack_type / variant_id / recommended_level / max_life_points), so
+    # scalars (damage_types / variant_id / recommended_level / max_life_points), so
     # its description carries the same shared convention get_stage/get_enemy state.
     conn = sqlite3.connect(":memory:")
     assert LIST_FIELD_CONVENTION in build_analyze_stage_spec(lambda: conn).description
@@ -452,7 +465,11 @@ def test_enum_legend_and_stat_scales_ride_only_the_detailed_depth(
     # res/move_speed/weight block, so only that depth ships their domain + scales. A
     # legend or a scale for a field this depth never emits is noise (§V66).
     detailed = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()
-    assert set(detailed["data"]["enum_legend"]) == {"enemy_class"}  # type: ignore[arg-type,index]
+    assert set(detailed["data"]["enum_legend"]) == {  # type: ignore[arg-type,index]
+        "enemy_class",
+        "damage_types",
+        "targeting",
+    }
     assert ENEMY_STAT_SCALE_NOTE in detailed["limitations"]
     for depth in ("summary", "standard"):
         env = _handler(conn)(server="en", stage_code="4-4", depth=depth).to_dict()

@@ -22,7 +22,7 @@ that declaration against what the bridge actually does. It fails BOTH ways --
   just the code).
 
 Counts inside the declaration are @pinned ``413a81a3`` + build
-``2026-07-28T170428Z-en-cn``; this module asserts the STRUCTURE those counts
+``2026-07-29T065116Z-en-cn``; this module asserts the STRUCTURE those counts
 describe, so it runs offline with no snapshot and no build.
 """
 
@@ -34,20 +34,19 @@ import pytest
 
 from arknights_mcp.analyzers.base import EnemyOccurrence, StageThreatContext
 from arknights_mcp.analyzers.rules import (
-    DEAD_BY_DATA_RULES,
-    DEAD_RULE_ARMS,
+    RETIRED_RULES,
     RULE_DECIDING_FIELDS,
     THREAT_RULES,
 )
 from arknights_mcp.analyzers.stage import analyze_stage
 from arknights_mcp.importers.enemies import parse_enemies
+from arknights_mcp.importers.enemy_normalization import normalize_enemy_sources
 from arknights_mcp.importers.field_policy import (
     ENEMY_HANDBOOK_ALLOWLIST,
     ENEMY_KEY_HOMES,
     ENEMY_LEVEL_ALLOWLIST,
     LIVE_KEY_STATUSES,
 )
-from arknights_mcp.importers.normalization import normalize_enemy_sources
 
 _ALL_ENEMY_KEYS = ENEMY_HANDBOOK_ALLOWLIST | ENEMY_LEVEL_ALLOWLIST
 
@@ -59,10 +58,9 @@ _STATUSES = frozenset({"live", "bridge_gap", "retired", "no_home", "not_stored"}
 #: spawn), not the enemy allowlist, and are demonstrably non-degenerate on the
 #: build (lane_route 2453, pressure_spike 1124, tiles_deploy 241 en observations).
 _DECIDING_FIELD_SOURCE_KEY = {
-    "attack_type": "attackType",
+    "damage_types": "damageType",
     "attack_range": "attackRange",
-    "block_behavior": "blockBehavior",
-    "abilities": "abilities",
+    "targeting": "targeting",
     "motion_type": "motionType",
     "defense": "def",
     "res": "res",
@@ -72,10 +70,11 @@ _DECIDING_FIELD_SOURCE_KEY = {
 def _real_shaped_sources() -> tuple[dict[str, Any], dict[str, Any]]:
     """A REAL-shaped handbook + enemy_database carrying every declared home.
 
-    Deliberately not ``tests/fixtures/stage_4_4_real``: that fixture is hand-trimmed
-    and asserts a value domain upstream does not send (it sets
-    ``attackType: "physical"`` where all 1585 real entries send ``null``), which is
-    the very thing that hid B160. This input mirrors the pinned snapshot instead --
+    Deliberately not ``tests/fixtures/stage_4_4_real``: that fixture was hand-trimmed
+    and asserted a value domain upstream does not send (it set
+    ``attackType: "physical"`` where all 1585 real entries send ``null``), which is the
+    very thing that hid B160 -- §T210 (e) corrected the fixture, and this input stays
+    independent of it so one edit cannot silence both. It mirrors the pinned snapshot --
     every ``m_defined``/``m_value`` cell wrapped as upstream wraps it, and every home
     named in :data:`ENEMY_KEY_HOMES` present with a value a bridge COULD map.
     """
@@ -197,9 +196,27 @@ def test_v113c_retired_key_yields_no_value_from_a_real_shaped_handbook() -> None
     assert len(parsed) == 1
     assert ENEMY_KEY_HOMES["attackType"].status == "retired"
     assert parsed[0].attack_type is None
+    # ...and the field that REPLACED it does yield a value from the same entry, which is
+    # what makes "retired" the right status rather than "no_home" (§T210 (b)).
+    assert ENEMY_KEY_HOMES["damageType"].status == "live"
+    assert parsed[0].damage_types == ["MAGIC"]
     # motionType has no handbook home either, but the bridge backfills it from the
     # enemy_database ``motion`` cell -- which is why it is declared live, not dead.
     assert parsed[0].motion_type == "WALK"
+
+
+def test_v113a_revived_level_keys_reach_the_parsed_level() -> None:
+    """The three §T210 (a) keys travel bridge -> parser, not just bridge -> dict.
+
+    B160's shape was a key that existed in the allowlist and in the column and nowhere
+    in between, so a bridge-only assertion would have passed while the substrate stayed
+    empty. This one ends where the INSERT reads.
+    """
+    handbook, database = _real_shaped_sources()
+    level = parse_enemies(*normalize_enemy_sources(handbook, database))[0].levels[0]
+    assert level.attack_range == 2.5
+    assert level.targeting == "RANGED"
+    assert level.immunities == ["STUN"]
 
 
 # --- §V113 (b): a registered rule that cannot fire is not coverage -------------
@@ -219,53 +236,61 @@ def _live_deciding_fields(rule_id: str) -> set[str]:
 def test_v113b_deciding_field_map_covers_every_registered_rule() -> None:
     registered = {rule.rule_id for rule in THREAT_RULES}
     assert set(RULE_DECIDING_FIELDS) == registered
-    assert registered >= DEAD_BY_DATA_RULES, "stale DEAD_BY_DATA_RULES entry"
-    assert set(DEAD_RULE_ARMS) <= registered, "stale DEAD_RULE_ARMS entry"
+    assert registered & RETIRED_RULES == set(), "a retired rule is registered again"
 
 
 @pytest.mark.parametrize("rule_id", sorted(RULE_DECIDING_FIELDS))
-def test_v113b_rule_is_live_or_declared_dead(rule_id: str) -> None:
-    """Every rule either owns a live deciding field or is declared dead-by-data."""
-    live = _live_deciding_fields(rule_id)
-    if rule_id in DEAD_BY_DATA_RULES:
-        assert not live, (
-            f"{rule_id} is declared dead-by-data but now owns live deciding field(s) {live} "
-            "-- drop it from DEAD_BY_DATA_RULES (§V113 (b))"
-        )
-        return
-    if rule_id == "threat.ranged_arts":
-        # B160 (a)+(b): dead today, but both homes are counted upstream, so it is a
-        # bridge gap T210 closes -- not a rule to retire. Pinned so the exception
-        # cannot quietly become permanent.
-        assert ENEMY_KEY_HOMES["attackRange"].status == "bridge_gap"
-        assert ENEMY_KEY_HOMES["attackType"].status == "retired"
-        return
-    assert live, (
-        f"{rule_id} has no live deciding field and is not declared dead-by-data -- a "
-        "registered rule that cannot fire is not coverage (§V113 (b))"
+def test_v113b_every_registered_rule_owns_a_live_deciding_field(rule_id: str) -> None:
+    """§V113 (b): a registered rule that cannot fire is not coverage.
+
+    There is no exemption list any more. §T210 revived ``ranged_arts``'s substrate from
+    a counted upstream home and retired the three rules whose fields had no home at all,
+    so every survivor must own a field the real build populates -- if a future rule is
+    added against an empty column, this fails on the rule, not four milestones later on
+    a zero-observation count.
+    """
+    assert _live_deciding_fields(rule_id), (
+        f"{rule_id} has no live deciding field -- a registered rule that cannot fire is "
+        "not coverage (§V113 (b)); revive its substrate or retire it (§T210 c)"
     )
 
 
-@pytest.mark.parametrize("rule_id", sorted(DEAD_BY_DATA_RULES))
-def test_v113b_declared_dead_rules_really_emit_nothing(rule_id: str) -> None:
-    """Prove the declaration: on build-shaped input those rules produce no observation.
+def test_v113b_retired_rules_are_not_registered() -> None:
+    """§T210 (c): the three dead-by-data rules are GONE, and their fields stay dead.
 
-    The occurrence mirrors what the build actually stores -- every dead column NULL,
-    every live one populated -- so this fails the moment a dead rule starts firing
-    (its declaration is then wrong) as well as when it stays dead after being
-    re-grounded.
+    Retiring them is only honest while the reason holds. If a source ever fills either
+    field the declaration flips to ``live`` and this fails, which is the prompt to bring
+    the rule back rather than leave a live column unread.
+    """
+    registered = {rule.rule_id for rule in THREAT_RULES}
+    assert {
+        "threat.block_bypass",
+        "threat.crowd_control",
+        "threat.support_aura",
+    } == RETIRED_RULES
+    assert not (RETIRED_RULES & registered)
+    assert ENEMY_KEY_HOMES["blockBehavior"].status == "no_home"
+    assert ENEMY_KEY_HOMES["abilities"].status == "no_home"
+
+
+def test_v113b_a_build_shaped_occurrence_still_reports_its_live_rules() -> None:
+    """The positive half: on an occurrence shaped like a real row, the survivors fire.
+
+    Every value here is one the promoted build really stores for an arts flyer, so this
+    is the assertion B160 could not have made before -- ``ranged_arts`` reading a radius
+    the column now carries, rather than taking its §V26 "field missing" arm and
+    returning clean.
     """
     occurrence = EnemyOccurrence(
-        game_id="enemy_1007_slime",
-        display_name="Originium Slug",
-        motion_type="WALK",
-        attack_type=None,  # 0/3879 on the build
-        abilities=None,  # 0/4343
+        game_id="enemy_1105_drone",
+        display_name="Recon Drone",
+        motion_type="FLY",
+        damage_types=("MAGIC",),
         total_count=4,
-        defense=50,
+        defense=0,
         res=10,
-        attack_range=None,  # 0/4343
-        block_behavior=None,  # 0/4343
+        attack_range=2.5,
+        targeting="RANGED",
         first_spawn_time=1.0,
         last_spawn_time=9.0,
     )
@@ -277,16 +302,5 @@ def test_v113b_declared_dead_rules_really_emit_nothing(rule_id: str) -> None:
             occurrences=(occurrence,),
         )
     )
-    assert not [obs for obs in result.observations if obs.rule_id == rule_id]
-
-
-def test_v113b_aerial_dead_arm_is_declared() -> None:
-    """``threat.aerial`` fires 507 en stages purely from ``motion_type`` (§V113 (b)).
-
-    Its ``abilities`` arm cannot contribute while that column is 0/4343, so the arm
-    is declared rather than left as an unreachable branch nobody counts.
-    """
-    assert DEAD_RULE_ARMS["threat.aerial"] == frozenset({"abilities"})
-    assert ENEMY_KEY_HOMES["abilities"].status == "no_home"
-    assert ENEMY_KEY_HOMES["motionType"].status == "live"
-    assert _live_deciding_fields("threat.aerial") == {"motion_type"}
+    fired = {obs.rule_id for obs in result.observations}
+    assert {"threat.aerial", "threat.ranged_arts"} <= fired

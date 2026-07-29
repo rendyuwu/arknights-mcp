@@ -1,8 +1,14 @@
 """T16: the M0 deterministic aerial threat rule + stage analyzer (§V6, §V26).
 
 Verifies every observation carries the §V6 fields, that the rule decides from
-typed fields only (never prose, §V26), and that missing / conflicting fields are
-handled per §V26 (reduced confidence + limitation; omit conclusion + warn).
+typed fields only (never prose, §V26), and that an absent / unrecognized
+``motion_type`` yields no conclusion plus a §V26 limitation.
+
+§T210 (c)/B160: the rule's second arm -- infer flight from an ``aerial`` ability
+token, and warn when a ground motion contradicted one -- is gone with the
+``abilities`` field. No source has ever carried a typed ability vocabulary, so that
+arm decided 0 of the 507 EN observations this rule really makes while its tests
+passed on synthetic tokens: a guard that cannot fail on real data is not a guard.
 """
 
 from __future__ import annotations
@@ -31,28 +37,32 @@ def _ctx(
     )
 
 
+# Both carry the source's OWN damage token (the real handbook sends ``damageType``
+# ["MAGIC"] for this drone and ["PHYSIC"] for this slug); the invented "physical"
+# string these fixtures used to pass appears on 0 of 1585 real entries (B160 (b)).
 DRONE = EnemyOccurrence(
     game_id="enemy_1105_drone",
     display_name="Recon Drone",
     motion_type="FLY",
-    attack_type="physical",
-    abilities=("aerial",),
+    damage_types=("MAGIC",),
+    attack_range=2.5,
+    targeting="RANGED",
     total_count=2,
 )
 SLUG = EnemyOccurrence(
     game_id="enemy_1007_slime",
     display_name="Originium Slug",
     motion_type="WALK",
-    attack_type="physical",
-    abilities=(),
+    damage_types=("PHYSIC",),
     total_count=3,
 )
 
 
 def test_registry_rules_match_protocol_with_unique_ids() -> None:
-    # M3 (§T39): the engine grew from one rule to nine; each still satisfies the
-    # ThreatRule protocol (rule_id + evaluate) and every rule_id is unique.
-    assert len(THREAT_RULES) == 9
+    # M3 (§T39) grew the engine from one rule to nine; §T210 (c) retired the three
+    # that no real column could feed. Each survivor still satisfies the ThreatRule
+    # protocol (rule_id + evaluate) and every rule_id is unique.
+    assert len(THREAT_RULES) == 6
     for rule in THREAT_RULES:
         assert isinstance(rule, ThreatRule)  # structural: rule_id + evaluate()
     assert any(isinstance(rule, AerialThreatRule) for rule in THREAT_RULES)
@@ -63,8 +73,9 @@ def test_registry_rules_match_protocol_with_unique_ids() -> None:
 def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
     result = analyze_stage(_ctx(DRONE, SLUG))
     assert result.analyzer_version == ANALYZER_VERSION
-    assert len(result.observations) == 1
-    obs = result.observations[0]
+    # The drone is an arts flyer, so the ranged-arts rule fires on it too (that is the
+    # §T210 revival working); this suite is about the aerial one.
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
     # §V6: every mandated field present + well-formed.
     assert obs.rule_id == RULE_ID
     assert obs.analyzer_version == ANALYZER_VERSION
@@ -100,43 +111,42 @@ def test_typed_field_only_no_nl_keyword_match() -> None:
         game_id="enemy_nl_trap",
         display_name="Aerial Flying Skyborne Terror",
         motion_type="WALK",
-        attack_type="physical",
-        abilities=(),
+        damage_types=("PHYSIC",),
         total_count=1,
     )
     result = analyze_stage(_ctx(trap))
     assert result.observations == ()
 
 
-def test_missing_motion_type_reduces_confidence_and_records_limitation() -> None:
-    inferred = EnemyOccurrence(
+def test_missing_motion_type_yields_no_conclusion_and_a_limitation() -> None:
+    # §V26: the one field that decides is absent -> the enemy is not judged, and the
+    # response says which enemy went unjudged rather than defaulting it to ground.
+    unknown = EnemyOccurrence(
         game_id="enemy_infer",
         display_name=None,
         motion_type=None,  # field absent
-        attack_type=None,
-        abilities=("aerial",),
+        damage_types=None,
         total_count=1,
     )
-    result = analyze_stage(_ctx(inferred))
-    assert len(result.observations) == 1
-    obs = result.observations[0]
-    assert obs.confidence < 0.9  # §V26: missing field reduces confidence
-    assert any("motion_type missing" in lim for lim in obs.limitations)
-    assert obs.evidence[0].field == "abilities"
+    result = analyze_stage(_ctx(DRONE, unknown))
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
+    assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
+    assert any("enemy_infer" in lim and "motion_type missing" in lim for lim in obs.limitations)
 
 
-def test_conflicting_fields_omit_conclusion_and_warn() -> None:
-    conflict = EnemyOccurrence(
-        game_id="enemy_conflict",
+def test_unrecognized_motion_type_yields_no_conclusion_and_a_limitation() -> None:
+    # §V96: a token outside the known vocabulary is not silently bucketed as ground.
+    odd = EnemyOccurrence(
+        game_id="enemy_odd",
         display_name=None,
-        motion_type="WALK",  # ground motion ...
-        attack_type=None,
-        abilities=("aerial",),  # ... but ability claims aerial
+        motion_type="HOVER_UNKNOWN",
+        damage_types=None,
         total_count=1,
     )
-    result = analyze_stage(_ctx(conflict))
-    assert result.observations == ()  # §V26: omit conclusion
-    assert any("conflict" in w for w in result.warnings)  # §V26: warn
+    result = analyze_stage(_ctx(DRONE, odd))
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
+    assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
+    assert any("unrecognized motion_type" in lim for lim in obs.limitations)
 
 
 def test_same_flyer_at_two_variants_counts_as_one_type() -> None:
@@ -146,12 +156,13 @@ def test_same_flyer_at_two_variants_counts_as_one_type() -> None:
         game_id="enemy_1105_drone",
         display_name="Recon Drone",
         motion_type="FLY",
-        attack_type="physical",
-        abilities=("aerial",),
+        damage_types=("MAGIC",),
+        attack_range=2.5,
+        targeting="RANGED",
         total_count=1,
     )
     result = analyze_stage(_ctx(DRONE, drone_v1))
-    obs = result.observations[0]
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
     assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
     assert "1 aerial enemy type" in obs.summary  # not "2 ... types"
 

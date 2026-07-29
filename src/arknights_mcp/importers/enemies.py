@@ -11,13 +11,13 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from arknights_mcp.importers.enemy_normalization import normalize_enemy_sources
 from arknights_mcp.importers.field_policy import (
     ENEMY_HANDBOOK_ALLOWLIST,
     ENEMY_LEVEL_ALLOWLIST,
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import insert_record_provenance
-from arknights_mcp.importers.normalization import normalize_enemy_sources
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none
 from arknights_mcp.util.sqlite import integrity_guard
@@ -40,7 +40,11 @@ class ParsedEnemyLevel:
     weight: int | None
     life_point_reduction: int | None
     block_behavior: str | None
-    targeting: Any
+    #: ``applyWay``: ONE token (MELEE/RANGED/ALL/NONE), so a scalar column, not JSON
+    #: (§V99 -- the ``_json`` suffix it used to carry claimed a shape it never had).
+    targeting: str | None
+    #: The nine typed ``<x>Immune`` flags folded into one list (§V67): ``[]`` = the
+    #: source defined the flags and none is set, ``None`` = it defined none of them.
     immunities: Any
     abilities: Any
 
@@ -52,7 +56,12 @@ class ParsedEnemy:
     enemy_class: str | None
     is_boss: bool
     is_elite: bool
+    #: The RETIRED handbook scalar (§V113): still allowlisted, still recorded in
+    #: provenance, and ``None`` on every real entry -- the live fact is ``damage_types``.
     attack_type: str | None
+    #: ``damageType``: a LIST upstream because 42 enemies deal PHYSIC *and* MAGIC.
+    #: ``None`` = the handbook entry carried no such key (§V67 key-absent).
+    damage_types: Any
     motion_type: str | None
     levels: list[ParsedEnemyLevel]
     provenance_record: dict[str, Any]
@@ -107,7 +116,7 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
                     weight=as_int(kept.get("weight")),
                     life_point_reduction=as_int(kept.get("lifePointReduction")),
                     block_behavior=as_str(kept.get("blockBehavior")),
-                    targeting=kept.get("targeting"),
+                    targeting=as_str(kept.get("targeting")),
                     immunities=kept.get("immunities"),
                     abilities=kept.get("abilities"),
                 )
@@ -121,6 +130,7 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
                 is_boss=enemy_class == "BOSS",
                 is_elite=enemy_class == "ELITE",
                 attack_type=as_str(kept_hb.get("attackType")),
+                damage_types=kept_hb.get("damageType"),
                 motion_type=as_str(kept_hb.get("motionType")),
                 levels=levels,
                 provenance_record={"handbook": kept_hb, "levels": kept_levels},
@@ -151,7 +161,8 @@ def insert_enemies(
         cur = conn.execute(
             "INSERT INTO enemies "
             "(server, game_id, display_name, enemy_class, is_boss, is_elite, "
-            "attack_type, motion_type, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "attack_type, damage_types_json, motion_type, provenance_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 server,
                 enemy.game_id,
@@ -160,6 +171,7 @@ def insert_enemies(
                 int(enemy.is_boss),
                 int(enemy.is_elite),
                 enemy.attack_type,
+                json_or_none(enemy.damage_types),
                 enemy.motion_type,
                 provenance_id,
             ),
@@ -178,7 +190,7 @@ def insert_enemies(
                     "INSERT INTO enemy_levels "
                     "(enemy_pk, level_variant, hp, atk, def, res, attack_interval, "
                     "attack_range, move_speed, weight, life_point_reduction, block_behavior, "
-                    "targeting_json, immunities_json, abilities_json) "
+                    "targeting, immunities_json, abilities_json) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         enemy_pk,
@@ -193,7 +205,7 @@ def insert_enemies(
                         level.weight,
                         level.life_point_reduction,
                         level.block_behavior,
-                        json_or_none(level.targeting),
+                        level.targeting,
                         json_or_none(level.immunities),
                         json_or_none(level.abilities),
                     ),

@@ -117,11 +117,11 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
     assert occ_by_id["enemy_1105_drone"].motion_type == "FLY"
     assert occ_by_id["enemy_1007_slime"].total_count == 3
 
-    # threat finding with every §V6 field, decided from a typed field (§V26)
+    # threat findings with every §V6 field, decided from typed fields (§V26). Two fire:
+    # the drone is an arts flyer, and §T210 revived the substrate ranged_arts reads.
     assert result.analyzer_version is not None
-    assert len(result.observations) == 1
-    obs = result.observations[0]
-    assert obs.rule_id == RULE_ID
+    assert {o.rule_id for o in result.observations} == {RULE_ID, "threat.ranged_arts"}
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
     assert obs.analyzer_version == result.analyzer_version
     assert 0.0 <= obs.confidence <= 1.0
     assert obs.confidence >= 0.9  # authoritative typed motion_type=FLY
@@ -130,6 +130,11 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
     assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
     assert obs.evidence[0].field == "motion_type"
     assert obs.evidence[0].value == "FLY"
+    # §T210 end to end: the radius the §V30 bridge now carries reaches the rule, so the
+    # conclusion rests on a measured field instead of the §V26 "range unknown" arm.
+    arts = next(o for o in result.observations if o.rule_id == "threat.ranged_arts")
+    assert (arts.evidence[0].field, arts.evidence[0].value) == ("attack_range", 1.2)
+    assert arts.confidence >= 0.9
     assert result.warnings == ()
 
 
@@ -193,7 +198,7 @@ def test_accept_no_wiki_text_leaks_through_pipeline(tmp_path: Path) -> None:
     assert result.status == "ok"
     assert result.stage is not None
     assert result.occurrences
-    assert len(result.observations) == 1
+    assert len(result.observations) == 2
 
     # §V16: prose absent from every column of the built database ...
     tables = [

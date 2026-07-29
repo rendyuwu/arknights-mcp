@@ -1,17 +1,12 @@
-"""Raw ``arknights_assets_gamedata`` → normalized importer shapes (§V29, §V30; T66).
+"""Raw ``arknights_assets_gamedata`` LEVEL shapes → normalized importer shapes
+(§V29, §V30; T66).
 
-The upstream schema differs *structurally* from the normalized shapes the
-allowlisted parsers (:mod:`~arknights_mcp.importers.enemies`,
-:mod:`~arknights_mcp.importers.levels`) consume (§V29). This module is the single
-explicit bridge mandated by §V30: it reshapes raw JSON so the parsers stay stable
-and unit-testable, and it performs **no** database or network I/O — pure
-JSON→JSON. B6 records the concrete divergences this bridges:
+The stage/level half of the §V30 bridge; the enemy handbook + database half lives in
+:mod:`~arknights_mcp.importers.enemy_normalization` (split at the §V38 hard cap).
+This module reshapes raw level JSON so the parsers stay stable and unit-testable, and
+it performs **no** database or network I/O — pure JSON→JSON. B6 records the concrete
+divergences this bridges:
 
-* ``enemy_database.json`` is a top-level *id-keyed dict → list* (no ``"enemies"``
-  wrapper); each level's stats live under ``enemyData.attributes.<stat>.m_value``
-  with different names (``maxHp``≠``hp``, ``magicResistance``≠``res``,
-  ``baseAttackTime``≠``attackInterval``); enemy motion is at
-  ``enemyData.motion.m_value`` (the handbook has no ``motionType``).
 * ``stage_table.levelId`` is a Title-case, extension-less reference
   (``Obt/Main/level_main_04-04``) that must be lowercased and rewritten to the
   actual snapshot path (``gamedata/levels/obt/main/level_main_04-04.json``).
@@ -26,260 +21,23 @@ returns the input unchanged, so only genuinely-real snapshots take the transform
 branch. Prose/unknown fields are dropped here and re-checked by the parsers'
 allowlist + sanitize step (§V18) — normalization never widens the field policy.
 
-The field mappings below (``massLevel``→``weight``,
-``lifePointReduce``→``lifePointReduction``, ``preDelay``→``spawnTime``,
+The field mappings below (``preDelay``→``spawnTime``,
 ``maxTimeWaitingForNextWave``→``maxTimeWaiting``, and the positional route/wave
 index fallbacks) are **verified against live upstream**, not merely inferred from
 the fixture: the CI-only ``tests/contract/test_live_upstream.py`` (§T68) imports a
-pinned ``arknights_assets_gamedata`` commit and asserts real 4-4 yields non-null
-``hp``/``res``/``attackInterval``/``weight``/``lifePointReduction``/``motion`` plus
-non-empty tiles/spawns/``stage_enemies`` (§V29, §V30).
+pinned ``arknights_assets_gamedata`` commit and asserts real 4-4 yields non-empty
+tiles/spawns/``stage_enemies`` (§V29, §V30).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from arknights_mcp.importers.field_policy import OVERWRITTEN_DATA_ALLOWLIST, apply_allowlist
-
-# --- enemy_database + handbook -------------------------------------------------
-
-#: Real ``enemyData.attributes`` stat key → normalized level key (B6 (a)).
-_ENEMY_STAT_MAP: dict[str, str] = {
-    "maxHp": "hp",
-    "atk": "atk",
-    "def": "def",
-    "magicResistance": "res",
-    "moveSpeed": "moveSpeed",
-    "baseAttackTime": "attackInterval",
-    "massLevel": "weight",
-}
-
-#: Real ``enemyData.<key>.m_value`` (outside ``attributes``) → normalized level key.
-_ENEMY_DATA_SCALAR_MAP: dict[str, str] = {
-    "lifePointReduce": "lifePointReduction",
-}
-
-
-def _m_value(wrapped: Any) -> Any:
-    """Unwrap a real ``{"m_defined": ..., "m_value": ...}`` cell to its value.
-
-    Real attribute/scalar fields are wrapped; a plain value (already normalized)
-    passes through. ``None`` for anything else.
-    """
-    if isinstance(wrapped, dict):
-        return wrapped.get("m_value")
-    return wrapped
-
-
-def _defined_m_value(wrapped: Any) -> tuple[bool, Any]:
-    """A real ``{"m_defined", "m_value"}`` cell → ``(defined, value)`` (§V44/B38).
-
-    ``m_defined`` gates whether *this* level entry actually sets the attribute:
-    enemy_database level entries are deltas over level 0, and a ``m_defined:false``
-    cell carries a sentinel ``m_value`` (typically ``0``) that means "unset at this
-    level, inherit the base" — it MUST NOT be written as a real stat (that is B38:
-    a level-1 flyer with ``magicResistance.m_defined=false`` would report ``res=0``
-    instead of the level-0 value). Only an *explicit* ``m_defined:false`` marks a
-    cell unset; a cell missing the flag (a plain/shorthand value) is defined.
-    """
-    if isinstance(wrapped, dict):
-        return bool(wrapped.get("m_defined", True)), wrapped.get("m_value")
-    return True, wrapped
-
-
-def _database_is_normalized(database_raw: Any) -> bool:
-    """True iff ``database_raw`` is already in the ``{"enemies": {...}}`` shape."""
-    return isinstance(database_raw, dict) and isinstance(database_raw.get("enemies"), dict)
-
-
-def _normalize_enemy_data_stats(enemy_data: dict[str, Any]) -> dict[str, Any]:
-    """Extract the §V29-verified stat set from an ``enemyData``-shaped dict.
-
-    Reads ``attributes.<stat>.m_value`` (via :data:`_ENEMY_STAT_MAP`) and the
-    non-attribute scalars (:data:`_ENEMY_DATA_SCALAR_MAP`), emitting only the
-    *defined* cells (``m_defined``, §V44): an undefined stat is omitted so the
-    consumer inherits the base value rather than a sentinel ``0``. The single home
-    (§V37) shared by the enemy-database level normalizer and the stage-scoped
-    inline-variant extractor (§T80), both of which read the same ``enemyData`` shape
-    (``overwrittenData`` is a partial ``enemyData``).
-    """
-    out: dict[str, Any] = {}
-    attributes = enemy_data.get("attributes")
-    if isinstance(attributes, dict):
-        for real_key, norm_key in _ENEMY_STAT_MAP.items():
-            if real_key in attributes:
-                defined, value = _defined_m_value(attributes[real_key])
-                if defined and value is not None:
-                    out[norm_key] = value
-    for real_key, norm_key in _ENEMY_DATA_SCALAR_MAP.items():
-        if real_key in enemy_data:
-            defined, value = _defined_m_value(enemy_data[real_key])
-            if defined and value is not None:
-                out[norm_key] = value
-    return out
-
-
-def _defined_motion(raw: Any) -> str | None:
-    """A defined ``{m_defined, m_value}`` motion cell → its string, else ``None``.
-
-    An undefined (``m_defined:false``) or absent motion is dropped so a variant
-    inherits the base enemy's motion (§V44 semantics extended to §T80 variants).
-    """
-    defined, value = _defined_m_value(raw)
-    return value if defined and isinstance(value, str) and value else None
-
-
-def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
-    """One real level entry ``{level, enemyData:{attributes,...}}`` → normalized dict."""
-    out: dict[str, Any] = {}
-    if not isinstance(raw_level, dict):
-        return out
-    level = raw_level.get("level")
-    if isinstance(level, bool | int | float):
-        out["level"] = level
-    enemy_data = raw_level.get("enemyData")
-    if not isinstance(enemy_data, dict):
-        return out
-    out.update(_normalize_enemy_data_stats(enemy_data))
-    return out
-
-
-#: Normalized level keys that inherit the base (level-0) value when a higher
-#: level does not redefine them (§V44/B38). Kept in sync with the two stat maps.
-_INHERITED_LEVEL_KEYS: tuple[str, ...] = (
-    *_ENEMY_STAT_MAP.values(),
-    *_ENEMY_DATA_SCALAR_MAP.values(),
+from arknights_mcp.importers.enemy_normalization import (
+    _defined_motion,
+    _normalize_enemy_data_stats,
 )
-
-
-def _apply_level_deltas(levels: list[dict[str, Any]]) -> None:
-    """Backfill each higher level's unset mapped stats from level 0 (§V44/B38).
-
-    Enemy_database level entries are deltas: a higher level (variant) only carries
-    the attributes it changes, and ``_normalize_enemy_level`` now drops the ones it
-    leaves ``m_defined:false``. Those inherit the base (``level == 0``) value in the
-    real game, so we copy any missing mapped key from the base level. Mutates the
-    list in place; a single-level enemy (no base to inherit past) is unchanged.
-    """
-    if not levels:
-        return
-    base = next((lvl for lvl in levels if lvl.get("level") == 0), levels[0])
-    for lvl in levels:
-        if lvl is base:
-            continue
-        for key in _INHERITED_LEVEL_KEYS:
-            if key not in lvl and key in base:
-                lvl[key] = base[key]
-
-
-def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[str, str]]:
-    """Real id-keyed enemy DB → normalized ``{"enemies": {...}}`` + ``{id: motion}``.
-
-    Returns the normalized database and a map of enemy id → motion string extracted
-    from ``enemyData.motion.m_value`` (used to backfill the handbook, which has no
-    ``motionType`` in the real schema). Idempotent: an already-normalized database
-    passes through unchanged with an empty motion map (its motion already lives in
-    the handbook).
-    """
-    if _database_is_normalized(database_raw):
-        return database_raw, {}
-    if not isinstance(database_raw, dict):
-        return {"enemies": {}}, {}
-
-    enemies: dict[str, Any] = {}
-    motion_by_id: dict[str, str] = {}
-    for game_id, raw_levels in database_raw.items():
-        if not isinstance(game_id, str) or not isinstance(raw_levels, list):
-            continue
-        levels = [_normalize_enemy_level(rl) for rl in raw_levels]
-        _apply_level_deltas(levels)  # §V44/B38: unset higher-level stats inherit level 0
-        enemies[game_id] = {"levels": levels}
-        for rl in raw_levels:
-            enemy_data = rl.get("enemyData") if isinstance(rl, dict) else None
-            motion = _m_value(enemy_data.get("motion")) if isinstance(enemy_data, dict) else None
-            if isinstance(motion, str) and motion:
-                motion_by_id[game_id] = motion
-                break  # motion is constant across a given enemy's level variants
-    return {"enemies": enemies}, motion_by_id
-
-
-def _inject_motion(handbook_raw: Any, motion_by_id: dict[str, str]) -> Any:
-    """Backfill ``motionType`` into each handbook entry from the enemy DB motion.
-
-    Real handbooks carry no ``motionType`` (§V29); the motion source of truth is
-    the enemy database. Returns a new handbook mapping so the input is never
-    mutated. When ``motion_by_id`` is empty (already-normalized input) the handbook
-    is returned unchanged. An existing ``motionType`` is never overwritten.
-    """
-    if not motion_by_id or not isinstance(handbook_raw, dict):
-        return handbook_raw
-    entries = handbook_raw.get("enemyData")
-    if not isinstance(entries, dict):
-        return handbook_raw
-
-    new_entries: dict[str, Any] = {}
-    for game_id, entry in entries.items():
-        new_entries[game_id] = entry
-        if isinstance(entry, dict) and "motionType" not in entry and game_id in motion_by_id:
-            merged = dict(entry)
-            merged["motionType"] = motion_by_id[game_id]
-            new_entries[game_id] = merged
-    # An enemy present only in the stats DB (no handbook entry) still carries motion.
-    for game_id, motion in motion_by_id.items():
-        if game_id not in new_entries:
-            new_entries[game_id] = {"enemyId": game_id, "motionType": motion}
-
-    out = dict(handbook_raw)
-    out["enemyData"] = new_entries
-    return out
-
-
-def normalize_enemy_sources(handbook_raw: Any, database_raw: Any) -> tuple[Any, Any]:
-    """Bridge the real enemy handbook + database to the normalized parser shapes.
-
-    Returns ``(handbook_norm, database_norm)`` ready for
-    :func:`arknights_mcp.importers.enemies.parse_enemies`. Idempotent on
-    already-normalized input (§V29, §V30).
-    """
-    database_norm, motion_by_id = normalize_enemy_database(database_raw)
-    handbook_norm = _inject_motion(handbook_raw, motion_by_id)
-    return handbook_norm, database_norm
-
-
-def normalize_kengxxiao_enemy_database(
-    database_raw: Any,
-) -> tuple[dict[str, Any], dict[str, str]]:
-    """Kengxxiao CN enemy DB (KV-list shape) → normalized ``{"enemies": {...}}`` + motion.
-
-    Kengxxiao's ``enemy_database.json`` wraps its enemies as a list of
-    ``{"Key": <id>, "Value": [<levels>]}`` pairs (§T69), not the top-level id-keyed
-    dict ``arknights_assets_gamedata`` uses (§V29). The *inner* level shape
-    (``enemyData.attributes.<stat>.m_value``, ``enemyData.motion.m_value``) is the
-    same, so this reshapes the KV list into the id-keyed dict and delegates to the
-    shared per-level normalizer (§V30: the one raw→normalized bridge home). Pure
-    JSON→JSON — never persisted into a build (§C: kengxxiao is CI-only, never a
-    runtime dep, never overrides the primary source). Idempotent on
-    already-normalized input.
-    """
-    if _database_is_normalized(database_raw):
-        return database_raw, {}
-    if not isinstance(database_raw, dict):
-        return {"enemies": {}}, {}
-    pairs = database_raw.get("enemies")
-    if not isinstance(pairs, list):
-        return {"enemies": {}}, {}
-    id_keyed: dict[str, Any] = {}
-    for pair in pairs:
-        if not isinstance(pair, dict):
-            continue
-        game_id = pair.get("Key")
-        raw_levels = pair.get("Value")
-        if not isinstance(game_id, str) or not game_id or not isinstance(raw_levels, list):
-            continue
-        id_keyed[game_id] = raw_levels
-    return normalize_enemy_database(id_keyed)
-
+from arknights_mcp.importers.field_policy import OVERWRITTEN_DATA_ALLOWLIST, apply_allowlist
 
 # --- stage levelId → resolvable snapshot path ---------------------------------
 
@@ -700,9 +458,7 @@ def normalize_level(level_raw: Any) -> Any:
 
 
 __all__ = [
-    "normalize_enemy_sources",
-    "normalize_enemy_database",
-    "normalize_kengxxiao_enemy_database",
     "normalize_level_id",
     "normalize_level",
+    "is_clean_level_path",
 ]

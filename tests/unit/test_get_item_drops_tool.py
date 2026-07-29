@@ -41,7 +41,8 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
-from arknights_mcp.mcp.tools._shared import CONFIDENCE_SCALE_NOTE, OPEN_ENUM_LIMITATIONS
+from arknights_mcp.mcp.tools._enum_legend import OPEN_ENUM_LIMITATIONS
+from arknights_mcp.mcp.tools._shared import CONFIDENCE_SCALE_NOTE
 from arknights_mcp.mcp.tools.drops import build_get_item_drops_spec
 from arknights_mcp.models.common import MAX_ID_LEN
 from arknights_mcp.services.drops import get_item_drops

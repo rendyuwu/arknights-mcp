@@ -112,8 +112,9 @@ def test_occurrences_from_stage_enemies(conn: sqlite3.Connection) -> None:
 
 def test_aerial_observation_carries_v6_fields(conn: sqlite3.Connection) -> None:
     result = analyze_stage(conn, server="en", stage_code="4-4")
-    assert len(result.observations) == 1
-    obs = result.observations[0]
+    # The drone is an arts flyer, so the revived ranged-arts rule reports it too (§T210);
+    # this test is about the aerial observation the service propagates.
+    obs = next(o for o in result.observations if o.rule_id == RULE_ID)
     # §V6: every mandated field present + well-formed, propagated by the service.
     assert obs.rule_id == RULE_ID
     assert obs.analyzer_version == result.analyzer_version

@@ -65,12 +65,13 @@
   ],
   "occurrences": [
     {
-      "abilities": [],
       "atk": 280,
       "attack_interval": 1.5,
       "attack_range": 0.0,
-      "attack_type": "physical",
-      "block_behavior": "blockable",
+      "attack_type": null,
+      "damage_types": [
+        "PHYSIC"
+      ],
       "def_": 200,
       "display_name": "Foot Soldier A",
       "enemy_class": "NORMAL",
@@ -85,17 +86,19 @@
       "move_speed": 0.9,
       "res": 0,
       "route_count": 1,
+      "targeting": "MELEE",
       "total_count": 3,
       "variant_id": null,
       "weight": 2
     },
     {
-      "abilities": [],
       "atk": 260,
       "attack_interval": 1.6,
       "attack_range": 0.0,
-      "attack_type": "physical",
-      "block_behavior": "blockable",
+      "attack_type": null,
+      "damage_types": [
+        "PHYSIC"
+      ],
       "def_": 150,
       "display_name": "Foot Soldier B",
       "enemy_class": "NORMAL",
@@ -110,6 +113,7 @@
       "move_speed": 0.9,
       "res": 10,
       "route_count": 1,
+      "targeting": "MELEE",
       "total_count": 3,
       "variant_id": null,
       "weight": 2
@@ -124,7 +128,7 @@
     "max_life_points": 3,
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "en:465bb705512f"
+      "snapshot_id": "en:a75200c3aac5"
     },
     "recommended_level": 45,
     "sanity_cost": 18,

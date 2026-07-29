@@ -5,6 +5,8 @@
       "enemyData": {
         "name": {"m_defined": true, "m_value": "Originium Slug"},
         "description": {"m_defined": true, "m_value": "REALPROSE enemy lore that must never be imported."},
+        "applyWay": {"m_defined": true, "m_value": "MELEE"},
+        "rangeRadius": {"m_defined": false, "m_value": 0.0},
         "attributes": {
           "maxHp": {"m_defined": true, "m_value": 1650},
           "atk": {"m_defined": true, "m_value": 320},
@@ -12,7 +14,16 @@
           "magicResistance": {"m_defined": true, "m_value": 0},
           "moveSpeed": {"m_defined": true, "m_value": 0.7},
           "baseAttackTime": {"m_defined": true, "m_value": 2.0},
-          "massLevel": {"m_defined": true, "m_value": 2}
+          "massLevel": {"m_defined": true, "m_value": 2},
+          "stunImmune": {"m_defined": true, "m_value": false},
+          "silenceImmune": {"m_defined": false, "m_value": false},
+          "sleepImmune": {"m_defined": false, "m_value": false},
+          "frozenImmune": {"m_defined": false, "m_value": false},
+          "levitateImmune": {"m_defined": false, "m_value": false},
+          "disarmedCombatImmune": {"m_defined": false, "m_value": false},
+          "fearedImmune": {"m_defined": false, "m_value": false},
+          "palsyImmune": {"m_defined": false, "m_value": false},
+          "attractImmune": {"m_defined": false, "m_value": false}
         },
         "lifePointReduce": {"m_defined": true, "m_value": 1},
         "motion": {"m_defined": true, "m_value": "WALK"}
@@ -25,6 +36,8 @@
       "enemyData": {
         "name": {"m_defined": true, "m_value": "Recon Drone"},
         "description": {"m_defined": true, "m_value": "REALPROSE enemy lore that must never be imported."},
+        "applyWay": {"m_defined": true, "m_value": "RANGED"},
+        "rangeRadius": {"m_defined": true, "m_value": 2.5},
         "attributes": {
           "maxHp": {"m_defined": true, "m_value": 900},
           "atk": {"m_defined": true, "m_value": 260},
@@ -32,7 +45,16 @@
           "magicResistance": {"m_defined": true, "m_value": 10},
           "moveSpeed": {"m_defined": true, "m_value": 1.0},
           "baseAttackTime": {"m_defined": true, "m_value": 1.6},
-          "massLevel": {"m_defined": true, "m_value": 1}
+          "massLevel": {"m_defined": true, "m_value": 1},
+          "stunImmune": {"m_defined": false, "m_value": false},
+          "silenceImmune": {"m_defined": true, "m_value": true},
+          "sleepImmune": {"m_defined": false, "m_value": false},
+          "frozenImmune": {"m_defined": false, "m_value": false},
+          "levitateImmune": {"m_defined": false, "m_value": false},
+          "disarmedCombatImmune": {"m_defined": false, "m_value": false},
+          "fearedImmune": {"m_defined": false, "m_value": false},
+          "palsyImmune": {"m_defined": false, "m_value": false},
+          "attractImmune": {"m_defined": false, "m_value": false}
         },
         "lifePointReduce": {"m_defined": true, "m_value": 1},
         "motion": {"m_defined": true, "m_value": "FLY"}

@@ -31,6 +31,12 @@ scoped PER LEVEL upstream, so a value now rides ``skills`` only while every leve
 and ``skill_levels`` when they do not. Reading the skill row alone would let a token drop
 out of the guard's view exactly when it starts varying.
 
+T210 added the LIST-valued enum columns (B160): ``enemies.damage_types_json`` and
+``enemy_levels.immunities_json`` store a JSON array, so the scalar ``SELECT DISTINCT``
+above cannot read them and a column whose domain no one checks is how the substrate
+stayed empty in the first place. ``enemy_levels.targeting`` is scalar and joins the
+table above -- it was renamed OUT of a ``_json`` suffix precisely so it could (§V99).
+
 Skipped when no build is promoted (the offline ``pytest -q`` gate builds fixtures, not a
 full en+cn corpus); the unit-level pin in ``tests/unit/test_client_facing_text.py``
 carries the same value sets so a text edit still regresses loudly in CI.
@@ -44,7 +50,7 @@ from pathlib import Path
 
 import pytest
 
-from arknights_mcp.mcp.tools._shared import (
+from arknights_mcp.mcp.tools._enum_legend import (
     ENUM_LEGENDS,
     OPEN_ENUM_LIMITATIONS,
     TOOL_ENUM_LEGEND_FIELDS,
@@ -63,6 +69,8 @@ _EMITTED_ENUM_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("enemies", "enemy_class", "get_enemy"),
     ("enemies", "enemy_class", "analyze_stage"),
     ("enemies", "motion_type", "get_enemy"),
+    ("enemy_levels", "targeting", "get_enemy"),
+    ("enemy_levels", "targeting", "analyze_stage"),
     ("skills", "skill_type", "get_operator"),
     ("skills", "duration_type", "get_operator"),
     ("operators", "profession", "get_operator"),
@@ -70,6 +78,16 @@ _EMITTED_ENUM_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("items", "item_type", "get_stage_drops"),
     ("items", "item_type", "get_item_drops"),
     ("banners", "rule_type", "get_banners"),
+)
+
+#: §T210/§V113 (B160): ``(table, json column, wire field, tool)`` for every enum-valued
+#: column stored as a JSON ARRAY. They are separated only because the read differs -- the
+#: contract is identical to the scalar table above, and so is the reason it exists: these
+#: are the two columns the §V30 bridge was not filling at all.
+_EMITTED_ENUM_LIST_COLUMNS: tuple[tuple[str, str, str, str], ...] = (
+    ("enemies", "damage_types_json", "damage_types", "get_enemy"),
+    ("enemies", "damage_types_json", "damage_types", "analyze_stage"),
+    ("enemy_levels", "immunities_json", "immunities", "get_enemy"),
 )
 
 #: ``difficulty`` is the one column whose wire domain is WIDER than the stored one:
@@ -131,6 +149,34 @@ def test_every_emitted_enum_value_is_published_in_its_legend(
     if column != "sp_type":
         stale = sorted(v for v in legend if v not in emitted)
         assert stale == [], f"{tool} legend names {column} values the build never emits: {stale}"
+
+
+@pytest.mark.parametrize(("table", "column", "field", "tool"), _EMITTED_ENUM_LIST_COLUMNS)
+def test_every_emitted_list_enum_value_is_published_in_its_legend(
+    conn: sqlite3.Connection, table: str, column: str, field: str, tool: str
+) -> None:
+    """The list-valued twin of the scalar guard above (§V104 b; §T210).
+
+    Both directions again: an undocumented token is a value a client cannot place, and a
+    documented token the corpus never emits is a claim about data that is not there --
+    which for these two columns is exactly the state B160 found them in (0 rows).
+    """
+    rows = conn.execute(
+        f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"  # noqa: S608
+    ).fetchall()
+    emitted: set[str] = set()
+    for (raw,) in rows:
+        decoded = json.loads(raw)
+        assert isinstance(decoded, list), f"{table}.{column} is not a JSON list: {raw!r}"
+        emitted |= {str(token) for token in decoded}
+    # Guard the guard: a typo'd column, or a column back to 0 rows, must not pass silently.
+    assert emitted, f"{table}.{column} yielded no values"
+    assert field in TOOL_ENUM_LEGEND_FIELDS[tool], (tool, field)
+    legend = ENUM_LEGENDS[field]
+    undocumented = sorted(value for value in emitted if value not in legend)
+    assert undocumented == [], f"{tool} emits {field} values its legend never names: {undocumented}"
+    stale = sorted(value for value in legend if value not in emitted)
+    assert stale == [], f"{tool} legend names {field} values the build never emits: {stale}"
 
 
 #: §T208 (B157): the three ``skills`` columns the SHARED ``_enum_text`` coercion feeds, with

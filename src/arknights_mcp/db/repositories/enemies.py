@@ -32,6 +32,7 @@ class EnemyRow:
     is_boss: bool
     is_elite: bool
     attack_type: str | None
+    damage_types_json: str | None
     motion_type: str | None
     snapshot_id: str
     imported_at: str
@@ -41,7 +42,8 @@ class EnemyRow:
 class EnemyLevelRow:
     """One level variant of an enemy (``enemy_levels``).
 
-    Scalar stats are typed columns; ``targeting``/``immunities``/``abilities``
+    Scalar stats are typed columns -- ``targeting`` among them, since upstream's
+    ``applyWay`` is one token, not a structure (§V99). ``immunities``/``abilities``
     stay JSON strings here (allowlisted + sanitized at import, §V18/§V31) and are
     decoded in the service.
     """
@@ -57,14 +59,14 @@ class EnemyLevelRow:
     weight: int | None
     life_point_reduction: int | None
     block_behavior: str | None
-    targeting_json: str | None
+    targeting: str | None
     immunities_json: str | None
     abilities_json: str | None
 
 
 _ENEMY_SQL = (
     "SELECT e.enemy_pk, e.server, e.game_id, e.display_name, e.enemy_class, "
-    "e.is_boss, e.is_elite, e.attack_type, e.motion_type, "
+    "e.is_boss, e.is_elite, e.attack_type, e.damage_types_json, e.motion_type, "
     "p.snapshot_id, ss.imported_at "
     "FROM enemies e "
     "JOIN record_provenance p ON p.provenance_id = e.provenance_id "
@@ -77,7 +79,7 @@ _ENEMY_SQL = (
 _LEVELS_SQL = (
     "SELECT level_variant, hp, atk, def, res, attack_interval, attack_range, "
     "move_speed, weight, life_point_reduction, block_behavior, "
-    "targeting_json, immunities_json, abilities_json "
+    "targeting, immunities_json, abilities_json "
     "FROM enemy_levels WHERE enemy_pk = ? "
     "ORDER BY level_variant"
 )
@@ -93,6 +95,7 @@ def _to_enemy_row(row: Any) -> EnemyRow:
         is_boss,
         is_elite,
         attack_type,
+        damage_types_json,
         motion_type,
         snapshot_id,
         imported_at,
@@ -106,6 +109,7 @@ def _to_enemy_row(row: Any) -> EnemyRow:
         is_boss=bool(is_boss),
         is_elite=bool(is_elite),
         attack_type=attack_type,
+        damage_types_json=damage_types_json,
         motion_type=motion_type,
         snapshot_id=snapshot_id,
         imported_at=imported_at,
@@ -125,7 +129,7 @@ def _to_enemy_level_row(row: Any) -> EnemyLevelRow:
         weight,
         life_point_reduction,
         block_behavior,
-        targeting_json,
+        targeting,
         immunities_json,
         abilities_json,
     ) = row
@@ -141,7 +145,7 @@ def _to_enemy_level_row(row: Any) -> EnemyLevelRow:
         weight=weight,
         life_point_reduction=life_point_reduction,
         block_behavior=block_behavior,
-        targeting_json=targeting_json,
+        targeting=targeting,
         immunities_json=immunities_json,
         abilities_json=abilities_json,
     )

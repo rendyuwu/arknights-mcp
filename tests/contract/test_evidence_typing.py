@@ -300,13 +300,15 @@ def test_real_build_stage_evidence_rows_are_typed(build_conn: sqlite3.Connection
         rules.update(obs["rule_id"] for obs in observations)
         checked += _assert_rows_typed(observations, _stage_records(data))
     # §V96 non-degenerate: a guard that checked zero rows of the rules it names is not a
-    # guard. These five are what the real corpus can fire (the other four read enemy
-    # columns that are empty on every row of the build).
+    # guard. These SIX are the whole registry as of §T210: ranged_arts joined them when the
+    # §V30 bridge started filling the columns it decides from (B160), and the three that
+    # could never fire were retired rather than left registered (§T210 c).
     assert rules == {
         "threat.aerial",
         "threat.def_res_skew",
         "threat.lane_route",
         "threat.pressure_spike",
+        "threat.ranged_arts",
         "threat.tiles_deploy",
     }, rules
     assert checked > 500, f"only {checked} rows checked"

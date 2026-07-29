@@ -33,16 +33,43 @@
       "summary": "Stage fields 1 aerial enemy type (2 total spawns); ground-only defenses cannot engage them.",
       "tag": "aerial",
       "title": "Aerial enemies present"
+    },
+    {
+      "analyzer_version": "1",
+      "category": "threat",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "count": null,
+          "field": "attack_range",
+          "note": "arts damage at range",
+          "ref": "enemy_1105_drone",
+          "value": 1.2
+        },
+        {
+          "count": null,
+          "field": "total_count",
+          "note": null,
+          "ref": "enemy_1105_drone",
+          "value": 2
+        }
+      ],
+      "limitations": [],
+      "rule_id": "threat.ranged_arts",
+      "summary": "Stage fields 1 enemy type dealing ranged arts damage, which ignores physical armor and strikes from a distance.",
+      "tag": "ranged_arts",
+      "title": "Ranged arts damage present"
     }
   ],
   "occurrences": [
     {
-      "abilities": [],
       "atk": 320,
       "attack_interval": 2.0,
       "attack_range": 0.0,
-      "attack_type": "physical",
-      "block_behavior": "blockable",
+      "attack_type": null,
+      "damage_types": [
+        "PHYSIC"
+      ],
       "def_": 100,
       "display_name": "Originium Slug",
       "enemy_class": "NORMAL",
@@ -57,19 +84,19 @@
       "move_speed": 0.7,
       "res": 0,
       "route_count": 1,
+      "targeting": "MELEE",
       "total_count": 3,
       "variant_id": null,
       "weight": 2
     },
     {
-      "abilities": [
-        "aerial"
-      ],
       "atk": 260,
       "attack_interval": 1.6,
       "attack_range": 1.2,
-      "attack_type": "physical",
-      "block_behavior": "unblockable_flying",
+      "attack_type": null,
+      "damage_types": [
+        "MAGIC"
+      ],
       "def_": 0,
       "display_name": "Recon Drone",
       "enemy_class": "ELITE",
@@ -84,6 +111,7 @@
       "move_speed": 1.0,
       "res": 10,
       "route_count": 1,
+      "targeting": "RANGED",
       "total_count": 2,
       "variant_id": null,
       "weight": 1
@@ -98,7 +126,7 @@
     "max_life_points": 3,
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "en:75d6e11fab51"
+      "snapshot_id": "en:e2ca8ab4ee16"
     },
     "recommended_level": 45,
     "sanity_cost": 18,

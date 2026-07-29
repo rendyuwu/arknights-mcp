@@ -1,7 +1,7 @@
 """T39: the M3 deterministic rule engine (§V6, §V7, §V26, §V35).
 
-One test group per rule (block-bypass, def/res skew, ranged-arts, support-aura,
-pressure-spike, lane/route, tiles/deploy, crowd-control) plus cross-cutting guards:
+One test group per rule (def/res skew, ranged-arts, pressure-spike, lane/route,
+tiles/deploy) plus cross-cutting guards:
 
 * every emitted observation carries the five §V6 fields;
 * rules decide from typed fields only and handle missing / conflicting fields per
@@ -11,7 +11,12 @@ pressure-spike, lane/route, tiles/deploy, crowd-control) plus cross-cutting guar
 * the engine is deterministic regardless of input order.
 
 The M0 aerial rule keeps its own suite (``test_analyzer_stage_aerial``); here it
-only appears where a combined scenario needs it (the block-bypass exclusion).
+appears only in the combined scenario.
+
+§T210 (c) retired block-bypass, crowd-control and support-aura, so their groups are
+gone with them: every field those rules decided from is absent from every real source
+(B160 (c)), and the tests that passed were feeding the rules synthetic values no build
+could produce. ``tests/contract/test_column_liveness.py`` now pins the retirement.
 """
 
 from __future__ import annotations
@@ -25,25 +30,26 @@ from arknights_mcp.analyzers import (
     StageTiles,
     analyze_stage,
 )
-from arknights_mcp.analyzers.rules import THREAT_RULES
-from arknights_mcp.analyzers.rules.block_bypass import RULE_ID as BLOCK_BYPASS_ID
-from arknights_mcp.analyzers.rules.crowd_control import RULE_ID as CROWD_CONTROL_ID
+from arknights_mcp.analyzers.rules import RETIRED_RULES, THREAT_RULES
 from arknights_mcp.analyzers.rules.def_res_skew import RULE_ID as DEF_RES_SKEW_ID
 from arknights_mcp.analyzers.rules.lane_route import RULE_ID as LANE_ROUTE_ID
 from arknights_mcp.analyzers.rules.pressure_spike import RULE_ID as PRESSURE_SPIKE_ID
 from arknights_mcp.analyzers.rules.ranged_arts import RULE_ID as RANGED_ARTS_ID
-from arknights_mcp.analyzers.rules.support_aura import RULE_ID as SUPPORT_AURA_ID
 from arknights_mcp.analyzers.rules.tiles_deploy import RULE_ID as TILES_DEPLOY_ID
 
 
 def occ(game_id: str, **kw: Any) -> EnemyOccurrence:
-    """An enemy occurrence with inert defaults (ground, physical, no abilities) so a
-    test opts *into* exactly the typed fields the rule under test reads."""
+    """An enemy occurrence with inert defaults (ground, physical damage) so a test opts
+    *into* exactly the typed fields the rule under test reads.
+
+    ``damage_types`` uses the source's OWN token (``PHYSIC``), not the invented
+    ``"physical"`` these tests used to pass: that string appears on 0 of 1585 real
+    handbook entries, and a default no build can produce is how B160 stayed invisible.
+    """
     base: dict[str, Any] = {
         "display_name": None,
         "motion_type": "WALK",
-        "attack_type": "physical",
-        "abilities": (),
+        "damage_types": ("PHYSIC",),
         "total_count": 1,
     }
     base.update(kw)
@@ -82,53 +88,6 @@ def _assert_v6_fields(o: Observation) -> None:
     assert 0.0 <= o.confidence <= 1.0
     assert isinstance(o.evidence, tuple) and o.evidence  # non-empty typed evidence
     assert isinstance(o.limitations, tuple)
-
-
-# --- block-bypass -------------------------------------------------------------
-
-
-def test_block_bypass_fires_on_typed_block_behavior() -> None:
-    result = analyze_stage(ctx(occ("enemy_burrow", block_behavior="unblockable_ground")))
-    obs = _obs_by_tag(result)["block_bypass"]
-    assert obs.rule_id == BLOCK_BYPASS_ID
-    _assert_v6_fields(obs)
-    assert obs.confidence >= 0.85  # authoritative typed block_behavior
-    assert obs.evidence[0].field == "block_behavior"
-
-
-def test_block_bypass_excludes_flyers() -> None:
-    # §V26/dedup: a flyer marked unblockable is reported by the aerial rule, not
-    # double-counted here -> only the aerial observation appears.
-    drone = occ(
-        "enemy_drone",
-        motion_type="FLY",
-        abilities=("aerial",),
-        block_behavior="unblockable_flying",
-    )
-    tags = _obs_by_tag(analyze_stage(ctx(drone)))
-    assert "aerial" in tags
-    assert "block_bypass" not in tags
-
-
-def test_block_bypass_ability_only_reduces_confidence_and_limits() -> None:
-    result = analyze_stage(ctx(occ("enemy_sneak", abilities=("teleport",), block_behavior=None)))
-    obs = _obs_by_tag(result)["block_bypass"]
-    assert obs.confidence < 0.85  # inferred from ability, not the typed field
-    assert obs.evidence[0].field == "abilities"
-    assert any("block_behavior missing" in lim for lim in obs.limitations)
-
-
-def test_block_bypass_conflict_omits_and_warns() -> None:
-    # typed block_behavior says blockable but an ability claims bypass -> §V26 omit + warn.
-    result = analyze_stage(
-        ctx(occ("enemy_conf", abilities=("unblockable",), block_behavior="blockable"))
-    )
-    assert "block_bypass" not in _obs_by_tag(result)
-    assert any("conflict" in w for w in result.warnings)
-
-
-def test_block_bypass_silent_on_plain_blockable_enemy() -> None:
-    assert analyze_stage(ctx(occ("enemy_plain", block_behavior="blockable"))).observations == ()
 
 
 # --- def/res skew -------------------------------------------------------------
@@ -174,11 +133,18 @@ def test_def_res_skew_partial_stats_recorded_as_limitation() -> None:
 
 
 # --- ranged-arts --------------------------------------------------------------
+#
+# §T210 (a)/(b): the rule reads THREE typed fields in a fixed order of authority --
+# damage_types gates it, a measured attack_range decides it, and upstream's own
+# targeting token decides it when no radius was stored. The order is the fix: counted
+# over the pinned EN snapshot, 77 of the 383 arts-capable enemies carry no radius and
+# 55 of THOSE declare applyWay MELEE, so a rule that fell straight from "no radius" to
+# the §V26 inference would publish 55 enemies as ranged threats against the source.
 
 
 def test_ranged_arts_fires_on_arts_at_range() -> None:
     obs = _obs_by_tag(
-        analyze_stage(ctx(occ("enemy_caster", attack_type="magical", attack_range=2.5)))
+        analyze_stage(ctx(occ("enemy_caster", damage_types=("MAGIC",), attack_range=2.5)))
     )["ranged_arts"]
     assert obs.rule_id == RANGED_ARTS_ID
     _assert_v6_fields(obs)
@@ -186,54 +152,101 @@ def test_ranged_arts_fires_on_arts_at_range() -> None:
     assert obs.evidence[0].field == "attack_range"
 
 
-def test_ranged_arts_missing_range_infers_at_reduced_confidence() -> None:
-    obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_arts", attack_type="arts", attack_range=None))))[
-        "ranged_arts"
-    ]
-    assert obs.confidence < 0.9
-    assert any("attack_range missing" in lim for lim in obs.limitations)
+def test_ranged_arts_reads_the_arts_half_of_a_dual_damage_enemy() -> None:
+    # 42 real enemies deal PHYSIC *and* MAGIC, and PHYSIC is listed first -- a rule
+    # reading damage_types[0] would skip every one of them.
+    obs = _obs_by_tag(
+        analyze_stage(ctx(occ("enemy_dual", damage_types=("PHYSIC", "MAGIC"), attack_range=4.5)))
+    )["ranged_arts"]
+    assert obs.evidence[0].field == "attack_range"
+
+
+def test_ranged_arts_reads_targeting_before_inferring_from_absence() -> None:
+    # No radius stored, but the source states the enemy strikes beyond melee: the
+    # conclusion rests on that token, at a confidence between measured and inferred.
+    obs = _obs_by_tag(
+        analyze_stage(
+            ctx(
+                occ(
+                    "enemy_arts",
+                    damage_types=("MAGIC",),
+                    attack_range=None,
+                    targeting="RANGED",
+                )
+            )
+        )
+    )["ranged_arts"]
+    assert 0.6 < obs.confidence < 0.9
+    assert (obs.evidence[0].field, obs.evidence[0].value) == ("targeting", "RANGED")
+    assert any("reach read from targeting" in lim for lim in obs.limitations)
+
+
+def test_ranged_arts_melee_targeting_without_a_radius_does_not_fire() -> None:
+    # THE 55-false-positive case (§T210 b): arts damage, no radius, and the source's own
+    # token says melee. Inferring reach here would contradict the field that answered.
+    result = analyze_stage(
+        ctx(
+            occ("enemy_melee_caster", damage_types=("MAGIC",), attack_range=None, targeting="MELEE")
+        )
+    )
+    assert result.observations == ()
+
+
+def test_ranged_arts_no_targeting_at_all_is_a_conflict_not_a_conclusion() -> None:
+    # §V26 conflicting typed fields: it deals arts damage yet states no attack reach.
+    result = analyze_stage(
+        ctx(occ("enemy_inert", damage_types=("MAGIC",), attack_range=None, targeting="NONE"))
+    )
+    assert result.observations == ()
+    assert any("no attack reach" in w for w in result.warnings)
+
+
+def test_ranged_arts_missing_range_and_targeting_infers_at_reduced_confidence() -> None:
+    obs = _obs_by_tag(
+        analyze_stage(
+            ctx(occ("enemy_arts", damage_types=("MAGIC",), attack_range=None, targeting=None))
+        )
+    )["ranged_arts"]
+    assert obs.confidence < 0.8
+    assert obs.evidence[0].field == "damage_types"
+    assert any("attack_range and targeting both missing" in lim for lim in obs.limitations)
 
 
 def test_ranged_arts_melee_arts_does_not_fire() -> None:
-    # arts damage but no reach -> not a ranged-arts threat.
+    # arts damage but no reach -> not a ranged-arts threat. A measured radius wins over
+    # the targeting token, which is why this stays silent even declared RANGED.
     assert (
-        analyze_stage(ctx(occ("enemy_bruiser", attack_type="arts", attack_range=0.0))).observations
+        analyze_stage(
+            ctx(
+                occ(
+                    "enemy_bruiser",
+                    damage_types=("MAGIC",),
+                    attack_range=0.0,
+                    targeting="RANGED",
+                )
+            )
+        ).observations
         == ()
     )
 
 
 def test_ranged_arts_physical_does_not_fire() -> None:
     assert (
-        analyze_stage(ctx(occ("enemy_gun", attack_type="physical", attack_range=3.0))).observations
+        analyze_stage(
+            ctx(occ("enemy_gun", damage_types=("PHYSIC",), attack_range=3.0))
+        ).observations
         == ()
     )
 
 
-# --- support-aura -------------------------------------------------------------
-
-
-def test_support_aura_fires_on_typed_ability() -> None:
-    obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_medic", abilities=("heal_allies",)))))[
-        "support_aura"
-    ]
-    assert obs.rule_id == SUPPORT_AURA_ID
-    _assert_v6_fields(obs)
-
-
-def test_support_aura_typed_only_ignores_name() -> None:
-    # Name screams support but no typed aura ability -> §V26 forbids matching prose.
-    trap = occ("enemy_named", display_name="Battlefield Support Aura Healer", abilities=())
-    assert analyze_stage(ctx(trap)).observations == ()
-
-
-def test_support_aura_counts_distinct_enemy_once_across_variants() -> None:
-    # §V35: one enemy at two variants -> two evidence items, one distinct type.
-    v0 = occ("enemy_medic", abilities=("heal_allies",))
-    v1 = occ("enemy_medic", abilities=("aura",))
-    obs = _obs_by_tag(analyze_stage(ctx(v0, v1)))["support_aura"]
-    assert [e.value for e in obs.evidence if e.field == "abilities"] == ["heal_allies", "aura"]
-    assert {e.ref for e in obs.evidence} == {"enemy_medic"}
-    assert "1 enemy type" in obs.summary
+def test_ranged_arts_absent_damage_types_does_not_fire() -> None:
+    # §V26: the source carried no damage kind at all -> no conclusion, not a guess.
+    assert (
+        analyze_stage(
+            ctx(occ("enemy_unknown", damage_types=None, attack_range=3.0, targeting="RANGED"))
+        ).observations
+        == ()
+    )
 
 
 # --- pressure-spike -----------------------------------------------------------
@@ -362,19 +375,6 @@ def test_tiles_deploy_absent_tiles_does_not_fire() -> None:
     assert analyze_stage(ctx(occ("enemy_a"), tiles=None)).observations == ()
 
 
-# --- crowd-control ------------------------------------------------------------
-
-
-def test_crowd_control_fires_on_typed_ability() -> None:
-    obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_stun", abilities=("stun",)))))["crowd_control"]
-    assert obs.rule_id == CROWD_CONTROL_ID
-    _assert_v6_fields(obs)
-
-
-def test_crowd_control_silent_without_cc_ability() -> None:
-    assert analyze_stage(ctx(occ("enemy_calm", abilities=("aerial",)))).observations == ()
-
-
 # --- cross-cutting guards -----------------------------------------------------
 
 #: Prescriptive language §V7 forbids in an observation (it must state facts, not
@@ -383,15 +383,12 @@ _FORBIDDEN = ("mandatory", "must use", "must bring", "best operator", "always br
 
 
 def _every_observation() -> list[Observation]:
-    """Fire every rule once so the guards see all nine observation shapes."""
+    """Fire every rule once so the guards see all six observation shapes."""
     scenario = ctx(
-        occ("enemy_drone", motion_type="FLY", abilities=("aerial",), total_count=2),
-        occ("enemy_burrow", block_behavior="unblockable_ground"),
+        occ("enemy_drone", motion_type="FLY", total_count=2),
         occ("enemy_wall", defense=800, res=0),
-        occ("enemy_caster", attack_type="magical", attack_range=2.5),
-        occ("enemy_medic", abilities=("heal_allies",)),
+        occ("enemy_caster", damage_types=("MAGIC",), attack_range=2.5),
         occ("enemy_swarm", total_count=8, first_spawn_time=2.0, last_spawn_time=10.0),
-        occ("enemy_stun", abilities=("stun",)),
         route_count=3,
         tiles=StageTiles(total=24, buildable_melee=2, buildable_ranged=1),
     )
@@ -402,14 +399,11 @@ def test_all_rules_can_fire_together() -> None:
     tags = {o.tag for o in _every_observation()}
     assert tags == {
         "aerial",
-        "block_bypass",
         "def_res_skew",
         "ranged_arts",
-        "support_aura",
         "pressure_spike",
         "lane_route",
         "tiles_deploy",
-        "crowd_control",
     }
 
 
@@ -428,21 +422,21 @@ def test_no_observation_uses_prescriptive_language() -> None:
 
 def test_engine_deterministic_regardless_of_input_order() -> None:
     a = occ("enemy_wall", defense=800, res=0)
-    b = occ("enemy_caster", attack_type="magical", attack_range=2.5)
+    b = occ("enemy_caster", damage_types=("MAGIC",), attack_range=2.5)
     assert analyze_stage(ctx(a, b)) == analyze_stage(ctx(b, a))
 
 
 def test_registry_covers_every_named_rule() -> None:
-    # §T39 names nine rules; the registry exposes exactly those rule_ids.
+    # §T39 named nine rules; §T210 (c) retired three whose deciding fields no real
+    # source fills, so the registry exposes exactly these six rule_ids.
     ids = {rule.rule_id for rule in THREAT_RULES}
     assert ids == {
         "threat.aerial",
-        BLOCK_BYPASS_ID,
         DEF_RES_SKEW_ID,
         RANGED_ARTS_ID,
-        SUPPORT_AURA_ID,
         PRESSURE_SPIKE_ID,
         LANE_ROUTE_ID,
         TILES_DEPLOY_ID,
-        CROWD_CONTROL_ID,
     }
+    # A retired rule may not creep back in without its substrate (§V113 b).
+    assert not (ids & RETIRED_RULES)

@@ -53,10 +53,14 @@ class StageEnemyRow:
     """One enemy's typed occurrence in a stage (from ``stage_enemies``).
 
     Carries the §V47 per-enemy stat block (``hp`` / ``atk`` / ``def_`` / ``res`` /
-    ``attack_interval`` / ``move_speed`` / ``weight``) plus the extra M3 analyzer
-    inputs (``attack_range`` / ``block_behavior``), joined from the matching
-    ``enemy_levels`` variant (§T39); each is ``None`` when the level row or the
-    source field is absent (§V26).
+    ``attack_interval`` / ``move_speed`` / ``weight``) plus the analyzer inputs the
+    threat rules decide from (``attack_range`` / ``targeting``, and the enemy-level
+    ``damage_types_json``), joined from the matching ``enemy_levels`` variant (§T39);
+    each is ``None`` when the level row or the source field is absent (§V26).
+
+    ``abilities_json`` / ``block_behavior`` are NOT selected: no real source fills
+    either column (§V113 ``no_home``; B160 (c)), and the three rules that read them
+    were retired in §T210 (c) rather than left registered and unable to fire.
 
     For a stage-scoped inline variant (``variant_id`` set; §T80/§V43) every
     §V29-verified stat (``hp`` / ``atk`` / ``def_`` / ``res`` / ``attack_interval`` /
@@ -72,12 +76,12 @@ class StageEnemyRow:
     is_elite: bool
     motion_type: str | None
     attack_type: str | None
+    damage_types_json: str | None
     level_variant: int
     total_count: int | None
     first_spawn_time: float | None
     last_spawn_time: float | None
     route_count: int | None
-    abilities_json: str | None
     hp: int | None
     atk: int | None
     def_: int | None
@@ -86,7 +90,7 @@ class StageEnemyRow:
     attack_range: float | None
     move_speed: float | None
     weight: int | None
-    block_behavior: str | None
+    targeting: str | None
     variant_id: str | None
 
 
@@ -181,13 +185,14 @@ _STAGE_BY_GAME_ID_SQL = {
 # surfaced for traceability (NULL for a plain base-enemy occurrence).
 _OCCURRENCES_SQL = (
     "SELECT e.game_id, e.display_name, e.enemy_class, e.is_boss, e.is_elite, "
-    "COALESCE(v.motion_type, e.motion_type), e.attack_type, se.enemy_level_variant, "
+    "COALESCE(v.motion_type, e.motion_type), e.attack_type, e.damage_types_json, "
+    "se.enemy_level_variant, "
     "se.total_count, se.first_spawn_time, se.last_spawn_time, se.route_count, "
-    "el.abilities_json, COALESCE(v.hp, el.hp), COALESCE(v.atk, el.atk), "
+    "COALESCE(v.hp, el.hp), COALESCE(v.atk, el.atk), "
     'COALESCE(v."def", el."def"), COALESCE(v.res, el.res), '
     "COALESCE(v.attack_interval, el.attack_interval), el.attack_range, "
     "COALESCE(v.move_speed, el.move_speed), COALESCE(v.weight, el.weight), "
-    "el.block_behavior, v.variant_id "
+    "el.targeting, v.variant_id "
     "FROM stage_enemies se "
     "JOIN enemies e ON e.enemy_pk = se.enemy_pk "
     "LEFT JOIN enemy_levels el "
@@ -301,12 +306,12 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         is_elite,
         motion_type,
         attack_type,
+        damage_types_json,
         level_variant,
         total_count,
         first_spawn_time,
         last_spawn_time,
         route_count,
-        abilities_json,
         hp,
         atk,
         def_,
@@ -315,7 +320,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         attack_range,
         move_speed,
         weight,
-        block_behavior,
+        targeting,
         variant_id,
     ) = row
     return StageEnemyRow(
@@ -326,12 +331,12 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         is_elite=bool(is_elite),
         motion_type=motion_type,
         attack_type=attack_type,
+        damage_types_json=damage_types_json,
         level_variant=level_variant,
         total_count=total_count,
         first_spawn_time=first_spawn_time,
         last_spawn_time=last_spawn_time,
         route_count=route_count,
-        abilities_json=abilities_json,
         hp=hp,
         atk=atk,
         def_=def_,
@@ -340,7 +345,7 @@ def _to_stage_enemy_row(row: Any) -> StageEnemyRow:
         attack_range=attack_range,
         move_speed=move_speed,
         weight=weight,
-        block_behavior=block_behavior,
+        targeting=targeting,
         variant_id=variant_id,
     )
 

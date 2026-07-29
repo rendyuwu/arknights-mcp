@@ -1,15 +1,21 @@
 """Aerial threat rule: does a stage field flying enemies? (§V6, §V26).
 
-Deterministic and typed-field-only -- decides from ``motion_type`` (a typed
-enum value) and ``abilities`` (a typed id list), never from a name/description
-string (§V26). A missing ``motion_type`` reduces confidence and is recorded as a
-limitation; a ground ``motion_type`` that conflicts with an ``aerial`` ability is
-omitted from the conclusion and surfaced as a warning (§V26).
+Deterministic and typed-field-only -- decides from ``motion_type`` (a typed enum
+value), never from a name/description string (§V26). A ``motion_type`` that is
+missing or outside the known vocabulary yields no conclusion for that enemy and is
+recorded as a limitation (§V26): the rule reports which enemies it could not judge
+rather than judging them.
+
+§T210 (c)/B160: this rule used to carry a second arm that inferred flight from an
+``aerial`` ability token, and a third that warned when a ground motion contradicted
+one. Both are gone with the ``abilities`` field itself -- no real source has ever
+carried a typed ability vocabulary, so that arm could not fire on any build ever
+promoted while the arm's tests passed on synthetic input. ``motion_type`` is the
+authoritative field and it is populated on 3879/3879 real enemies (WALK 3547, FLY
+332), which is why this rule is the one member of B160's four that kept firing.
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 from arknights_mcp.analyzers.base import (
     EvidenceItem,
@@ -18,10 +24,8 @@ from arknights_mcp.analyzers.base import (
     StageThreatContext,
 )
 from arknights_mcp.analyzers.rules._common import (
-    AERIAL_ABILITY,
     FLY_MOTIONS,
     GROUND_MOTIONS,
-    ability_tokens,
     by_game_id,
     count_evidence,
     distinct_refs,
@@ -30,7 +34,6 @@ from arknights_mcp.analyzers.rules._common import (
 RULE_ID = "threat.aerial"
 
 _CONF_MOTION_FLY = 0.9  # authoritative typed motion field
-_CONF_ABILITY_ONLY = 0.6  # inferred from ability when motion_type is missing/unknown
 
 
 def _summary(flyer_types: int, total_spawns: int) -> str:
@@ -49,63 +52,40 @@ class AerialThreatRule:
     def evaluate(self, ctx: StageThreatContext) -> RuleResult:
         evidence: list[EvidenceItem] = []
         limitations: list[str] = []
-        warnings: list[str] = []
         confidence = 0.0
         total_spawns = 0
 
-        # Sort by game_id so evidence/warning order is deterministic (§V26).
+        # Sort by game_id so evidence/limitation order is deterministic (§V26).
         for occ in by_game_id(ctx.occurrences):
             motion = occ.motion_type.upper() if occ.motion_type else None
-            abilities = ability_tokens(occ.abilities)
-            has_aerial = abilities is not None and AERIAL_ABILITY in abilities
 
-            deciding_field: str | None = None
-            deciding_value: Any = None
-            conf = 0.0
-
-            if motion in FLY_MOTIONS:
-                deciding_field = "motion_type"
-                deciding_value = occ.motion_type
-                conf = _CONF_MOTION_FLY
-            elif motion in GROUND_MOTIONS:
-                if has_aerial:
-                    warnings.append(
-                        f"{occ.game_id}: motion_type={occ.motion_type!r} conflicts with "
-                        "'aerial' ability; omitted from aerial conclusion"
-                    )
+            if motion in GROUND_MOTIONS:
                 continue
-            elif has_aerial:
-                # motion_type is missing or an unrecognized value, but a typed
-                # 'aerial' ability is present -> infer flying at lower confidence.
-                deciding_field = "abilities"
-                deciding_value = AERIAL_ABILITY
-                conf = _CONF_ABILITY_ONLY
+            if motion not in FLY_MOTIONS:
+                # §V26: absent or unrecognized -> no conclusion, and say so rather than
+                # defaulting the enemy to ground.
                 if motion is None:
-                    limitations.append(
-                        f"{occ.game_id}: motion_type missing; aerial inferred from 'aerial' ability"
-                    )
+                    limitations.append(f"{occ.game_id}: motion_type missing; not judged as aerial")
                 else:
                     limitations.append(
                         f"{occ.game_id}: unrecognized motion_type={occ.motion_type!r}; "
-                        "aerial inferred from 'aerial' ability"
+                        "not judged as aerial"
                     )
-
-            if deciding_field is None:
                 continue
 
             evidence.append(
-                EvidenceItem(ref=occ.game_id, field=deciding_field, value=deciding_value)
+                EvidenceItem(ref=occ.game_id, field="motion_type", value=occ.motion_type)
             )
             # §V101: the spawn count is a fact with its own field path -> its own row,
             # never a "total_count=7" note welded onto the deciding row.
             count_row = count_evidence(occ)
             if count_row is not None:
                 evidence.append(count_row)
-            confidence = max(confidence, conf)
+            confidence = max(confidence, _CONF_MOTION_FLY)
             total_spawns += occ.total_count or 0
 
         if not evidence:
-            return RuleResult(warnings=tuple(warnings))
+            return RuleResult()
 
         # One enemy that appears at several level variants yields several evidence
         # items with the same ``ref``; the headline counts *distinct* enemies, not
@@ -121,4 +101,4 @@ class AerialThreatRule:
             evidence=tuple(evidence),
             limitations=tuple(limitations),
         )
-        return RuleResult(observation=observation, warnings=tuple(warnings))
+        return RuleResult(observation=observation)

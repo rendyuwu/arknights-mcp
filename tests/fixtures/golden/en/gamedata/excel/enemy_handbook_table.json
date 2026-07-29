@@ -4,36 +4,46 @@
       "enemyId": "enemy_drone_a",
       "name": "Scout Drone A",
       "enemyLevel": "ELITE",
-      "attackType": "physical",
-      "motionType": "FLY"
+      "motionType": "FLY",
+      "damageType": [
+        "PHYSIC"
+      ]
     },
     "enemy_drone_b": {
       "enemyId": "enemy_drone_b",
       "name": "Scout Drone B",
       "enemyLevel": "ELITE",
-      "attackType": "physical",
-      "motionType": "FLY"
+      "motionType": "FLY",
+      "damageType": [
+        "PHYSIC"
+      ]
     },
     "enemy_caster": {
       "enemyId": "enemy_caster",
       "name": "Arts Caster",
       "enemyLevel": "ELITE",
-      "attackType": "magical",
-      "motionType": "WALK"
+      "motionType": "WALK",
+      "damageType": [
+        "MAGIC"
+      ]
     },
     "enemy_soldier_a": {
       "enemyId": "enemy_soldier_a",
       "name": "Foot Soldier A",
       "enemyLevel": "NORMAL",
-      "attackType": "physical",
-      "motionType": "WALK"
+      "motionType": "WALK",
+      "damageType": [
+        "PHYSIC"
+      ]
     },
     "enemy_soldier_b": {
       "enemyId": "enemy_soldier_b",
       "name": "Foot Soldier B",
       "enemyLevel": "NORMAL",
-      "attackType": "physical",
-      "motionType": "WALK"
+      "motionType": "WALK",
+      "damageType": [
+        "PHYSIC"
+      ]
     }
   }
 }

@@ -36,17 +36,20 @@ from dataclasses import asdict
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import (
+    TOOL_ENUM_LEGEND_FIELDS,
+    attach_enum_legend,
+)
 from arknights_mcp.mcp.tools._shared import (
     CONFIDENCE_SCALE_NOTE,
     ENEMY_CLASS_NOTE,
     ENEMY_STAT_SCALE_NOTE,
     LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
+    RETIRED_ATTACK_TYPE_NOTE,
     STAGE_MAP_GUIDE_POINTER,
-    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
     absent_field_limitation,
-    attach_enum_legend,
     observation_to_dict,
     page_to_dict,
     run_guarded,
@@ -387,11 +390,15 @@ _ANALYZE_TOOL_DESCRIPTION = (
 )
 
 #: §V67/§V26 (B98 follow-through): the detailed occurrence rows omit an
-#: absent-in-source ``attack_type`` key, so the envelope must still carry the
+#: absent-in-source ``damage_types`` key, so the envelope must still carry the
 #: absence signal (limitation = sole signal, mirroring ``get_enemy``). Client-facing
 #: text, so no internal cites/jargon (§V71) -- the cites live in this comment.
-_OCCURRENCE_ATTACK_TYPE_LIMITATION = (
-    "attack_type is not present in the source data for one or more enemies in this "
+#:
+#: §V113/B160: the RETIRED ``attack_type`` gets its own shared sentence
+#: (:data:`RETIRED_ATTACK_TYPE_NOTE`) instead, because its absence is corpus-wide and
+#: this per-stage phrasing would understate it (§V108).
+_OCCURRENCE_DAMAGE_TYPES_LIMITATION = (
+    "damage_types is not present in the source data for one or more enemies in this "
     "stage; those occurrence rows omit the key."
 )
 
@@ -417,13 +424,18 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
     than emitted as a bare null for a base-enemy occurrence (§V67/B90); the
     ``attack_type`` scalar is likewise omitted when absent in source (§V67/B98).
 
-    §V101/§T197: ``attack_range`` / ``block_behavior`` / ``abilities`` ride here too --
-    the ranged-arts, block-bypass and ability-token rules cite them as evidence field
-    paths, and until now this response emitted none of the three, so those paths resolved
-    to nothing a client could look up. Same §V67 discipline: an absent scalar omits its
-    key, and ``abilities`` is ``[]`` when the source confirms none, omitted when the
-    source carried no such field (B58). An evidence row for one of these fields exists
-    only when the rule read a value, so the row and its key appear together."""
+    §V101/§T197: ``damage_types`` / ``attack_range`` / ``targeting`` ride here too -- the
+    ranged-arts rule cites all three as evidence field paths, and a path this response
+    does not carry is one a client cannot look up. Same §V67 discipline: an absent scalar
+    omits its key, and ``damage_types`` is ``[]`` when the source confirms none, omitted
+    when the source carried no such field (B58). An evidence row for one of these fields
+    exists only when the rule read a value, so the row and its key appear together.
+
+    ``block_behavior`` / ``abilities`` are NOT here: the rules that cited them were
+    retired in §T210 (c) because no source fills either column, so their §V101
+    justification went with them. ``immunities`` stays a ``get_enemy`` fact -- it is
+    per-enemy detail no stage rule decides from, and this row is already the widest one
+    the §V22 cap has to hold."""
     out: dict[str, object] = {
         "game_id": occ.game_id,
         "display_name": occ.display_name,
@@ -453,11 +465,11 @@ def _occurrence_full(occ: EnemyOccurrenceFacts) -> dict[str, object]:
         out["attack_type"] = occ.attack_type
     if occ.attack_range is not None:
         out["attack_range"] = occ.attack_range
-    if occ.block_behavior is not None:
-        out["block_behavior"] = occ.block_behavior
+    if occ.targeting is not None:
+        out["targeting"] = occ.targeting
     # §V67/B58: [] = the source confirms none; key absent = the source carried no field.
-    if occ.abilities is not None:
-        out["abilities"] = list(occ.abilities)
+    if occ.damage_types is not None:
+        out["damage_types"] = list(occ.damage_types)
     return out
 
 
@@ -497,15 +509,20 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     # §V67/B98: the shared stage shaper omits absent scalars (recommended_level /
     # max_life_points), so this surface carries the same sole-signal limitation
     # naming them as get_stage does; a detailed occurrence row likewise omits an
-    # absent attack_type, so that omission is named too (sole signal, never silent).
+    # absent damage_types, so that omission is named too (sole signal, never silent).
     # §V102 (b)/B139: the shared-stage_code disclosure leads, at every depth -- which
     # stage was analyzed is the first thing a client must be able to check.
     limitations = (
         *stage_ambiguity_limitation(result.ambiguity),
         *_stage_absent_field_limitations(result.stage),
     )
-    if depth == "detailed" and any(o.attack_type is None for o in result.occurrences):
-        limitations = (*limitations, _OCCURRENCE_ATTACK_TYPE_LIMITATION)
+    if depth == "detailed":
+        if any(o.damage_types is None for o in result.occurrences):
+            limitations = (*limitations, _OCCURRENCE_DAMAGE_TYPES_LIMITATION)
+        # §V113/B160: the retired scalar's absence is a fact about the game data, not
+        # about this stage, so it is stated once with its true scope (§V108).
+        if any(o.attack_type is None for o in result.occurrences):
+            limitations = (*limitations, RETIRED_ATTACK_TYPE_NOTE)
     # §V104 (b): only the DETAILED occurrence row carries enemy_class, so only it needs
     # the domain -- a legend for a field this response omits would be noise (§V67).
     # §V104/§V71 (e): the same gate carries the stat scales -- only the detailed row

@@ -33,20 +33,22 @@ from arknights_mcp.instructions import (
 from arknights_mcp.mcp.resources import build_default_resources
 from arknights_mcp.mcp.tool_registry import MAX_TOOL_DESCRIPTION_CHARS
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools._enum_legend import (
+    ENUM_LEGENDS,
+    OPEN_ENUM_LIMITATIONS,
+    TOOL_ENUM_LEGEND_FIELDS,
+)
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     CONFIDENCE_SCALE_NOTE,
     DB_UNAVAILABLE_ACTION,
     ENEMY_STAT_SCALE_NOTE,
-    ENUM_LEGENDS,
     LEVEL_VARIANT_NOTE,
     MODULE_CHANGE_DEDUP_NOTE,
-    OPEN_ENUM_LIMITATIONS,
     SEARCH_COVERAGE_POINTER,
     SEARCH_COVERAGE_URI,
     STAGE_MAP_GUIDE_POINTER,
     STAGE_MAP_GUIDE_URI,
-    TOOL_ENUM_LEGEND_FIELDS,
 )
 from arknights_mcp.mcp.tools.drops import _ITEM_NO_DROPS_ACTION, _ITEM_NOT_FOUND_ACTION
 from arknights_mcp.mcp.tools.drops import _NOT_FOUND_ACTION as _DROPS_NOT_FOUND_ACTION

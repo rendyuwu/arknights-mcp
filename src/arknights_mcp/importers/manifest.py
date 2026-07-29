@@ -42,7 +42,13 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: ``sp_type`` code its level 2 names). No allowlist change -- all four keys were already
 #: allowlisted -- so ``FIELD_POLICY_VERSION`` stands and this bump alone is what makes the
 #: re-import promote over an unchanged snapshot (§V92).
-TRANSFORM_VERSION = "5"
+#: ``6`` (B160/§V113): the §V30 enemy bridge now emits ``attackRange`` (with upstream's
+#: ``-1.0`` no-radius sentinel kept OUT of the distance column, §V103), ``targeting``, and
+#: the nine typed ``<x>Immune`` flags folded into one ``immunities`` list -- three keys the
+#: allowlist admitted while nothing mapped them, so the columns were 100% NULL on every
+#: build ever promoted. ``damageType`` is imported beside them (a policy change too, hence
+#: both versions move). Every enemy level row imports different bytes.
+TRANSFORM_VERSION = "6"
 
 
 def _now_iso() -> str:

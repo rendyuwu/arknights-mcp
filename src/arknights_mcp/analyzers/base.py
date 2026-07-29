@@ -24,26 +24,36 @@ ANALYZER_VERSION = "1"
 class EnemyOccurrence:
     """One enemy's typed, allowlisted appearance in a stage (rule input).
 
-    ``abilities is None`` means the source field was absent (missing -> §V26
-    reduces confidence); ``abilities == ()`` means present-but-empty. The M3 stat
+    ``damage_types is None`` means the source field was absent (missing -> §V26
+    reduces confidence); ``damage_types == ()`` means present-but-empty. The M3 stat
     and timing fields (§T39) follow the same convention: ``None`` = the source
     field was absent, so a rule reduces confidence or records a limitation (§V26),
     never silently treats it as zero.
+
+    Every field here is one a real build POPULATES. ``abilities`` / ``block_behavior``
+    were removed in §T210 (c): no upstream source carries either, so the three rules
+    that decided from them (block-bypass, crowd-control, support-aura) were retired
+    (B160 (c)) -- a rule input nothing can fill is not a conservative default, it is a
+    guaranteed §V26 "missing field" arm that makes a dead rule read as a clean one.
     """
 
     game_id: str
     display_name: str | None
     motion_type: str | None
-    attack_type: str | None
-    abilities: tuple[str, ...] | None
+    #: The enemy's damage kinds (upstream ``damageType``): a LIST, because 42 real
+    #: enemies deal PHYSIC *and* MAGIC. Replaces the retired ``attack_type`` scalar,
+    #: which is NULL on 3879/3879 build rows (§V113 retired arm; B160 (b)).
+    damage_types: tuple[str, ...] | None
     total_count: int | None
     # M3 rule inputs (§T39): typed stat / timing fields from the enemy's level
     # variant and its stage occurrence. Defaulted so the M0 aerial substrate (which
-    # reads only motion + abilities) constructs unchanged.
+    # reads only motion) constructs unchanged.
     defense: int | None = None
     res: int | None = None
     attack_range: float | None = None
-    block_behavior: str | None = None
+    #: Upstream ``applyWay``: MELEE / RANGED / ALL / NONE, the enemy's own statement
+    #: of what it can reach. Read BEFORE any inference about reach (§T210 (b)).
+    targeting: str | None = None
     first_spawn_time: float | None = None
     last_spawn_time: float | None = None
     route_count: int | None = None

@@ -47,7 +47,7 @@ from tests.support import (
     live_upstream_disabled,
 )
 
-from arknights_mcp.mcp.tools._shared import ENUM_LEGENDS, OPEN_ENUM_LIMITATIONS
+from arknights_mcp.mcp.tools._enum_legend import ENUM_LEGENDS, OPEN_ENUM_LIMITATIONS
 
 pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_SKIP_REASON)
 

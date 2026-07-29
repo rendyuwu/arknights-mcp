@@ -47,11 +47,13 @@ from arknights_mcp.mcp.envelopes import (
     error,
 )
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import (
+    TOOL_ENUM_LEGEND_FIELDS,
+    attach_enum_legend,
+)
 from arknights_mcp.mcp.tools._shared import (
     CONFIDENCE_SCALE_NOTE,
-    TOOL_ENUM_LEGEND_FIELDS,
     ConnectionProvider,
-    attach_enum_legend,
     hoist_drop_provenance,
     page_to_dict,
     ranked_observation_to_dict,

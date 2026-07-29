@@ -45,18 +45,21 @@ jobs:
         run: uv run pytest -q --cov=arknights_mcp --cov-report=term-missing
 
   live-upstream:
-    # SPEC §T68 / §T193 / §T204 / §T205 / §T208 / §C: real-corpus validation against LIVE
+    # SPEC §T68 / §T193 / §T204 / §T205 / §T208 / §T210 / §C: real-corpus validation against LIVE
     # upstream. Needs network, so it is a dedicated Linux-only job gated by
     # ARKMCP_LIVE_UPSTREAM (the test modules skip themselves unless the flag is set).
     # Fetches a pinned arknights_assets_gamedata commit and asserts (a) real 4-4 combat
     # data after an import (§T68), (b) the §V97 token boundary over every real EN effect
     # template (§T193/B130), (c) §V109's zero-truncation template cap (§T204/B154),
-    # (d) §V110's real event titles reaching the search service (§T205/B155) and (e) the
-    # §V99 skill enum encoding arms (§T208/B157). The module list is enumerated, so a new
+    # (d) §V110's real event titles reaching the search service (§T205/B155), (e) the
+    # §V99 skill enum encoding arms (§T208/B157) and (f) the §V113 enemy substrate --
+    # rangeRadius/applyWay/<x>Immune/damageType counted at the source, plus the
+    # melee-declared arts census that decided the ranged-arts field order (§T210/B160).
+    # The module list is enumerated, so a new
     # live guard is only guarded here once it is ADDED -- (c) and (d) were written but
     # never listed, and so never ran in CI at all. Nothing fetched is committed (§V16,
     # fetch -> discard).
-    name: live-upstream real-corpus (§T68, §T193, §T204, §T205, §T208)
+    name: live-upstream real-corpus (§T68, §T193, §T204, §T205, §T208, §T210)
     runs-on: ubuntu-latest
     # Non-blocking: a flaky/unreachable/rate-limited upstream must not turn CI red
     # for unrelated changes. The job still runs and reports its own status; it just
@@ -88,7 +91,8 @@ jobs:
             tests/contract/test_template_weld.py \
             tests/contract/test_template_truncation.py \
             tests/contract/test_zone_event_search.py \
-            tests/contract/test_skill_enum_encoding.py -q
+            tests/contract/test_skill_enum_encoding.py \
+            tests/contract/test_enemy_substrate.py -q
 
   cn-cross-validate:
     # SPEC §T69 / §C: CI-only kengxxiao_gamedata CN cross-validator. Fetches a

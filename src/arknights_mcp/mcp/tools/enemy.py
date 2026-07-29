@@ -23,16 +23,20 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import (
+    TOOL_ENUM_LEGEND_FIELDS,
+    attach_enum_legend,
+)
 from arknights_mcp.mcp.tools._shared import (
     ENEMY_CLASS_NOTE,
+    ENEMY_DEAD_FIELD_NOTE,
     ENEMY_STAT_SCALE_NOTE,
     IMAGE_REFS_PATH_NOTE,
     LEVEL_VARIANT_NOTE,
     LIST_FIELD_CONVENTION,
-    TOOL_ENUM_LEGEND_FIELDS,
+    RETIRED_ATTACK_TYPE_NOTE,
     ConnectionProvider,
     absent_field_limitation,
-    attach_enum_legend,
     attach_image_ref_disclosures,
     run_guarded,
 )
@@ -50,11 +54,12 @@ _TOOL_NAME = "get_enemy"
 _TOOL_TITLE = "Get enemy"
 _TOOL_DESCRIPTION = (
     "Fetch one Arknights enemy's facts by region + game_id: class, boss/elite "
-    "flags, attack/motion type, and the per-level stat block (hp, atk, def, res, "
+    "flags, damage kinds, motion type, and the per-level stat block (hp, atk, def, res, "
     "attack interval in seconds, attack range, move speed, weight, life-point "
-    "reduction) with immunities and abilities. "
+    "reduction) with what the enemy targets and which control effects it ignores. "
     + ENEMY_CLASS_NOTE
-    + " The response's enum_legend gives the values of enemy_class and motion_type. "
+    + " The response's enum_legend gives the values of enemy_class, motion_type, "
+    "damage_types, targeting and immunities. "
     + LEVEL_VARIANT_NOTE
     + " When the image-reference source is "
     "enabled, an additional image_refs list with the derived enemy sprite reference is "
@@ -83,6 +88,13 @@ _LEVEL_OPTIONAL_FIELDS: tuple[str, ...] = (
     "immunities",
     "abilities",
 )
+
+#: §V113 (B160 (c)): the two per-level fields NO real source fills. They stay in the
+#: omit table above -- the day a source carries one it must reach the wire -- but their
+#: absence is reported by :data:`ENEMY_DEAD_FIELD_NOTE`, which names the true (corpus-
+#: wide) scope, instead of the per-entity absent-field sentence that would imply some
+#: other enemy has them.
+_DEAD_BY_DATA_LEVEL_FIELDS: frozenset[str] = frozenset({"block_behavior", "abilities"})
 
 
 def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
@@ -121,7 +133,7 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
 def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
     """§V67/§V26 (B58): name the expected enemy fields absent from the source.
 
-    ``attack_type`` is absent when the enemy-level scalar is ``None``; a per-level
+    ``damage_types`` is absent when the enemy carried no handbook entry; a per-level
     field (the :data:`_LEVEL_OPTIONAL_FIELDS` scalars + lists) is absent when NO
     level variant carries a value (every variant decoded ``None``) -- a variant with
     ``[]`` is present-but-empty (confirmed none), not absent, and a MIXED enemy
@@ -131,12 +143,26 @@ def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
     the single standing limitation naming them (empty when nothing expected is
     absent)."""
     absent: list[str] = []
-    if enemy.attack_type is None:
-        absent.append("attack_type")
+    standing: list[str] = []
+    # §V113/B160 (b): the retired scalar is not a gap in THIS enemy's data -- upstream
+    # stopped filling it for every enemy -- so it gets the routing sentence, not a place
+    # in the per-entity absence list. Only when the live field is missing too is there
+    # an entity-level gap worth naming.
+    if enemy.damage_types is None:
+        absent.append("damage_types")
+    elif enemy.attack_type is None:
+        standing.append(RETIRED_ATTACK_TYPE_NOTE)
+    dead_absent = False
     for name in _LEVEL_OPTIONAL_FIELDS:
-        if all(getattr(lv, name) is None for lv in enemy.levels):
+        if not all(getattr(lv, name) is None for lv in enemy.levels):
+            continue
+        if name in _DEAD_BY_DATA_LEVEL_FIELDS:
+            dead_absent = True
+        else:
             absent.append(name)
-    return absent_field_limitation(absent)
+    if dead_absent:
+        standing.append(ENEMY_DEAD_FIELD_NOTE)
+    return (*absent_field_limitation(absent), *standing)
 
 
 def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, object]:
@@ -161,6 +187,10 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
     # absent-field limitation is the sole signal, not a null+limitation duplicate.
     if enemy.attack_type is not None:
         data["attack_type"] = enemy.attack_type
+    # §V67/B58: [] = the source confirms this enemy deals no damage kind; key absent =
+    # the enemy has no handbook entry at all (it exists only in the stats database).
+    if enemy.damage_types is not None:
+        data["damage_types"] = list(enemy.damage_types)
     if image_refs_enabled:
         # §V63: DERIVED from the enemy's already-stored game_id -- no byte, no url stored,
         # no fetch. §V5: rides this enemy's OWN region envelope (game_id is region-scoped)

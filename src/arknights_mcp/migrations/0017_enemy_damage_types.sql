@@ -1,0 +1,39 @@
+-- 0017 enemy damage kind + targeting shape (SPEC §T210; §V113/§V67/§V99; B160).
+-- Two shape corrections on the enemy substrate, both counted against the pinned
+-- 413a81a3 EN snapshot before they were written (§V29/§V113 c).
+--
+-- 1. `enemies.attack_type` is a SCALAR and it is the WRONG SHAPE, independently of
+--    being empty. The handbook still ships `attackType` and it is `null` on all 1585
+--    real entries; the live home is `damageType`, a LIST -- and 42 enemies really do
+--    carry both PHYSIC and MAGIC, so no scalar column can hold the fact even after
+--    upstream repopulates one. Hence a new list column rather than a backfill of the
+--    old one (§V67: a list-typed field says `[]` for confirmed-none, and "physical"
+--    could never have said "physical AND arts").
+--
+--    The retired scalar column STAYS. It is the §V113 declared-dead arm: the key is
+--    still allowlisted, `ENEMY_KEY_HOMES["attackType"]` carries the counted 1585/1585
+--    null, and the provenance record keeps recording what the handbook actually sent.
+--    Dropping it would delete the only machine-checked evidence that the field went
+--    empty upstream rather than that this server forgot to read it -- which is the
+--    exact ambiguity B160 cost a milestone to resolve. It is never emitted (it has
+--    been NULL on 3879/3879 rows of every build), so nothing on the wire changes.
+--
+-- 2. `enemy_levels.targeting_json` is renamed to `targeting`. Upstream `applyWay` is a
+--    single token (MELEE 858 | RANGED 570 | NONE 251 | ALL 99 over the 1778 defined EN
+--    level cells), not a structure: storing one bare token JSON-encoded would make
+--    `SELECT DISTINCT targeting` read `"RANGED"` with quotes, so the enum-domain guard
+--    (§V104) could not read the column the way it reads every other enum, and the
+--    `_json` suffix would claim a shape the value does not have (§V99). The column has
+--    been NULL on 4343/4343 rows since it was created, so the rename moves no data and
+--    no consumer can have read it.
+--
+--    `immunities_json` KEEPS its suffix and its type: nine typed upstream booleans fold
+--    into one real list there (§V67), which is a JSON document.
+--
+-- No index on either column. Nothing looks an enemy up BY damage kind or targeting --
+-- both are read from an already-resolved enemy/stage row -- and an index added before
+-- its query is write amplification (§V94/B122). No new provenance FK either: both are
+-- more fields of the same handbook/database records the enemy's provenance_id already
+-- points at (§V17).
+ALTER TABLE enemies ADD COLUMN damage_types_json TEXT;
+ALTER TABLE enemy_levels RENAME COLUMN targeting_json TO targeting;

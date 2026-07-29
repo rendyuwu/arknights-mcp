@@ -13,8 +13,8 @@
           "moveSpeed": 1.0,
           "weight": 1,
           "lifePointReduction": 1,
-          "blockBehavior": "unblockable_flying",
-          "abilities": ["aerial"]
+          "targeting": "RANGED",
+          "immunities": []
         }
       ]
     },
@@ -31,8 +31,8 @@
           "moveSpeed": 1.0,
           "weight": 1,
           "lifePointReduction": 1,
-          "blockBehavior": "unblockable_flying",
-          "abilities": ["aerial"]
+          "targeting": "RANGED",
+          "immunities": []
         }
       ]
     },
@@ -49,8 +49,10 @@
           "moveSpeed": 0.8,
           "weight": 3,
           "lifePointReduction": 1,
-          "blockBehavior": "blockable",
-          "abilities": []
+          "targeting": "RANGED",
+          "immunities": [
+            "SILENCE"
+          ]
         }
       ]
     },
@@ -67,8 +69,8 @@
           "moveSpeed": 0.9,
           "weight": 2,
           "lifePointReduction": 1,
-          "blockBehavior": "blockable",
-          "abilities": []
+          "targeting": "MELEE",
+          "immunities": []
         }
       ]
     },
@@ -85,8 +87,8 @@
           "moveSpeed": 0.9,
           "weight": 2,
           "lifePointReduction": 1,
-          "blockBehavior": "blockable",
-          "abilities": []
+          "targeting": "MELEE",
+          "immunities": []
         }
       ]
     }

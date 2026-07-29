@@ -48,3 +48,27 @@ def test_python_312() -> None:
 @pytest.mark.parametrize("step", REQUIRED_STEPS)
 def test_required_step_present(step: str) -> None:
     assert step in CI.read_text(encoding="utf-8"), f"CI missing step: {step}"
+
+
+def test_every_live_upstream_module_is_listed_in_the_job() -> None:
+    """A live-upstream guard that CI never selects runs NOWHERE (§T208 CI gap, §T210 d).
+
+    Each of those modules skips itself unless ``ARKMCP_LIVE_UPSTREAM`` is set, and the
+    job names its modules explicitly rather than running ``tests/contract/``. So an
+    unlisted module is silent in BOTH paths: the default suite skips it and CI never
+    selects it. It looks green locally and guards nothing -- which is what happened to
+    §T204's template-truncation guard and §T205's event-title guard, written and then
+    unrun for two milestones until §T208 found them.
+    """
+    workflow = CI.read_text(encoding="utf-8")
+    contract_dir = REPO_ROOT / "tests" / "contract"
+    gated = sorted(
+        path.name
+        for path in contract_dir.glob("test_*.py")
+        if "live_upstream_disabled()" in path.read_text(encoding="utf-8")
+    )
+    assert gated, "no live-upstream modules found; this guard would pass vacuously"
+    missing = [name for name in gated if f"tests/contract/{name}" not in workflow]
+    assert missing == [], (
+        f"live-upstream guards never run in CI because the job does not list them: {missing}"
+    )
