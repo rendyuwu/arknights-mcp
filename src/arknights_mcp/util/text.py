@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 
 #: Default maximum length for an imported string field -- the name/label class.
 DEFAULT_MAX_TEXT_LENGTH = 512
@@ -153,3 +154,24 @@ def is_placeholder(value: str | None) -> bool:
         return True
     stripped = value.strip()
     return not stripped or (stripped.startswith("<") and stripped.endswith(">"))
+
+
+def template_text(value: Any) -> str | None:
+    """Effect-description TEMPLATE as clean grounding text (§V18/§V65 (a)/§V109).
+
+    Read from the RAW source level/candidate, **not** the ``apply_allowlist`` output:
+    the allowlist caps at ``DEFAULT_MAX_TEXT_LENGTH`` with the rich-text tags still in
+    place, so the budget goes to markup and the template is cut mid-sentence (B154).
+    :func:`clean_template_text` strips the tags first (``<@ba.vup>{atk_scale:0%}</>``
+    -> ``{atk_scale:0%}``, keeping the ``{blackboard-key}`` grounding placeholders),
+    then sanitizes and caps at the template ceiling (§V109). The key is still on the
+    allowlist -- reading it directly only bypasses the cap, never the policy. A
+    blank-after-clean or non-string value yields ``None`` -- never an empty template.
+
+    Lives here rather than in an importer (§T202/§V37): the operator and skill
+    importers both read templates this way, and a private copy in each is how the
+    ``_as_dict`` duplicate this module's sibling already owned went unnoticed.
+    """
+    if not isinstance(value, str):
+        return None
+    return clean_template_text(value) or None

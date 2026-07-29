@@ -138,50 +138,12 @@
       "summary": "CX-1 module attribute bonus changes across levels -- atk: +14 (Lv1->2), +18 (Lv2->3).",
       "tag": "stat_bonus",
       "title": "Module attribute bonus change across levels"
-    },
-    {
-      "analyzer_version": "1",
-      "category": "module",
-      "confidence": 0.9,
-      "evidence": [
-        {
-          "count": null,
-          "field": "trait_changes.count",
-          "note": "module level 1",
-          "ref": "uniequip_002_amiya",
-          "value": 1
-        }
-      ],
-      "limitations": [],
-      "rule_id": "module.trait_change",
-      "summary": "CX-1 module alters the operator's base trait at level(s) 1.",
-      "tag": "trait_change",
-      "title": "Module alters operator trait"
-    },
-    {
-      "analyzer_version": "1",
-      "category": "module",
-      "confidence": 0.9,
-      "evidence": [
-        {
-          "count": null,
-          "field": "talent_changes.talent_index",
-          "note": "module level 2",
-          "ref": "uniequip_002_amiya",
-          "value": 0
-        }
-      ],
-      "limitations": [],
-      "rule_id": "module.talent_change",
-      "summary": "CX-1 module adds or enhances talent(s) 0.",
-      "tag": "talent_change",
-      "title": "Module adds or overrides a talent"
     }
   ],
   "operator_display_name": "Amiya",
   "provenance": {
     "imported_at": "2026-07-18T00:00:00+00:00",
-    "snapshot_id": "en:15b89427e6c5"
+    "snapshot_id": "en:ab983ed0dea1"
   },
   "server": "en",
   "status": "ok",

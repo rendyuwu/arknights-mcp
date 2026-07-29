@@ -54,7 +54,14 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: imports ``attack_range_declared_none = 1`` instead of an ``attack_range`` NULL
 #: indistinguishable from "never defined". The strip itself is unchanged (no negative is
 #: stored as a distance, then or now); what changed is that the answer survives it.
-TRANSFORM_VERSION = "7"
+#:
+#: ``8`` (B162/§V115, §T202): the module change bundles now carry the part's own
+#: ``isToken`` down onto each candidate, so whose effect a change describes is stored as
+#: the source's statement instead of being inferred downstream from the ``talentIndex``
+#: ``-1`` sentinel -- two facts that disagree on 454 of 513 en rows. Every module level
+#: row with a change bundle imports different bytes, so the transform moves even where
+#: the field policy would not.
+TRANSFORM_VERSION = "8"
 
 
 def _now_iso() -> str:

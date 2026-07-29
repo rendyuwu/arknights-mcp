@@ -106,17 +106,37 @@ def test_dedup_non_list_passthrough() -> None:
     assert dedup_effect_changes(42) == 42
 
 
-# --- label_token_effects: label the -1 summon/token change (§V83) --------------
+# --- label_token_effects: rename the source's own isToken flag (§V83/§V115) ----
 
 
-def test_token_talent_index_gets_applies_to_label() -> None:
-    out = label_token_effects([{"talentIndex": -1, "blackboard": _BB}])
-    assert out == [{"talentIndex": -1, "blackboard": _BB, "applies_to": "token"}]
+def test_source_token_flag_becomes_the_applies_to_label() -> None:
+    # §V115/B162: the label reports the field that STATES the fact -- the part's own
+    # isToken, carried down onto each bundle by the importer -- and the raw source key
+    # never reaches the wire.
+    out = label_token_effects([{"talentIndex": 1, "isToken": True, "blackboard": _BB}])
+    assert out == [{"talentIndex": 1, "applies_to": "token", "blackboard": _BB}]
 
 
-def test_non_token_talent_index_untouched() -> None:
-    row = {"talentIndex": 0, "blackboard": _BB}
+def test_source_operator_flag_is_an_answer_not_a_silence() -> None:
+    # isToken false is a STATEMENT ("this describes the operator"), so it ships as a
+    # label rather than as an absent key -- absence is reserved for a source that said
+    # nothing (§V67/§V114).
+    out = label_token_effects([{"talentIndex": 1, "isToken": False, "blackboard": _BB}])
+    assert out == [{"talentIndex": 1, "applies_to": "operator", "blackboard": _BB}]
+
+
+def test_talent_index_minus_one_alone_earns_no_label() -> None:
+    # The B162 regression in one assertion: -1 is a change with no talent index of its
+    # own, NOT a token marker -- 454 of 513 en rows carrying it sit on parts the source
+    # flags isToken false. Unflagged, it gets no applies_to at all.
+    row = {"talentIndex": -1, "blackboard": _BB}
     assert label_token_effects([row]) == [row]
+
+
+def test_minus_one_on_an_operator_part_is_labelled_operator() -> None:
+    # The same sentinel WITH the source's flag: the label follows the flag, not the -1.
+    out = label_token_effects([{"talentIndex": -1, "isToken": False, "blackboard": _BB}])
+    assert out == [{"talentIndex": -1, "applies_to": "operator", "blackboard": _BB}]
 
 
 def test_label_is_idempotent_and_passes_through_non_list() -> None:
@@ -126,7 +146,7 @@ def test_label_is_idempotent_and_passes_through_non_list() -> None:
 
 
 def test_dedup_and_label_composes_all_three_steps() -> None:
-    # The service pipeline: collapse duplicates, label the surviving -1 row, THEN rename
+    # The service pipeline: collapse duplicates, label from the source flag, THEN rename
     # the keys for the wire (§V71 d). The rename is last so the first two steps still read
     # the source's own names.
     row = {
@@ -134,6 +154,7 @@ def test_dedup_and_label_composes_all_three_steps() -> None:
         "requiredPotentialRank": 0,
         "unlockCondition": _COND,
         "blackboard": _BB,
+        "isToken": True,
     }
     assert dedup_and_label_changes([row, row]) == [
         {
@@ -144,6 +165,50 @@ def test_dedup_and_label_composes_all_three_steps() -> None:
             "applies_to": "token",
         }
     ]
+
+
+def test_two_povs_of_one_change_stay_two_rows() -> None:
+    # §V83 amended (B162): 89 en / 101 cn groups carry both an operator-POV and a
+    # token-POV copy under one (talentIndex, requiredPotentialRank). isToken is part of
+    # the identity, so they never merge.
+    operator_pov = {
+        "talentIndex": 1,
+        "requiredPotentialRank": 0,
+        "unlockCondition": _COND,
+        "blackboard": _BB,
+        "isToken": False,
+    }
+    token_pov = {**operator_pov, "isToken": True}
+    out = dedup_and_label_changes([operator_pov, token_pov])
+    assert [row["applies_to"] for row in out] == ["operator", "token"]  # type: ignore[index]
+
+
+def test_an_unmarked_change_never_absorbs_a_token_label() -> None:
+    # This is what putting isToken IN the §V83 identity actually buys, measured rather
+    # than assumed: a first attempt at this guard used two fully-populated POVs and passed
+    # with the member removed, because a differing isToken is also a value CONFLICT and
+    # the conflict check alone keeps that pair apart.
+    #
+    # The case only the identity decides is a bundle the source never marked meeting one
+    # it did. Absent is not a conflict -- it is subsumed -- so without the member the two
+    # merge and the unmarked bundle comes out labelled "token": a statement the source
+    # never made, which is B162's failure mode in miniature (§V115 c/§V67).
+    unmarked = {
+        "talentIndex": 1,
+        "requiredPotentialRank": 0,
+        "unlockCondition": _COND,
+        "blackboard": _BB,
+    }
+    token_pov = {
+        "talentIndex": 1,
+        "requiredPotentialRank": 0,
+        "unlockCondition": _COND,
+        "isToken": True,
+    }
+    out = dedup_and_label_changes([unmarked, token_pov])
+    assert len(out) == 2, "an unmarked bundle was merged into a marked one"
+    assert "applies_to" not in out[0]  # type: ignore[operator]
+    assert out[1]["applies_to"] == "token"  # type: ignore[index]
 
 
 # --- normalize_change_keys: snake_case + one phase encoding (§V71 d/§V99/B140) --

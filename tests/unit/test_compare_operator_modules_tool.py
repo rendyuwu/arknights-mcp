@@ -146,7 +146,10 @@ def test_with_observations_emits_module_observations(conn: sqlite3.Connection) -
     obs = data["observations"]
     assert isinstance(obs, list) and obs
     tags = {o["tag"] for o in obs}
-    assert {"stat_bonus", "trait_change", "talent_change"} <= tags
+    # §T202/ADR 0018 (B152): the trait + talent rules are retired -- both restated facts
+    # this same payload already carries in its trait_changes / talent_changes rows, so the
+    # only module rule left is the one whose delta is computed rather than re-read.
+    assert tags == {"stat_bonus"}
     # §V6: every observation carries the five fields; the version rides the envelope.
     version = env.to_dict()["analyzer_version"]
     assert version is not None

@@ -66,6 +66,7 @@
       "rarity": 6,
       "skill_count": 1,
       "subclass_id": "sword",
+      "subclass_name": null,
       "tags": [
         "近战位",
         "输出"

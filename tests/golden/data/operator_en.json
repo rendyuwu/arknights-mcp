@@ -134,7 +134,7 @@
     ],
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "en:15b89427e6c5"
+      "snapshot_id": "en:ab983ed0dea1"
     },
     "server": "en",
     "skills": [
@@ -224,6 +224,7 @@
       "rarity": 5,
       "skill_count": 2,
       "subclass_id": "corecaster",
+      "subclass_name": "Core Caster",
       "tags": [
         "Arts",
         "DPS"

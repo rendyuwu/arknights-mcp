@@ -9,11 +9,19 @@ typed fields only (§V26), never a name or description string.
 Each observation carries the five §V6 fields (``rule_id`` + evidence + confidence
 + limitations + ``analyzer_version``) reusing the shared
 :class:`~arknights_mcp.analyzers.base.Observation` / ``EvidenceItem`` vocabulary
-(§V37). Observations state capability facts (which talents a module changes and how
-its stat bonus scales across levels) -- never a "mandatory" / "best-in-slot" verdict
-(§V7); the raw per-level bonuses live in the comparison rows, so the stat observation
-reports only the cross-level change they do not spell out (§V66.1). A requested
-level a module does not define is recorded as a §V26 warning, never concluded from.
+(§V37). Observations state capability facts (how a module's stat bonus scales across
+its levels) -- never a "mandatory" / "best-in-slot" verdict (§V7); the raw per-level
+bonuses live in the comparison rows, so the stat observation reports only the
+cross-level change they do not spell out (§V66.1). A requested level a module does
+not define is recorded as a §V26 warning, never concluded from.
+
+One rule, not three (ADR 0018, B152/§V66.1). ``module.trait_change`` and
+``module.talent_change`` restated facts the response already carried beside them: the
+levels that alter the trait, and which talent index each change targets, are both
+visible in the ``trait_changes`` / ``talent_changes`` rows the same payload emits, so
+6 of 9 observations on a three-module operator were re-readings rather than findings.
+``module.stat_bonus`` survives because a cross-level DELTA is genuinely computed --
+the rows carry absolute bonuses per level and never the step between them.
 """
 
 from __future__ import annotations
@@ -37,13 +45,6 @@ class ModuleStat:
 
 
 @dataclass(frozen=True)
-class ModuleTalentChange:
-    """One talent a module level adds or overrides (by typed index; no prose)."""
-
-    talent_index: int | None
-
-
-@dataclass(frozen=True)
 class ModuleLevelInput:
     """One requested potential level of a module, already decoded to typed fields.
 
@@ -55,8 +56,6 @@ class ModuleLevelInput:
     level: int
     present: bool
     stats: tuple[ModuleStat, ...]
-    trait_change_count: int
-    talent_changes: tuple[ModuleTalentChange, ...]
 
 
 @dataclass(frozen=True)
@@ -162,119 +161,9 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
     )
 
 
-def _trait_observation(module: ModuleInput) -> Observation | None:
-    """Observation of the levels at which a module alters the operator's trait (§V6)."""
-    altering = [level for level in module.levels if level.present and level.trait_change_count > 0]
-    if not altering:
-        return None
-    # §V101/B137: ``field="trait_changes"`` with ``value=1`` read as a magnitude-free
-    # flag restating mere presence -- and ``trait_changes`` is emitted as a LIST, so the
-    # value was never that field's scalar. The count is named as what it is: how many
-    # entries the emitted trait_changes list carries at that level (2 and 3 both occur in
-    # the real corpus, so it is a real magnitude, not a dressed-up boolean). The level
-    # stays in the note: it is the §V85 level list a deduped row carries, and the
-    # evidence tuple has no level slot.
-    evidence = [
-        EvidenceItem(
-            ref=module.game_id,
-            field="trait_changes.count",
-            value=level.trait_change_count,
-            note=f"module level {level.level}",
-        )
-        for level in altering
-    ]
-    # The summary's level list comes from the typed levels, not the evidence notes:
-    # §V85 dedup may merge byte-identical rows into one note-joined row.
-    levels = ", ".join(str(level.level) for level in altering)
-    return Observation(
-        rule_id="module.trait_change",
-        category=_CATEGORY,
-        tag="trait_change",
-        title="Module alters operator trait",
-        summary=f"{_label(module)} module alters the operator's base trait at level(s) {levels}.",
-        confidence=_CONFIDENCE,
-        evidence=tuple(evidence),
-        limitations=(),
-    )
-
-
-def _talent_observation(module: ModuleInput) -> Observation | None:
-    """Observation of the talents a module adds/overrides, by typed index (§V6, §V71).
-
-    A ``talentIndex`` of ``-1`` is the game-data convention for the operator's TOKEN /
-    summon effect, not a numbered operator talent; it is glossed as "the token effect"
-    rather than emitted as a bare ``-1`` -- an internal convention never reaches the
-    client (§V71), in the summary or the evidence. Numbered talents (index >= 0) are
-    named by their index; an absent index is a generic "a talent" (§V26 invents none).
-    """
-    evidence: list[EvidenceItem] = []
-    indices: set[int] = set()
-    token_effect = False
-    for level in module.levels:
-        if not level.present:
-            continue
-        for change in level.talent_changes:
-            idx = change.talent_index
-            if idx is not None and idx < 0:
-                # -1 = the operator's token/summon effect; a typed label, never a bare -1.
-                # §V101: the path is the one the wire really carries. This row used to name
-                # ``talent_changes.token_effect``, a field no response has ever emitted --
-                # the label the service attaches is ``applies_to: "token"`` (§V83), so the
-                # evidence points at that, and the client can look it up.
-                token_effect = True
-                evidence.append(
-                    EvidenceItem(
-                        ref=module.game_id,
-                        field="talent_changes.applies_to",
-                        value="token",
-                        note=f"module level {level.level}",
-                    )
-                )
-                continue
-            evidence.append(
-                EvidenceItem(
-                    ref=module.game_id,
-                    # §V101/§V71 (d): the path is the one the wire really carries, so it
-                    # moved with the T198 rename -- the emitted key is ``talent_index``
-                    # now, and a stale camelCase path here would resolve to nothing.
-                    field="talent_changes.talent_index",
-                    value=idx,
-                    note=f"module level {level.level}",
-                )
-            )
-            if idx is not None:
-                indices.add(idx)
-    if not evidence:
-        return None
-    phrases: list[str] = []
-    if indices:
-        phrases.append("talent(s) " + ", ".join(str(i) for i in sorted(indices)))
-    if token_effect:
-        phrases.append("the token effect")
-    named = " and ".join(phrases) if phrases else "a talent"
-    return Observation(
-        rule_id="module.talent_change",
-        category=_CATEGORY,
-        tag="talent_change",
-        title="Module adds or overrides a talent",
-        summary=f"{_label(module)} module adds or enhances {named}.",
-        confidence=_CONFIDENCE,
-        evidence=tuple(evidence),
-        limitations=(),
-    )
-
-
 def _analyze_module(module: ModuleInput) -> tuple[list[Observation], list[str]]:
     """Run every module rule over one module; collect observations + §V26 warnings."""
-    observations = [
-        obs
-        for obs in (
-            _stat_observation(module),
-            _trait_observation(module),
-            _talent_observation(module),
-        )
-        if obs is not None
-    ]
+    observations = [obs for obs in (_stat_observation(module),) if obs is not None]
     # A requested level the module does not define is omitted from the comparison
     # and warned, never concluded from as an empty/zero change (§V26).
     warnings = [

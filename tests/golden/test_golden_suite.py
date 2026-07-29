@@ -311,7 +311,9 @@ def test_golden_compare_modules_en(operator_multi: sqlite3.Connection) -> None:
     assert [lv["level"] for lv in module["levels"]] == [1, 2, 3]
     # §V6: every observation is fully attributed to the pinned analyzer version.
     tags = {o["tag"] for o in payload["observations"]}
-    assert {"stat_bonus", "trait_change", "talent_change"} <= tags
+    # §T202/ADR 0018 (B152): trait_change + talent_change are retired -- the golden's own
+    # diff shows what that cost, 38 lines of observations restating rows still in the file.
+    assert tags == {"stat_bonus"}
     for obs in payload["observations"]:
         assert obs["rule_id"] and obs["evidence"]
         assert 0.0 <= obs["confidence"] <= 1.0

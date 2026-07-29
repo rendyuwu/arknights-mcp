@@ -104,6 +104,10 @@ ENUM_LEGENDS: dict[str, dict[str, str]] = {
         "MEDIC": "Medic",
     },
     "position": dict.fromkeys(("MELEE", "RANGED"), _SOURCE_TOKEN),
+    "applies_to": {
+        "token": "the change describes the operator's summon or token, not the operator",
+        "operator": "the change describes the operator itself",
+    },
     "skill_type": dict.fromkeys(("AUTO", "MANUAL", "PASSIVE"), _SOURCE_TOKEN),
     "sp_type": dict.fromkeys(
         ("INCREASE_WITH_TIME", "INCREASE_WHEN_ATTACK", "INCREASE_WHEN_TAKEN_DAMAGE"),
@@ -195,7 +199,15 @@ TOOL_ENUM_LEGEND_FIELDS: dict[str, tuple[str, ...]] = {
     "search_entities": ("difficulty",),
     "get_enemy": ("enemy_class", "motion_type", "damage_types", "targeting", "immunities"),
     "analyze_stage": ("enemy_class", "damage_types", "targeting"),
-    "get_operator": ("profession", "position", "skill_type", "sp_type", "duration_type"),
+    "get_operator": (
+        "profession",
+        "position",
+        "skill_type",
+        "sp_type",
+        "duration_type",
+        "applies_to",
+    ),
+    "compare_operator_modules": ("applies_to",),
     "get_stage_drops": ("item_type",),
     "get_item_drops": ("item_type",),
     "get_banners": ("rule_type",),

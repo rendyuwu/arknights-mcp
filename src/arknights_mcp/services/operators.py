@@ -68,6 +68,10 @@ class OperatorSummary:
     rarity: int | None
     profession: str | None
     subclass_id: str | None
+    #: The subclass id's display name (§V69/B150). ``None`` when this build's
+    #: ``uniequip_table`` carries no entry for the id -- the id still ships, and the
+    #: absence is disclosed rather than papered over with a guess.
+    subclass_name: str | None
     position: str | None
     tags: tuple[str, ...]
     obtainable: bool
@@ -329,6 +333,7 @@ def _summary(operator: OperatorRow, counts: OperatorSectionCounts) -> OperatorSu
         rarity=operator.rarity,
         profession=operator.profession,
         subclass_id=operator.subclass_id,
+        subclass_name=operator.subclass_name,
         position=operator.position,
         tags=_tags(operator.tag_json),
         obtainable=operator.obtainable,

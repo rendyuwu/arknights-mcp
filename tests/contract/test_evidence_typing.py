@@ -323,23 +323,16 @@ def test_real_build_module_evidence_rows_are_typed(build_conn: sqlite3.Connectio
         )
     ]
     checked = 0
-    token_rows = 0
     for game_id in operators:
         data = _compare(build_conn, server="en", game_id=game_id, levels=[1, 2, 3])
         if not data.get("observations"):
             continue
         records = _module_records(data)
         checked += _assert_rows_typed(data["observations"], records)
-        token_rows += sum(
-            1
-            for obs in data["observations"]
-            for row in obs["evidence"]
-            if row["field"] == "talent_changes.applies_to"
-        )
     assert checked > 100, f"only {checked} rows checked"
-    # The token/summon label is live on the real corpus, so the path that names it is
-    # exercised rather than merely declared -- it is the row B137's audit missed.
-    assert token_rows, "no talent_changes.applies_to row exercised"
+    # The applies_to row this test used to pin is gone with the rule that emitted it
+    # (§T202/ADR 0018): the label is a FACT on the emitted change bundles, never an
+    # observation's evidence, and tests/contract/test_effect_pov_label.py pins it there.
 
 
 def test_stage_level_rows_ref_game_id_not_stage_code(build_conn: sqlite3.Connection) -> None:

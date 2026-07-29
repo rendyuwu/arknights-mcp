@@ -11,22 +11,33 @@ database:
 * a module with no typed changes yields no observation (missing != zero, §V26);
 * summaries state capability facts, never a "mandatory"/"best" verdict (§V7);
 * modules + evidence are emitted in a stable order (deterministic, §V26).
+
+§T202/ADR 0018 (B152/§V66.1): the trait and talent rules are RETIRED, so the tests
+that pinned their output are gone with them and one guard is here in their place --
+the analyzer emits stat observations only. The retired rules restated facts the same
+payload already carried (which levels alter the trait, which talent index each change
+targets, both readable straight off the emitted change rows), so 6 of the 9
+observations a three-module operator received were re-readings. ``module.stat_bonus``
+stays because its delta is COMPUTED: the rows carry absolute bonuses per level and
+never the step between them.
 """
 
 from __future__ import annotations
 
 from arknights_mcp.analyzers import ANALYZER_VERSION
-from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.analyzers.module import (
     ModuleAnalysisContext,
     ModuleInput,
     ModuleLevelInput,
     ModuleStat,
-    ModuleTalentChange,
     analyze_modules,
 )
 
 _PRESCRIPTIVE = ("mandatory", "best-in-slot", "best in slot", "must ", "should ", "always use")
+
+#: The rule ids ADR 0018 retired. Named here so the guard below fails on a
+#: reintroduction rather than on a count that some later rule could restore.
+_RETIRED_RULE_IDS = ("module.trait_change", "module.talent_change")
 
 
 def _amiya_cx1(levels: tuple[ModuleLevelInput, ...]) -> ModuleInput:
@@ -39,29 +50,15 @@ def _amiya_cx1(levels: tuple[ModuleLevelInput, ...]) -> ModuleInput:
 
 
 def _full_cx1() -> ModuleInput:
-    """CX-1 with all three real levels: atk 34/48/66 (+150 hp at 3), trait@1, talent@2."""
+    """CX-1 with all three real levels: atk 34/48/66, plus 150 max_hp at level 3."""
     return _amiya_cx1(
         (
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="atk", value=34.0),),
-                trait_change_count=1,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=2,
-                present=True,
-                stats=(ModuleStat(key="atk", value=48.0),),
-                trait_change_count=0,
-                talent_changes=(ModuleTalentChange(talent_index=0),),
-            ),
+            ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),
+            ModuleLevelInput(level=2, present=True, stats=(ModuleStat(key="atk", value=48.0),)),
             ModuleLevelInput(
                 level=3,
                 present=True,
                 stats=(ModuleStat(key="atk", value=66.0), ModuleStat(key="max_hp", value=150.0)),
-                trait_change_count=0,
-                talent_changes=(),
             ),
         )
     )
@@ -83,10 +80,9 @@ def _by_tag(analysis) -> dict[str, object]:  # type: ignore[no-untyped-def]
 # --- §V6: every observation is fully attributed --------------------------------
 
 
-def test_stat_talent_trait_observations_emitted() -> None:
+def test_stat_observation_emitted_and_fully_attributed() -> None:
     analysis = analyze_modules(_ctx(_full_cx1()))
-    tags = _by_tag(analysis)
-    assert set(tags) == {"stat_bonus", "trait_change", "talent_change"}
+    assert set(_by_tag(analysis)) == {"stat_bonus"}
     for obs in analysis.observations:
         # §V6: rule_id + evidence + confidence + limitations + analyzer_version.
         assert obs.rule_id.startswith("module.")
@@ -117,15 +113,7 @@ def test_single_level_stat_bonus_yields_no_observation() -> None:
     # §T148/§V66.1: a stat bonus at a single level is fully visible in its stat_bonus row,
     # so there is no cross-level change to compute -> no observation (never restate a row).
     one = _amiya_cx1(
-        (
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="atk", value=34.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-        )
+        (ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),)
     )
     analysis = analyze_modules(_ctx(one, levels=(1,)))
     assert "stat_bonus" not in {o.tag for o in analysis.observations}
@@ -137,20 +125,8 @@ def test_constant_stat_across_levels_yields_no_observation() -> None:
     # only stat constant, there is no evidence -> no observation (never a bare "+0").
     flat = _amiya_cx1(
         (
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="atk", value=34.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=2,
-                present=True,
-                stats=(ModuleStat(key="atk", value=34.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
+            ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),
+            ModuleLevelInput(level=2, present=True, stats=(ModuleStat(key="atk", value=34.0),)),
         )
     )
     analysis = analyze_modules(_ctx(flat, levels=(1, 2)))
@@ -168,15 +144,11 @@ def test_constant_stat_skipped_but_changing_stat_kept() -> None:
                 level=1,
                 present=True,
                 stats=(ModuleStat(key="atk", value=34.0), ModuleStat(key="def", value=10.0)),
-                trait_change_count=0,
-                talent_changes=(),
             ),
             ModuleLevelInput(
                 level=2,
                 present=True,
                 stats=(ModuleStat(key="atk", value=48.0), ModuleStat(key="def", value=10.0)),
-                trait_change_count=0,
-                talent_changes=(),
             ),
         )
     )
@@ -188,133 +160,36 @@ def test_constant_stat_skipped_but_changing_stat_kept() -> None:
     assert "+0" not in stat.summary  # type: ignore[attr-defined]
 
 
-def test_talent_observation_names_the_typed_index() -> None:
-    talent = _by_tag(analyze_modules(_ctx(_full_cx1())))["talent_change"]
-    assert any(ev.value == 0 for ev in talent.evidence)  # type: ignore[attr-defined]
-    assert "0" in talent.summary  # type: ignore[attr-defined]
+# --- ADR 0018/§V66.1 (B152): the two padded rules are retired -------------------
 
 
-def _token_module(talents: tuple[ModuleTalentChange, ...]) -> ModuleInput:
-    # module_type=None so the label falls back to the -1-free game_id -- a "-1" in the
-    # summary then can only be a leaked talentIndex, not the module type (e.g. "CX-1").
-    return ModuleInput(
-        game_id="uniequip_002_amiya",
-        module_type=None,
-        display_name=None,
-        levels=(
-            ModuleLevelInput(
-                level=1, present=True, stats=(), trait_change_count=0, talent_changes=talents
-            ),
-        ),
-    )
+def test_retired_trait_and_talent_rules_emit_nothing() -> None:
+    # B152: a module that alters the trait at every level and overrides two talents used to
+    # emit two extra observations restating exactly that -- both facts are already in the
+    # emitted trait_changes / talent_changes rows the same response carries (§V66.1: evidence
+    # never re-states numbers already in sibling facts). The analyzer input no longer even
+    # carries the change lists, so the guard asserts the OUTPUT: whatever the levels hold,
+    # the only rule that fires is the computed stat delta.
+    analysis = analyze_modules(_ctx(_full_cx1()))
+    assert {o.rule_id for o in analysis.observations} == {"module.stat_bonus"}
+    for retired in _RETIRED_RULE_IDS:
+        assert all(o.rule_id != retired for o in analysis.observations)
+        assert all(o.tag != retired.removeprefix("module.") for o in analysis.observations)
 
 
-def test_talent_observation_glosses_token_effect_index() -> None:
-    # §T148/§V71: talentIndex -1 is the token/summon effect convention, not a numbered
-    # talent; the observation glosses it as "the token effect" and leaks no bare -1 --
-    # neither in the summary nor the evidence.
-    # §V101/§T197: the row names the path the WIRE really carries. It used to say
-    # ``talent_changes.token_effect``, a field no response has ever emitted, so the
-    # evidence pointed at nothing a client could look up; the label the service attaches
-    # (§V83) is ``applies_to: "token"``, and that is what the evidence names now.
-    module = _token_module((ModuleTalentChange(talent_index=-1),))
-    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
-    assert "token effect" in talent.summary  # type: ignore[attr-defined]
-    assert "-1" not in talent.summary  # type: ignore[attr-defined]
-    assert all(ev.value != -1 for ev in talent.evidence)  # type: ignore[attr-defined]
-    token_rows = [  # type: ignore[attr-defined]
-        ev for ev in talent.evidence if ev.field == "talent_changes.applies_to"
-    ]
-    assert [ev.value for ev in token_rows] == ["token"]
-    assert not any("token_effect" in ev.field for ev in talent.evidence)  # type: ignore[attr-defined]
-
-
-def test_talent_observation_combines_numbered_and_token_effect() -> None:
-    # §T148: a module that changes a numbered talent AND the token effect names both,
-    # with the -1 still glossed (numbered talents first, token effect appended).
-    module = _token_module(
-        (ModuleTalentChange(talent_index=0), ModuleTalentChange(talent_index=-1))
-    )
-    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
-    assert "talent(s) 0" in talent.summary  # type: ignore[attr-defined]
-    assert "the token effect" in talent.summary  # type: ignore[attr-defined]
-    assert "-1" not in talent.summary  # type: ignore[attr-defined]
-
-
-# --- §V85: byte-identical evidence rows collapse (B92) --------------------------
-
-
-def test_byte_identical_talent_evidence_collapses_to_one_row() -> None:
-    # §V85/B92: one talent-change candidate per potential rank (6 per level, all the
-    # token effect) x2 levels = 12 byte-identical rows pre-dedup -> 1 attributed row
-    # carrying the collapsed count + the level list, never 12 verbatim repeats.
-    module = ModuleInput(
-        game_id="uniequip_002_kalts",
-        module_type="Y",
-        display_name=None,
-        levels=tuple(
-            ModuleLevelInput(
-                level=level,
-                present=True,
-                stats=(),
-                trait_change_count=0,
-                talent_changes=(ModuleTalentChange(talent_index=-1),) * 6,
-            )
-            for level in (2, 3)
-        ),
-    )
-    talent = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["talent_change"]
-    # The dedup home is the shared wire emit (observation_to_dict applies
-    # dedupe_evidence for every analyzer, §V37); asserting through the same helper
-    # pins the collapse without coupling this analyzer test to the MCP layer.
-    deduped = dedupe_evidence(talent.evidence)  # type: ignore[attr-defined]
-    assert len(deduped) == 1
-    row = deduped[0]
-    assert row.count == 12
-    assert row.note == "module level 2; module level 3"
-    assert "token effect" in talent.summary  # type: ignore[attr-defined]
-
-
-def test_identical_trait_evidence_across_levels_collapses() -> None:
-    # §V85: the same trait_change_count at two levels is byte-identical evidence ->
-    # 1 row + count + level list; the summary still names both levels (derived from
-    # the typed levels, not parsed back out of the merged note).
-    module = _amiya_cx1(
+def test_module_whose_only_content_is_changes_yields_no_observation() -> None:
+    # The other half of the retirement: a module with change bundles but no stat movement
+    # now yields NOTHING rather than two restating rows. The facts still ship -- the change
+    # bundles are in the payload beside this empty observations list (§V26 disclosure is
+    # the response's job, not a rule's).
+    changes_only = _amiya_cx1(
         (
-            ModuleLevelInput(
-                level=2, present=True, stats=(), trait_change_count=2, talent_changes=()
-            ),
-            ModuleLevelInput(
-                level=3, present=True, stats=(), trait_change_count=2, talent_changes=()
-            ),
+            ModuleLevelInput(level=1, present=True, stats=()),
+            ModuleLevelInput(level=2, present=True, stats=()),
         )
     )
-    trait = _by_tag(analyze_modules(_ctx(module, levels=(2, 3))))["trait_change"]
-    deduped = dedupe_evidence(trait.evidence)  # type: ignore[attr-defined]
-    assert len(deduped) == 1
-    row = deduped[0]
-    assert row.count == 2 and row.value == 2
-    assert row.note == "module level 2; module level 3"
-    assert "level(s) 2, 3" in trait.summary  # type: ignore[attr-defined]
-    # §V101/B137: the row used to be ``field="trait_changes", value=1``, which read as a
-    # magnitude-free presence flag -- and ``trait_changes`` is emitted as a LIST, so the
-    # value was never that field's scalar. It now names the count of that emitted list.
-    assert row.field == "trait_changes.count"
-    # The level list stays in the note on purpose: ``count`` is §V85 dedup multiplicity
-    # and the §V101 tuple has no level slot, so prose is the only home the spec leaves.
-    assert row.note is not None and "module level" in row.note
-
-
-def test_distinct_evidence_values_stay_separate_rows() -> None:
-    # §V85 negative / §V6: distinct typed values are distinct evidence -- no collapse,
-    # and a unique row carries no count (the wire mapping then omits the key, §V67).
-    module = _token_module((ModuleTalentChange(talent_index=0), ModuleTalentChange(talent_index=1)))
-    talent = _by_tag(analyze_modules(_ctx(module, levels=(1,))))["talent_change"]
-    assert [(ev.field, ev.value) for ev in talent.evidence] == [  # type: ignore[attr-defined]
-        ("talent_changes.talent_index", 0),
-        ("talent_changes.talent_index", 1),
-    ]
-    assert all(ev.count is None for ev in talent.evidence)  # type: ignore[attr-defined]
+    analysis = analyze_modules(_ctx(changes_only, levels=(1, 2)))
+    assert analysis.observations == ()
 
 
 # --- §V26: absent level -> warning, missing != zero ----------------------------
@@ -325,23 +200,9 @@ def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
     # never reported as an empty/zero change (§V26), and forms no cross-level delta.
     partial = _amiya_cx1(
         (
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="atk", value=34.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=2,
-                present=True,
-                stats=(ModuleStat(key="atk", value=48.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=3, present=False, stats=(), trait_change_count=0, talent_changes=()
-            ),
+            ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),
+            ModuleLevelInput(level=2, present=True, stats=(ModuleStat(key="atk", value=48.0),)),
+            ModuleLevelInput(level=3, present=False, stats=()),
         )
     )
     analysis = analyze_modules(_ctx(partial, levels=(1, 2, 3)))
@@ -355,13 +216,7 @@ def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
 def test_module_with_no_typed_changes_yields_no_observation() -> None:
     # §V26: absent typed data is not a zero conclusion -- a bare module produces no
     # observation (and no warning, since every requested level is present).
-    bare = _amiya_cx1(
-        (
-            ModuleLevelInput(
-                level=1, present=True, stats=(), trait_change_count=0, talent_changes=()
-            ),
-        )
-    )
+    bare = _amiya_cx1((ModuleLevelInput(level=1, present=True, stats=()),))
     analysis = analyze_modules(_ctx(bare, levels=(1,)))
     assert analysis.observations == ()
     assert analysis.warnings == ()
@@ -388,20 +243,8 @@ def test_modules_processed_in_supplied_order() -> None:
         module_type="AA-1",
         display_name=None,
         levels=(
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="atk", value=10.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=2,
-                present=True,
-                stats=(ModuleStat(key="atk", value=20.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
+            ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=10.0),)),
+            ModuleLevelInput(level=2, present=True, stats=(ModuleStat(key="atk", value=20.0),)),
         ),
     )
     b = ModuleInput(
@@ -409,20 +252,8 @@ def test_modules_processed_in_supplied_order() -> None:
         module_type="BB-1",
         display_name=None,
         levels=(
-            ModuleLevelInput(
-                level=1,
-                present=True,
-                stats=(ModuleStat(key="def", value=5.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
-            ModuleLevelInput(
-                level=2,
-                present=True,
-                stats=(ModuleStat(key="def", value=12.0),),
-                trait_change_count=0,
-                talent_changes=(),
-            ),
+            ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="def", value=5.0),)),
+            ModuleLevelInput(level=2, present=True, stats=(ModuleStat(key="def", value=12.0),)),
         ),
     )
     refs = [obs.evidence[0].ref for obs in analyze_modules(_ctx(a, b, levels=(1, 2))).observations]

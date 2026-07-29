@@ -23,11 +23,42 @@
       "unlockEvolvePhase": "PHASE_2",
       "unlockLevel": 40,
       "itemCost": {
-        "1": [{"id": "mat_1", "count": 8, "type": "MATERIAL", "sortId": 99}],
-        "2": [{"id": "mat_2", "count": 4, "type": "MATERIAL"}],
-        "3": [{"id": "mat_3", "count": 2, "type": "MATERIAL"}]
+        "1": [
+          {
+            "id": "mat_1",
+            "count": 8,
+            "type": "MATERIAL",
+            "sortId": 99
+          }
+        ],
+        "2": [
+          {
+            "id": "mat_2",
+            "count": 4,
+            "type": "MATERIAL"
+          }
+        ],
+        "3": [
+          {
+            "id": "mat_3",
+            "count": 2,
+            "type": "MATERIAL"
+          }
+        ]
       }
     }
   },
-  "charEquip": {"char_002_amiya": ["uniequip_001_amiya", "uniequip_002_amiya"]}
+  "charEquip": {
+    "char_002_amiya": [
+      "uniequip_001_amiya",
+      "uniequip_002_amiya"
+    ]
+  },
+  "subProfDict": {
+    "corecaster": {
+      "subProfessionId": "corecaster",
+      "subProfessionName": "Core Caster",
+      "subProfessionCatagory": 32
+    }
+  }
 }

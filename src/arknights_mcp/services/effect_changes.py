@@ -9,8 +9,9 @@ the two surfaces cannot drift:
 * **§V83/§V66** -- :func:`dedup_effect_changes` collapses the duplicate/subset rows the
   source emits for one change, and :func:`hoist_uniform_changes` lifts a bundle that is
   byte-identical at every level onto the parent. Both are byte-lossless.
-* **§V83** -- :func:`label_token_effects` names the ``-1`` summon/token sentinel instead
-  of leaving a client to guess it.
+* **§V83/§V115** -- :func:`label_token_effects` renames the source's own ``isToken`` flag
+  to the emitted ``applies_to``, so whose effect a change describes is read off the field
+  that states it rather than inferred from a neighbouring sentinel (B162).
 * **§V71 (d)** -- :func:`normalize_change_keys` is the last step: the source's camelCase
   keys become snake_case and the doubly-encoded unlock phase becomes one encoding.
 
@@ -26,12 +27,41 @@ import json
 
 from arknights_mcp.util.coerce import suffix_int
 
+#: The source key stating WHOSE effect a change bundle describes -- the operator's, or the
+#: operator's summon/token (§V115). Carried down from the part by the importer; renamed to
+#: the emitted ``applies_to`` label by :func:`label_token_effects`.
+_IS_TOKEN_KEY = "isToken"
+
+#: The emitted label + its two values. The domain is closed because the source's flag is a
+#: bool: it either says token or says operator. A bundle whose source stated nothing keeps
+#: neither value and ships no label at all (§V67 -- absent means not-in-source).
+_APPLIES_TO_KEY = "applies_to"
+_APPLIES_TO_TOKEN = "token"
+_APPLIES_TO_OPERATOR = "operator"
+
 #: The keys that IDENTIFY which talent/trait change a bundle is (§V83): two entries sharing
-#: these describe the same change (same talent, same potential gate, same unlock condition);
-#: every other key (``blackboard``, ``description``) is value-bearing and may be merged.
-_EFFECT_IDENTITY_KEYS: frozenset[str] = frozenset(
-    {"talentIndex", "requiredPotentialRank", "unlockCondition"}
+#: these describe the same change (same talent, same potential gate, same unlock condition,
+#: same subject); every other key (``blackboard``, ``description``) is value-bearing and may
+#: be merged.
+#:
+#: ``isToken`` is an identity member, not a value (B162): 89 en / 101 cn
+#: (module, level, talentIndex, requiredPotentialRank) groups carry BOTH an operator-POV and
+#: a token-POV copy of one change, and the two are different source statements about
+#: different subjects. They are held apart today only because their descriptions differ,
+#: which :func:`_effect_conflict` reads as a conflict -- luck, not a rule: a pair whose two
+#: POVs happened to share a description would merge and one subject would vanish.
+#:
+#: Ordered so :func:`_effect_identity` can render a stable key from it; the frozenset is
+#: DERIVED from this tuple rather than spelled out again. They were two literals until
+#: §T202, and the identity function read the shorter one -- so adding a member to the set
+#: left the grouping unchanged and silently did nothing (§V37: one list, one home).
+_EFFECT_IDENTITY_ORDER: tuple[str, ...] = (
+    "talentIndex",
+    "requiredPotentialRank",
+    "unlockCondition",
+    _IS_TOKEN_KEY,
 )
+_EFFECT_IDENTITY_KEYS: frozenset[str] = frozenset(_EFFECT_IDENTITY_ORDER)
 
 
 def _canonical(value: object) -> str:
@@ -45,10 +75,8 @@ def _empty_effect_value(value: object) -> bool:
 
 
 def _effect_identity(entry: dict[str, object]) -> str:
-    """The identity key of one change bundle -- its (talentIndex, potential, unlock) triple."""
-    return _canonical(
-        [entry.get(k) for k in ("talentIndex", "requiredPotentialRank", "unlockCondition")]
-    )
+    """The identity key of one change bundle (§V83): every member of the identity tuple."""
+    return _canonical([entry.get(k) for k in _EFFECT_IDENTITY_ORDER])
 
 
 def _effect_conflict(a: dict[str, object], b: dict[str, object]) -> bool:
@@ -118,23 +146,47 @@ def dedup_effect_changes(changes: object) -> object:
 
 
 def label_token_effects(changes: object) -> object:
-    """Label a summon/token talent change (``talentIndex == -1``) with ``applies_to`` (§V83).
+    """Turn the source's own ``isToken`` flag into the emitted ``applies_to`` (§V83/§V115).
 
-    A ``talentIndex`` of ``-1`` is a game-data sentinel for an effect that applies to the
-    operator's summon/token rather than the operator itself; emitted bare it forces a client
-    to guess (B88), so an ``applies_to: "token"`` label is added (additive, §V21). Every
-    other bundle is passed through unchanged; a non-list value is returned as-is. The single
-    §V37 home shared by both read services (a trait change carries no ``talentIndex`` so it
-    is untouched).
+    Whose effect a change describes is a fact the source STATES, on the part that owns the
+    candidate: ``isToken`` true means the operator's summon/token, false means the operator.
+    The importer carries that flag down to each bundle, and this renames it to the label a
+    client reads. Both values are emitted, because "the source says operator" is an answer
+    and only a bundle whose source stated nothing ships no label (§V67).
+
+    It used to read the ``talentIndex == -1`` sentinel instead, which is a DIFFERENT fact --
+    a change carrying no existing talent index -- and the two nearly never coincide: at the
+    pinned upstream 454 of 513 en ``-1`` rows sit on parts flagged ``isToken: false``, so the
+    label was false on those and absent on the 79 rows the source does flag (B162). The
+    sentinel keeps its own meaning, which the source never names, so it is glossed as what
+    the source did rather than read as a token marker (§V114 c).
+
+    A non-list value is returned as-is; a bundle already carrying an explicit label is left
+    alone. The single §V37 home shared by both read services -- trait changes carry the flag
+    too (13 en / 13 cn candidates describe the token), so they are labelled by the same pass.
     """
     if not isinstance(changes, list):
         return changes
     labelled: list[object] = []
     for entry in changes:
-        if isinstance(entry, dict) and entry.get("talentIndex") == -1 and "applies_to" not in entry:
-            labelled.append({**entry, "applies_to": "token"})
-        else:
+        if not isinstance(entry, dict) or _APPLIES_TO_KEY in entry:
             labelled.append(entry)
+            continue
+        is_token = entry.get(_IS_TOKEN_KEY)
+        if not isinstance(is_token, bool):
+            # The source stated nothing (a pre-§V115 build, or a fixture without parts):
+            # no label, and the raw key never reaches the wire either way.
+            labelled.append({k: v for k, v in entry.items() if k != _IS_TOKEN_KEY})
+            continue
+        relabelled = {
+            (_APPLIES_TO_KEY if k == _IS_TOKEN_KEY else k): (
+                (_APPLIES_TO_TOKEN if is_token else _APPLIES_TO_OPERATOR)
+                if k == _IS_TOKEN_KEY
+                else v
+            )
+            for k, v in entry.items()
+        }
+        labelled.append(relabelled)
     return labelled
 
 

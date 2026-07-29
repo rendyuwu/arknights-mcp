@@ -45,7 +45,8 @@ from tests.support import (
 )
 
 from arknights_mcp.importers.modules import parse_modules
-from arknights_mcp.importers.operators import parse_operators, parse_skills
+from arknights_mcp.importers.operators import parse_operators
+from arknights_mcp.importers.skills import parse_skills
 from arknights_mcp.util.text import (
     DEFAULT_MAX_TEXT_LENGTH,
     MAX_TEMPLATE_LENGTH,

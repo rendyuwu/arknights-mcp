@@ -35,6 +35,7 @@ class OperatorRow:
     rarity: int | None
     profession: str | None
     subclass_id: str | None
+    subclass_name: str | None
     position: str | None
     tag_json: str | None
     obtainable: bool
@@ -179,7 +180,8 @@ class OperatorSkinRow:
 
 _OPERATOR_SQL = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.rarity, o.profession, "
-    "o.subclass_id, o.position, o.tag_json, o.obtainable, p.snapshot_id, ss.imported_at "
+    "o.subclass_id, o.subclass_name, o.position, o.tag_json, o.obtainable, "
+    "p.snapshot_id, ss.imported_at "
     "FROM operators o "
     "JOIN record_provenance p ON p.provenance_id = o.provenance_id "
     "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
@@ -271,6 +273,7 @@ def _to_operator_row(row: Any) -> OperatorRow:
         rarity,
         profession,
         subclass_id,
+        subclass_name,
         position,
         tag_json,
         obtainable,
@@ -285,6 +288,7 @@ def _to_operator_row(row: Any) -> OperatorRow:
         rarity=rarity,
         profession=profession,
         subclass_id=subclass_id,
+        subclass_name=subclass_name,
         position=position,
         tag_json=tag_json,
         obtainable=bool(obtainable),

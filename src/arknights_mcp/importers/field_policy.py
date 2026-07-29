@@ -63,7 +63,16 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    source said nothing" reached every consumer as one NULL. The strip is unchanged; the
 #:    answer now has a key of its own. New stored bytes (``enemy_levels
 #:    .attack_range_declared_none``), so the bump is what makes §V92 promote them.
-FIELD_POLICY_VERSION = "13"
+#: 14: T202 added SUBPROF_ALLOWLIST (§V69/B150) and the module change bundles' own
+#:    ``isToken`` (§V115/B162). The subclass NAME was in a file every sync already
+#:    fetched (``uniequip_table.subProfDict``) and no importer read, so 71 EN / 72 CN
+#:    subclass ids shipped bare; ``isToken`` is the source's own statement of whose
+#:    effect a module change describes, which the parser dropped on the floor while a
+#:    neighbouring sentinel was read in its place. Both are new stored bytes
+#:    (``operators.subclass_name``, the flag inside the change bundles), so the bump is
+#:    what makes §V92 promote them; bumped beside TRANSFORM_VERSION, since the change
+#:    bundle's shape moves too.
+FIELD_POLICY_VERSION = "14"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -397,6 +406,13 @@ UNIEQUIP_ALLOWLIST: frozenset[str] = frozenset(
 
 #: One ``itemCost`` entry for a module upgrade level (all id/count/enum; no prose).
 ITEM_COST_ALLOWLIST: frozenset[str] = frozenset({"id", "count", "type"})
+
+#: One ``uniequip_table.subProfDict[]`` entry -- the id an operator row already stores
+#: plus the SHORT display label for it ("Core Caster", "Ring Healer"), a proper name
+#: rather than prose (§V18/§V69/B150). ``subProfessionCatagory`` is deliberately absent:
+#: no reader consumes it, and an allowlisted column nothing fills or reads is the dead
+#: substrate §V113 catches.
+SUBPROF_ALLOWLIST: frozenset[str] = frozenset({"subProfessionId", "subProfessionName"})
 
 #: One Penguin Statistics ``items`` entry (§V18; §T89). ``itemId`` is the item's
 #: game id (== arknights item id), ``name`` a short display label (kept, like an

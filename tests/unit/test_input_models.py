@@ -7,6 +7,8 @@ Primary invariant §V22 (heavy sections opt-in, pagination bounded); touches §V
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 from pydantic import Field, ValidationError
 
@@ -24,6 +26,7 @@ from arknights_mcp.models import (
     tool_input_schema,
 )
 from arknights_mcp.models.common import StrictModel
+from arknights_mcp.models.operators import ModuleLevel
 
 # --- §V19/§V22: search limit bounded (default 10, max 50, rejected out of range) ---
 
@@ -162,6 +165,31 @@ def test_compare_invalid_level_rejected() -> None:
 def test_compare_empty_levels_rejected() -> None:
     with pytest.raises(ValidationError):
         CompareOperatorModulesInput(server="en", game_id="char_002_amiya", levels=())
+
+
+def test_compare_levels_domain_is_in_the_published_schema() -> None:
+    """§V107/B149: the {1,2,3} domain reaches the CLIENT, not just the validator.
+
+    It lived in prose plus a runtime check, so the only way to learn it was to spend a
+    call and read the error -- avoidable, since ``page_size``'s ``maximum: 100`` proves
+    the same schema can carry a bound. The enum is generated from ``ModuleLevel`` itself,
+    so the published domain and the check that reports it cannot drift (§V37).
+    """
+    schema = tool_input_schema(CompareOperatorModulesInput)
+    assert schema["properties"]["levels"]["items"]["enum"] == [1, 2, 3]
+    assert set(get_args(ModuleLevel)) == set(schema["properties"]["levels"]["items"]["enum"])
+
+
+def test_compare_out_of_domain_level_reports_the_whole_domain() -> None:
+    """The disclosure does not cost the message B149 called model-grade (§V71 c).
+
+    The Literal alone would reject per ITEM ("Input should be 1, 2 or 3"), naming neither
+    the field's whole domain nor which values offended; the domain check runs first and
+    keeps the sentence a client can act on.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        CompareOperatorModulesInput(server="en", game_id="char_002_amiya", levels=(0, 5))
+    assert "levels must be a subset of {1, 2, 3}; got [0, 5]" in str(excinfo.value)
 
 
 # --- §V18/§V19/§V22: bounds surface on the wire (generated inputSchema) ---

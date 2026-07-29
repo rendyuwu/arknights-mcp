@@ -32,7 +32,6 @@ from arknights_mcp.analyzers import (
     ModuleInput,
     ModuleLevelInput,
     ModuleStat,
-    ModuleTalentChange,
     Observation,
     analyze_modules,
 )
@@ -144,28 +143,6 @@ def _stats(stat_bonus: object) -> tuple[ModuleStat, ...]:
     return tuple(out)
 
 
-def _talent_changes(talent_changes: object) -> tuple[ModuleTalentChange, ...]:
-    """Extract the typed ``talentIndex`` of each decoded talent change (§V26)."""
-    if not isinstance(talent_changes, list):
-        return ()
-    out: list[ModuleTalentChange] = []
-    for entry in talent_changes:
-        if not isinstance(entry, dict):
-            continue
-        idx = entry.get("talentIndex")
-        out.append(
-            ModuleTalentChange(
-                talent_index=idx if isinstance(idx, int) and not isinstance(idx, bool) else None
-            )
-        )
-    return tuple(out)
-
-
-def _trait_count(trait_changes: object) -> int:
-    """How many trait override candidates a level carries (0 when absent; §V26)."""
-    return len(trait_changes) if isinstance(trait_changes, list) else 0
-
-
 def _change_descriptions(changes: object) -> list[str | None]:
     """The ``description`` template of each change bundle in a decoded list (§V66.3 input).
 
@@ -267,23 +244,15 @@ def compare_operator_modules(
         )
         # Shape each requested level once; a present level's trait/talent change lists are
         # description-stripped (when the template was hoisted), then deduped + token-labelled
-        # (§V83/B88). The analyzer reads the RAW decode (key/value/talentIndex), so it is
-        # unaffected by this emit shaping.
+        # (§V83/B88/B162). The analyzer reads the RAW decode (stat key/value only, since
+        # ADR 0018 retired the trait/talent rules), so it is unaffected by this emit shaping.
         shaped_levels: list[tuple[int, bool, object, object, object, object]] = []
         analyzer_levels: list[ModuleLevelInput] = []
         for level in requested:
             row = rows.get(level)
             if row is None:
                 shaped_levels.append((level, False, None, None, None, None))
-                analyzer_levels.append(
-                    ModuleLevelInput(
-                        level=level,
-                        present=False,
-                        stats=(),
-                        trait_change_count=0,
-                        talent_changes=(),
-                    )
-                )
+                analyzer_levels.append(ModuleLevelInput(level=level, present=False, stats=()))
                 continue
             stat_bonus = json_load(row.stat_bonus_json)
             trait_changes = json_load(row.trait_changes_json)
@@ -307,13 +276,7 @@ def compare_operator_modules(
                 )
             )
             analyzer_levels.append(
-                ModuleLevelInput(
-                    level=level,
-                    present=True,
-                    stats=_stats(stat_bonus),
-                    trait_change_count=_trait_count(trait_changes),
-                    talent_changes=_talent_changes(talent_changes),
-                )
+                ModuleLevelInput(level=level, present=True, stats=_stats(stat_bonus))
             )
         # §V66.3/§V83: a change bundle byte-identical across every PRESENT level is hoisted
         # once to the module (dropped from each level below); ``None`` keeps it per level.

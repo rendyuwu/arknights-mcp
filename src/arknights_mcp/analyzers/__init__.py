@@ -31,7 +31,6 @@ from arknights_mcp.analyzers.module import (
     ModuleInput,
     ModuleLevelInput,
     ModuleStat,
-    ModuleTalentChange,
     analyze_modules,
 )
 from arknights_mcp.analyzers.rules import THREAT_RULES
@@ -50,7 +49,6 @@ __all__ = [
     "ModuleInput",
     "ModuleLevelInput",
     "ModuleStat",
-    "ModuleTalentChange",
     "Observation",
     "RankedObservation",
     "RankingRow",

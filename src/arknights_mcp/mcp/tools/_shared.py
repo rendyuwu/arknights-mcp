@@ -200,12 +200,48 @@ SKIN_ALT_FORM_NOTE = (
 #: OMITTED (the §V26 absent-field class), which is read post-call beside the payload, and as
 #: description text it was a 366-char block billed to both tools' §V71 (f) budget every
 #: session. Client-facing text, so no internal cites/jargon (§V71); short sentences (§V71 f).
+#:
+#: §V115/B162 rewrote the label sentence and added the sentinel one. ``applies_to`` now
+#: reports the source's own ``isToken`` flag, so BOTH of its values are answers and the
+#: note says so; and ``talent_index: -1`` -- which the old label was inferred from, wrongly
+#: -- is described as what the source did, with no reading attached (§V114 c).
 MODULE_CHANGE_DEDUP_NOTE = (
     "For a module's trait_changes and talent_changes: repeated identical entries for one "
     "change are collapsed into a single row. A bundle that is the same at every level is "
     "listed once on the module (as trait_changes or talent_changes) and omitted from each "
-    'level. A talent change tagged applies_to "token" affects the operator\'s summon or '
-    "token rather than the operator."
+    'level. A change tagged applies_to "token" describes the operator\'s summon or token '
+    'rather than the operator, and one tagged applies_to "operator" describes the operator; '
+    "both come from the game data's own marking, and a change it does not mark carries no "
+    "applies_to at all. A talent change may carry talent_index -1: that is the game data's "
+    "marker for a change with no talent index of its own, it is emitted exactly as stored, "
+    "and it says nothing about who the change applies to -- read applies_to for that."
+)
+
+
+#: §V69/B150: ``module_type`` ships on every emitted module ("PHY-X", "CCR-Y", "ISW-A") and
+#: had neither a paired name nor a limitation, so a client could only guess it. §V69's
+#: pairing arm is unavailable here: the game data ships no name for the branch stamp. Its
+#: own ``equipTypeInfos`` names only the variant letters, and the stamp is NOT a subclass
+#: code -- ``ISW`` covers 11 different subclasses and ``RA`` covers 3 at the pinned upstream
+#: -- so glossing it as the operator's subclass would have been a fabrication (§V26/§V29).
+#: What is left is §V69's second arm: emit the id and say what is known about it. Rides both
+#: module-emitting tools, so one wording, one home (§V37). Client-facing (§V71 b).
+MODULE_TYPE_NOTE = (
+    "module_type is the label the game data puts on the module: a branch stamp and a "
+    "variant letter, such as PHY-X. The game data ships no name for either part, so it is "
+    "emitted exactly as stored and is not expanded here. The module's own display_name "
+    "names the module itself."
+)
+
+
+#: §V69/B150: an operator's ``subclass_id`` is paired with ``subclass_name`` from the game
+#: data's own subclass table. When this build has no name for the id -- a snapshot without
+#: ``uniequip_table.json``, or an id the table does not cover -- §V69's other arm applies:
+#: the id ships bare and this says why, rather than a fabricated name (§V26). Emitted only
+#: on that path, so it is never a standing caveat on a response that carries the name.
+SUBCLASS_NAME_LIMITATION = (
+    "This build has no name for this operator's subclass_id, so only the id is shown. A "
+    "name is never guessed for it."
 )
 
 

@@ -49,7 +49,8 @@ from tests.support import (
 )
 
 from arknights_mcp.importers.announcements import parse_announcements
-from arknights_mcp.importers.operators import parse_operators, parse_skills
+from arknights_mcp.importers.operators import parse_operators
+from arknights_mcp.importers.skills import parse_skills
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text, strip_richtext_tags
 
 pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_SKIP_REASON)

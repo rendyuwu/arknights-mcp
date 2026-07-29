@@ -27,12 +27,14 @@ from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
 from arknights_mcp.mcp.tool_registry import ToolSpec
+from arknights_mcp.mcp.tools._enum_legend import attach_enum_legend
 from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_GLOSSARY_POINTER,
     BLACKBOARD_LIMITATION,
     CONFIDENCE_SCALE_NOTE,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
+    MODULE_TYPE_NOTE,
     ConnectionProvider,
     has_unnamed_cost_item,
     observation_to_dict,
@@ -91,6 +93,12 @@ def _level_to_dict(
     if not talent_hoisted:
         out["talent_changes"] = level.talent_changes
     return out
+
+
+#: §V104 (b)/§V115: this tool's one enum domain -- the applies_to label the emitted change
+#: bundles carry. Its entry in the shared TOOL_ENUM_LEGEND_FIELDS table is asserted by the
+#: §V104 guard, so the two cannot drift.
+_MODULE_ENUM_FIELDS = ("applies_to",)
 
 
 def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
@@ -159,7 +167,10 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
     # bundles -- it names what those bundles OMIT, which is read post-call (§V111 a). Same
     # gate as the blackboard caveat: no modules, no deduped payload, no note.
     if result.modules:
-        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE)
+        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE, MODULE_TYPE_NOTE)
+        # §V104 (b)/§V115: the applies_to label decodes post-call, so its whole vocabulary
+        # rides the response that carries the labelled bundles -- same gate as the notes.
+        limitations = attach_enum_legend(data, _MODULE_ENUM_FIELDS, limitations)
     # §V104/§V6: the confidence scale rides the mode that emits a confidence, once per
     # envelope (§V66); facts_only carries no observation, so it carries no scale.
     if result.mode == "with_observations" and result.observations:

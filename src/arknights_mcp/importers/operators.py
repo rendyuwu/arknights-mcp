@@ -1,9 +1,15 @@
-"""Operator / skill / talent importer (§T42; PRD §12.3).
+"""Operator / talent importer (§T42; PRD §12.3).
 
-Parses the real ``character_table.json`` + ``skill_table.json`` shapes (both
-top-level id-keyed dicts, no wrapper) into the normalized operator domain:
-``operators`` + ``operator_aliases`` + ``operator_phases`` + ``skills`` +
-``operator_skills`` + ``skill_levels`` + ``talents`` + ``talent_levels``.
+Parses the real ``character_table.json`` shape (a top-level id-keyed dict, no
+wrapper) into the normalized operator domain: ``operators`` + ``operator_aliases``
++ ``operator_phases`` + ``operator_skills`` + ``talents`` + ``talent_levels``, and
+drives :mod:`~arknights_mcp.importers.skills` for the ``skill_table`` half so one
+call still imports the whole domain (the split is §V38's, not the pipeline's).
+
+``uniequip_table.json`` is read here too, for one field: ``subProfDict`` supplies
+each operator's subclass DISPLAY NAME, which shipped as a bare id until §T202
+(§V69/B150). The file was already fetched for the module importer (§V41), so the
+pairing costs no new source -- it was fetched and never read (§V98).
 
 Applies the explicit field allowlist and string sanitization (§V18/§V31) and
 attaches per-record provenance (§V17) to each core row (operators + skills);
@@ -34,25 +40,25 @@ from arknights_mcp.importers.field_policy import (
     PHASE_ALLOWLIST,
     PHASE_ATTR_ALLOWLIST,
     REGION_TO_NAME_LOCALE,
-    SKILL_LEVEL_ALLOWLIST,
     SKILL_LINK_ALLOWLIST,
-    SP_DATA_ALLOWLIST,
+    SUBPROF_ALLOWLIST,
     TALENT_CANDIDATE_ALLOWLIST,
     allowlist_blackboard,
     apply_allowlist,
 )
 from arknights_mcp.importers.manifest import insert_record_provenance
+from arknights_mcp.importers.skills import insert_skills, parse_skills
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import (
+    as_dict,
     as_float,
     as_int,
     as_str,
     json_or_none,
     suffix_int,
-    uniform_str,
 )
 from arknights_mcp.util.sqlite import integrity_guard
-from arknights_mcp.util.text import clean_template_text
+from arknights_mcp.util.text import template_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -62,41 +68,6 @@ _NON_OPERATOR_PROFESSIONS: frozenset[str] = frozenset({"TOKEN", "TRAP"})
 
 
 # --- parsed shapes -----------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ParsedSkillLevel:
-    level: int
-    sp_cost: int | None
-    initial_sp: int | None
-    duration: float | None
-    range_id: str | None
-    blackboard: Any
-    #: In-game skill effect description TEMPLATE (mechanic text referencing the
-    #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
-    #: at parse time (§V18); ``None`` when the source level carries no description.
-    description: str | None
-    #: This level's OWN name / enum values (§V112/B159). The source scopes all four per
-    #: level; they are carried here so a level that disagrees with its siblings keeps its
-    #: value instead of being overwritten by level 1's.
-    display_name: str | None
-    skill_type: str | None
-    sp_type: str | None
-    duration_type: str | None
-
-
-@dataclass(frozen=True)
-class ParsedSkill:
-    game_id: str
-    #: The value every level shares, or ``None`` when the levels disagree (§V112 a/b).
-    #: ``None`` is not "absent from the source": it means the fact is per level, and the
-    #: level rows carry it. Never level 1's value standing in for the rest.
-    display_name: str | None
-    skill_type: str | None
-    sp_type: str | None
-    duration_type: str | None
-    levels: list[ParsedSkillLevel]
-    provenance_record: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -156,6 +127,7 @@ class ParsedOperator:
     rarity: int | None
     profession: str | None
     subclass_id: str | None
+    subclass_name: str | None
     position: str | None
     tags: list[str]
     obtainable: bool
@@ -179,64 +151,6 @@ class OperatorImportResult:
 # --- coercion helpers --------------------------------------------------------
 
 
-def _enum_text(value: Any) -> str | None:
-    """Enum-ish field (``skillType``/``spType``/``durationType``) → text or ``None``.
-
-    The value is read from an already-allowlisted+sanitized ``kept`` dict, so a ``str``
-    needs no further cleaning; an ``int`` code is stringified so the source's numeric form
-    still round-trips into a ``TEXT`` column. ``bool`` is rejected (an ``int`` subclass,
-    never a real code).
-
-    The numeric arm is NOT a legacy encoding -- §T208 corrects the framing B157 inherited
-    from this docstring. The pinned upstream ``413a81a3`` ships BOTH forms in the SAME file
-    at the SAME pin: ``spType`` is a name on 8674 en / 9108 cn skill-level rows and the bare
-    int ``8`` on 1515 en / 1745 cn, and skill ``sktok_mjcsdw`` carries both across its own
-    levels. A second, independent export of the same game data emits that same bare ``8``
-    on every one of the 1352 skill ids it shares with the pin, with zero disagreements, so
-    the NAME does not exist upstream rather than having been missed here.
-
-    Stringifying is therefore the honest coercion (§V99 wants one type per key, but not at
-    the price of a fabricated one): dropping the int would erase the field on 1145 rows of
-    the promoted build, and mapping it to a name would invent one, which §V29/§V96 forbid.
-    What the client gets instead is disclosure -- ``OPEN_ENUM_LIMITATIONS['sp_type']``
-    (§V104 c), a floor rather than a resolution.
-
-    ``skillType``/``durationType`` are 100% strings at the same pin (10189 en / 10853 cn
-    level rows each), so the two clean siblings are clean by DATA, not by construction:
-    one upstream int would land here and reach the wire the same silent way. That is what
-    ``tests/contract/test_enum_domain_coverage.py`` pins for all three columns.
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, str):
-        return value or None
-    if isinstance(value, int):
-        return str(value)
-    return None
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Return ``value`` if it is a dict, else an empty dict (single narrowing home)."""
-    return value if isinstance(value, dict) else {}
-
-
-def _template_text(value: Any) -> str | None:
-    """Effect-description TEMPLATE as clean grounding text (§V18/§V65 (a)/§V109).
-
-    Read from the RAW source level/candidate, **not** the ``apply_allowlist`` output:
-    the allowlist caps at ``DEFAULT_MAX_TEXT_LENGTH`` with the rich-text tags still in
-    place, so the budget goes to markup and the template is cut mid-sentence (B154).
-    ``clean_template_text`` strips the tags first (``<@ba.vup>{atk_scale:0%}</>`` ->
-    ``{atk_scale:0%}``, keeping the ``{blackboard-key}`` grounding placeholders), then
-    sanitizes and caps at the template ceiling (§V109). The key is still on the
-    allowlist -- reading it directly only bypasses the cap, never the policy. A
-    blank-after-clean or non-string value yields ``None`` -- never an empty template.
-    """
-    if not isinstance(value, str):
-        return None
-    return clean_template_text(value) or None
-
-
 def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
     """``{operator game_id: operator_pk}`` for ``server`` (the single §V37 home).
 
@@ -254,160 +168,6 @@ def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, i
 
 
 # --- skills ------------------------------------------------------------------
-
-
-def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
-    """Transform raw ``skill_table`` (id-keyed dict) into typed, allowlisted skills.
-
-    ``name`` / ``skillType`` / ``durationType`` / ``spData.spType`` are scoped PER LEVEL
-    upstream, so each :class:`ParsedSkillLevel` keeps its own value and the skill-wide
-    scalar is the one every level shares -- ``None`` when they disagree (§V112, B159).
-    Reading level 1 and calling it the skill's value discarded the others: ``sktok_mjcsdw``
-    stored the unnamed ``spType`` code ``8`` from its level 1 while its level 2 sends
-    ``INCREASE_WITH_TIME``, and ``sktok_sunmao`` stored "Connect" while its level 5 is
-    "Engrave". The uniform case (1597 of 1598 EN skills) is unchanged: the value rides the
-    skill row and every level row leaves it ``NULL``, the same hoist ``gameplay_description``
-    already uses (§V66.3).
-    """
-    if not isinstance(skill_raw, dict):
-        return []
-    parsed: list[ParsedSkill] = []
-    for game_id in sorted(skill_raw):
-        entry = skill_raw[game_id]
-        if not isinstance(entry, dict) or not isinstance(game_id, str):
-            continue
-        raw_levels = entry.get("levels")
-        raw_levels = raw_levels if isinstance(raw_levels, list) else []
-        levels: list[ParsedSkillLevel] = []
-        kept_levels: list[dict[str, Any]] = []
-        for i, raw_level in enumerate(raw_levels):
-            if not isinstance(raw_level, dict):
-                continue
-            kept = apply_allowlist(raw_level, SKILL_LEVEL_ALLOWLIST).kept
-            sp = apply_allowlist(_as_dict(raw_level.get("spData")), SP_DATA_ALLOWLIST).kept
-            blackboard = allowlist_blackboard(raw_level.get("blackboard"))
-            kept_levels.append({**kept, "spData": sp, "blackboard": blackboard})
-            levels.append(
-                ParsedSkillLevel(
-                    level=i + 1,
-                    sp_cost=as_int(sp.get("spCost")),
-                    initial_sp=as_int(sp.get("initSp")),
-                    duration=as_float(kept.get("duration")),
-                    range_id=as_str(kept.get("rangeId")),
-                    blackboard=blackboard,
-                    # §V65 (a)/ADR 0010: the effect template rides the blackboard as its
-                    # grounding. Read from the RAW level, not `kept`: the allowlist cap
-                    # lands before the tag strip and cuts the template mid-sentence
-                    # (§V109/B154). `description` is on SKILL_LEVEL_ALLOWLIST either way.
-                    description=_template_text(raw_level.get("description")),
-                    # §V112: this level's OWN four, not level 1's (B159).
-                    display_name=as_str(kept.get("name")),
-                    skill_type=_enum_text(kept.get("skillType")),
-                    sp_type=_enum_text(sp.get("spType")),
-                    duration_type=_enum_text(kept.get("durationType")),
-                )
-            )
-        parsed.append(
-            ParsedSkill(
-                game_id=game_id,
-                # §V112 (a): a scalar the skill may claim only when every level agrees;
-                # `uniform_str` returns None the moment they diverge, and the diverging
-                # values stay on their level rows (§V112 b).
-                display_name=uniform_str(lv.display_name for lv in levels),
-                skill_type=uniform_str(lv.skill_type for lv in levels),
-                sp_type=uniform_str(lv.sp_type for lv in levels),
-                duration_type=uniform_str(lv.duration_type for lv in levels),
-                levels=levels,
-                provenance_record={"skill_id": game_id, "levels": kept_levels},
-            )
-        )
-    return parsed
-
-
-def _level_only(
-    skill: ParsedSkill, level: ParsedSkillLevel
-) -> tuple[str | None, str | None, str | None, str | None]:
-    """The four per-level values to STORE on ``level``: its own, or ``NULL`` when hoisted.
-
-    A field the skill row already carries (every level agreed, §V112 a) is redundant on
-    each level row, so it is stored once on the skill and ``NULL`` here -- the same
-    hoist ``gameplay_description`` and the module change bundles use (§V66.3). A field
-    the skill row left ``NULL`` is either varying (§V112 b) or absent from the source;
-    in both cases this level's own value is the honest one to store.
-    """
-    return (
-        level.display_name if skill.display_name is None else None,
-        level.skill_type if skill.skill_type is None else None,
-        level.sp_type if skill.sp_type is None else None,
-        level.duration_type if skill.duration_type is None else None,
-    )
-
-
-def insert_skills(
-    conn: sqlite3.Connection,
-    parsed: list[ParsedSkill],
-    *,
-    server: str,
-    snapshot_id: str,
-    skill_source_path: str,
-) -> dict[str, int]:
-    """Insert skills + skill_levels; return ``{skill game_id: skill_pk}`` for linking."""
-    skill_pk_by_game_id: dict[str, int] = {}
-    for skill in parsed:
-        provenance_id = insert_record_provenance(
-            conn,
-            snapshot_id=snapshot_id,
-            source_path=skill_source_path,
-            source_record_key=skill.game_id,
-            record=skill.provenance_record,
-        )
-        with integrity_guard(
-            f"skill {skill.game_id!r} collides on UNIQUE(server, game_id) or a duplicate level",
-            ImporterError,
-        ):
-            cur = conn.execute(
-                "INSERT INTO skills "
-                "(server, game_id, display_name, skill_type, sp_type, duration_type, "
-                "provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    server,
-                    skill.game_id,
-                    skill.display_name,
-                    skill.skill_type,
-                    skill.sp_type,
-                    skill.duration_type,
-                    provenance_id,
-                ),
-            )
-            skill_pk = int(cur.lastrowid or 0)
-            for level in skill.levels:
-                conn.execute(
-                    "INSERT INTO skill_levels "
-                    "(skill_pk, level, sp_cost, initial_sp, duration, range_id, "
-                    "blackboard_json, gameplay_description, display_name, skill_type, "
-                    "sp_type, duration_type) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        skill_pk,
-                        level.level,
-                        level.sp_cost,
-                        level.initial_sp,
-                        level.duration,
-                        level.range_id,
-                        json_or_none(level.blackboard),
-                        level.description,  # effect template (§V65 (a)/ADR 0010)
-                        # §V112 (a)/§V66.3: a value the whole skill shares rides the skill
-                        # row once; a level stores its own only when the levels disagree,
-                        # so NULL here reads as "see the skill row" and the uniform case
-                        # costs no repeated bytes.
-                        *_level_only(skill, level),
-                    ),
-                )
-        skill_pk_by_game_id[skill.game_id] = skill_pk
-    return skill_pk_by_game_id
-
-
-# --- operators ---------------------------------------------------------------
 
 
 def _parse_phases(raw_phases: Any) -> tuple[list[ParsedPhase], list[dict[str, Any]]]:
@@ -453,7 +213,7 @@ def _parse_skill_links(raw_skills: Any) -> tuple[list[ParsedSkillLink], list[dic
         if not skill_id:
             continue
         kept_links.append(kept)
-        unlock = _as_dict(kept.get("unlockCond"))
+        unlock = as_dict(kept.get("unlockCond"))
         links.append(
             ParsedSkillLink(
                 skill_game_id=skill_id,
@@ -483,7 +243,7 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
             kept_cands.append({**kept, "blackboard": blackboard})
             if display_name is None:
                 display_name = as_str(kept.get("name"))
-            cond = _as_dict(kept.get("unlockCondition"))
+            cond = as_dict(kept.get("unlockCondition"))
             variants.append(
                 ParsedTalentVariant(
                     variant_index=vi,
@@ -494,7 +254,7 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
                     # §V65 (a)/ADR 0010: as for skill levels above -- read the template
                     # from the RAW candidate so the tag strip precedes the cap
                     # (§V109/B154). `description` is on TALENT_CANDIDATE_ALLOWLIST.
-                    description=_template_text(cand.get("description")),
+                    description=template_text(cand.get("description")),
                 )
             )
         talents.append(ParsedTalent(talent_index=ti, display_name=display_name, variants=variants))
@@ -511,13 +271,48 @@ def _operator_aliases(name: str | None, appellation: str | None) -> list[ParsedA
     return aliases
 
 
-def parse_operators(character_raw: Any) -> list[ParsedOperator]:
+def parse_subclass_names(uniequip_raw: Any) -> dict[str, str]:
+    """``uniequip_table.subProfDict`` → ``{subProfessionId: display name}`` (§V69/B150).
+
+    The name for the ``subProfessionId`` every operator row already stores lives in the
+    module table, keyed by that same id: ``{"corecaster": {"subProfessionId":
+    "corecaster", "subProfessionName": "Core Caster", ...}}``. Verified against the
+    pinned upstream for both regions; CN ships the Chinese label under the same key, so
+    the map is region-scoped exactly like every other display string (§V5).
+
+    Returns an empty map for an absent/foreign shape, which leaves ``subclass_name``
+    NULL rather than guessing -- the §V69 limitation arm. An entry with no id or no
+    name is skipped for the same reason; the id is read from the entry's own
+    ``subProfessionId`` rather than the dict key so a mismatch cannot invent a pairing.
+    """
+    sub_dict = uniequip_raw.get("subProfDict") if isinstance(uniequip_raw, dict) else None
+    if not isinstance(sub_dict, dict):
+        return {}
+    names: dict[str, str] = {}
+    for entry in sub_dict.values():
+        if not isinstance(entry, dict):
+            continue
+        kept = apply_allowlist(entry, SUBPROF_ALLOWLIST).kept
+        subclass_id = as_str(kept.get("subProfessionId"))
+        display_name = as_str(kept.get("subProfessionName"), sanitize=True)
+        if subclass_id and display_name:
+            names[subclass_id] = display_name
+    return names
+
+
+def parse_operators(
+    character_raw: Any, subclass_names: dict[str, str] | None = None
+) -> list[ParsedOperator]:
     """Transform raw ``character_table`` (id-keyed dict) into typed operators.
 
     Summon tokens + map traps (``profession`` in ``TOKEN``/``TRAP``) are skipped.
+    ``subclass_names`` pairs each ``subProfessionId`` with its display name (§V69/B150);
+    an id the map does not cover keeps a NULL name rather than a fabricated one, which a
+    snapshot without ``uniequip_table.json`` makes the norm rather than the exception.
     """
     if not isinstance(character_raw, dict):
         raise ImporterError("character table is not a JSON object")
+    names = subclass_names or {}
     parsed: list[ParsedOperator] = []
     for game_id in sorted(character_raw):
         entry = character_raw[game_id]
@@ -527,6 +322,7 @@ def parse_operators(character_raw: Any) -> list[ParsedOperator]:
         profession = as_str(kept.get("profession"))
         if profession in _NON_OPERATOR_PROFESSIONS:
             continue
+        subclass_id = as_str(kept.get("subProfessionId"))
         name = as_str(kept.get("name"))
         appellation = as_str(kept.get("appellation"))
         tags = [t for t in kept.get("tagList", []) if isinstance(t, str)]
@@ -539,7 +335,8 @@ def parse_operators(character_raw: Any) -> list[ParsedOperator]:
                 display_name=name,
                 rarity=suffix_int(kept.get("rarity"), "TIER_"),
                 profession=profession,
-                subclass_id=as_str(kept.get("subProfessionId")),
+                subclass_id=subclass_id,
+                subclass_name=names.get(subclass_id) if subclass_id else None,
                 position=as_str(kept.get("position")),
                 tags=tags,
                 obtainable=not bool(entry.get("isNotObtainable")),
@@ -587,8 +384,9 @@ def insert_operators(
         ):
             cur = conn.execute(
                 "INSERT INTO operators "
-                "(server, game_id, display_name, rarity, profession, subclass_id, position, "
-                "tag_json, obtainable, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(server, game_id, display_name, rarity, profession, subclass_id, "
+                "subclass_name, position, tag_json, obtainable, provenance_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     server,
                     op.game_id,
@@ -596,6 +394,7 @@ def insert_operators(
                     op.rarity,
                     op.profession,
                     op.subclass_id,
+                    op.subclass_name,
                     op.position,
                     json_or_none(op.tags) if op.tags else None,
                     int(op.obtainable),
@@ -729,6 +528,7 @@ def import_operators(
     *,
     character_table_path: str = "gamedata/excel/character_table.json",
     skill_table_path: str = "gamedata/excel/skill_table.json",
+    uniequip_table_path: str = "gamedata/excel/uniequip_table.json",
 ) -> OperatorImportResult:
     """Read character + skill tables via the adapter and import them.
 
@@ -736,11 +536,21 @@ def import_operators(
     an empty result rather than failing, so the operator domain is optional per
     snapshot. Skills import first so operator→skill links resolve to a real
     ``skill_pk`` (FK).
+
+    ``uniequip_table.json`` is read here for its ``subProfDict`` alone -- the display
+    name of each operator's subclass (§V69/B150). It is read tolerantly for the same
+    reason the skill table is: a combat-only snapshot has neither, and its absence
+    leaves ``subclass_name`` NULL rather than failing the domain. The file is already
+    in the sync's supplementary set for the module importer (§V41), so pairing the name
+    costs no new source; the module importer reads its own keys from the same file.
     """
     if not adapter.exists(character_table_path):
         return OperatorImportResult()
     character_raw = adapter.read_json(character_table_path)
     skill_raw = adapter.read_json(skill_table_path) if adapter.exists(skill_table_path) else {}
+    uniequip_raw = (
+        adapter.read_json(uniequip_table_path) if adapter.exists(uniequip_table_path) else {}
+    )
     parsed_skills = parse_skills(skill_raw)
     skill_pk_by_game_id = insert_skills(
         conn,
@@ -749,7 +559,7 @@ def import_operators(
         snapshot_id=snapshot_id,
         skill_source_path=skill_table_path,
     )
-    parsed_operators = parse_operators(character_raw)
+    parsed_operators = parse_operators(character_raw, parse_subclass_names(uniequip_raw))
     return insert_operators(
         conn,
         parsed_operators,

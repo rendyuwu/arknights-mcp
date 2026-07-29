@@ -158,52 +158,85 @@ def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | Non
     return None
 
 
-def _trait_change(cand: dict[str, Any]) -> dict[str, Any]:
+def _is_token(part: dict[str, Any]) -> bool | None:
+    """The PART's typed ``isToken`` flag -- whose effect the change describes (§V115).
+
+    A module's phase splits into parts, and the part says whether its candidates
+    describe the operator or the operator's summon/token. The flag lives one level
+    ABOVE the candidate, so it has to be carried down: nothing inside a candidate
+    states it, and the ``talentIndex`` sentinel that used to stand in for it is a
+    different fact entirely (B162 -- the two disagree on 454 of 513 en rows).
+
+    ``None`` when the source states nothing, which keeps "the source said operator"
+    apart from "the source said nothing" instead of collapsing both to false
+    (§V114/§V67); every real part at the pinned upstream fills it.
+    """
+    value = part.get("isToken")
+    return value if isinstance(value, bool) else None
+
+
+def _trait_change(cand: dict[str, Any], is_token: bool | None) -> dict[str, Any]:
     """One ``overrideTraitDataBundle`` candidate → numeric params + effect template.
 
     Keeps the ``blackboard`` params, unlock condition, potential rank, and the in-game
     trait effect description TEMPLATE (``additionalDescription`` then the misspelled
     upstream ``overrideDescripton``) -- mechanic text referencing the blackboard keys,
     emitted alongside them for grounding (§V65 path (a), ADR 0010; sanitized + capped
-    §V18). No lore/story prose is kept (§V16 ceiling).
+    §V18). No lore/story prose is kept (§V16 ceiling). ``is_token`` rides from the
+    parent part (§V115): 13 en / 13 cn trait candidates describe the token, not the
+    operator, and nothing in the candidate itself says so.
     """
-    return {
+    change: dict[str, Any] = {
         "unlockCondition": _unlock_condition(cand.get("unlockCondition")),
         "requiredPotentialRank": as_int(cand.get("requiredPotentialRank")),
         "blackboard": allowlist_blackboard(cand.get("blackboard")),
         "description": _effect_template(cand, ("additionalDescription", "overrideDescripton")),
     }
+    if is_token is not None:
+        change["isToken"] = is_token
+    return change
 
 
-def _talent_change(cand: dict[str, Any]) -> dict[str, Any]:
+def _talent_change(cand: dict[str, Any], is_token: bool | None) -> dict[str, Any]:
     """One ``addOrOverrideTalentDataBundle`` candidate → numeric params + effect template.
 
     Keeps the talent index, unlock condition, potential rank, ``blackboard`` params,
     and the in-game talent effect description TEMPLATE (``upgradeDescription`` then
     ``description``) -- mechanic text referencing the blackboard keys, emitted alongside
     them for grounding (§V65 path (a), ADR 0010; sanitized + capped §V18). The ``name``
-    label and any lore/story prose are dropped (§V16 ceiling).
+    label and any lore/story prose are dropped (§V16 ceiling). ``is_token`` rides from
+    the parent part (§V115): it is the source's own statement of whose effect this is,
+    and the read side turns it into the emitted ``applies_to`` label.
     """
-    return {
+    change: dict[str, Any] = {
         "talentIndex": as_int(cand.get("talentIndex")),
         "unlockCondition": _unlock_condition(cand.get("unlockCondition")),
         "requiredPotentialRank": as_int(cand.get("requiredPotentialRank")),
         "blackboard": allowlist_blackboard(cand.get("blackboard")),
         "description": _effect_template(cand, ("upgradeDescription", "description")),
     }
+    if is_token is not None:
+        change["isToken"] = is_token
+    return change
 
 
 def _parse_parts(parts: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split a phase's ``parts`` into trait changes + talent changes (numeric only)."""
+    """Split a phase's ``parts`` into trait changes + talent changes (numeric only).
+
+    Each candidate carries its part's ``isToken`` down with it (§V115/B162): the
+    candidates are flattened into one per-level list here, so a flag left behind on
+    the part is a fact the wire can never recover.
+    """
     trait_changes: list[dict[str, Any]] = []
     talent_changes: list[dict[str, Any]] = []
     for part in parts if isinstance(parts, list) else []:
         if not isinstance(part, dict):
             continue
+        is_token = _is_token(part)
         for cand in _candidates(part.get("overrideTraitDataBundle")):
-            trait_changes.append(_trait_change(cand))
+            trait_changes.append(_trait_change(cand, is_token))
         for cand in _candidates(part.get("addOrOverrideTalentDataBundle")):
-            talent_changes.append(_talent_change(cand))
+            talent_changes.append(_talent_change(cand, is_token))
     return trait_changes, talent_changes
 
 

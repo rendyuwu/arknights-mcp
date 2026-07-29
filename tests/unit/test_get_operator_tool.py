@@ -34,6 +34,7 @@ from arknights_mcp.mcp.tools._shared import (
     BLACKBOARD_LIMITATION,
     COST_ITEM_NAME_LIMITATION,
     MODULE_CHANGE_DEDUP_NOTE,
+    SUBCLASS_NAME_LIMITATION,
 )
 from arknights_mcp.mcp.tools.operator import (
     _phase_to_dict,
@@ -488,3 +489,47 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert tool.inputSchema["additionalProperties"] is False
     assert set(tool.inputSchema["required"]) == {"server", "game_id"}
     assert tool.inputSchema["properties"]["game_id"]["maxLength"] == MAX_ID_LEN
+
+
+# --- §V69/B150: the subclass id ships with its name, or says why not ------------
+
+
+def test_subclass_id_ships_paired_with_its_name(conn: sqlite3.Connection) -> None:
+    """§V69 pairing arm: the fixture's uniequip carries subProfDict, so the name resolves.
+
+    The entry is transcribed from the pinned upstream rather than invented (B107 class):
+    ``corecaster`` -> "Core Caster" is what the real table ships for the subclass this
+    fixture's operator actually has.
+    """
+    body = _handler(conn)(server="en", game_id=_AMIYA).to_dict()
+    summary = body["data"]["operator"]["summary"]  # type: ignore[index]
+    assert summary["subclass_id"] == "corecaster"
+    assert summary["subclass_name"] == "Core Caster"
+    assert SUBCLASS_NAME_LIMITATION not in body["limitations"]
+
+
+def test_subclass_name_absent_yields_the_limitation_not_a_null(tmp_path: Path) -> None:
+    """§V69's other arm, on a snapshot with no ``uniequip_table.json`` at all.
+
+    The promoted build resolves every operator, so this arm has no real-corpus witness --
+    which is exactly why it needs a fixture. A combat-only snapshot imports operators
+    without any module data, and then the id is all there is: the key is OMITTED rather
+    than emitted null (§V67), and the limitation is the sole signal (§V26 -- never a
+    fabricated name).
+    """
+    path = tmp_path / "cand.sqlite"
+    adapter = LocalSnapshotAdapter(FIXTURE_ROOT.parent / "cn", "cn", "local_snapshot")
+    build_candidate(
+        path,
+        [ServerImport("cn", adapter, "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+    )
+    conn = open_read_only(path)
+    try:
+        body = _handler(conn)(server="cn", game_id="char_1013_chen").to_dict()
+        summary = body["data"]["operator"]["summary"]  # type: ignore[index]
+        assert summary["subclass_id"], "the id must still ship -- it is the joinable key"
+        assert "subclass_name" not in summary, "an unresolved name must be omitted, not null"
+        assert SUBCLASS_NAME_LIMITATION in body["limitations"]
+    finally:
+        conn.close()

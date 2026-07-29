@@ -24,3 +24,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0015](0015-skin-gallery-import.md) | Skin gallery import — named metadata in, prose and art out; alt-form via tmplId | D5-adjacent (extends 0008/0009) | §V88, §V18, §V16, §V21, §V30, §V63 |
 | [0016](0016-threat-rule-retirement.md) | Retire three threat rules no source can feed; revive `ranged_arts` from the §V30 bridge | D5, D8 | §V113, §V26, §V96, §V67, §V103 |
 | [0017](0017-response-shape-v0.3.md) | Response-shape v0.3 — one coordinated `schema_version` `0.2`→`0.3` for five parked breaking fixes; closes the v0.2 line | none (§V21-mandated) | §V21, §V99, §V100, §V71, §V106 |
+| [0018](0018-module-observation-retirement.md) | Retire the two module observations that restate their own payload; keep the computed stat delta | D5, D8 | §V66, §V101, §V6, §V26 |

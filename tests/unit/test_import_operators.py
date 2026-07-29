@@ -21,13 +21,12 @@ from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.operators import (
     ParsedAlias,
     ParsedOperator,
-    _level_only,
     import_operators,
     insert_operators,
     parse_operators,
-    parse_skills,
 )
 from arknights_mcp.importers.search_index import build_search_index
+from arknights_mcp.importers.skills import _level_only, parse_skills
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
@@ -510,6 +509,7 @@ def test_duplicate_operator_fails_gracefully(tmp_path: Path) -> None:
         rarity=6,
         profession="GUARD",
         subclass_id=None,
+        subclass_name=None,
         position="MELEE",
         tags=[],
         obtainable=True,

@@ -39,8 +39,10 @@ from arknights_mcp.mcp.tools._shared import (
     COST_ITEM_NAME_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     MODULE_CHANGE_DEDUP_NOTE,
+    MODULE_TYPE_NOTE,
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
+    SUBCLASS_NAME_LIMITATION,
     ConnectionProvider,
     attach_image_ref_disclosures,
     has_unnamed_cost_item,
@@ -110,13 +112,16 @@ _NOT_FOUND_ACTION = (
     "admin to run `arknights-mcp status` to check the active build"
 )
 
-#: §V104 (b)/§V67: which of this tool's five enum domains ride which response. The identity
+#: §V104 (b)/§V67: which of this tool's six enum domains ride which response. The identity
 #: pair comes with the always-present summary; the three skill domains only when
-#: ``include_skills`` actually put skills on the wire. Their union is the tool's entry in
-#: the shared :data:`TOOL_ENUM_LEGEND_FIELDS` table (asserted in the §V104 guard), so a
-#: field added there can never be silently left unattached here.
+#: ``include_skills`` actually put skills on the wire, and ``applies_to`` only when
+#: ``include_modules`` put change bundles there (§V115 -- it is the label those bundles
+#: carry). Their union is the tool's entry in the shared :data:`TOOL_ENUM_LEGEND_FIELDS`
+#: table (asserted in the §V104 guard), so a field added there can never be silently left
+#: unattached here.
 _SUMMARY_ENUM_FIELDS = ("profession", "position")
 _SKILL_ENUM_FIELDS = ("skill_type", "sp_type", "duration_type")
+_MODULE_ENUM_FIELDS = ("applies_to",)
 
 #: The four ``skill_table`` fields the source scopes PER LEVEL (§V112/B159). One home for
 #: the list the variance detector and both emit sites below walk. Local to this module,
@@ -169,6 +174,9 @@ def _summary_to_dict(summary: OperatorSummary) -> dict[str, object]:
         "rarity": summary.rarity,
         "profession": summary.profession,
         "subclass_id": summary.subclass_id,
+        # §V69/B150: the opaque id ships paired with its name. Omitted, never null, when
+        # the build has no name for it (§V67) -- the limitation is then the sole signal.
+        **({"subclass_name": summary.subclass_name} if summary.subclass_name else {}),
         "position": summary.position,
         "tags": list(summary.tags),
         "obtainable": summary.obtainable,
@@ -419,7 +427,15 @@ def _shape(
     # payload OMITTED, so it rides the response that carries modules rather than the
     # description of both module-emitting tools (§V111 a).
     if operator.modules:
-        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE)
+        limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE, MODULE_TYPE_NOTE)
+    # §V69/B150: the subclass id ships with its name; when this build has no name for it,
+    # the id ships alone and the limitation is the sole signal (§V67 -- no null, no guess).
+    if (
+        operator.summary is not None
+        and operator.summary.subclass_id
+        and not operator.summary.subclass_name
+    ):
+        limitations = (*limitations, SUBCLASS_NAME_LIMITATION)
     # §V104 (b): each domain rides the response that actually emits its field -- a legend
     # for a section this call did not request would be noise (§V67). Both subsets are
     # drawn from the one §V37 table, so the tool and the §V104 guard cannot drift.
@@ -428,6 +444,7 @@ def _shape(
         (
             *(_SUMMARY_ENUM_FIELDS if operator.summary is not None else ()),
             *(_SKILL_ENUM_FIELDS if operator.skills else ()),
+            *(_MODULE_ENUM_FIELDS if operator.modules else ()),
         ),
         limitations,
     )

@@ -45,7 +45,11 @@ def test_field_policy_version_present() -> None:
     # 13: T211/§V114 (B161) added `attackRangeDeclaredNone` -- the §V103 strip that keeps
     #    upstream's -1.0 no-radius mask out of the distance column was erasing the fact
     #    that the source ANSWERED, so "said none" and "said nothing" arrived as one NULL.
-    assert FIELD_POLICY_VERSION == "13"
+    # 14: T202/§V69 (B150) added SUBPROF_ALLOWLIST -- the subclass NAME sat in a file
+    #    every sync already fetched (uniequip_table.subProfDict) and no importer read,
+    #    so 71 EN / 72 CN subclass ids shipped bare -- and §V115 (B162) the module change
+    #    bundles' own `isToken`, the source's statement of whose effect a change is.
+    assert FIELD_POLICY_VERSION == "14"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:
