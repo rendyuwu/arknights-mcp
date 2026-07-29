@@ -39,8 +39,44 @@ _RULES: list[ThreatRule] = [
 ]
 THREAT_RULES: tuple[ThreatRule, ...] = tuple(_RULES)
 
+#: §V113 (b): every registered rule -> the typed occurrence fields it can decide from.
+#: A rule fires only when at least one of these carries real values on the build, so
+#: this is the map a liveness guard joins against :data:`ENEMY_KEY_HOMES`.
+RULE_DECIDING_FIELDS: dict[str, frozenset[str]] = {
+    "threat.aerial": frozenset({"motion_type", "abilities"}),
+    "threat.block_bypass": frozenset({"block_behavior", "abilities"}),
+    "threat.def_res_skew": frozenset({"defense", "res"}),
+    "threat.ranged_arts": frozenset({"attack_type", "attack_range"}),
+    "threat.support_aura": frozenset({"abilities"}),
+    "threat.pressure_spike": frozenset({"total_count", "first_spawn_time", "last_spawn_time"}),
+    "threat.lane_route": frozenset({"route_count"}),
+    "threat.tiles_deploy": frozenset({"tiles"}),
+    "threat.crowd_control": frozenset({"abilities"}),
+}
+
+#: §V113 (b): rules that CANNOT fire on the real build because every deciding field
+#: above is dead-by-data, and rules with a dead ARM that the live arm masks. A
+#: registered rule is not coverage (§V6) -- listing it here is the declaration §V113
+#: demands in place of a silent no-op. Retiring or re-grounding them is T210 (c);
+#: until then this set is what keeps the "nine rules" count honest.
+#:
+#: ``threat.ranged_arts`` is deliberately ABSENT: both of its deciding fields are
+#: dead today, but T210 (a)+(b) revive them from a counted upstream home, so it is a
+#: bridge gap, not a dead rule. The three below have no upstream home at all (B160).
+DEAD_BY_DATA_RULES: frozenset[str] = frozenset(
+    {"threat.block_bypass", "threat.crowd_control", "threat.support_aura"}
+)
+
+#: §V113 (b): a rule whose only live arm is one of several must DECLARE the dead
+#: ones -- ``threat.aerial`` reports 507 en stages purely from ``motion_type``; its
+#: ``abilities`` arm ("aerial" token) has been unreachable since the first build.
+DEAD_RULE_ARMS: dict[str, frozenset[str]] = {"threat.aerial": frozenset({"abilities"})}
+
 __all__ = [
     "THREAT_RULES",
+    "RULE_DECIDING_FIELDS",
+    "DEAD_BY_DATA_RULES",
+    "DEAD_RULE_ARMS",
     "AerialThreatRule",
     "BlockBypassRule",
     "CrowdControlRule",

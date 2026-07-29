@@ -91,6 +91,108 @@ ENEMY_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
+
+@dataclass(frozen=True)
+class SourceKeyHome:
+    """Where an allowlisted key's value really comes from upstream (§V113 (a); B160).
+
+    An allowlist is a *claim* about what the importer reads (§V98). A key admitted
+    here whose value no real snapshot ever produces is worse than a missing key: it
+    creates a column that is NULL by construction, which every downstream consumer
+    then reads through its own §V26 "field missing -> reduce confidence" arm and so
+    reports **clean**. Nothing below the build can witness it; only a count over the
+    built DB can. This declaration is that count, enumerated per key.
+
+    ``status`` is one of:
+
+    * ``live`` -- the §V30 bridge emits the key and the column is non-degenerate on
+      the real build (the count is in ``counted``).
+    * ``bridge_gap`` -- upstream carries ``home`` but ``normalization.py`` never maps
+      it, so the column is 100% NULL (T210 (a) closes these).
+    * ``retired`` -- the key still exists upstream and its VALUE is ``null``/absent on
+      100% of real records; ``home`` names the field that replaced it (T210 (b)).
+    * ``no_home`` -- DEAD BY DATA: no real source carries this at all, so every
+      consumer owes a §V26 limitation rather than a silent NULL.
+    * ``not_stored`` -- allowlisted and read, but feeds no column (kept for the
+      provenance record only).
+
+    Counts are @pinned ``413a81a3`` (en) + build ``2026-07-28T170428Z-en-cn`` (§B160),
+    never assumed: a field that is populated today is populated by DATA, not by
+    construction (§V96 sibling).
+    """
+
+    home: str | None
+    status: str
+    counted: str
+
+
+#: §V113 (a): every ENEMY_HANDBOOK_ALLOWLIST + ENEMY_LEVEL_ALLOWLIST key -> its real
+#: upstream home. Pinned by ``tests/contract/test_column_liveness.py``, which fails
+#: both ways: a key added to either allowlist without an entry here, and an entry
+#: whose ``status`` disagrees with what the §V30 bridge actually emits.
+ENEMY_KEY_HOMES: Mapping[str, SourceKeyHome] = {
+    # -- handbook ------------------------------------------------------------
+    "enemyId": SourceKeyHome(
+        "enemyData.<id>.enemyId", "not_stored", "1585/1585 present; the id IS the dict key"
+    ),
+    "name": SourceKeyHome("enemyData.<id>.name", "live", "enemies.display_name 3294/3879"),
+    "enemyLevel": SourceKeyHome(
+        "enemyData.<id>.enemyLevel", "live", "enemies.enemy_class 3294/3879 NORMAL|ELITE|BOSS"
+    ),
+    "attackType": SourceKeyHome(
+        "enemyData.<id>.damageType",  # the field that REPLACED it
+        "retired",
+        "attackType null 1585/1585; damageType [PHYSIC] 1022|[MAGIC] 338|[NO_DAMAGE] 180|both 42",
+    ),
+    "motionType": SourceKeyHome(
+        "enemyData.motion.m_value (enemy_database; absent from the real handbook)",
+        "live",
+        "enemies.motion_type 3879/3879 WALK 3547|FLY 332",
+    ),
+    # -- enemy_database level entries ----------------------------------------
+    "level": SourceKeyHome("<level>.level", "live", "enemy_levels 4343 rows"),
+    "hp": SourceKeyHome("enemyData.attributes.maxHp.m_value", "live", "4303/4343"),
+    "atk": SourceKeyHome("enemyData.attributes.atk.m_value", "live", "4227/4343"),
+    "def": SourceKeyHome("enemyData.attributes.def.m_value", "live", "4230/4343"),
+    "res": SourceKeyHome("enemyData.attributes.magicResistance.m_value", "live", "4184/4343"),
+    "attackInterval": SourceKeyHome(
+        "enemyData.attributes.baseAttackTime.m_value", "live", "4204/4343"
+    ),
+    "moveSpeed": SourceKeyHome("enemyData.attributes.moveSpeed.m_value", "live", "4287/4343"),
+    "weight": SourceKeyHome("enemyData.attributes.massLevel.m_value", "live", "4192/4343"),
+    "lifePointReduction": SourceKeyHome("enemyData.lifePointReduce.m_value", "live", "3998/4343"),
+    "attackRange": SourceKeyHome(
+        "enemyData.rangeRadius.m_value", "bridge_gap", "upstream defined 1170/2036; column 0/4343"
+    ),
+    "targeting": SourceKeyHome(
+        "enemyData.applyWay.m_value",
+        "bridge_gap",
+        "upstream MELEE 858|RANGED 570|NONE 251|ALL 99; column 0/4343",
+    ),
+    "immunities": SourceKeyHome(
+        "enemyData.attributes.{stun,silence,sleep,frozen,levitate,disarmedCombat,feared,palsy,"
+        "attract}Immune.m_value",
+        "bridge_gap",
+        "upstream silenceImmune true 653, stunImmune true 264; column 0/4343",
+    ),
+    "blockBehavior": SourceKeyHome(
+        None,
+        "no_home",
+        "attributes.blockCnt m_defined:false 2031/2036; the only unblockable statement upstream "
+        'is prose abilityList[].text ("Cannot be blocked." x37), which §V26 forbids reading',
+    ),
+    "abilities": SourceKeyHome(
+        None,
+        "no_home",
+        "no typed ability vocabulary upstream: abilityList[].text is prose (§V26) and "
+        "skills[].prefabKey is free-form (626 distinct over 1378 rows, unpinned)",
+    ),
+}
+
+#: The §V113 statuses that mean the column carries real values today. Any other
+#: status is a column a consumer must treat as absent (§V26), never as "none".
+LIVE_KEY_STATUSES: frozenset[str] = frozenset({"live", "not_stored"})
+
 # ``zoneName`` is the synthetic-fixture key; the real zone_table names a zone via
 # ``zoneNameSecond`` (see FIELD_POLICY_VERSION note 8). Both are NAME-only (§V18).
 #
