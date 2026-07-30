@@ -58,8 +58,10 @@ _TOOL_DESCRIPTION = (
     "data gacha_table. Each entry carries only its pool id, display name, open/end "
     "schedule, rule type, and the typed featured operators. It never carries gacha "
     "summary, detail, html, or image prose. The response's enum_legend gives the values "
-    "of rule_type. Many pools carry no typed featured operator, because their rate-up is not in "
-    "the typed game data. That absence is reported as a limitation, never fabricated. This "
+    "of rule_type. Most pools carry no typed featured operator, because their rate-up is "
+    "not in the typed game data. Those pools omit the featured_ops key instead of sending "
+    "an empty list. A limitation names the rule types that happened for. Absence is "
+    "always reported as a limitation, never fabricated. This "
     "is a historical schedule fact, not gacha planning. It has no pull-probability, "
     "pity, or spark. Optional since/until bounds window the list by ISO open-time "
     "(inclusive). An optional query narrows the list to banners whose display name "
@@ -105,18 +107,28 @@ def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[st
     §V77/§V66 (B79): no per-row ``region`` -- the response is single-region (``server``
     is required, §V5), so region is stated ONCE on the parent ``server`` field, never
     repeated on every banner row.
+
+    §V67/§T199 (B138): a pool with no typed featured op OMITS ``featured_ops`` entirely
+    instead of sending ``[]``. An empty list is §V67's CONFIRMED-none, and it was false for
+    every pool here: the game data simply has no featured-operator array for them (counted
+    over the pinned upstream, an EMPTY array occurs on zero pools in either region), so
+    absence of the key is the honest encoding and the reason rides ``limitations``. The
+    caveat is split by rule type there, so a FESCLASSIC pool is no longer described as a
+    standard banner whose rate-up lives in prose.
     """
-    return {
+    data: dict[str, object] = {
         "game_id": banner.game_id,
         "display_name": banner.display_name,
         "open_time": banner.open_time,
         "end_time": banner.end_time,
         "rule_type": banner.rule_type,
-        "featured_ops": [
+    }
+    if banner.featured_ops:
+        data["featured_ops"] = [
             _featured_op_to_dict(op, image_refs_enabled=image_refs_enabled)
             for op in banner.featured_ops
-        ],
-    }
+        ]
+    return data
 
 
 def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelope:

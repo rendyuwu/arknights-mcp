@@ -95,7 +95,8 @@ jobs:
             tests/contract/test_enemy_substrate.py \
             tests/contract/test_sentinel_answer.py \
             tests/contract/test_effect_pov_label.py \
-            tests/contract/test_subclass_name_pairing.py -q
+            tests/contract/test_subclass_name_pairing.py \
+            tests/contract/test_banner_featured_carriers.py -q
 
   cn-cross-validate:
     # SPEC §T69 / §C: CI-only kengxxiao_gamedata CN cross-validator. Fetches a

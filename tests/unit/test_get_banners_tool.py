@@ -13,6 +13,10 @@ They assert:
 * the §V62/§V26 caveats: a LIMITED banner resolves its featured op to an operator name; a
   standard (NORMAL) banner carries no featured op and surfaces the standard-banner
   limitation; an unresolved featured op surfaces its raw char id + the unresolved caveat;
+* §V67/§T199 (B138): a pool with no typed featured op OMITS ``featured_ops`` instead of
+  sending ``[]``, and the reason splits by rule type -- an expected CARRIER with no array
+  (FESCLASSIC), or a rule type §V62 never classified (BACKFLOW), names itself in its own
+  caveat rather than borrowing the standard banner's prose-only explanation;
 * the optional since/until ISO open-time window narrows the list, newest-first;
 * the §V19/§V22 bounded pagination: out-of-range page rejected at BOTH the model and the
   service (never a silent clamp), and the page descriptor reports total + has_more;
@@ -27,6 +31,7 @@ They assert:
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -42,6 +47,7 @@ from arknights_mcp.models.common import MAX_ID_LEN, MAX_QUERY_LEN
 from arknights_mcp.services.banners import (
     STANDARD_BANNER_LIMITATION,
     UNRESOLVED_FEATURED_OP_LIMITATION,
+    absent_featured_op_array_limitation,
     get_banners,
 )
 from arknights_mcp.sources.registry import load_source_registry
@@ -95,7 +101,11 @@ _EN_BANNERS = [
     ),
 ]
 
-#: One cn banner so a cn query returns cn-only data (en/cn never mixed, §V5).
+#: Two cn banners so a cn query returns cn-only data (en/cn never mixed, §V5): a LIMITED
+#: pool with a featured op, and the §T199/B138 case -- a FESCLASSIC pool, a rule type §V62
+#: declares a typed CARRIER, whose featured-op array the source does not actually have.
+#: That pool is why the cn listing is the one that proves the two absence caveats are
+#: DISTINCT: it must take the absent-array arm without ever taking the standard-banner arm.
 _CN_BANNERS = [
     ParsedBanner(
         game_id="CN_1",
@@ -105,6 +115,15 @@ _CN_BANNERS = [
         rule_type="LIMITED",
         featured_char_ids=["char_002_amiya"],
         provenance_record={"gachaPoolId": "CN_1"},
+    ),
+    ParsedBanner(
+        game_id="CN_FES_1",
+        display_name="CN Celebration",
+        open_time="2026-07-02T00:00:00+00:00",
+        end_time="2026-07-09T00:00:00+00:00",
+        rule_type="FESCLASSIC",
+        featured_char_ids=[],
+        provenance_record={"gachaPoolId": "CN_FES_1"},
     ),
 ]
 
@@ -140,11 +159,22 @@ def _seed_registry(conn: sqlite3.Connection) -> None:
     )
 
 
-def _candidate(tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False) -> Path:
+def _candidate(
+    tmp_path: Path,
+    *,
+    seed_en: bool = True,
+    seed_cn: bool = False,
+    extra_en: Sequence[ParsedBanner] = (),
+    extra_cn: Sequence[ParsedBanner] = (),
+) -> Path:
     """Build a bare candidate DB, seed the registry, and import the banner archive.
 
     Uses the real T113 ``insert_banners`` writer so soft-resolve + provenance + region
     stamping are exercised, then closes so the tool reopens the file read-only.
+    ``extra_en``/``extra_cn`` seed a pool ON TOP of the shared listing for a test that
+    needs one rule type the default fixtures do not carry -- they must be passed here,
+    because the connection every test reads through is read-only (§V2) and cannot be
+    written mid-test.
     """
     path = tmp_path / "cand.sqlite"
     conn = build_database(path)
@@ -153,7 +183,7 @@ def _candidate(tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False) -
         if seed_en:
             insert_banners(
                 conn,
-                list(_EN_BANNERS),
+                [*_EN_BANNERS, *extra_en],
                 server="en",
                 snapshot_id="snap-en",
                 source_path="gamedata/excel/gacha_table.json",
@@ -161,7 +191,7 @@ def _candidate(tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False) -
         if seed_cn:
             insert_banners(
                 conn,
-                list(_CN_BANNERS),
+                [*_CN_BANNERS, *extra_cn],
                 server="cn",
                 snapshot_id="snap-cn",
                 source_path="gamedata/excel/gacha_table.json",
@@ -222,7 +252,7 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert data["server"] == "cn"  # type: ignore[index]
     banners = data["banners"]  # type: ignore[index]
-    assert [b["game_id"] for b in banners] == ["CN_1"]
+    assert [b["game_id"] for b in banners] == ["CN_1", "CN_FES_1"]
     assert all("region" not in b for b in banners)
 
 
@@ -259,11 +289,80 @@ def test_classic_family_partial_resolve(conn: sqlite3.Connection) -> None:
     assert resolved["char_999_ghost"] == {"char_id": "char_999_ghost", "resolved": False}
 
 
-def test_standard_banner_has_no_featured_op_and_limitation(conn: sqlite3.Connection) -> None:
-    # §V62/§V26: NORMAL carries no typed featured-op; the listing notes the caveat.
+def test_standard_banner_omits_featured_ops_and_notes_the_caveat(conn: sqlite3.Connection) -> None:
+    # §V62/§V26/§V67 (§T199/B138): NORMAL carries no typed featured-op, so the key is
+    # ABSENT rather than ``[]``. An empty list is §V67's CONFIRMED-none, and the pool has
+    # a rate-up -- it just lives in prose the field policy excludes. The caveat is the
+    # sole signal (§V67: never a placeholder value AND a limitation for one absence).
     env = _handler(conn)(server="en")
-    assert _by_id(env, "NORMAL_1")["featured_ops"] == []
+    assert "featured_ops" not in _by_id(env, "NORMAL_1")
     assert STANDARD_BANNER_LIMITATION in env.limitations
+
+
+def test_expected_carrier_without_the_array_names_its_rule_type(conn: sqlite3.Connection) -> None:
+    # §T199/B138, the client harm: FESCLASSIC is one of the six rule types §V62 declares a
+    # typed carrier, and on the real corpus it carries the array on ZERO pools. The old wire
+    # said ``featured_ops: []`` -- a CONFIRMED-none asserting a celebration banner has no
+    # rate-up operator. Now the key is absent and the caveat NAMES the rule type, so the
+    # reason resolves per pool through that row's own rule_type.
+    env = _handler(conn)(server="cn")
+    assert "featured_ops" not in _by_id(env, "CN_FES_1")
+    caveat = absent_featured_op_array_limitation(("FESCLASSIC",))
+    assert caveat in env.limitations
+    # ... and it is NOT described as a standard banner whose rate-up lives in prose: that
+    # mislabel is exactly what B138 flagged, since the description's standard set
+    # (NORMAL/SINGLE/DOUBLE/LINKAGE) never covered FESCLASSIC.
+    assert STANDARD_BANNER_LIMITATION not in env.limitations
+
+
+def test_both_absence_caveats_ride_a_mixed_page(tmp_path: Path) -> None:
+    # §V26/§T199: a page mixing a standard pool with an expected-carrier pool carries BOTH
+    # caveats, because the two absences have different causes and one caveat cannot stand
+    # in for the other.
+    path = _candidate(
+        tmp_path,
+        extra_en=[
+            ParsedBanner(
+                game_id="EN_FES_1",
+                display_name="EN Celebration",
+                open_time="2026-06-01T00:00:00+00:00",
+                end_time="2026-06-08T00:00:00+00:00",
+                rule_type="FESCLASSIC",
+                featured_char_ids=[],
+                provenance_record={"gachaPoolId": "EN_FES_1"},
+            )
+        ],
+    )
+    env = _handler(open_read_only(path))(server="en")
+    assert STANDARD_BANNER_LIMITATION in env.limitations
+    assert absent_featured_op_array_limitation(("FESCLASSIC",)) in env.limitations
+
+
+def test_unclassified_rule_type_takes_the_conservative_arm(tmp_path: Path) -> None:
+    # §V96 (unknown token -> conservative side + limitation): BACKFLOW is a real cn rule
+    # type §V62's list never named, and a token upstream adds tomorrow behaves the same.
+    # It must surface as a NAMED source gap, never be read as a prose-only standard banner
+    # -- a silent bucket is how a new pool type would inherit a claim nobody checked.
+    path = _candidate(
+        tmp_path,
+        seed_en=False,
+        seed_cn=True,
+        extra_cn=[
+            ParsedBanner(
+                game_id="CN_BACKFLOW_1",
+                display_name="CN Backflow",
+                open_time="2026-06-01T00:00:00+00:00",
+                end_time="2026-06-08T00:00:00+00:00",
+                rule_type="BACKFLOW",
+                featured_char_ids=[],
+                provenance_record={"gachaPoolId": "CN_BACKFLOW_1"},
+            )
+        ],
+    )
+    env = _handler(open_read_only(path))(server="cn")
+    assert "featured_ops" not in _by_id(env, "CN_BACKFLOW_1")
+    assert absent_featured_op_array_limitation(("BACKFLOW", "FESCLASSIC")) in env.limitations
+    assert STANDARD_BANNER_LIMITATION not in env.limitations
 
 
 def test_unresolved_featured_op_limitation(conn: sqlite3.Connection) -> None:
@@ -272,11 +371,20 @@ def test_unresolved_featured_op_limitation(conn: sqlite3.Connection) -> None:
     assert UNRESOLVED_FEATURED_OP_LIMITATION in env.limitations
 
 
-def test_no_standard_limitation_when_all_featured(conn: sqlite3.Connection) -> None:
-    # The cn listing has only a LIMITED banner (a featured op), so the standard-banner
-    # caveat is absent -- the limitation is data-driven, not always-on.
+def test_no_standard_limitation_when_no_standard_pool_is_listed(conn: sqlite3.Connection) -> None:
+    # The cn listing carries no NORMAL/SINGLE/DOUBLE/LINKAGE pool at all, so the
+    # standard-banner caveat is absent -- the limitation is data-driven, not always-on, and
+    # (§T199) the FESCLASSIC pool it does carry takes the other arm instead.
     env = _handler(conn)(server="cn")
     assert STANDARD_BANNER_LIMITATION not in env.limitations
+
+
+def test_no_absence_caveat_when_every_listed_pool_is_featured(conn: sqlite3.Connection) -> None:
+    # §V26/§T199: both absence caveats stay off a page where every pool carries a typed
+    # featured op -- the cn LIMITED pool alone, reached through the query filter.
+    env = _handler(conn)(server="cn", query="限定")
+    assert STANDARD_BANNER_LIMITATION not in env.limitations
+    assert absent_featured_op_array_limitation(("FESCLASSIC",)) not in env.limitations
 
 
 # --- metadata-only: no gacha prose surfaces (§V62/§V16) -----------------------

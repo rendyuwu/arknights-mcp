@@ -8,13 +8,19 @@ the query). The scope is METADATA-ONLY (§V62, extends §V16/§V56): only the sc
 identity fields + the TYPED featured operators are surfaced -- there is no gacha
 summary/detail/html/image to leak.
 
-Two §V62/§V26 caveats surface as limitations on the result:
+Three §V62/§V26 caveats surface as limitations on the result:
 
 * a standard banner (``NORMAL``/``SINGLE``/``DOUBLE``/``LINKAGE``) carries no typed
   featured-op in the game data (its rate-up lives only in prose, which is §V18-
   forbidden), so a listing that includes one notes "standard-banner rate-up not in typed
   gamedata" (§V26 missing-field -> limitation; the field is genuinely absent, never
   fabricated);
+* a pool whose rule type §V62 declares a TYPED CARRIER, but whose featured-op array is
+  absent from the source anyway, gets its own caveat naming those rule types (§T199/B138).
+  Four of the six declared carriers -- ``CLASSIC``/``CLASSIC_DOUBLE``/``FESCLASSIC``/
+  ``SPECIAL`` -- carry the array on ZERO pools of the real corpus, so this arm is the
+  common case, not an edge; a rule type §V62 never classified at all (``BACKFLOW``, or a
+  future token) joins it as the conservative side (§V96 unknown -> conservative);
 * a featured op whose char id did not soft-resolve to an operator present in the same
   snapshot is surfaced as the raw char id (§V62); a listing with one notes that some
   featured operators are unresolved.
@@ -46,14 +52,55 @@ from arknights_mcp.services.stages import (
 #: ``not_found`` -- this is a list tool, not an entity lookup.
 BannersStatus = Literal["ok"]
 
+#: §V62 rule types that carry a typed featured op in the game data: ``LIMITED`` names one
+#: under ``limitParam.limitedCharId``, the CLASSIC family an array under
+#: ``dynMeta.attainRare6CharList``. This is the set the importer READS (a §V37 mirror of
+#: :mod:`arknights_mcp.importers.banners`), which is what makes a pool in it with zero
+#: featured ops a SOURCE gap rather than a rule-type that never had one -- the distinction
+#: B138 needed and the emit side could not previously draw.
+EXPECTED_FEATURED_OP_RULE_TYPES: frozenset[str] = frozenset(
+    {"LIMITED", "ATTAIN", "CLASSIC", "CLASSIC_ATTAIN", "CLASSIC_DOUBLE", "FESCLASSIC", "SPECIAL"}
+)
+
+#: §V62 rule types that carry NO typed featured op anywhere in the game data: their rate-up
+#: lives only in gacha prose (§V18-forbidden). COUNTED over the pinned upstream, both
+#: regions: 282 of 389 EN pools and 312 of 437 CN pools, zero featured rows on any of them.
+NO_TYPED_FEATURED_OP_RULE_TYPES: frozenset[str] = frozenset(
+    {"NORMAL", "SINGLE", "DOUBLE", "LINKAGE"}
+)
+
 #: §V62/§V26 limitation: a standard banner carries no typed featured-op in the game
 #: data (its rate-up is prose only, §V18-forbidden), so none is emitted -- surfaced as
-#: a caveat, never a fabricated rate-up.
+#: a caveat, never a fabricated rate-up. §V67 (§T199): the wire OMITS the ``featured_ops``
+#: key on such a pool rather than sending ``[]``, so this caveat is the sole signal.
 STANDARD_BANNER_LIMITATION = (
     "standard-banner rate-up not in typed gamedata: one or more listed banners "
-    "carry no typed featured operator; their rate-up lives only in gacha prose, which "
-    "is excluded by the field policy and never fabricated"
+    "carry no typed featured operator, so they omit the featured_ops key; their rate-up "
+    "lives only in gacha prose, which is excluded by the field policy and never fabricated"
 )
+
+
+def absent_featured_op_array_limitation(rule_types: tuple[str, ...]) -> str:
+    """§V62/§V26/§V67 caveat for expected-carrier pools with none on this page (§T199/B138).
+
+    A pool whose rule type DOES carry a typed featured op elsewhere in the data, yet has
+    none here, names its rule types so the caveat resolves PER POOL -- a client maps each
+    key-less row to this reason through that row's own ``rule_type``. The rule types are
+    read off the page, never a static list, so the caveat cannot outlive the gap it
+    describes (§V96: the partition is measured, not asserted) and stays bounded by the
+    12-token domain rather than by the page size (§V19).
+
+    This replaces the ``featured_ops: []`` that shipped before: an empty list is a §V67
+    CONFIRMED-none, which was FALSE for every FESCLASSIC/CLASSIC pool -- a real rate-up
+    banner whose rate-up operator the wire denied existed.
+    """
+    return (
+        "featured_ops is omitted for the listed pools whose rule_type is "
+        f"{', '.join(rule_types)}: the typed featured-operator array is absent from the "
+        "game data for them, so no featured operator is emitted. It is never emitted as "
+        "an empty list, which would assert those pools have no rate-up operator at all"
+    )
+
 
 #: §V62 limitation: a featured char id that did not soft-resolve to an operator present
 #: in this snapshot is surfaced as the raw char id (operators are optional-zero, B36).
@@ -83,9 +130,10 @@ class BannerFacts:
 
     Exactly the §V62 schedule/identity fields plus the typed featured ops;
     ``display_name``/``open_time``/``end_time``/``rule_type`` are nullable (a raw pool
-    entry may omit any). ``featured_ops`` is empty for a standard banner (surfaced as a
-    listing-level limitation). No gacha prose field exists -- the schema cannot hold one
-    (§V16).
+    entry may omit any). ``featured_ops`` is empty whenever the source carries no typed
+    featured op for the pool -- which the wire encodes as an ABSENT key, never ``[]``
+    (§V67/§T199), with the reason in a limitation. No gacha prose field exists -- the
+    schema cannot hold one (§V16).
     """
 
     game_id: str
@@ -176,16 +224,52 @@ def _banner_provenance(rows: tuple[BannerRow, ...]) -> tuple[StageProvenance, ..
     return tuple(provenance)
 
 
+def _absent_array_rule_types(banners: tuple[BannerFacts, ...]) -> tuple[str, ...]:
+    """Rule types on this page that SHOULD carry a typed featured op but carry none (§T199).
+
+    The conservative side takes two kinds of pool (§V96 unknown -> conservative side):
+    a rule type §V62 declares a typed carrier, and a rule type §V62 classified NEITHER way
+    (``BACKFLOW``, or a token upstream adds tomorrow) -- so a new pool type surfaces as a
+    named source gap instead of being silently read as a prose-only standard banner. Only
+    the four measured standard types are excluded, because only they are known to carry no
+    typed featured op anywhere in the corpus. A pool with no ``rule_type`` at all cannot be
+    named, so it falls to the standard caveat rather than an unnamed entry here.
+
+    Sorted + deduped so the emitted caveat is deterministic (§V26).
+    """
+    return tuple(
+        sorted(
+            {
+                b.rule_type
+                for b in banners
+                if not b.featured_ops
+                and b.rule_type is not None
+                and b.rule_type not in NO_TYPED_FEATURED_OP_RULE_TYPES
+            }
+        )
+    )
+
+
 def _limitations(banners: tuple[BannerFacts, ...]) -> tuple[str, ...]:
     """The §V62/§V26 caveats for the banners on the returned page.
 
-    A banner with no typed featured-op (a standard banner) adds the standard-banner
-    caveat; a featured op that stayed unresolved adds the unresolved caveat. Each is
-    added at most once, in a fixed order, so the list is deterministic (§V26).
+    A banner with no typed featured-op splits by rule type (§T199/B138): a standard type
+    (or an unnamed one) adds the standard-banner caveat, while an expected-carrier type adds
+    the absent-array caveat naming those types. Both can fire on one page -- a listing may
+    mix a NORMAL pool with a FESCLASSIC one, and the two absences have different causes.
+    A featured op that stayed unresolved adds the unresolved caveat. Each is added at most
+    once, in a fixed order, so the list is deterministic (§V26).
     """
+    absent_array_types = _absent_array_rule_types(banners)
     limitations: list[str] = []
-    if any(not b.featured_ops for b in banners):
+    if any(
+        not b.featured_ops
+        and (b.rule_type is None or b.rule_type in NO_TYPED_FEATURED_OP_RULE_TYPES)
+        for b in banners
+    ):
         limitations.append(STANDARD_BANNER_LIMITATION)
+    if absent_array_types:
+        limitations.append(absent_featured_op_array_limitation(absent_array_types))
     if any(not op.resolved for b in banners for op in b.featured_ops):
         limitations.append(UNRESOLVED_FEATURED_OP_LIMITATION)
     return tuple(limitations)
