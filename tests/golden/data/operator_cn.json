@@ -22,6 +22,7 @@
       "imported_at": "2026-07-18T00:00:00+00:00",
       "snapshot_id": "cn:1995ec828713"
     },
+    "ranges": [],
     "server": "cn",
     "skills": [
       {
@@ -93,6 +94,9 @@
           }
         ]
       }
+    ],
+    "unresolved_range_ids": [
+      "0-1"
     ]
   },
   "server": "cn",

@@ -49,7 +49,11 @@ def test_field_policy_version_present() -> None:
     #    every sync already fetched (uniequip_table.subProfDict) and no importer read,
     #    so 71 EN / 72 CN subclass ids shipped bare -- and §V115 (B162) the module change
     #    bundles' own `isToken`, the source's statement of whose effect a change is.
-    assert FIELD_POLICY_VERSION == "14"
+    # 15: T200/§V98 (B132) added RANGE_ALLOWLIST + RANGE_GRID_ALLOWLIST -- `range_table
+    #    .json` was DECLARED in the registry's fields_consumed while no sync fetched it
+    #    and no importer read it, so `range_id` shipped bare on 2548 phase + 5334
+    #    skill-level rows with no resolver and no limitation (§V69).
+    assert FIELD_POLICY_VERSION == "15"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

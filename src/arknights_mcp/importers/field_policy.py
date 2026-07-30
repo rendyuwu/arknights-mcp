@@ -72,7 +72,14 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    (``operators.subclass_name``, the flag inside the change bundles), so the bump is
 #:    what makes §V92 promote them; bumped beside TRANSFORM_VERSION, since the change
 #:    bundle's shape moves too.
-FIELD_POLICY_VERSION = "14"
+#: 15: T200/§V98 (B132) added RANGE_ALLOWLIST + RANGE_GRID_ALLOWLIST: `range_table.json`
+#:    was DECLARED in the primary source's registry `fields_consumed` yet never fetched
+#:    and never read, while `range_id` shipped bare on 2548 phase + 5334 skill-level
+#:    rows with no resolver (§V69). The grids are new stored bytes in a new `ranges`
+#:    table (migration 0020), so the bump is what makes §V92 promote them. No
+#:    TRANSFORM_VERSION bump: no existing record's transform changes -- a new domain is
+#:    added beside them (the T205 precedent, entry 11).
+FIELD_POLICY_VERSION = "15"
 
 #: Fact region -> name/alias locale tag (§V57; B46/§V59). A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -413,6 +420,20 @@ ITEM_COST_ALLOWLIST: frozenset[str] = frozenset({"id", "count", "type"})
 #: no reader consumes it, and an allowlisted column nothing fills or reads is the dead
 #: substrate §V113 catches.
 SUBPROF_ALLOWLIST: frozenset[str] = frozenset({"subProfessionId", "subProfessionName"})
+
+#: One ``range_table.json`` entry -- the attack-range grid an operator phase / skill
+#: level names by ``rangeId`` (§T200/§V98/§V69/B132). ``grids`` is a nested list of
+#: ``{row, col}`` dicts kept structurally (RANGE_GRID_ALLOWLIST); every leaf in it is
+#: an integer, so unlike the other nested structures §V31 makes us decompose, there is
+#: no string leaf that could carry prose. ``direction`` is deliberately absent: it is
+#: the constant ``1`` on all 68 EN / 73 CN entries at the pinned commit, its meaning is
+#: unverified, and nothing reads it -- the dead-substrate case §V113/B160 caught and
+#: §V94 forbids. The live-upstream guard PINS that constancy instead (§V96/§V112 (c)),
+#: so a second value would fail loudly rather than be silently dropped.
+RANGE_ALLOWLIST: frozenset[str] = frozenset({"id", "grids"})
+
+#: One ``grids[]`` cell of a range: integer offsets from the deploy tile (§V31).
+RANGE_GRID_ALLOWLIST: frozenset[str] = frozenset({"row", "col"})
 
 #: One Penguin Statistics ``items`` entry (§V18; §T89). ``itemId`` is the item's
 #: game id (== arknights item id), ``name`` a short display label (kept, like an

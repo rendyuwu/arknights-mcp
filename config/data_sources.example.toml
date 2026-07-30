@@ -19,17 +19,28 @@ canonical_url = "https://github.com/ArknightsAssets/ArknightsGamedata"
 source_type = "structured_game_data_snapshot"
 regions = ["en", "cn"]
 purpose = "Primary EN/CN structured gameplay snapshot (stages, enemies, operators, modules)."
+# SPEC §V98 (B132): this list is a CLAIM about the code and ships verbatim to a
+# client, so it must equal the set of snapshot files a real sync stages and an
+# importer actually reads -- not a wish list. It is enforced against
+# CORE_FILES + SUPPLEMENTARY_FILES by tests/unit/test_source_registry_truth.py.
+# `range_table.json` sat here for six milestones while nothing fetched or read it
+# (B132), and `uniequip_data.json` was listed as a file that has never existed --
+# the module metadata is the `equipDict` key INSIDE `uniequip_table.json`, already
+# listed. Both are corrected in T200; the list is entries at FILE granularity, so
+# a sub-key is never named as a file again.
 fields_consumed = [
     "character_table.json",
     "skill_table.json",
     "uniequip_table.json",
-    "uniequip_data.json",
     "battle_equip_table.json",
+    "gacha_table.json",
+    "skin_table.json",
+    "activity_table.json",
+    "range_table.json",
     "enemy_handbook_table.json",
     "enemy_database.json",
     "stage_table.json",
     "zone_table.json",
-    "range_table.json",
     "levels/**",
 ]
 adapter_version = "0.1"

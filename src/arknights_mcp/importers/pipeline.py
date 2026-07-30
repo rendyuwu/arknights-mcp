@@ -41,6 +41,7 @@ from arknights_mcp.importers.guards import (
 from arknights_mcp.importers.manifest import build_manifest, make_snapshot_record
 from arknights_mcp.importers.modules import import_modules
 from arknights_mcp.importers.operators import import_operators
+from arknights_mcp.importers.ranges import RangeImportResult, import_ranges
 from arknights_mcp.importers.search_index import build_search_index
 from arknights_mcp.importers.skins import SkinImportResult, import_skins
 from arknights_mcp.importers.stages import StageImportResult, import_stages
@@ -84,6 +85,7 @@ class SnapshotSummary:
     modules: int = 0
     banners: int = 0
     skins: int = 0
+    ranges: int = 0
 
 
 @dataclass(frozen=True)
@@ -208,6 +210,21 @@ def _import_one(
         empty=SkinImportResult,
         cites="§V88/§V58",
     )
+    # §T200/§V98 (B132): the attack-range grids that resolve the `range_id` phases and
+    # skill levels emit. Same optional fail-open class as banners/skins -- `range_table`
+    # is fetched tolerant-absent (§V41/B36) and `ranges` is not CRITICAL, so a snapshot
+    # without it imports zero and the wire takes §V69's limitation arm. It references no
+    # operator row, so its position here is free; it runs last with the other optional
+    # domains so one §V37 home (import_optional_domain) governs them all.
+    ranges = import_optional_domain(
+        conn,
+        lambda: import_ranges(conn, job.adapter, record.snapshot_id),
+        domain="ranges",
+        server=job.server,
+        describe="attack-range grids",
+        empty=RangeImportResult,
+        cites="§V98/§V69",
+    )
     lv = stages.levels
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
@@ -227,6 +244,7 @@ def _import_one(
         modules=modules.modules_inserted,
         banners=banners.banners_inserted,
         skins=skins.skins_inserted,
+        ranges=ranges.ranges_inserted,
     )
 
 

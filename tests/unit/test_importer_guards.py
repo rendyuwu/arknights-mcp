@@ -217,7 +217,9 @@ def test_fail_open_block_has_single_home() -> None:
     src = inspect.getsource(pipeline_mod)
     assert "except ImporterError" not in src
     assert "savepoint(" not in src
-    assert src.count("import_optional_domain(") == 2
+    # banners + skins + ranges (§T200): each optional domain reaches the helper, and the
+    # count moves WITH a new domain so a hand-rolled copy beside them still fails here.
+    assert src.count("import_optional_domain(") == 3
     assert import_optional_domain.__module__ == "arknights_mcp.importers.guards"
 
 

@@ -95,6 +95,12 @@ STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 #: name a client actually types matches nothing (B155). It is name-only metadata from
 #: the SAME snapshot, and a combat-only snapshot legitimately lacks it, so it is
 #: fetched every sync and tolerated-if-absent (the zones then keep a NULL event_name).
+#: ``range_table`` (§T200/§V98, B132) is the class again, and the case that named the
+#: rule: it was DECLARED in the registry's ``fields_consumed`` yet never appeared here,
+#: so no sync ever fetched it and no importer ever read it, while ``range_id`` shipped
+#: bare on every operator phase and skill level with no resolver (§V69). 68 EN / 73 CN
+#: grids, ~70 KiB, resolving every emitted id with zero unresolved. Same tolerant-absent
+#: posture: a combat-only snapshot lacks it and the wire falls back to the limitation.
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/character_table.json",
     "gamedata/excel/skill_table.json",
@@ -103,6 +109,7 @@ SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/gacha_table.json",
     "gamedata/excel/skin_table.json",
     "gamedata/excel/activity_table.json",
+    "gamedata/excel/range_table.json",
 )
 
 

@@ -533,3 +533,92 @@ def test_subclass_name_absent_yields_the_limitation_not_a_null(tmp_path: Path) -
         assert SUBCLASS_NAME_LIMITATION in body["limitations"]
     finally:
         conn.close()
+
+
+# --- §T200/§V69: the emitted range_id resolves, or says why not (B132) ----------
+
+
+def test_range_ids_resolve_to_grids_on_the_wire(conn: sqlite3.Connection) -> None:
+    """§V69 pairing arm: every emitted ``range_id`` is decodable from the response.
+
+    The id itself keeps shipping -- it is the joinable key, and dropping it would be a
+    breaking change, not a fix (§V21). What is new is that the response now carries the
+    grid it names, so "what is this skill's range" is answerable without a second call
+    and without game knowledge (B132/§V73).
+    """
+    body = _handler(conn)(
+        server="en", game_id=_AMIYA, include_phases=True, include_skills=True
+    ).to_dict()
+    operator = body["data"]["operator"]  # type: ignore[index]
+
+    emitted = {p["range_id"] for p in operator["phases"] if "range_id" in p}
+    emitted |= {
+        lv["range_id"] for s in operator["skills"] for lv in s["levels"] if "range_id" in lv
+    }
+    # The fixture's own character_table/skill_table name these three.
+    assert emitted == {"1-1", "1-2", "x-1"}
+
+    entries = operator["ranges"]["entries"]
+    assert set(entries) == emitted, "the map must cover exactly the ids this response emits"
+    # Transcribed from the real range_table: 1-1 is the deploy tile plus the one in front.
+    assert entries["1-1"]["grids"] == [{"row": 0, "col": 0}, {"row": 0, "col": 1}]
+    assert entries["1-1"]["rows"] == ["@#"]
+    assert entries["1-1"]["cell_count"] == 2
+    # x-1 is Amiya's Chain Cast diamond.
+    assert entries["x-1"]["rows"] == ["..#..", ".###.", "##@##", ".###.", "..#.."]
+    # No limitation may claim a range is unavailable while its grid is right there.
+    assert not any("attack-range grid unavailable" in t for t in body["limitations"])
+
+
+def test_range_symbols_ride_the_response_once(conn: sqlite3.Connection) -> None:
+    """§V66: the alphabet is hoisted onto the container, not repeated per entry."""
+    body = _handler(conn)(server="en", game_id=_AMIYA, include_phases=True).to_dict()
+    ranges = body["data"]["operator"]["ranges"]  # type: ignore[index]
+    assert set(ranges["symbols"]) == {
+        "origin_covered",
+        "origin_uncovered",
+        "covered",
+        "absent",
+    }
+    decodable = set(ranges["symbols"].values())
+    for entry in ranges["entries"].values():
+        assert "symbols" not in entry, "the alphabet must not repeat per entry"
+        assert {ch for row in entry["rows"] for ch in row} <= decodable
+
+
+def test_no_section_loaded_emits_no_range_map(conn: sqlite3.Connection) -> None:
+    """§V22/§V67: a summary-only response names no range_id, so it carries no grids."""
+    body = _handler(conn)(server="en", game_id=_AMIYA).to_dict()
+    assert "ranges" not in body["data"]["operator"]  # type: ignore[operator]
+    assert not any("attack-range grid unavailable" in t for t in body["limitations"])
+
+
+def test_unresolved_range_id_yields_the_limitation_not_a_fabricated_grid(
+    tmp_path: Path,
+) -> None:
+    """§V69's other arm, on a snapshot with no ``range_table.json`` at all.
+
+    Same reasoning as the subclass fallback above: the promoted build resolves every
+    emitted id, so this arm has no real-corpus witness and needs a fixture. The CN
+    operator fixture ships no range table, so the id must still ship, the ``ranges`` key
+    must be ABSENT rather than an empty map claiming no grids exist (§V67), and the
+    limitation must NAME the unresolved id (§V26 -- never a guessed grid).
+    """
+    path = tmp_path / "cand.sqlite"
+    adapter = LocalSnapshotAdapter(FIXTURE_ROOT.parent / "cn", "cn", "local_snapshot")
+    build_candidate(
+        path,
+        [ServerImport("cn", adapter, "local_snapshot")],
+        registry=load_source_registry(REGISTRY),
+    )
+    conn = open_read_only(path)
+    try:
+        body = _handler(conn)(server="cn", game_id="char_1013_chen", include_phases=True).to_dict()
+        phases = body["data"]["operator"]["phases"]  # type: ignore[index]
+        assert any(p.get("range_id") == "0-1" for p in phases), "the id must still ship"
+        assert "ranges" not in body["data"]["operator"]  # type: ignore[operator]
+        notes = [t for t in body["limitations"] if "attack-range grid unavailable" in t]
+        assert len(notes) == 1, "the unresolved id must be disclosed exactly once"
+        assert "0-1" in notes[0], "the limitation must name the id it could not resolve"
+    finally:
+        conn.close()

@@ -37,10 +37,12 @@ from arknights_mcp.db.repositories.operators import (
     TalentLevelRow,
     TalentRow,
 )
+from arknights_mcp.db.repositories.ranges import RangeRepository
 from arknights_mcp.services.effect_changes import (
     dedup_and_label_changes,
     hoist_uniform_changes,
 )
+from arknights_mcp.services.range_grid import range_grid_rows
 from arknights_mcp.util.coerce import json_load, uniform_str
 
 #: Typed outcome of an operator lookup. The full §V23 status vocabulary is wired
@@ -235,6 +237,20 @@ class OperatorSkinFacts:
 
 
 @dataclass(frozen=True)
+class RangeGridFacts:
+    """One resolved attack-range grid referenced by this operator (§T200/§V69/B132).
+
+    ``grids`` is the imported fact -- deploy-tile-relative ``(row, col)`` offsets --
+    and ``rows`` is the same grid laid out as a readable board (§V74 (c) class), empty
+    only when the frame was refused by the §V22 ceiling.
+    """
+
+    range_id: str
+    grids: tuple[tuple[int, int], ...]
+    rows: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class OperatorFacts:
     """Typed, allowlisted facts about one operator (no prose; §V16/§V18).
 
@@ -244,6 +260,10 @@ class OperatorFacts:
     fact always carries its region attribution (§V5). ``skins`` is loaded only for
     the image-ref-emitting wiring (``load_skins``, §T182) and is empty on a build
     without the skin domain.
+
+    ``ranges`` resolves every ``range_id`` the loaded phases/skills actually emit, and
+    ``unresolved_range_ids`` names the ones this build has no grid for -- §V69's two
+    arms, both computed here so the transport only renders them (§V37/B132).
     """
 
     server: str
@@ -255,6 +275,8 @@ class OperatorFacts:
     talents: tuple[OperatorTalentFacts, ...]
     modules: tuple[OperatorModuleFacts, ...]
     skins: tuple[OperatorSkinFacts, ...]
+    ranges: tuple[RangeGridFacts, ...]
+    unresolved_range_ids: tuple[str, ...]
     provenance: OperatorProvenance
 
 
@@ -564,6 +586,41 @@ def _skin_facts(row: OperatorSkinRow) -> OperatorSkinFacts:
     )
 
 
+def _range_facts(
+    conn: sqlite3.Connection,
+    server: str,
+    phases: tuple[OperatorPhaseFacts, ...],
+    skills: tuple[OperatorSkillFacts, ...],
+) -> tuple[tuple[RangeGridFacts, ...], tuple[str, ...]]:
+    """Resolve the ``range_id`` values the loaded sections emit (§T200/§V69/B132).
+
+    Collects the ids from the phases and from every skill LEVEL (the source scopes
+    ``rangeId`` per level and seven skills genuinely vary across their levels, §V112),
+    resolves them in one batched region-scoped read, and splits the result into §V69's
+    two arms: the grids that resolved, and the ids that did not. An unresolved id is
+    never dropped and never guessed -- it is what the limitation names (§V26).
+
+    Region-scoped: an ``en`` operator resolves only against ``en`` grids, so en and cn
+    never mix (§V5). CN's table is a strict superset of EN's at the pinned commit, which
+    is exactly why the region must be part of the key rather than a fallback chain.
+    """
+    wanted = {p.range_id for p in phases if p.range_id} | {
+        lv.range_id for s in skills for lv in s.levels if lv.range_id
+    }
+    if not wanted:
+        return (), ()
+    resolved = RangeRepository(conn).by_ids(server, wanted)
+    facts = tuple(
+        RangeGridFacts(
+            range_id=row.range_id,
+            grids=row.grids,
+            rows=range_grid_rows(row.grids),
+        )
+        for row in (resolved[rid] for rid in sorted(resolved))
+    )
+    return facts, tuple(sorted(wanted - resolved.keys()))
+
+
 def get_operator(
     conn: sqlite3.Connection,
     *,
@@ -617,6 +674,10 @@ def get_operator(
         if load_skins
         else ()
     )
+    # §T200/§V69 (B132): resolve exactly the range ids the LOADED sections emit -- a grid
+    # for a section this call did not request would be a fact about nothing (§V22/§V67).
+    # One batched query; the unresolved remainder feeds §V69's limitation arm.
+    ranges, unresolved_range_ids = _range_facts(conn, operator.server, phases, skills)
     facts = OperatorFacts(
         server=operator.server,
         game_id=operator.game_id,
@@ -627,6 +688,8 @@ def get_operator(
         talents=talents,
         modules=modules,
         skins=skins,
+        ranges=ranges,
+        unresolved_range_ids=unresolved_range_ids,
         provenance=OperatorProvenance(
             snapshot_id=operator.snapshot_id, imported_at=operator.imported_at
         ),

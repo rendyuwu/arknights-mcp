@@ -60,9 +60,11 @@ from arknights_mcp.services.operators import (
     OperatorSkillFacts,
     OperatorSummary,
     OperatorTalentFacts,
+    RangeGridFacts,
     SkillLevelFacts,
     get_operator,
 )
+from arknights_mcp.services.range_grid import RANGE_GRID_SYMBOLS, unresolved_range_limitation
 
 _TOOL_NAME = "get_operator"
 _TOOL_TITLE = "Get operator"
@@ -200,8 +202,10 @@ def _phase_to_dict(phase: OperatorPhaseFacts) -> dict[str, object]:
         "block_count": phase.block_count,
         "attack_interval": phase.attack_interval,
     }
-    # §V67: ``range_id`` is an always-optional scalar -- omit the key when the source
-    # carried none rather than emit an ambiguous null (additive-safe, §V21).
+    # §V67: ``range_id`` is optional -- omit the key when the source carried none rather
+    # than emit an ambiguous null (additive-safe, §V21). When present it is resolvable
+    # through the response-level ``ranges`` map (§V69/§T200), or named by the unresolved
+    # limitation; it is never a bare id with neither (B132).
     if phase.range_id is not None:
         out["range_id"] = phase.range_id
     return out
@@ -215,7 +219,10 @@ def _skill_level_to_dict(level: SkillLevelFacts) -> dict[str, object]:
         "duration": level.duration,
         "blackboard": level.blackboard,
     }
-    # §V67: omit the always-optional ``range_id`` scalar when the source carried none.
+    # §V67: omit the optional ``range_id`` scalar when the source carried none. The
+    # source scopes it per LEVEL and seven skills really do vary across their levels
+    # (§V112), so it stays here rather than hoisting to the skill; the response-level
+    # ``ranges`` map resolves whichever ids the levels name (§V69/§T200).
     if level.range_id is not None:
         out["range_id"] = level.range_id
     # §V66.3: the effect TEMPLATE is emitted once on the parent skill when it is
@@ -327,6 +334,35 @@ def _module_to_dict(module: OperatorModuleFacts) -> dict[str, object]:
     return out
 
 
+def _ranges_to_dict(ranges: tuple[RangeGridFacts, ...]) -> dict[str, object]:
+    """The response-level ``range_id`` -> grid resolution map (§T200/§V69/§V66; B132).
+
+    Hoisted once per response rather than inlined at each site: three phases and ~21
+    skill levels reference a mean of two distinct grids, so pairing at every emission
+    would repeat the same coordinates two dozen times (§V66 dedup). The symbol alphabet
+    rides the container once for the same reason.
+
+    ``symbols`` decodes ``rows``. It is the SERVER's own alphabet, not a source value
+    domain, so it belongs with the payload rather than in the §V104 enum legend -- the
+    same reasoning that keeps ``tile_grid.absent_symbol`` beside its grid.
+    """
+    return {
+        "symbols": dict(RANGE_GRID_SYMBOLS),
+        "entries": {
+            r.range_id: {
+                # The imported fact: deploy-tile-relative offsets, machine-usable
+                # without parsing the board (§V69 -- no forced second step).
+                "grids": [{"row": row, "col": col} for row, col in r.grids],
+                # §V67: the board is omitted, never emitted empty, when the §V22 frame
+                # ceiling refused it -- an empty rows list would read as "no board".
+                **({"rows": list(r.rows)} if r.rows else {}),
+                "cell_count": len(r.grids),
+            }
+            for r in ranges
+        },
+    }
+
+
 def _operator_to_dict(
     operator: OperatorFacts, *, include_provenance: bool, image_refs_enabled: bool
 ) -> dict[str, object]:
@@ -355,6 +391,11 @@ def _operator_to_dict(
         data["talents"] = [_talent_to_dict(t) for t in operator.talents]
     if operator.modules:
         data["modules"] = [_module_to_dict(m) for m in operator.modules]
+    # §T200/§V69 (B132): the grids resolving the range_ids the emitted sections carry.
+    # Absent when nothing emitted a range_id, or when none of them resolved -- the
+    # limitation is then the sole signal (§V67: no empty map claiming "no grids exist").
+    if operator.ranges:
+        data["ranges"] = _ranges_to_dict(operator.ranges)
     if include_provenance:
         data["provenance"] = {
             "snapshot_id": operator.provenance.snapshot_id,
@@ -436,6 +477,12 @@ def _shape(
         and not operator.summary.subclass_name
     ):
         limitations = (*limitations, SUBCLASS_NAME_LIMITATION)
+    # §V69/§V26 (§T200, B132): §V69's other arm. An emitted range_id this build has no
+    # grid for (snapshot without range_table, or a DB predating migration 0020) ships as
+    # a bare id plus this limitation naming it -- never a fabricated grid, and never the
+    # silence that made "what is this skill's range" unanswerable.
+    if (range_note := unresolved_range_limitation(operator.unresolved_range_ids)) is not None:
+        limitations = (*limitations, range_note)
     # §V104 (b): each domain rides the response that actually emits its field -- a legend
     # for a section this call did not request would be noise (§V67). Both subsets are
     # drawn from the one §V37 table, so the tool and the §V104 guard cannot drift.
