@@ -411,8 +411,8 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "Each observation carries a "
     "rule_id, typed evidence, a confidence score, and limitations -- facts and "
     "observations only, never a mandatory or best-in-slot recommendation. depth "
-    "scales the surrounding facts: summary (observations only), standard (+ enemy "
-    "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
+    "scales the surrounding facts, not warnings (they ride any depth): "
+    "summary (observations), standard (+ enemy roster), detailed (+ full per-enemy stat and timing "
     "context, with attack_interval and spawn times in seconds). "
     + STAGE_FACTS_SIBLING_NOTE
     + " "
@@ -543,6 +543,13 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
     if depth != "summary":
         shaper = _occurrence_full if depth == "detailed" else _occurrence_compact
         data["occurrences"] = [shaper(o) for o in result.occurrences]
+        data["warnings"] = list(result.warnings)
+    elif result.warnings:
+        # §V118 (d)/B165: ``depth`` scales the surrounding FACTS. A §V26 disclosure is not
+        # one of them -- an enemy the analyzer could not judge, or a stage whose level data
+        # was never imported, is exactly what a summary reader would otherwise mistake for
+        # a clean result. Additive and only when non-empty (§V21/§V67), so the summary key
+        # set stays a subset of standard's.
         data["warnings"] = list(result.warnings)
 
     # §V67/B98: the shared stage shaper omits absent scalars (recommended_level /

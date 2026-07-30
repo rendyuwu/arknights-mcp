@@ -20,7 +20,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, distinct_refs
+from arknights_mcp.analyzers.rules._common import by_game_id, declined, distinct_refs
 
 RULE_ID = "threat.def_res_skew"
 
@@ -50,7 +50,15 @@ class DefResSkewRule:
             d, r = occ.defense, occ.res
             if d is None or r is None:
                 if d is None and r is None:
-                    continue  # nothing typed to assess for this enemy
+                    # §V118/B165: this used to be a bare ``continue``. The enemy the rule
+                    # knows LEAST about was the one it said nothing about, so 64 real
+                    # occurrences -- one of them a boss -- were indistinguishable from
+                    # enemies that were assessed and found unskewed, while the one-stat
+                    # case below refused out loud. Absence is not a negative.
+                    limitations.append(
+                        f"{occ.game_id}: def and res both missing; damage-type skew not assessed"
+                    )
+                    continue
                 missing = "def" if d is None else "res"
                 limitations.append(
                     f"{occ.game_id}: {missing} missing; damage-type skew not assessed"
@@ -73,7 +81,8 @@ class DefResSkewRule:
             confidence = max(confidence, _CONFIDENCE)
 
         if not evidence:
-            return RuleResult()
+            # §V118 (b): the refusals outlive the conclusion that would have carried them.
+            return declined(limitations)
 
         count = distinct_refs(evidence)
         types_word = "type" if count == 1 else "types"

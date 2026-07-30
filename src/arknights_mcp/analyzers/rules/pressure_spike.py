@@ -23,7 +23,12 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, distinct_refs, fuller_view_note
+from arknights_mcp.analyzers.rules._common import (
+    by_game_id,
+    declined,
+    distinct_refs,
+    fuller_view_note,
+)
 
 RULE_ID = "threat.pressure_spike"
 
@@ -79,8 +84,17 @@ class PressureSpikeRule:
 
         for occ in by_game_id(ctx.occurrences):
             count = occ.total_count
-            if count is None or count < _SPIKE_MIN_COUNT:
+            if count is None:
+                # §V118/B165: an absent spawn count was folded in with a LOW one below,
+                # so "we do not know how many arrive" read exactly like "few arrive".
+                # NULL on 0/28302 occurrences today; the column is nullable, so the arm
+                # is declared dead_today rather than dropped (§V117).
+                limitations.append(
+                    f"{occ.game_id}: total_count missing; spawn pressure not assessed"
+                )
                 continue
+            if count < _SPIKE_MIN_COUNT:
+                continue  # a counted, genuinely small arrival -> a real negative
             first, last = occ.first_spawn_time, occ.last_spawn_time
 
             # §V101/B137: the note used to read "13 spawns; computed window 7s is
@@ -114,7 +128,7 @@ class PressureSpikeRule:
             confidence = max(confidence, conf)
 
         if not evidence:
-            return RuleResult()
+            return declined(limitations)  # §V118 (b)
 
         # §V108/§V66: one route to the per-wave timeline for the whole observation, and
         # only when a window was actually computed -- the count-only arm has no window to

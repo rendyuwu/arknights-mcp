@@ -230,6 +230,33 @@ def test_detailed_envelope_names_absent_occurrence_damage_types() -> None:
     assert not any("damage_types" in lim.lower() for lim in standard.limitations)
 
 
+def test_summary_depth_still_carries_a_warning(conn: sqlite3.Connection) -> None:
+    """§V118 (d)/B165: ``depth`` scales the FACTS, and a §V26 disclosure is not one.
+
+    ``summary`` dropped ``warnings`` wholesale, so the reader most likely to take an empty
+    analysis at face value was the one told least about it -- an enemy the rules could not
+    judge, or a stage whose level data was never imported, vanished with the key. It stays
+    additive: a stage with nothing to disclose emits no key at all, so summary's keys are
+    still a subset of standard's (asserted above).
+    """
+    result = analyze_stage(conn, server="en", stage_code="4-4")
+    assert result.stage is not None
+    with_warning = StageAnalysisResult(
+        status="ok",
+        server=result.server,
+        stage=result.stage,
+        occurrences=result.occurrences,
+        observations=result.observations,
+        warnings=("enemy_0000_x: def and res both missing; damage-type skew not assessed",),
+        analyzer_version=result.analyzer_version,
+    )
+    for depth in ("summary", "standard", "detailed"):
+        data = _shape_analysis(depth, with_warning).to_dict()["data"]  # type: ignore[arg-type]
+        assert data["warnings"] == [  # type: ignore[index]
+            "enemy_0000_x: def and res both missing; damage-type skew not assessed"
+        ], depth
+
+
 def test_analyze_description_states_field_convention() -> None:
     # §V67 "convention stated in tool descriptions": analyze_stage omits absent
     # scalars (damage_types / variant_id / recommended_level / max_life_points), so

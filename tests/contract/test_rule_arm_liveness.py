@@ -21,12 +21,18 @@ So this module counts branches, not rules, in three layers:
   occurrence. ``dead_today`` is a statement about the corpus; an arm no input can reach
   is not dead, it is dishonest, and §T210 (c) is what to do with it instead.
 * **build sweep** -- every rule is run over every stage of the promoted build and each
-  emitted limitation is mapped back to its declared arm. A ``live`` arm that fires zero
+  emitted refusal is mapped back to its declared arm. A ``live`` arm that fires zero
   times is a new B164; a ``dead_today`` arm that fires is a declaration gone stale; a
-  limitation that maps to no arm is an undeclared branch that the static layer somehow
+  refusal that maps to no arm is an undeclared branch that the static layer somehow
   let through.
 
-Counts in the declaration are @promoted ``2026-07-30T010030Z-en-cn``; the static and
+§V118/B165 widened all three layers from the ``limitations`` channel to BOTH channels: a
+rule that concludes nothing now sends its refusals out as ``warnings``, so a guard that
+reads only limitations would report the arms that fix restored as dead again -- and the
+two §V26 conflict warnings ``ranged_arts`` always emitted turn out to be refusals this
+module never counted at all.
+
+Counts in the declaration are @promoted ``2026-07-30T092427Z-en-cn``; the static and
 reachability layers run offline, and only the sweep needs a build.
 """
 
@@ -49,7 +55,7 @@ from arknights_mcp.analyzers.rules import (
     LimitationArm,
 )
 from arknights_mcp.analyzers.rules._common import FLY_MOTIONS, GROUND_MOTIONS
-from arknights_mcp.analyzers.stage import analyze_stage
+from arknights_mcp.analyzers.stage import SUBSTRATE_ABSENT_MARKER, analyze_stage
 from arknights_mcp.services.stages import analyze_stage as analyze_stage_service
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -110,7 +116,30 @@ def _module_constants(tree: ast.Module) -> dict[str, list[ast.expr]]:
     return consts
 
 
-def _texts(node: ast.expr, consts: dict[str, list[ast.expr]]) -> list[str]:
+def _module_returns(tree: ast.Module) -> dict[str, list[ast.expr]]:
+    """Every module-level helper -> the expressions it can return (§V118 b/B165).
+
+    ``ranged_arts`` words its "arts damage but no attack reach" refusal in a §V37 helper
+    and appends the CALL, so the resolver saw a call whose arguments are three variables
+    and produced nothing but holes. An arm composed one function away is still an arm, so
+    the helper's own returns are resolved instead of its arguments.
+    """
+    returns: dict[str, list[ast.expr]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            returns[node.name] = [
+                child.value
+                for child in ast.walk(node)
+                if isinstance(child, ast.Return) and child.value is not None
+            ]
+    return returns
+
+
+def _texts(
+    node: ast.expr,
+    consts: dict[str, list[ast.expr]],
+    returns: dict[str, list[ast.expr]] | None = None,
+) -> list[str]:
     """Every string an expression can evaluate to, with holes for what is unknown.
 
     Handles the shapes a limitation is actually written in: literals, implicit
@@ -124,28 +153,39 @@ def _texts(node: ast.expr, consts: dict[str, list[ast.expr]]) -> list[str]:
     the ``flag="include_map"`` argument riding beside the sentence is not an arm of its
     own, so splitting them would demand a declaration for a fragment nobody refuses with.
     """
+    returns = returns if returns is not None else {}
     if isinstance(node, ast.Constant):
         return [node.value] if isinstance(node.value, str) else [_HOLE]
     if isinstance(node, ast.JoinedStr):
-        parts = [_texts(value, consts) for value in node.values]
+        parts = [_texts(value, consts, returns) for value in node.values]
         return ["".join(combo) for combo in product(*parts)] if parts else [""]
     if isinstance(node, ast.FormattedValue):
-        return _texts(node.value, consts)
+        return _texts(node.value, consts, returns)
     if isinstance(node, ast.IfExp):
-        return _texts(node.body, consts) + _texts(node.orelse, consts)
+        return _texts(node.body, consts, returns) + _texts(node.orelse, consts, returns)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         return [
             left + right
-            for left, right in product(_texts(node.left, consts), _texts(node.right, consts))
+            for left, right in product(
+                _texts(node.left, consts, returns), _texts(node.right, consts, returns)
+            )
         ]
     if isinstance(node, ast.Name):
         bindings = consts.get(node.id, [])
-        return [text for binding in bindings for text in _texts(binding, consts)] or [_HOLE]
+        return [text for binding in bindings for text in _texts(binding, consts, returns)] or [
+            _HOLE
+        ]
     if isinstance(node, (ast.Tuple, ast.List)):
-        return [text for element in node.elts for text in _texts(element, consts)]
+        return [text for element in node.elts for text in _texts(element, consts, returns)]
     if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in returns:
+            # A helper defined in this module: its RETURNS are the arm's text. Only
+            # module-local ones -- an imported helper is resolved by its arguments below,
+            # which is how the shared ``fuller_view_note`` sentence stays readable.
+            bodies = returns[node.func.id]
+            return [text for body in bodies for text in _texts(body, consts, returns)] or [_HOLE]
         args: list[ast.expr] = [*node.args, *(kw.value for kw in node.keywords)]
-        parts = [_texts(arg, consts) for arg in args]
+        parts = [_texts(arg, consts, returns) for arg in args]
         return [" ".join(combo) for combo in product(*parts)] if parts else [_HOLE]
     return [_HOLE]
 
@@ -153,9 +193,14 @@ def _texts(node: ast.expr, consts: dict[str, list[ast.expr]]) -> list[str]:
 def _arm_sites(module: str) -> list[list[str]]:  # noqa: C901
     """Each limitation-emitting site in a rule module, as its candidate texts.
 
-    A site is an ``append`` onto the local ``limitations`` list or a ``limitations=``
-    keyword handed to the observation -- the two ways every rule in the package states a
-    refusal. Anything new that emits one has to be one of these, or the sweep catches it.
+    A site is an ``append`` onto the local ``limitations`` or ``warnings`` list, or either
+    handed over as a keyword -- the ways every rule in the package states a refusal.
+    Anything new that emits one has to be one of these, or the sweep catches it.
+
+    ``warnings`` joined the set with §V118 (b)/B165: a rule that concludes nothing now
+    routes its refusals there, and the two §V26 conflict warnings ``ranged_arts`` has
+    always emitted were refusals this guard never saw, because it only ever read the
+    ``limitations`` channel.
 
     A literal SEQUENCE of limitations is N sites, not one: reading
     ``limitations=(_TILE_LAYOUT_ROUTE, "...")`` as a single site lets one declared
@@ -164,6 +209,7 @@ def _arm_sites(module: str) -> list[list[str]]:  # noqa: C901
     """
     tree = ast.parse((_RULES_DIR / module).read_text(encoding="utf-8"))
     consts = _module_constants(tree)
+    returns = _module_returns(tree)
     sites: list[list[str]] = []
 
     def _emit(node: ast.expr) -> None:
@@ -175,7 +221,7 @@ def _arm_sites(module: str) -> list[list[str]]:  # noqa: C901
         # limitations)`` is the plumbing that hands the accumulated list to the
         # Observation, not an arm with text of its own. Every real arm in the package
         # carries a literal, and the build sweep covers anything that somehow does not.
-        texts = [text for text in _texts(node, consts) if text.replace(_HOLE, "").strip()]
+        texts = [text for text in _texts(node, consts, returns) if text.replace(_HOLE, "").strip()]
         if texts:
             sites.append(texts)
 
@@ -186,12 +232,12 @@ def _arm_sites(module: str) -> list[list[str]]:  # noqa: C901
                 isinstance(func, ast.Attribute)
                 and func.attr in {"append", "extend"}
                 and isinstance(func.value, ast.Name)
-                and func.value.id == "limitations"
+                and func.value.id in {"limitations", "warnings"}
             ):
                 for arg in node.args:
                     _emit(arg)
             for keyword in node.keywords:
-                if keyword.arg == "limitations":
+                if keyword.arg in {"limitations", "warnings"}:
                     _emit(keyword.value)
     return sites
 
@@ -274,12 +320,16 @@ def _stage(*occurrences: EnemyOccurrence) -> StageThreatContext:
 
 
 def _limitations(ctx: StageThreatContext, rule_id: str) -> list[str]:
+    """The rule's refusals through both carriers (§V118 b): observation, then warnings."""
     result = analyze_stage(ctx)
     return [
-        limitation
-        for obs in result.observations
-        if obs.rule_id == rule_id
-        for limitation in obs.limitations
+        *(
+            limitation
+            for obs in result.observations
+            if obs.rule_id == rule_id
+            for limitation in obs.limitations
+        ),
+        *result.warnings,
     ]
 
 
@@ -373,6 +423,17 @@ def test_pressure_spike_spawn_timing_missing_arm_is_reachable() -> None:
     assert any("spawn timing missing; burst window unconfirmed" in text for text in limitations)
 
 
+def test_pressure_spike_total_count_missing_arm_is_reachable() -> None:
+    """§V118/B165: an unknown arrival count, which used to read as a small one.
+
+    NULL on 0/28302 rows today, and nullable, so it is declared rather than dropped. The
+    stage fields nothing else, which is the point: the refusal has to reach a client with
+    no observation to ride on (§V118 b).
+    """
+    limitations = _limitations(_stage(_occurrence("enemy_0006_x")), "threat.pressure_spike")
+    assert any("total_count missing; spawn pressure not assessed" in text for text in limitations)
+
+
 def test_every_dead_arm_has_a_reachability_proof() -> None:
     """Accounting: a ``dead_today`` arm with no test above is an undischarged claim.
 
@@ -385,6 +446,7 @@ def test_every_dead_arm_has_a_reachability_proof() -> None:
         ("threat.aerial", "motion_unrecognized"),
         ("threat.def_res_skew", "def_missing"),
         ("threat.pressure_spike", "spawn_timing_missing"),
+        ("threat.pressure_spike", "total_count_missing"),
     }
     declared_dead = {
         (arm.rule_id, arm.name) for arm in RULE_LIMITATION_ARMS if arm.status == "dead_today"
@@ -421,6 +483,21 @@ def _sweep() -> Counter[tuple[str, str]]:
                         continue
                     for arm in matched:
                         fires[(arm.rule_id, arm.name)] += 1
+            # §V118 (b)/B165: a rule that concludes nothing sends its refusals out as
+            # warnings, so counting only the observation channel would report the arms
+            # this project just fixed as dead again -- and would let a genuinely new
+            # undeclared refusal ride out unmapped. Warnings are stage-scoped, so the
+            # marker attributes them; the stage's own substrate disclosure is the one
+            # warning that belongs to no rule.
+            for warning in result.warnings:
+                if SUBSTRATE_ABSENT_MARKER in warning:
+                    continue
+                matched = [arm for arm in RULE_LIMITATION_ARMS if arm.marker in warning]
+                if not matched:
+                    unmapped.append(("<warnings>", warning))
+                    continue
+                for arm in matched:
+                    fires[(arm.rule_id, arm.name)] += 1
     finally:
         conn.close()
     assert not unmapped, (

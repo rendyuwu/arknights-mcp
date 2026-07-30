@@ -76,6 +76,17 @@ def ctx(
     )
 
 
+def _reach_warnings(result: Any, game_id: str) -> list[str]:
+    """The ranged-arts reach warnings naming this enemy, and nothing else (§V118).
+
+    ``occ()`` leaves def/res absent and ``ctx()`` loads no tiles or routes, so a stage
+    now also carries the "could not judge this" lines B165 added -- including ones that
+    name the same enemy. A test about the reach conflict has to say which warning it
+    means, or it reads whichever refusal happens to sort first.
+    """
+    return [w for w in result.warnings if game_id in w and "ranged-arts conclusion" in w]
+
+
 def _obs_by_tag(result: Any) -> dict[str, Observation]:
     return {o.tag: o for o in result.observations}
 
@@ -222,7 +233,7 @@ def test_ranged_arts_denied_radius_conflicting_with_targeting_warns_and_omits() 
     )
     # §V26: two typed source fields disagree -> omit the conclusion, report the conflict.
     assert result.observations == ()
-    warning = next(w for w in result.warnings if "enemy_1404_msnip" in w)
+    warning = next(iter(_reach_warnings(result, "enemy_1404_msnip")))
     assert "declares no attack radius" in warning
     assert "conflicting source fields" in warning
     # ...and the false reason is gone: nothing calls a cell the source FILLED "missing".
@@ -245,7 +256,7 @@ def test_ranged_arts_denied_radius_alone_neither_concludes_nor_warns() -> None:
         )
     )
     assert result.observations == ()
-    assert result.warnings == ()
+    assert not _reach_warnings(result, "enemy_denied")
 
 
 def test_ranged_arts_denied_radius_with_melee_targeting_is_silent() -> None:
@@ -262,7 +273,7 @@ def test_ranged_arts_denied_radius_with_melee_targeting_is_silent() -> None:
         )
     )
     assert result.observations == ()
-    assert result.warnings == ()
+    assert not _reach_warnings(result, "enemy_denied_melee")
 
 
 def test_ranged_arts_denied_radius_with_no_targeting_keeps_the_no_reach_conflict() -> None:

@@ -51,6 +51,24 @@ RULE_DECIDING_FIELDS: dict[str, frozenset[str]] = {
     "threat.tiles_deploy": frozenset({"tiles"}),
 }
 
+#: §V118 (a): every registered rule -> the typed occurrence fields whose ABSENCE forces
+#: it to refuse. This is NOT :data:`RULE_DECIDING_FIELDS` narrowed: that map asks whether
+#: a rule has anything at all to decide from on a build and is satisfied by any one
+#: member, so ``threat.ranged_arts`` passes it on ``targeting`` alone while an occurrence
+#: with no ``damage_types`` is one it cannot start judging. ANY member absent is enough:
+#: a rule may not skip such an occurrence in silence -- absence is not a negative (B165).
+#:
+#: An empty set means the rule decides from stage-level inputs only; the stage-level
+#: substrate disclosure (§V118 c) covers those, so they own no per-occurrence gate.
+RULE_GATE_FIELDS: dict[str, frozenset[str]] = {
+    "threat.aerial": frozenset({"motion_type"}),
+    "threat.def_res_skew": frozenset({"defense", "res"}),
+    "threat.ranged_arts": frozenset({"damage_types"}),
+    "threat.pressure_spike": frozenset({"total_count"}),
+    "threat.lane_route": frozenset(),
+    "threat.tiles_deploy": frozenset(),
+}
+
 #: §V117: the statuses a declared refusal arm may carry.
 ARM_STATUSES = frozenset({"live", "dead_today"})
 
@@ -87,9 +105,16 @@ class LimitationArm:
 
 
 #: §V117/B164: every refusal arm of every registered rule, with the count over the
-#: promoted build ``2026-07-30T010030Z-en-cn`` (6716 stages, 28302 stage-enemy
+#: promoted build ``2026-07-30T092427Z-en-cn`` (6716 stages, 28302 stage-enemy
 #: occurrences) that makes its status true. Pinned by
 #: ``tests/contract/test_rule_arm_liveness.py``.
+#:
+#: §V118/B165 added the three arms that did not exist because the branch emitted nothing
+#: at all -- a silent ``continue`` has no site for the §V117 AST guard to demand a
+#: declaration for, which is why that guard read complete at eleven arms while three
+#: refusals were missing entirely. It also removed the "dropped with the observation"
+#: precondition several of these carried: a rule that concludes nothing now sends its
+#: refusals out as warnings (:func:`._common.declined`).
 RULE_LIMITATION_ARMS: tuple[LimitationArm, ...] = (
     LimitationArm(
         rule_id="threat.aerial",
@@ -100,9 +125,8 @@ RULE_LIMITATION_ARMS: tuple[LimitationArm, ...] = (
             "0 fires / 1030 observations. enemies.motion_type is NULL on 0/3879 rows and the "
             "occurrence reads COALESCE(variant, base) over that base, so 0/28302 occurrences "
             "arrive without a motion. Reachable: the column is nullable and the variant's own "
-            "motion_type IS NULL on 11 rows, so only the COALESCE keeps this arm quiet. Narrower "
-            "than it reads: the limitation is dropped with the observation unless the same stage "
-            "also fields a confirmed flyer."
+            "motion_type IS NULL on 11 rows, so only the COALESCE keeps this arm quiet. The "
+            "flyer-in-the-same-stage precondition it used to carry is gone (§T214/§V118 b)."
         ),
     ),
     LimitationArm(
@@ -124,9 +148,9 @@ RULE_LIMITATION_ARMS: tuple[LimitationArm, ...] = (
         status="dead_today",
         counted=(
             "0 fires. def is NULL while res is present on 0/28302 occurrences (the mirror case is "
-            "136). Reachable: both columns are nullable and independently populated. Narrower "
-            "than it reads, like the aerial arms: the refusal is dropped with the observation "
-            "unless another enemy in the same stage produced a skew conclusion to carry it."
+            "136). Reachable: both columns are nullable and independently populated. No longer "
+            "narrowed by the rule's own gate -- §T214 routes a refusal to warnings when the rule "
+            "concludes nothing, so this arm no longer waits on another enemy skewing."
         ),
     ),
     LimitationArm(
@@ -134,7 +158,32 @@ RULE_LIMITATION_ARMS: tuple[LimitationArm, ...] = (
         name="res_missing",
         marker="res missing; damage-type skew not assessed",
         status="live",
-        counted="56 fires / 3184 observations (res-only-NULL on 136 occurrences).",
+        counted="136 fires (res-only-NULL on 136 occurrences over 128 stages).",
+    ),
+    LimitationArm(
+        rule_id="threat.def_res_skew",
+        name="def_and_res_missing",
+        marker="def and res both missing; damage-type skew not assessed",
+        status="live",
+        counted=(
+            "64 fires (33 en / 31 cn) over 56 stages and 4 enemies per server, one of them the "
+            "boss enemy_1544_cledub. B165: this branch emitted nothing at all until §T214 -- the "
+            "enemy the rule knew least about was the one it stayed quiet on, while the one-stat "
+            "arm above refused out loud."
+        ),
+    ),
+    LimitationArm(
+        rule_id="threat.ranged_arts",
+        name="damage_types_missing",
+        marker="damage_types missing; not judged as ranged arts",
+        status="live",
+        counted=(
+            "227 fires (107 en / 120 cn) over 181 stages and 19 enemies per server. B165: these "
+            "used to fall into the same silent continue as an enemy whose damage kinds were "
+            "PRESENT and simply held no arts token; every one of them is an enemy the handbook "
+            "never described (display_name is NULL too), so the rule was quietest about the "
+            "enemies it knew nothing about."
+        ),
     ),
     LimitationArm(
         rule_id="threat.ranged_arts",
@@ -151,11 +200,45 @@ RULE_LIMITATION_ARMS: tuple[LimitationArm, ...] = (
         counted="52 fires / 2368 observations.",
     ),
     LimitationArm(
+        rule_id="threat.ranged_arts",
+        name="conflict_declared_none_vs_targeting",
+        marker="conflicting source fields, omitted from ranged-arts conclusion",
+        status="live",
+        counted=(
+            "98 fires / 2368 observations. §V26's other half -- two typed fields disagreeing, so "
+            "the conclusion is omitted and the disagreement stated. Declared with B165: it rides "
+            "warnings rather than limitations, and the §V117 guard only read the limitation "
+            "channel, so this arm and the next were refusals nothing was counting."
+        ),
+    ),
+    LimitationArm(
+        rule_id="threat.ranged_arts",
+        name="conflict_no_attack_reach",
+        marker="states no attack reach; omitted from ranged-arts conclusion",
+        status="live",
+        counted=(
+            "60 fires / 2368 observations. One §V37 wording reached from two arms (radius never "
+            "stated / radius DENIED by the §V103 sentinel), counted together because the finding "
+            "is the same: the enemy deals arts damage and targeting says it reaches nothing."
+        ),
+    ),
+    LimitationArm(
         rule_id="threat.pressure_spike",
         name="fragment_window",
         marker="may overstate burst",
         status="live",
         counted="4128 fires / 2273 observations (per enemy).",
+    ),
+    LimitationArm(
+        rule_id="threat.pressure_spike",
+        name="total_count_missing",
+        marker="total_count missing; spawn pressure not assessed",
+        status="dead_today",
+        counted=(
+            "0 fires. stage_enemies.total_count is NULL on 0/28302 rows. Reachable: the column is "
+            "nullable. B165: absence used to be folded in with a genuinely low count (`count is "
+            "None or count < _SPIKE_MIN_COUNT`), so an unknown arrival read as a small one."
+        ),
     ),
     LimitationArm(
         rule_id="threat.pressure_spike",
@@ -217,6 +300,7 @@ __all__ = [
     "ARM_STATUSES",
     "THREAT_RULES",
     "RULE_DECIDING_FIELDS",
+    "RULE_GATE_FIELDS",
     "RULE_LIMITATION_ARMS",
     "RETIRED_RULES",
     "LimitationArm",

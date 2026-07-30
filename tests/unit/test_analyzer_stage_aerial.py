@@ -101,7 +101,9 @@ def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
 def test_no_observation_when_only_ground_enemies() -> None:
     result = analyze_stage(_ctx(SLUG))
     assert result.observations == ()
-    assert result.warnings == ()
+    # §V118/B165: a ground-only stage still says what it could NOT judge -- this fixture
+    # loads no tiles or routes and types no stats -- but never that an enemy flies.
+    assert not any("aerial" in warning for warning in result.warnings)
 
 
 def test_typed_field_only_no_nl_keyword_match() -> None:

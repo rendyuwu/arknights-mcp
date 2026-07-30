@@ -6,7 +6,9 @@ Reads three typed fields, in a fixed order of authority (§V26, §T210/B160):
 * ``damage_types`` -- must contain an arts/magical token, else the enemy is skipped.
   This replaced the retired ``attack_type`` scalar, which upstream stopped filling
   (``null`` on 1585/1585 handbook entries) and which could not have expressed the 42
-  enemies that deal PHYSIC *and* MAGIC anyway.
+  enemies that deal PHYSIC *and* MAGIC anyway. It is the rule's GATE field (§V118): a
+  list that is PRESENT and holds no arts token is a real negative and is skipped in
+  silence, an ABSENT one is a refusal and says so.
 * ``attack_range`` -- a measured radius. At or beyond :data:`_RANGED_MIN` it is the
   authoritative answer; a shorter one means the enemy has arts damage but no reach,
   which is not a ranged-arts threat and is skipped.
@@ -40,7 +42,12 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, count_evidence, distinct_refs
+from arknights_mcp.analyzers.rules._common import (
+    by_game_id,
+    count_evidence,
+    declined,
+    distinct_refs,
+)
 
 RULE_ID = "threat.ranged_arts"
 
@@ -75,9 +82,19 @@ class RangedArtsRule:
         confidence = 0.0
 
         for occ in by_game_id(ctx.occurrences):
+            if occ.damage_types is None:
+                # §V118/B165: absent is not "no arts damage". This case used to fall into
+                # the same silent ``continue`` as an enemy whose typed damage kinds were
+                # present and simply held no arts token -- 227 occurrences over 181 stages,
+                # every one of them an enemy the handbook never described at all (its
+                # display_name is NULL too), reported as if it had been cleared.
+                limitations.append(
+                    f"{occ.game_id}: damage_types missing; not judged as ranged arts"
+                )
+                continue
             arts = _arts_token(occ.damage_types)
             if arts is None:
-                continue
+                continue  # typed damage kinds present, none of them arts -> a real negative
             rng = occ.attack_range
             targeting = occ.targeting.upper() if occ.targeting else None
 
@@ -142,7 +159,9 @@ class RangedArtsRule:
             confidence = max(confidence, conf)
 
         if not evidence:
-            return RuleResult(warnings=tuple(warnings))
+            # §V118 (b): the conflict warnings already survived a rule that concludes
+            # nothing; the refusals now travel the same channel instead of being dropped.
+            return declined(limitations, warnings)
 
         count = distinct_refs(evidence)
         types_word = "type" if count == 1 else "types"

@@ -36,6 +36,7 @@ from arknights_mcp.analyzers.rules._common import (
     GROUND_MOTIONS,
     by_game_id,
     count_evidence,
+    declined,
     distinct_refs,
 )
 
@@ -93,7 +94,11 @@ class AerialThreatRule:
             total_spawns += occ.total_count or 0
 
         if not evidence:
-            return RuleResult()
+            # §V118 (b)/B165: a stage with no confirmed flyer used to discard the "could
+            # not judge this enemy" rows with the observation, so both arms below were
+            # narrower than they read -- they needed an unjudgeable enemy AND a flyer in
+            # the same stage. The refusals now ride out on their own.
+            return declined(limitations)
 
         # One enemy that appears at several level variants yields several evidence
         # items with the same ``ref``; the headline counts *distinct* enemies, not

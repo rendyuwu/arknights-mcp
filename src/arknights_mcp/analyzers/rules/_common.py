@@ -4,6 +4,7 @@ One home for the pieces every rule reuses so no loop or constant is copy-pasted
 across the rule modules (§V37):
 
 * :func:`count_evidence` -- the enemy's ``total_count`` evidence ROW (§V101).
+* :func:`declined` -- the no-conclusion result that KEEPS its refusals (§V118 b).
 * :func:`distinct_refs` -- the §V35 distinct-``ref`` tally (count entities, not
   occurrence rows: an enemy seen at several level variants counts once).
 * :func:`by_game_id` -- deterministic enemy iteration order (§V26).
@@ -23,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from arknights_mcp.analyzers.base import EnemyOccurrence, EvidenceItem
+from arknights_mcp.analyzers.base import EnemyOccurrence, EvidenceItem, RuleResult
 
 #: ``motion_type`` values (uppercased) that mean the enemy flies (authoritative), and
 #: the ones that mean it is ground-bound. This is the COUNTED domain, not a guessed
@@ -69,6 +70,30 @@ def fuller_view_note(*, this_view: str, flag: str, fuller: str) -> str:
     Client-facing text, so no internal cites or jargon (§V71 b) -- they live here.
     """
     return f"{this_view} Call {_FULLER_VIEW_TOOL} with {flag} for this stage to get {fuller}."
+
+
+def declined(
+    limitations: Sequence[str],
+    warnings: Sequence[str] = (),
+) -> RuleResult:
+    """The result of a rule that concluded nothing, with its refusals kept (§V118 b).
+
+    Every rule ends in ``if not evidence: return RuleResult()``, and that line used to
+    throw away every limitation the pass had accumulated. The refusal then reached a
+    client only when some OTHER enemy in the same stage happened to produce a
+    conclusion to carry it -- ``def_res_skew`` alone dropped 80 res-missing rows over 78
+    stages that way (B165). §V117 declared that narrowing and left it standing, which
+    made the declaration true and the client no wiser.
+
+    So a refusal that has no observation to ride rides ``warnings``: the §V26 channel
+    that survives without one (``services/drops.py`` carries its excluded stages the
+    same way -- "no observation to subsume it"). Same text, different carrier, so the
+    §V117 marker still identifies the arm in either channel.
+
+    One §V37 home because four rules owe the same handling; written once, a fifth rule
+    cannot quietly reinstate the discard.
+    """
+    return RuleResult(warnings=(*warnings, *limitations))
 
 
 def count_evidence(occ: EnemyOccurrence) -> EvidenceItem | None:
