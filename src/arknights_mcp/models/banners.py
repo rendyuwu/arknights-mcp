@@ -14,7 +14,7 @@ so it pages through the bounded :class:`~arknights_mcp.models.common.PageParams`
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from arknights_mcp.models.common import (
     MAX_ID_LEN,
@@ -23,6 +23,7 @@ from arknights_mcp.models.common import (
     Region,
     StrictModel,
     validate_iso_bound,
+    validate_window_order,
 )
 
 
@@ -33,7 +34,9 @@ class GetBannersInput(StrictModel):
     silently mixed (§V5). ``since``/``until`` optionally window the banners by their
     stored ISO ``open_time`` (inclusive); both are length capped (§V18) AND ISO-date-
     shape validated (§V19) so a non-date bound is rejected rather than lexicographically
-    emptying the result (B48). ``query`` optionally narrows the list to banners whose
+    emptying the result (B48); the bound RELATION is checked too (§V105/B143), so a pair
+    whose window can match nothing is rejected rather than answered with an empty list.
+    ``query`` optionally narrows the list to banners whose
     display name contains it (case-insensitive substring); it is a free-text field so it
     is length capped at :data:`MAX_QUERY_LEN` (§V18) and, being an additive optional
     filter over a still-paged list, does not weaken the §V19 no-dump bound. ``page`` pages
@@ -49,3 +52,4 @@ class GetBannersInput(StrictModel):
 
     _validate_since = field_validator("since")(validate_iso_bound)
     _validate_until = field_validator("until")(validate_iso_bound)
+    _validate_window = model_validator(mode="after")(validate_window_order)

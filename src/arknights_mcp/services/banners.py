@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from arknights_mcp.db.repositories.banners import BannerRepository, BannerRow
-from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
+from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, reject_inverted_window
 from arknights_mcp.services.stages import (
     SectionPage,
     StageProvenance,
@@ -301,8 +301,13 @@ def get_banners(
     silent clamp). Grouping + provenance are computed over the FULL filtered set BEFORE
     slicing, so a later page never drops a banner or a snapshot. A region with no banners
     is a legitimate empty ``ok`` list (gacha_table is tolerant-absent, §V41/B36), never a
-    ``not_found``. Both transports call this same function (§V14).
+    ``not_found``. An IMPOSSIBLE window is not an empty answer at all: ``since`` after
+    ``until`` is rejected here as well as at the model gate (§V105/B143 -- one contract,
+    both places, like the §V19 page bounds), and this listing carried NO limitation at all
+    on such a window before, so its empty list was indistinguishable from an empty
+    archive. Both transports call this same function (§V14).
     """
+    reject_inverted_window(since, until)
     p, size = _validate_page(page, page_size)
 
     all_rows = tuple(

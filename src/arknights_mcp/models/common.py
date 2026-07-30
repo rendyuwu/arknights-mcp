@@ -27,7 +27,7 @@ so a region is always attributed and the two are never silently mixed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -113,6 +113,94 @@ def validate_iso_bound(value: str | None) -> str | None:
             f"must be an ISO date (YYYY-MM-DD) or ISO datetime; got {value!r}"
         ) from exc
     return value
+
+
+class WindowBounds(Protocol):
+    """Structural shape of a model carrying a since/until window (§V105; §V37).
+
+    The two windowed tool inputs (``GetAnnouncementsInput``, ``GetBannersInput``) declare
+    their own ``since``/``until`` fields, so the shared cross-field validator binds to
+    this shape rather than to a base class -- a base class would reorder the published
+    ``inputSchema`` properties for no behavioural gain.
+    """
+
+    since: str | None
+    until: str | None
+
+
+def inverted_window_reason(since: str | None, until: str | None) -> str | None:
+    """Why a since/until pair can match nothing, or ``None`` when it can (§V105).
+
+    The single home (§V37) for the bound-RELATION check, shared by the model gate of
+    every windowed tool and by the services behind them. B49/B48 typed the bound SHAPE
+    (:func:`validate_iso_bound`); this types the RELATION between the pair, which is the
+    other half of the same one-check-not-both defect (B143): ``since=2026-07-01,
+    until=2026-06-01`` used to return ``ok`` + an empty list, indistinguishable from a
+    genuinely empty window, so a client concluded nothing had been announced.
+
+    The comparison is LEXICOGRAPHIC because that is exactly the comparison the window
+    performs: both repositories filter with ``column >= :since`` / ``column <= :until``
+    over a TEXT column, so string order *is* the window's order. Strings are totally
+    ordered, so ``since > until`` means no stored value can satisfy both bounds at once --
+    the emptiness is a property of the input, not an answer about the data. That also
+    makes rejecting such a pair safe: it can never withhold a row the query would have
+    returned.
+
+    Two different mistakes produce that inversion, and the returned sentence names the
+    one that actually happened -- claiming "since is later than until" of a pair that is
+    chronologically fine would be a false statement about the caller's input:
+
+    * a genuine inversion -- the caller swapped the bounds;
+    * mixed ISO forms -- :func:`datetime.fromisoformat` accepts ISO *basic* format, so
+      ``since="20260801"`` passes the shape gate yet sorts above every ``2026-09-01``
+      style value (``-`` sorts below a digit), inverting a chronologically correct pair.
+
+    Both bounds have already passed :func:`validate_iso_bound` when this runs (field
+    validators precede a model validator), so both parse. An equal pair is a legitimate
+    single-day window and is never rejected.
+    """
+    if since is None or until is None or since <= until:
+        return None
+    if datetime.fromisoformat(since) <= datetime.fromisoformat(until):
+        # Chronologically fine, so the fault is the notation, not the order: say so
+        # rather than accusing the caller of swapping bounds they did not swap.
+        return (
+            f"since {since!r} and until {until!r} are written in different ISO forms, so "
+            "the date comparison orders them backwards and the window can match nothing; "
+            "write both as YYYY-MM-DD"
+        )
+    return (
+        f"since {since!r} is later than until {until!r}, so the window can match "
+        "nothing; swap the two bounds"
+    )
+
+
+def reject_inverted_window(since: str | None, until: str | None) -> None:
+    """Raise on a since/until pair whose window is empty by construction (§V105; §V23).
+
+    The enforcement point shared by the model gate (via :func:`validate_window_order`)
+    and by the services behind it, mirroring how §V19's page bounds are rejected at BOTH
+    the model and the service -- one contract, both places, never a silent empty in
+    either. A caller reaching a windowed service directly gets the same
+    :class:`ValueError`; through MCP the model gate fires first and the rejection reaches
+    the client as the typed §V71 (c) ``invalid_input`` envelope.
+    """
+    reason = inverted_window_reason(since, until)
+    if reason is not None:
+        raise ValueError(reason)
+
+
+def validate_window_order[ModelT: WindowBounds](model: ModelT) -> ModelT:
+    """Bind :func:`reject_inverted_window` as an ``after`` model validator (§V105).
+
+    Each windowed tool input binds this, so the rejection surfaces through the standard
+    §V71 (c) ``invalid_input`` envelope carrying the reason's own wording (Pydantic's
+    ``"Value error, "`` prefix is stripped there). The message names both offending
+    values itself, because a model-level validator reports no field ``loc`` for the
+    envelope to name.
+    """
+    reject_inverted_window(model.since, model.until)
+    return model
 
 
 #: JSON Schema keys whose *value* is a map of caller-chosen names -> subschema

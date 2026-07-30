@@ -11,7 +11,7 @@ page bounds surface in the tool ``inputSchema`` exactly as validated.
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from arknights_mcp.models.common import (
     MAX_ID_LEN,
@@ -19,6 +19,7 @@ from arknights_mcp.models.common import (
     Region,
     StrictModel,
     validate_iso_bound,
+    validate_window_order,
 )
 
 
@@ -29,8 +30,11 @@ class GetAnnouncementsInput(StrictModel):
     silently mixed (§V5). ``since``/``until`` optionally window the announcements by
     their stored ISO date (inclusive); both are length capped (§V18) AND ISO-date-shape
     validated (§V19) so a non-date bound is rejected rather than lexicographically
-    emptying the result. ``page`` pages the list through the bounded §V19 window so a
-    single request never pulls an unbounded slice (§V22).
+    emptying the result. The bound RELATION is checked too (§V105/B143): a pair whose
+    window can match nothing (``since`` after ``until``) is rejected rather than answered
+    with an empty list a client cannot tell from a genuinely empty window. ``page`` pages
+    the list through the bounded §V19 window so a single request never pulls an unbounded
+    slice (§V22).
     """
 
     server: Region
@@ -40,3 +44,4 @@ class GetAnnouncementsInput(StrictModel):
 
     _validate_since = field_validator("since")(validate_iso_bound)
     _validate_until = field_validator("until")(validate_iso_bound)
+    _validate_window = model_validator(mode="after")(validate_window_order)

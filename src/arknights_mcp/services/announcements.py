@@ -27,7 +27,7 @@ from typing import Literal
 
 from arknights_mcp.db.repositories.announcements import AnnouncementRepository, AnnouncementRow
 from arknights_mcp.db.repositories.metadata import MetadataRepository
-from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
+from arknights_mcp.models.common import PAGE_SIZE_DEFAULT, reject_inverted_window
 from arknights_mcp.services.stages import (
     SectionPage,
     StageProvenance,
@@ -222,9 +222,13 @@ def get_announcements(
     never drops a snapshot. A region with no announcements is a legitimate empty ``ok``
     list, never a ``not_found`` (§V106 (b)) -- but never a BARE one either: the result
     states whether the region's feed was ever imported (§V50) before an empty list can
-    be read as "nothing was announced" (B146). Both transports call this same function
-    (§V14).
+    be read as "nothing was announced" (B146). An IMPOSSIBLE window is not an empty
+    answer at all: ``since`` after ``until`` is rejected here as well as at the model gate
+    (§V105/B143 -- one contract, both places, like the §V19 page bounds), because no
+    limitation can make "nothing matched" a true answer to a question nothing can match.
+    Both transports call this same function (§V14).
     """
+    reject_inverted_window(since, until)
     p, size = _validate_page(page, page_size)
 
     all_rows = tuple(
