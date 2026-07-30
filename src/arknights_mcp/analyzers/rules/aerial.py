@@ -13,6 +13,14 @@ carried a typed ability vocabulary, so that arm could not fire on any build ever
 promoted while the arm's tests passed on synthetic input. ``motion_type`` is the
 authoritative field and it is populated on 3879/3879 real enemies (WALK 3547, FLY
 332), which is why this rule is the one member of B160's four that kept firing.
+
+§T213/B164: firing is not the same as judging. Both limitation arms below are
+``dead_today`` -- 1030 observations on the promoted build, zero limitations between
+them -- and the second was worse than quiet. It was unfirable, because the motion
+vocabulary in :mod:`._common` declared ten tokens over a corpus that sends two, so
+each guessed token concluded the case this arm exists to refuse. The vocabulary is
+now the counted domain and both arms are declared, with their counts, in
+:data:`~arknights_mcp.analyzers.rules.RULE_LIMITATION_ARMS` (§V117).
 """
 
 from __future__ import annotations

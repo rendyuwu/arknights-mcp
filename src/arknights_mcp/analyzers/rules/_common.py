@@ -25,10 +25,25 @@ from collections.abc import Iterable, Sequence
 
 from arknights_mcp.analyzers.base import EnemyOccurrence, EvidenceItem
 
-#: ``motion_type`` values (uppercased) that mean the enemy flies (authoritative).
-FLY_MOTIONS = frozenset({"FLY", "FLYING", "AIR"})
-#: ``motion_type`` values (uppercased) that mean the enemy is ground-bound.
-GROUND_MOTIONS = frozenset({"WALK", "GROUND", "CRAWL", "CLIMB", "DRIFT", "SWIM", "WALL"})
+#: ``motion_type`` values (uppercased) that mean the enemy flies (authoritative), and
+#: the ones that mean it is ground-bound. This is the COUNTED domain, not a guessed
+#: vocabulary (§V117/B164).
+#:
+#: These two sets used to carry ten tokens between them -- ``FLYING``/``AIR`` and
+#: ``GROUND``/``CRAWL``/``CLIMB``/``DRIFT``/``SWIM``/``WALL`` -- over a real domain of
+#: two: the promoted build stores WALK on 26526 stage-enemy occurrences and FLY on
+#: 1776, and nothing else, on either server. The eight extra members were not inert
+#: padding. A rule that partitions on a guessed token ANSWERS the case its own
+#: "unrecognized motion_type" arm exists to refuse: a new ground-ish token upstream
+#: would have been swallowed as ground with no limitation at all, and a new fly-ish one
+#: would have produced an aerial conclusion at 0.9 confidence -- both from semantics no
+#: source has ever stated (§V26). That is also what left the arm with zero fires over
+#: 1030 observations, so the fat vocabulary and the dead guard are one defect.
+#:
+#: So the vocabulary is exactly what the corpus sends, and the refusal arm handles
+#: everything else -- which is what makes it a tripwire rather than decoration.
+FLY_MOTIONS = frozenset({"FLY"})
+GROUND_MOTIONS = frozenset({"WALK"})
 
 #: The tool holding the fine view of every stage detail a threat rule summarises.
 _FULLER_VIEW_TOOL = "get_stage"
