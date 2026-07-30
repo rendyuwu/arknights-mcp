@@ -146,6 +146,87 @@ def test_admin_cli_action_is_phrased_as_ask_the_admin(action: str) -> None:
     assert "ask the server admin to run" in action
 
 
+#: The client-facing surfaces: every string these modules build is either published in a
+#: schema or emitted into an envelope a client reads.
+_CLIENT_TEXT_ROOTS = ("mcp", "services", "analyzers")
+
+
+def _client_facing_strings() -> list[tuple[str, int, str]]:
+    """Every string LITERAL the client-facing modules build, as ``(file, line, text)``.
+
+    §T203: the parametrized check above reads a hand-written tuple of eight
+    ``suggested_action`` constants. That list is the bug, not the check -- §V71 (a) was
+    written for errors, so when §V108 extended it to limitations, two limitations that
+    had acquired a bare CLI imperative were invisible to it (``_STALE_LIMITATION`` told
+    the client to "re-sync the penguin drop source", ``range_grid`` told it to "Run
+    `arknights-mcp sync`"). Same enumeration failure as §T208's CI module list and
+    §T196's five per-surface null rollouts: a rule policed by a list someone must
+    remember to extend is a rule with a hole in it.
+
+    So this walks the source instead. An f-string is rendered with ``{}`` standing in
+    for its interpolations, and its own Constant children are skipped so a spliced
+    string is judged once, whole, rather than once per fragment. Docstrings are skipped:
+    they are documentation for maintainers, not text any client receives.
+    """
+    found: list[tuple[str, int, str]] = []
+    for root in _CLIENT_TEXT_ROOTS:
+        base = Path(__file__).resolve().parents[2] / "src" / "arknights_mcp" / root
+        for path in sorted(base.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            skip: set[int] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.JoinedStr):
+                    skip.update(id(c) for c in ast.walk(node) if c is not node)
+                if isinstance(
+                    node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
+                    first = node.body[0] if node.body else None
+                    if (
+                        isinstance(first, ast.Expr)
+                        and isinstance(first.value, ast.Constant)
+                        and isinstance(first.value.value, str)
+                    ):
+                        skip.add(id(first.value))
+            for node in ast.walk(tree):
+                if id(node) in skip:
+                    continue
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    text = node.value
+                elif isinstance(node, ast.JoinedStr):
+                    text = "".join(
+                        v.value
+                        if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                        else "{}"
+                        for v in node.values
+                    )
+                else:
+                    continue
+                rel = path.relative_to(base.parents[2]).as_posix()
+                found.append((rel, node.lineno, text))
+    return found
+
+
+def test_every_client_string_naming_the_cli_asks_the_admin() -> None:
+    # §V71 (a)/§V28 swept MECHANICALLY (§T203): the client cannot run the admin CLI, so
+    # ANY client-facing string naming it -- suggested_action, limitation, observation,
+    # description alike -- must ask the admin rather than instruct the caller.
+    offenders = [
+        f"{path}:{line}: {text[:120]}"
+        for path, line, text in _client_facing_strings()
+        if "arknights-mcp" in text and "ask the server admin to run" not in text.lower()
+    ]
+    assert offenders == [], "client text issues a CLI command the client cannot run: " + str(
+        offenders
+    )
+
+
+def test_cli_naming_sweep_is_non_degenerate() -> None:
+    # §V96: a sweep that matched nothing would pass no matter how the text drifted. The
+    # eight hand-listed actions above are a floor on what it must reach.
+    swept = [text for _, _, text in _client_facing_strings() if "arknights-mcp" in text]
+    assert len(swept) >= len(_CLI_ACTIONS)
+
+
 @pytest.mark.parametrize(
     ("action", "tool"),
     [
@@ -511,10 +592,16 @@ def test_level_variant_join_key_is_named() -> None:
     # §T195/§V111 (a): get_stage's copy MOVED to a limitation on the responses that emit
     # the key (the opt-in spawn rows) to pay for the §V102 selector contract, so it is
     # asserted where it now lives -- see tests/unit/test_stage_selector_ambiguity.py,
-    # which drives include_spawns and checks the note arrives beside the values. The two
-    # tools that emit the key unconditionally still carry it pre-call.
-    for name in ("get_enemy", "analyze_stage"):
-        assert "enemy_level_variant" in _desc(name), name
+    # which drives include_spawns and checks the note arrives beside the values.
+    #
+    # §T203: analyze_stage's copy moved the same way, to its depth="detailed" limitation
+    # (tests/unit/test_view_routing.py). This test used to assert both descriptions on the
+    # grounds that they "emit the key unconditionally" -- which was never true of
+    # analyze_stage: only the detailed occurrence row carries level_variant, so at
+    # summary/standard depth the description glossed a key the response did not have.
+    # get_enemy is the one tool that really does emit level variants on every call, so it
+    # is the one that still owes the gloss pre-call.
+    assert "enemy_level_variant" in _desc("get_enemy")
     assert "enemy_level_variant" in LEVEL_VARIANT_NOTE
 
 

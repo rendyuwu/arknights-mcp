@@ -22,10 +22,10 @@
         }
       ],
       "limitations": [
-        "raw route count != distinct lanes; geometry not clustered"
+        "The raw route-record count is not the number of distinct lanes, because records may share start, end and checkpoint geometry. Call get_stage with include_routes for this stage to get the clustered route geometries."
       ],
       "rule_id": "threat.lane_route",
-      "summary": "Stage carries 2 raw enemy-route records; enemies advance along more than one path, so a single defensive line may not cover every approach. The raw record count overstates distinct lanes -- records may share start/end/checkpoint geometry -- so it is not a lane tally.",
+      "summary": "Stage carries 2 raw enemy-route records; enemies advance along more than one path, so a single defensive line may not cover every approach.",
       "tag": "lane_route",
       "title": "Multiple approach routes"
     },
@@ -56,7 +56,9 @@
           "value": 10
         }
       ],
-      "limitations": [],
+      "limitations": [
+        "These are tile counts, not positions, so they do not say where the tiles sit. Call get_stage with include_map for this stage to get the tile grid with each tile's position and type."
+      ],
       "rule_id": "threat.tiles_deploy",
       "summary": "Stage offers few deployable tiles (high-ground (ranged) tiles: 1; ground (melee) tiles: 2), limiting where units can be placed.",
       "tag": "tiles_deploy",

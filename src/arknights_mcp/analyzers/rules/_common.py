@@ -7,6 +7,8 @@ across the rule modules (§V37):
 * :func:`distinct_refs` -- the §V35 distinct-``ref`` tally (count entities, not
   occurrence rows: an enemy seen at several level variants counts once).
 * :func:`by_game_id` -- deterministic enemy iteration order (§V26).
+* :func:`fuller_view_note` -- the §V108 routing sentence a deliberately coarse
+  observation owes.
 * the motion constant sets -- the shared typed-field vocabulary the aerial rule
   partitions on.
 
@@ -27,6 +29,31 @@ from arknights_mcp.analyzers.base import EnemyOccurrence, EvidenceItem
 FLY_MOTIONS = frozenset({"FLY", "FLYING", "AIR"})
 #: ``motion_type`` values (uppercased) that mean the enemy is ground-bound.
 GROUND_MOTIONS = frozenset({"WALK", "GROUND", "CRAWL", "CLIMB", "DRIFT", "SWIM", "WALL"})
+
+#: The tool holding the fine view of every stage detail a threat rule summarises.
+_FULLER_VIEW_TOOL = "get_stage"
+
+
+def fuller_view_note(*, this_view: str, flag: str, fuller: str) -> str:
+    """The §V108 routing sentence a deliberately coarse observation owes (B153).
+
+    An analyzer works from a summary of the stage -- a route-RECORD count, tile
+    tallies, aggregated spawn bounds -- while the per-record detail lives on
+    ``get_stage`` behind an ``include_`` flag. Stating only what this view lacks
+    ("geometry not clustered") reads as a claim about the SERVER: the reporting
+    client concluded the map data did not exist and offered a community wiki, the
+    one source class this project refuses to use. So a coarse limitation says what
+    THIS view omits *and* names the tool + flag that returns the fine one.
+
+    One §V37 home because three rules owe the same sentence about three different
+    sections; written once, the three cannot drift into three shapes of one promise,
+    and the guard that checks the named flag is a real ``get_stage`` input has a
+    single place to check.
+
+    ``this_view`` is what the analysis does not do, ``fuller`` what the flag returns.
+    Client-facing text, so no internal cites or jargon (§V71 b) -- they live here.
+    """
+    return f"{this_view} Call {_FULLER_VIEW_TOOL} with {flag} for this stage to get {fuller}."
 
 
 def count_evidence(occ: EnemyOccurrence) -> EvidenceItem | None:

@@ -18,6 +18,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
+from arknights_mcp.analyzers.rules._common import fuller_view_note
 
 RULE_ID = "threat.tiles_deploy"
 
@@ -29,6 +30,19 @@ _SCARCE_RANGED = 2
 _SCARCE_MELEE = 3
 
 _CONFIDENCE = 0.8  # authoritative typed tile counts
+
+#: §V108/B153 class: this rule reports TALLIES ("2 high-ground tiles") off a
+#: :class:`~arknights_mcp.analyzers.base.StageTiles` summary; where those tiles sit --
+#: the thing that decides whether a scarce surface is actually a problem -- is the
+#: tile_grid on ``get_stage(include_map)``, present for all 241 EN / 247 CN stages this
+#: rule fires on. It carried NO limitation at all before, which is the same defect B153
+#: reported one step further along: a client told a stage has two ranged tiles and given
+#: no way to see them has been handed a bounded view presented as the whole answer.
+_TILE_LAYOUT_ROUTE = fuller_view_note(
+    this_view="These are tile counts, not positions, so they do not say where the tiles sit.",
+    flag="include_map",
+    fuller="the tile grid with each tile's position and type",
+)
 
 
 class TilesDeployRule:
@@ -79,6 +93,6 @@ class TilesDeployRule:
                 ),
                 confidence=_CONFIDENCE,
                 evidence=evidence,
-                limitations=(),
+                limitations=(_TILE_LAYOUT_ROUTE,),
             )
         )

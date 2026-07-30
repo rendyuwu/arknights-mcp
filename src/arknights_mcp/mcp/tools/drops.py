@@ -121,9 +121,15 @@ _STAGE_NO_DROPS_LIMITATION = (
     "for has no cached rates. Call get_data_status to check the cache's freshness, or ask "
     "the server admin to run `arknights-mcp sync --server all` to refresh it."
 )
+#: §V71 (a)/§V108: this used to read "re-sync the penguin drop source
+#: (`arknights-mcp sync`)" -- an imperative aimed at a client that cannot run the admin
+#: CLI (§V28). §V71 (a) was written for ``suggested_action`` and this is a limitation, so
+#: the hand-listed guard never looked at it; §V108 extends the rule from errors to
+#: limitations, which is what brings this string into scope.
 _STALE_LIMITATION = (
     "one or more drop rates are past their cache expiry; the figures are stale, not "
-    "fresh -- re-sync the penguin drop source (`arknights-mcp sync`) to refresh them"
+    "fresh -- ask the server admin to run `arknights-mcp sync --server all` to refresh "
+    "them"
 )
 
 

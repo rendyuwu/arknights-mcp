@@ -26,7 +26,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, count_evidence
+from arknights_mcp.analyzers.rules._common import by_game_id, count_evidence, fuller_view_note
 
 RULE_ID = "threat.lane_route"
 
@@ -41,7 +41,21 @@ _CONFIDENCE = 0.5
 
 #: §V49/B43: stamped on every firing so the client knows the raw record count is not
 #: the distinct-lane count and the geometry was not clustered into effective lanes.
-_RAW_ROUTE_LIMITATION = "raw route count != distinct lanes; geometry not clustered"
+#:
+#: §V108/B153: it used to stop at "geometry not clustered", naming no next call. A live
+#: client read that as the SERVER having no route geometry, said so, and offered the
+#: Arknights Wiki instead -- while ``get_stage(include_routes)`` returns the clustered
+#: geometries with start, end and checkpoints for every one of the 2453 EN / 2484 CN
+#: stages this rule fires on. The limitation was true of this view and false about the
+#: server, so it now routes (§V37 shared wording).
+_RAW_ROUTE_LIMITATION = fuller_view_note(
+    this_view=(
+        "The raw route-record count is not the number of distinct lanes, because "
+        "records may share start, end and checkpoint geometry."
+    ),
+    flag="include_routes",
+    fuller="the clustered route geometries",
+)
 
 
 class LaneRouteRule:
@@ -85,11 +99,15 @@ class LaneRouteRule:
                 category="threat",
                 tag="lane_route",
                 title="Multiple approach routes",
+                # §V66/§V37: the "records may share geometry, so this is not a lane tally"
+                # clause used to close this summary AND now opens the routing limitation
+                # below, word for word. One fact, one home -- and the limitation is the
+                # better one, because that is where the next call is named (§V108).
+                # "raw enemy-route records" stays here: §V49 wants the headline LABELLED
+                # as records, never as N lanes.
                 summary=(
                     f"Stage carries {route_count} raw enemy-route records; enemies advance along "
-                    "more than one path, so a single defensive line may not cover every approach. "
-                    "The raw record count overstates distinct lanes -- records may share "
-                    "start/end/checkpoint geometry -- so it is not a lane tally."
+                    "more than one path, so a single defensive line may not cover every approach."
                 ),
                 confidence=_CONFIDENCE,
                 evidence=tuple(evidence),

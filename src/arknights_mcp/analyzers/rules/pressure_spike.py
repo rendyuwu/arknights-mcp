@@ -23,7 +23,7 @@ from arknights_mcp.analyzers.base import (
     RuleResult,
     StageThreatContext,
 )
-from arknights_mcp.analyzers.rules._common import by_game_id, distinct_refs
+from arknights_mcp.analyzers.rules._common import by_game_id, distinct_refs, fuller_view_note
 
 RULE_ID = "threat.pressure_spike"
 
@@ -42,8 +42,27 @@ _CONF_WINDOW_MISSING = 0.5  # count only; window unknown
 
 #: §V39: the limitation stamped on a windowed fire so the client knows the window is
 #: not elapsed time and may overstate the burst.
+#:
 _FRAGMENT_WINDOW_LIMITATION = (
     "spawn window fragment-relative, aggregated across waves; may overstate burst"
+)
+
+#: §V108/B153 class: the window above is a min/max AGGREGATE over every wave -- a
+#: deliberately coarse figure whose per-wave detail (each spawn's own ``spawn_time``,
+#: ``interval`` and wave grouping) is what would settle whether the burst is real. That
+#: detail is on ``get_stage(include_spawns)`` for all 1124 EN / 1149 CN stages this arm
+#: fires on, so the caveat alone left the client with no way to resolve it.
+#:
+#: §V66: it rides the observation ONCE, not once per enemy. The caveat above is
+#: enemy-specific and stays per row; the route is the same sentence for every enemy in
+#: the stage, so repeating it would be N copies of one pointer.
+_SPAWN_TIMELINE_ROUTE = fuller_view_note(
+    this_view=(
+        "The window is aggregated across waves and is relative to each wave's own start, "
+        "not to elapsed stage time."
+    ),
+    flag="include_spawns",
+    fuller="the per-wave spawn timeline",
 )
 
 
@@ -56,6 +75,7 @@ class PressureSpikeRule:
         evidence: list[EvidenceItem] = []
         limitations: list[str] = []
         confidence = 0.0
+        windowed = False
 
         for occ in by_game_id(ctx.occurrences):
             count = occ.total_count
@@ -84,6 +104,7 @@ class PressureSpikeRule:
                 )
                 conf = _CONF_WINDOWED
                 limitations.append(f"{occ.game_id}: {_FRAGMENT_WINDOW_LIMITATION}")
+                windowed = True
             else:
                 conf = _CONF_WINDOW_MISSING
                 limitations.append(f"{occ.game_id}: spawn timing missing; burst window unconfirmed")
@@ -94,6 +115,12 @@ class PressureSpikeRule:
 
         if not evidence:
             return RuleResult()
+
+        # §V108/§V66: one route to the per-wave timeline for the whole observation, and
+        # only when a window was actually computed -- the count-only arm has no window to
+        # qualify, so pointing it at the timeline would answer a question it never raised.
+        if windowed:
+            limitations.append(_SPAWN_TIMELINE_ROUTE)
 
         count_types = distinct_refs(evidence)
         types_word = "type" if count_types == 1 else "types"

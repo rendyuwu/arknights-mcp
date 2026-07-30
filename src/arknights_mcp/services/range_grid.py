@@ -112,6 +112,6 @@ def unresolved_range_limitation(unresolved: Iterable[str], *, max_named: int = 8
     return (
         f"attack-range grid unavailable for range_id {named}{tail}: this build's snapshot "
         "carried no range_table entry for it, so the id is emitted unresolved rather than "
-        "guessed. Run `arknights-mcp sync` against a snapshot that includes "
-        "gamedata/excel/range_table.json to resolve it."
+        "guessed. Ask the server admin to run `arknights-mcp sync` against a snapshot "
+        "that includes gamedata/excel/range_table.json to resolve it."
     )

@@ -76,6 +76,26 @@ from arknights_mcp.services.stages import (
 
 _TOOL_NAME = "get_stage"
 _TOOL_TITLE = "Get stage"
+
+#: §V79/§V108 (B153): ``get_stage`` and ``analyze_stage`` are COMPLEMENTARY siblings --
+#: one domain, split payload -- and §V79 covered only OVERLAPPING ones until B153, so
+#: neither description had ever mentioned the other. The cost was measured live: a client
+#: that entered through ``analyze_stage`` was told the route geometry was "not clustered",
+#: had no way to learn ``get_stage`` holds it, concluded the server did not have it, and
+#: offered a community wiki instead. §V79 requires the cross-ref to be BIDIRECTIONAL and
+#: to name the FLAG, not just the sibling tool: "see get_stage" would leave the caller to
+#: guess which of four include_ flags carries routes. Client-facing text, so no internal
+#: cites or jargon (§V71 b); short sentences (§V71 f).
+ANALYZE_SIBLING_NOTE = (
+    "For threat observations on this stage -- aerial enemies, damage-type skews, spawn "
+    "pressure, approach routes -- call analyze_stage. It reports on this data rather "
+    "than returning it."
+)
+STAGE_FACTS_SIBLING_NOTE = (
+    "This tool returns observations, not the underlying map data. For the stage's tile "
+    "grid, clustered route geometry, or per-wave spawn rows, call get_stage with "
+    "include_map, include_routes, or include_spawns."
+)
 #: §V71 (f)/§V111 (§T207, B156). At 2881 chars this was the LONGEST description on the
 #: server -- the crown B145's ``get_operator`` halving moved rather than removed, and the
 #: same truncation exposure (a client tool-listing cutting the string mid-sentence, which
@@ -109,7 +129,10 @@ _TOOL_DESCRIPTION = (
     "reasoning use include_map's tile_grid. " + STAGE_MAP_GUIDE_POINTER + " "
     "Spawn timeline values (spawn_time and interval) are in seconds. "
     "difficulty is the stage variant tag; the response's enum_legend gives its values "
-    "and those of stage_type. en/cn are never mixed. " + LIST_FIELD_CONVENTION
+    "and those of stage_type. "
+    + ANALYZE_SIBLING_NOTE
+    + " en/cn are never mixed. "
+    + LIST_FIELD_CONVENTION
 )
 
 #: §V74 (d): the standing gloss attached to every response that emits ``tile_grid``.
@@ -373,6 +396,15 @@ def build_get_stage_spec(get_conn: ConnectionProvider) -> ToolSpec:
 
 _ANALYZE_TOOL_NAME = "analyze_stage"
 _ANALYZE_TOOL_TITLE = "Analyze stage"
+#: §V79/§V111 (b): this description sat at 1590 of the 1600-char §V71 (f) budget, so the
+#: §V108/B153 cross-ref (:data:`STAGE_FACTS_SIBLING_NOTE`) had to be PAID for, not merely
+#: appended -- and §V111 (b) forbids paying by deleting a §V-mandated fact. So
+#: :data:`LEVEL_VARIANT_NOTE` MOVED to a ``depth="detailed"`` limitation, beside the
+#: enum_legend and stat-scale notes already gated there. The gate is exact: only the
+#: detailed occurrence row emits ``level_variant``, so at summary/standard depth the note
+#: decoded a key the response did not carry and billed every caller for it. Same call
+#: §T195 made on ``get_stage`` (where it moved to the spawns-gated section) and §T207 made
+#: for the stat-scale and confidence notes.
 _ANALYZE_TOOL_DESCRIPTION = (
     "Analyze one Arknights stage (by region + stage_code, e.g. 4-4, or game_id) "
     "into deterministic, evidence-backed threat observations. " + STAGE_SELECTOR_NOTE + " "
@@ -382,11 +414,11 @@ _ANALYZE_TOOL_DESCRIPTION = (
     "scales the surrounding facts: summary (observations only), standard (+ enemy "
     "roster + analyzer warnings), detailed (+ full per-enemy stat and timing "
     "context, with attack_interval and spawn times in seconds). "
+    + STAGE_FACTS_SIBLING_NOTE
+    + " "
     + ENEMY_CLASS_NOTE
     + " The response's enum_legend gives the values of enemy_class. "
-    + LEVEL_VARIANT_NOTE
-    + " en/cn are never mixed. "
-    + LIST_FIELD_CONVENTION
+    "en/cn are never mixed. " + LIST_FIELD_CONVENTION
 )
 
 #: §V67/§V26 (B98 follow-through): the detailed occurrence rows omit an
@@ -538,7 +570,10 @@ def _shape_analysis(depth: AnalysisDepth, result: StageAnalysisResult) -> Respon
         limitations = attach_enum_legend(
             data, TOOL_ENUM_LEGEND_FIELDS[_ANALYZE_TOOL_NAME], limitations
         )
-        limitations = (*limitations, ENEMY_STAT_SCALE_NOTE)
+        # §V111 (b)/§T203: the level_variant join gloss, MOVED off the description (which
+        # had 10 chars of §V71 (f) headroom left) onto the one depth that emits the key it
+        # decodes. Never deleted -- §V111 (b) forbids buying budget with a mandated fact.
+        limitations = (*limitations, ENEMY_STAT_SCALE_NOTE, LEVEL_VARIANT_NOTE)
     # §V104/§V6: the confidence scale rides the response that carries a confidence,
     # stated ONCE per envelope (§V66) rather than in the description (§V111 a).
     if result.observations:
