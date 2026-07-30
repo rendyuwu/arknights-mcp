@@ -48,7 +48,14 @@ class AnnouncementRow:
 # Every announcement for a region, joined to its own provenance chain (§V5/§V17). The
 # since/until window is applied at the SQL layer via the "(? IS NULL OR a.date >= ?)"
 # idiom: a NULL bound leaves that side open; a set bound narrows by the stored ISO date
-# string (lexicographic compare is date-order-correct for ISO-8601). A row with a NULL
+# string (lexicographic compare is date-order-correct for ISO-8601). No upper-bound
+# sentinel is needed here (unlike the banner archive's "until || '~'"): the column is a
+# day-granular "YYYY-MM-DD" and the service renders both bounds to that same form before
+# calling (§V116/B163), so "a.date <= :until" already includes the until DAY. A bound
+# arriving in another ISO notation is what emptied this window silently (a basic-format
+# "20260101" sorts above every stored "2026-.." date) -- the render, not this SQL, is the
+# fix, because the same bound must collate identically here and in the window guard. A row
+# with a NULL
 # date is excluded once EITHER bound is set (it cannot be placed in the window), but
 # kept when the window is fully open. Ordered by date DESC then announce_id so the
 # newest announcements page first and the payload is deterministic + reproducible

@@ -26,10 +26,11 @@ so a region is always attributed and the two are never silently mixed.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from arknights_mcp.util.iso_bounds import UNTIL_UPPER_SENTINEL, canonical_iso_bound
 
 #: §V5 supported regions. A factual tool requires one; search may filter by one.
 #: The extra-locale (ja/ko) NAME-alias axis is RETIRED (§V57, T156 -- founder
@@ -88,8 +89,8 @@ class PageInfo(StrictModel):
     has_more: bool
 
 
-def validate_iso_bound(value: str | None) -> str | None:
-    """Reject a since/until date bound that is not an ISO date/datetime (§V19; §V37).
+def normalize_iso_bound(value: str | None) -> str | None:
+    """Reject a non-ISO since/until bound, and NORMALIZE the rest (§V19; §V116; §V37).
 
     The single home (§V37) for the date-filter bound validator shared by every list
     tool with a since/until window (``get_announcements`` §T96/B48, ``get_banners``
@@ -101,18 +102,27 @@ def validate_iso_bound(value: str | None) -> str | None:
     datetime (and validates the calendar parts), so a value it rejects surfaces as a
     protocol-level ``ValidationError`` at the model gate rather than a degenerate empty
     result.
+
+    Parsing alone was NOT enough (B163): ``fromisoformat`` accepts many NOTATIONS of one
+    instant, and this validator used to return the caller's text verbatim, so which rows
+    the window matched depended on the notation -- ``since="20260101"`` emptied a
+    wide-open window and ``until="20260101"`` was ignored entirely. The value is
+    therefore re-rendered into the canonical notation
+    (:func:`~arknights_mcp.util.iso_bounds.canonical_iso_bound`) before it leaves the
+    gate, so every surface downstream compares the same text. Rendering keeps the bound's
+    granularity; the column's granularity is applied by the service that owns the column
+    (§V116 (b)).
     """
     if value is None:
         return value
     try:
-        datetime.fromisoformat(value)
+        return canonical_iso_bound(value)
     except ValueError as exc:
         # Client-facing message (it surfaces in the §V71 (c) invalid_input envelope),
         # so no internal cite: keep the behavioral sentence, drop the §V tag.
         raise ValueError(
             f"must be an ISO date (YYYY-MM-DD) or ISO datetime; got {value!r}"
         ) from exc
-    return value
 
 
 class WindowBounds(Protocol):
@@ -129,46 +139,47 @@ class WindowBounds(Protocol):
 
 
 def inverted_window_reason(since: str | None, until: str | None) -> str | None:
-    """Why a since/until pair can match nothing, or ``None`` when it can (§V105).
+    """Why a since/until pair can match nothing, or ``None`` when it can (§V105; §V116).
 
     The single home (§V37) for the bound-RELATION check, shared by the model gate of
     every windowed tool and by the services behind them. B49/B48 typed the bound SHAPE
-    (:func:`validate_iso_bound`); this types the RELATION between the pair, which is the
+    (:func:`normalize_iso_bound`); this types the RELATION between the pair, which is the
     other half of the same one-check-not-both defect (B143): ``since=2026-07-01,
     until=2026-06-01`` used to return ``ok`` + an empty list, indistinguishable from a
     genuinely empty window, so a client concluded nothing had been announced.
 
-    The comparison is LEXICOGRAPHIC because that is exactly the comparison the window
-    performs: both repositories filter with ``column >= :since`` / ``column <= :until``
-    over a TEXT column, so string order *is* the window's order. Strings are totally
-    ordered, so ``since > until`` means no stored value can satisfy both bounds at once --
-    the emptiness is a property of the input, not an answer about the data. That also
-    makes rejecting such a pair safe: it can never withhold a row the query would have
-    returned.
+    The comparison is the one the window itself performs, which is why both bounds are
+    rendered canonically first and the upper bound carries
+    :data:`~arknights_mcp.util.iso_bounds.UNTIL_UPPER_SENTINEL`: both repositories filter
+    a TEXT column with ``column >= :since`` / ``column <= :until || '~'``, so canonical
+    string order *is* the window's order. Strings are totally ordered, so a ``since``
+    above the sentinel-terminated ``until`` means no stored value can satisfy both bounds
+    at once -- the emptiness is a property of the input, not an answer about the data.
+    That is what makes rejecting the pair safe: it cannot withhold a row the query would
+    have returned.
 
-    Two different mistakes produce that inversion, and the returned sentence names the
-    one that actually happened -- claiming "since is later than until" of a pair that is
-    chronologically fine would be a false statement about the caller's input:
+    Both halves of that mirroring were once missing, and each cost a real answer:
 
-    * a genuine inversion -- the caller swapped the bounds;
-    * mixed ISO forms -- :func:`datetime.fromisoformat` accepts ISO *basic* format, so
-      ``since="20260801"`` passes the shape gate yet sorts above every ``2026-09-01``
-      style value (``-`` sorts below a digit), inverting a chronologically correct pair.
+    * WITHOUT the canonical render, a chronologically fine pair in mixed notations
+      (``since="20260801", until="2026-09-01"``) collated backwards, and this function
+      rejected it with a sentence about ISO forms. The pair is answerable -- its instants
+      were never contradictory -- so it is now normalized and ANSWERED, and that second
+      message is gone (§V105 as amended by §V116 (a));
+    * WITHOUT the sentinel, an intra-day window (``since="2026-07-28T00:00:00",
+      until="2026-07-28"``) compared as ``since > until`` and was rejected as impossible
+      on every single banner-open day of the promoted build, while the SQL would have
+      returned that day's banners -- a guard one notation off from the query WITHHOLDS
+      rows (B163 arm 3, §V116 (c)).
 
-    Both bounds have already passed :func:`validate_iso_bound` when this runs (field
-    validators precede a model validator), so both parse. An equal pair is a legitimate
-    single-day window and is never rejected.
+    An equal pair is a legitimate single-day window and is never rejected. A pair reaching
+    this function unrendered is rendered here, so the verdict never depends on whether the
+    caller came through the model gate; text no ISO parse can place still raises
+    ``ValueError`` from the render, exactly as it does at the gate.
     """
-    if since is None or until is None or since <= until:
+    if since is None or until is None:
         return None
-    if datetime.fromisoformat(since) <= datetime.fromisoformat(until):
-        # Chronologically fine, so the fault is the notation, not the order: say so
-        # rather than accusing the caller of swapping bounds they did not swap.
-        return (
-            f"since {since!r} and until {until!r} are written in different ISO forms, so "
-            "the date comparison orders them backwards and the window can match nothing; "
-            "write both as YYYY-MM-DD"
-        )
+    if canonical_iso_bound(since) <= canonical_iso_bound(until) + UNTIL_UPPER_SENTINEL:
+        return None
     return (
         f"since {since!r} is later than until {until!r}, so the window can match "
         "nothing; swap the two bounds"

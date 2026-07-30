@@ -37,6 +37,7 @@ from arknights_mcp.importers.manifest import insert_record_provenance, make_snap
 from arknights_mcp.sources.announcements import source_id_for_region
 from arknights_mcp.util.coerce import as_int, as_str
 from arknights_mcp.util.hashing import canonical_json, sha256_hex
+from arknights_mcp.util.iso_bounds import canonical_iso_bound
 from arknights_mcp.util.sqlite import integrity_guard
 
 _LOG = logging.getLogger(__name__)
@@ -110,10 +111,21 @@ def _normalize_date(kept: dict[str, Any], *, fetched_at: datetime) -> str | None
     via :class:`datetime.date` also rejects a calendar-invalid ``day``/``month`` (e.g.
     2/31, 4/31, or 2/29 off a leap year) so an impossible date becomes ``None`` rather
     than a fabricated string (§V26); a non-int day/month is likewise absent, never faked.
+
+    An explicit ``date`` is RENDERED to its calendar day, not stored as written (§V116):
+    the ``since``/``until`` window compares this column as TEXT and the service renders its
+    bounds to a ``YYYY-MM-DD`` day, so a feed shipping ``2026-07-10T00:00:00+00:00`` in the
+    same column would sort outside every bound naming its own day (B163's defect, on the
+    stored side). A day is all this column claims to hold, and now all it can hold; an
+    explicit value in no ISO notation at all falls through to the ``day``+``month`` path
+    rather than being stored as unplaceable text.
     """
     explicit = as_str(kept.get("date"))
     if explicit is not None:
-        return explicit
+        try:
+            return canonical_iso_bound(explicit)[:10]
+        except ValueError:
+            pass
     month = as_int(kept.get("month"))
     day = as_int(kept.get("day"))
     if month is None or day is None:

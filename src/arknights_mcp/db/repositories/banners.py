@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from arknights_mcp.db.repositories.base import Repository
+from arknights_mcp.util.iso_bounds import UNTIL_UPPER_SENTINEL
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,14 @@ class BannerRow:
 # bound may be a bare date ("YYYY-MM-DD") or a lower-precision datetime, so a plain
 # "open_time <= until" would drop EVERY banner opening on the until date (the timestamp
 # sorts AFTER its own date prefix). The upper bound is therefore compared against
-# "until || '~'": '~' (0x7e) sorts after every char an ISO-8601 timestamp can carry
-# ('T','+','Z',':','-','.',digits), so a same-day/second banner is included (inclusive
-# until) while a strictly-later one is still excluded. The lower bound needs no such
-# sentinel -- ">=" already includes every timestamp whose date/prefix matches the bound.
+# "until || '~'" (UNTIL_UPPER_SENTINEL, the §V37/§V116 home shared with the window guard,
+# which must predict THIS comparison -- a guard using a bare "since > until" rejected
+# intra-day windows this SQL answers, B163 arm 3): '~' (0x7e) sorts after every char an
+# ISO-8601 timestamp can carry ('T','+','Z',':','-','.',digits), so a same-day/second
+# banner is included (inclusive until) while a strictly-later one is still excluded. The
+# lower bound needs no such sentinel -- ">=" already includes every timestamp whose
+# date/prefix matches the bound. The bound TEXT itself arrives canonical from the service
+# (§V116), so the comparison is against the stored notation and not the caller's.
 # A banner with a NULL open_time is excluded once EITHER bound is set (it cannot be placed
 # in the window), but kept when the window is fully open. The optional display-name filter
 # uses the same NULL-passes idiom on a bound LIKE pattern: a NULL query leaves that side
@@ -106,7 +111,8 @@ _BANNERS_SQL = (
     "LEFT JOIN operators o ON o.operator_pk = f.operator_pk "
     "WHERE b.server = ? "
     "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time >= ?)) "
-    "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time <= (? || '~'))) "
+    "AND (? IS NULL OR (b.open_time IS NOT NULL AND b.open_time <= "
+    f"(? || '{UNTIL_UPPER_SENTINEL}'))) "
     "AND (? IS NULL OR (b.display_name IS NOT NULL AND b.display_name LIKE ? ESCAPE '\\')) "
     "ORDER BY b.open_time DESC, b.game_id, f.char_id"
 )

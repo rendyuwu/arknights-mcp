@@ -101,7 +101,11 @@ def test_empty_window_on_the_real_build_blames_the_window_not_the_import(
     # invisible while rows flow (the test above passes on the rows alone) and shows up
     # exactly here: on a build where the feed IS imported, an out-of-range window must
     # be told it is the window, never "the admin never synced this feed".
-    result = get_announcements(conn, server=region, since="2099-01-01T00:00:00+00:00")
+    # A DAY bound: this column is day-granular, so a bound carrying a time of day would
+    # also carry the §V116 widening disclosure (its own fact, pinned in
+    # ``tests/contract/test_window_bound_forms.py``); the one under test here is WHICH
+    # empty-reason fires, and exactly one still does.
+    result = get_announcements(conn, server=region, since="2099-01-01")
     assert result.status == "ok" and result.announcements == ()
     (text,) = result.limitations
     assert "is imported for this region" in text

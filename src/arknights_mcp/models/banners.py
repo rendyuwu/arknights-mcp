@@ -3,7 +3,7 @@
 A banner listing is region-attributed (§V5) and metadata-only (§V62). The optional
 ``since``/``until`` bounds narrow the list by the banner's ISO ``open_time`` schedule;
 both are length capped (§V18) AND ISO-date-shape validated (§V19) via the shared
-:func:`~arknights_mcp.models.common.validate_iso_bound` (§V37 -- the same gate the
+:func:`~arknights_mcp.models.common.normalize_iso_bound` (§V37 -- the same gate the
 ``get_announcements`` since/until window uses, B48) so a non-date bound is rejected at
 the model gate rather than lexicographically emptying the query.
 
@@ -22,7 +22,7 @@ from arknights_mcp.models.common import (
     PageParams,
     Region,
     StrictModel,
-    validate_iso_bound,
+    normalize_iso_bound,
     validate_window_order,
 )
 
@@ -34,7 +34,10 @@ class GetBannersInput(StrictModel):
     silently mixed (§V5). ``since``/``until`` optionally window the banners by their
     stored ISO ``open_time`` (inclusive); both are length capped (§V18) AND ISO-date-
     shape validated (§V19) so a non-date bound is rejected rather than lexicographically
-    emptying the result (B48); the bound RELATION is checked too (§V105/B143), so a pair
+    emptying the result (B48); an accepted bound is NORMALIZED to the canonical ISO
+    notation (§V116/B163), since the window compares TEXT and a basic-format bound
+    collates against the stored timestamps arbitrarily (``until="20260101"`` used to be
+    ignored outright); the bound RELATION is checked too (§V105/B143), so a pair
     whose window can match nothing is rejected rather than answered with an empty list.
     ``query`` optionally narrows the list to banners whose
     display name contains it (case-insensitive substring); it is a free-text field so it
@@ -50,6 +53,6 @@ class GetBannersInput(StrictModel):
     query: str | None = Field(default=None, min_length=1, max_length=MAX_QUERY_LEN)
     page: PageParams = Field(default_factory=PageParams)
 
-    _validate_since = field_validator("since")(validate_iso_bound)
-    _validate_until = field_validator("until")(validate_iso_bound)
+    _normalize_since = field_validator("since")(normalize_iso_bound)
+    _normalize_until = field_validator("until")(normalize_iso_bound)
     _validate_window = model_validator(mode="after")(validate_window_order)

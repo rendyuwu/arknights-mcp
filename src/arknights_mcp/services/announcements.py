@@ -35,6 +35,7 @@ from arknights_mcp.services.stages import (
     _validate_page,
 )
 from arknights_mcp.sources.announcements import source_id_for_region
+from arknights_mcp.util.iso_bounds import canonical_window, coarsened_window_bounds
 
 #: Typed outcome of an announcement lookup. Always ``ok`` (§V106 (b)): this is a SET
 #: query, not an entity lookup, so an empty list is a legitimate answer to a
@@ -82,6 +83,24 @@ def feed_carries_no_announcement_limitation() -> str:
     return (
         "the announcement feed is imported for this region but its snapshot carries no "
         "announcement; this is the imported feed's own content, not a filtered-out result"
+    )
+
+
+def day_granular_bound_limitation(bounds: tuple[str, ...]) -> str:
+    """§V116 (b): a bound finer than a day was read as the whole calendar day.
+
+    ``announcements.date`` stores a calendar date with no time of day, so a bound
+    carrying one cannot be applied as written. It is widened to its day (the inclusive
+    reading -- excluding that day would assert an absence the column cannot support,
+    §V26) and the widening is stated here rather than left for the client to discover
+    from a row it did not expect to see. Fires only when a bound actually carried a time.
+    """
+    which = " and ".join(bounds)
+    label = "bound" if len(bounds) == 1 else "bounds"
+    return (
+        "the announcement date is stored as a calendar date with no time of day, so the "
+        f"{which} {label} you gave was read as the whole day; this feed cannot be "
+        "windowed more finely than one day"
     )
 
 
@@ -227,7 +246,19 @@ def get_announcements(
     (§V105/B143 -- one contract, both places, like the §V19 page bounds), because no
     limitation can make "nothing matched" a true answer to a question nothing can match.
     Both transports call this same function (§V14).
+
+    Each bound is rendered into the form of the column it is compared against BEFORE it
+    reaches the query or the guard (§V116/B163): canonical ISO notation, then truncated to
+    its calendar day, because ``announcements.date`` is day-granular. Without the render
+    the window's collation was the caller's notation -- ``since="20260101"`` returned
+    nothing on a corpus it should have matched entirely, under this service's own "widen
+    or drop the bounds" advice, which no widening could have fixed. A bound that carried a
+    time of day is widened to that day and says so (§V116 (b)). The render happens here as
+    well as at the model gate so a caller reaching the service directly gets the same
+    window (§V19's one-contract-both-places shape).
     """
+    coarsened = coarsened_window_bounds(since, until, granularity="date")
+    since, until = canonical_window(since, until, granularity="date")
     reject_inverted_window(since, until)
     p, size = _validate_page(page, page_size)
 
@@ -244,7 +275,13 @@ def get_announcements(
         announcements=tuple(_announcement_facts(r) for r in rows),
         page=page_info,
         provenance=provenance,
-        limitations=_limitations(
-            conn, server, len(all_rows), windowed=since is not None or until is not None
+        limitations=(
+            # Deterministic order (§V26): the granularity disclosure describes the QUERY
+            # (it fires whether or not rows came back), then the §V50/§V106 (b) reason an
+            # empty list is empty -- still exactly one of those four strings (B146).
+            *((day_granular_bound_limitation(coarsened),) if coarsened else ()),
+            *_limitations(
+                conn, server, len(all_rows), windowed=since is not None or until is not None
+            ),
         ),
     )

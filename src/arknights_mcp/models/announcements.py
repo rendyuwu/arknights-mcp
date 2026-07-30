@@ -18,7 +18,7 @@ from arknights_mcp.models.common import (
     PageParams,
     Region,
     StrictModel,
-    validate_iso_bound,
+    normalize_iso_bound,
     validate_window_order,
 )
 
@@ -30,7 +30,10 @@ class GetAnnouncementsInput(StrictModel):
     silently mixed (§V5). ``since``/``until`` optionally window the announcements by
     their stored ISO date (inclusive); both are length capped (§V18) AND ISO-date-shape
     validated (§V19) so a non-date bound is rejected rather than lexicographically
-    emptying the result. The bound RELATION is checked too (§V105/B143): a pair whose
+    emptying the result. An accepted bound is also NORMALIZED to the canonical ISO
+    notation (§V116/B163), because the window compares TEXT: a basic-format
+    ``since="20260101"`` parses fine yet sorts above every stored ``2026-…`` date, which
+    used to empty a wide-open window. The bound RELATION is checked too (§V105/B143): a pair whose
     window can match nothing (``since`` after ``until``) is rejected rather than answered
     with an empty list a client cannot tell from a genuinely empty window. ``page`` pages
     the list through the bounded §V19 window so a single request never pulls an unbounded
@@ -42,6 +45,6 @@ class GetAnnouncementsInput(StrictModel):
     until: str | None = Field(default=None, min_length=1, max_length=MAX_ID_LEN)
     page: PageParams = Field(default_factory=PageParams)
 
-    _validate_since = field_validator("since")(validate_iso_bound)
-    _validate_until = field_validator("until")(validate_iso_bound)
+    _normalize_since = field_validator("since")(normalize_iso_bound)
+    _normalize_until = field_validator("until")(normalize_iso_bound)
     _validate_window = model_validator(mode="after")(validate_window_order)

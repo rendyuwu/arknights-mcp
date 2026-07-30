@@ -315,7 +315,10 @@ def test_empty_window_on_an_imported_feed_says_so_differently(
     # shipped identical bytes, so the response could not be read either way. Both are
     # still ``ok`` + ``[]``, but the limitation now decides it -- and the imported one
     # never suggests a sync, which would read as "the cache is missing".
-    windowed = _handler(conn)(server="en", since="2027-01-01T00:00:00+00:00")
+    # A DAY bound: the feed's own column is day-granular, so a sub-day bound would also
+    # carry the §V116 widening disclosure, which is a different fact tested in
+    # ``test_window_bound_form.py`` -- this case is about the two EMPTY reasons.
+    windowed = _handler(conn)(server="en", since="2027-01-01")
     unimported = _handler(bare_conn)(server="en")
     assert windowed.status == unimported.status == "ok"
     assert windowed.to_dict()["data"]["announcements"] == []  # type: ignore[index]

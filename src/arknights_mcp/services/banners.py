@@ -46,6 +46,7 @@ from arknights_mcp.services.stages import (
     _section_page,
     _validate_page,
 )
+from arknights_mcp.util.iso_bounds import canonical_window
 
 #: Typed outcome of a banner lookup. Always ``ok``: a region with no banners is a
 #: legitimate empty list (gacha_table is fetched tolerant-absent, §V41/B36), not a
@@ -306,7 +307,16 @@ def get_banners(
     both places, like the §V19 page bounds), and this listing carried NO limitation at all
     on such a window before, so its empty list was indistinguishable from an empty
     archive. Both transports call this same function (§V14).
+
+    Each bound is rendered into the form of the stored ``open_time`` before it reaches the
+    query or the guard (§V116/B163): canonical ISO notation, offset-aware values converted
+    to UTC so they collate against the stored ``+00:00`` timestamps. Without the render the
+    window's collation was the caller's notation, and this listing carried NO limitation to
+    hint at it: ``since="20260101"`` returned an empty archive and ``until="20260101"``
+    returned the whole one. Rendered here as well as at the model gate, so a caller reaching
+    the service directly gets the same window (§V19's one-contract-both-places shape).
     """
+    since, until = canonical_window(since, until, granularity="datetime")
     reject_inverted_window(since, until)
     p, size = _validate_page(page, page_size)
 

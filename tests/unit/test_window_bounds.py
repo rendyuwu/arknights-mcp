@@ -10,10 +10,11 @@ indistinguishable from an empty archive.
 
 These drive the three enforcement points:
 
-* the predicate itself -- LEXICOGRAPHIC, because both repositories filter a TEXT column
-  with ``>= :since`` / ``<= :until``, so string order IS the window's order. A test pins
-  the predicate to that comparison, since a parsed-datetime predicate would silently
-  accept the mixed-form pairs the SQL still empties;
+* the predicate itself -- the comparison the window really performs, because both
+  repositories filter a TEXT column with ``>= :since`` / ``<= :until || '~'``, so string
+  order IS the window's order. A test pins the predicate to that comparison, sentinel
+  included: T212/§V116 later showed both halves of that mirroring matter, since a bare
+  ``since > until`` rejected intra-day windows the SQL answers (B163 arm 3);
 * the model gate on both windowed inputs -> a typed ``invalid_input`` envelope through the
   shared dispatch home (§V71 (c)/B60), never a leaked pydantic error;
 * the service mirror -- rejected at BOTH the model and the service, one contract in both
@@ -47,6 +48,7 @@ from arknights_mcp.services.banners import get_banners
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 from arknights_mcp.transports._server import dispatch_tool_call
+from arknights_mcp.util.iso_bounds import UNTIL_UPPER_SENTINEL, canonical_iso_bound
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
@@ -62,10 +64,12 @@ WINDOWED_SERVICES = (get_announcements, get_banners)
 #: B143's own filed pair.
 INVERTED = ("2026-07-01", "2026-06-01")
 
-#: Chronologically ASCENDING, yet inverted in the TEXT order the window compares in:
+#: Chronologically ASCENDING, yet inverted in the TEXT order T201 compared in:
 #: ``fromisoformat`` accepts ISO basic format, so this passes the B48 shape gate while
-#: ``"20260801" > "2026-09-01"`` (``-`` sorts below a digit). The SQL can match nothing
-#: here either, so it is rejected -- but never as an "inversion", which would be false.
+#: ``"20260801" > "2026-09-01"`` (``-`` sorts below a digit). T201 rejected it, naming the
+#: notation. T212/§V116 renders both bounds instead, so the pair now ANSWERS -- its
+#: instants were never contradictory, and a rejection that withholds a real answer is the
+#: thing §V105's rejection arm may not do. It stays here as exactly that control.
 MIXED_FORM = ("20260801", "2026-09-01")
 
 #: Windows that must SURVIVE: a single-day window, each one-sided bound, an ascending
@@ -119,14 +123,13 @@ def test_inverted_pair_reason_names_both_bounds_and_the_swap() -> None:
     assert "swap" in reason
 
 
-def test_mixed_iso_forms_are_rejected_without_claiming_an_inversion() -> None:
-    # The pair is chronologically ASCENDING, so "since is later than until" would be a
-    # FALSE statement about the caller's input; the notation is what is wrong.
-    reason = inverted_window_reason(*MIXED_FORM)
-    assert reason is not None
-    assert "later than" not in reason
-    assert "ISO forms" in reason and "YYYY-MM-DD" in reason
-    assert MIXED_FORM[0] in reason and MIXED_FORM[1] in reason
+def test_mixed_iso_forms_are_normalized_and_answered_not_rejected() -> None:
+    # T212/§V116 supersedes T201's second message: the pair is chronologically ASCENDING,
+    # so both bounds are rendered to one notation and the window is answered. Rejecting it
+    # would have withheld an answer the caller was entitled to; "since is later than until"
+    # would have been false about the input either way.
+    assert inverted_window_reason(*MIXED_FORM) is None
+    reject_inverted_window(*MIXED_FORM)
 
 
 @pytest.mark.parametrize(
@@ -137,32 +140,37 @@ def test_mixed_iso_forms_are_rejected_without_claiming_an_inversion() -> None:
         MIXED_FORM,
         ("2026-06-01", "20260701"),
         ("2026-06-01T09:00:00", "2026-06-01T08:00:00"),
+        ("2026-06-01T09:00:00", "2026-06-01"),
     ],
 )
 def test_predicate_is_the_comparison_the_window_performs(
     since: str | None, until: str | None
 ) -> None:
-    # The repositories filter a TEXT column (``>= :since`` / ``<= :until``), so the
-    # rejection must fire on exactly the pairs whose TEXT order makes a match impossible
-    # -- no wider (that would withhold rows) and no narrower (that would re-admit B143
-    # for every bound the shape gate lets through unnormalised).
-    impossible = since is not None and until is not None and since > until
+    # The repositories filter a TEXT column (``>= :since`` / ``<= :until || '~'``) over
+    # CANONICAL bound text (§V116), so the rejection must fire on exactly the pairs whose
+    # order in that comparison makes a match impossible -- no wider (that withholds rows,
+    # B163 arm 3) and no narrower (that re-admits B143).
+    impossible = (
+        since is not None
+        and until is not None
+        and canonical_iso_bound(since) > canonical_iso_bound(until) + UNTIL_UPPER_SENTINEL
+    )
     assert (inverted_window_reason(since, until) is not None) is impossible
 
 
 def test_reason_carries_no_internal_cite_or_jargon() -> None:
     # §V71 (b): the reason reaches a client verbatim inside the invalid_input envelope.
-    for reason in (inverted_window_reason(*INVERTED), inverted_window_reason(*MIXED_FORM)):
-        assert reason is not None
-        for token in ("§V", "§T", "B143", "B48", "lexicograph", "degenerate"):
-            assert token not in reason
+    reason = inverted_window_reason(*INVERTED)
+    assert reason is not None
+    for token in ("§V", "§T", "B143", "B48", "lexicograph", "degenerate"):
+        assert token not in reason
 
 
 # --- the model gate on every windowed input -----------------------------------
 
 
 @pytest.mark.parametrize("model", WINDOWED_MODELS)
-@pytest.mark.parametrize(("since", "until"), [INVERTED, MIXED_FORM])
+@pytest.mark.parametrize(("since", "until"), [INVERTED])
 def test_model_gate_rejects_an_impossible_window(
     model: type[GetAnnouncementsInput] | type[GetBannersInput],
     since: str,
@@ -187,7 +195,7 @@ def test_model_gate_accepts_a_window_that_can_match(
 
 
 @pytest.mark.parametrize("service", WINDOWED_SERVICES)
-@pytest.mark.parametrize(("since", "until"), [INVERTED, MIXED_FORM])
+@pytest.mark.parametrize(("since", "until"), [INVERTED])
 def test_service_rejects_an_impossible_window(
     conn: sqlite3.Connection, service: object, since: str, until: str
 ) -> None:

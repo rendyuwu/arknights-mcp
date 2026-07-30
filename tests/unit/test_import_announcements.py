@@ -173,7 +173,10 @@ def test_happy_path_inserts_row(tmp_path: Path) -> None:
             "en",
             "ann-1001",
             "Maintenance Notice",
-            "2026-07-21T00:00:00+00:00",
+            # The explicit feed value is rendered to its calendar DAY (§V116/B163): the
+            # column is what the since/until window compares as text, and a timestamp
+            # stored here would sort outside every bound naming its own day.
+            "2026-07-21",
             "https://www.arknights.global/news/ann-1001",
             "maintenance",
         )
@@ -417,9 +420,26 @@ def test_explicit_canonical_key_wins_over_source_key() -> None:
         fetched_at=_FETCHED,
     )
     ann = parsed[0]
-    assert ann.date == "2026-01-02T00:00:00+00:00"
+    # The canonical key still WINS (day 15/month 7 is ignored); its value is rendered to
+    # the stored column's day granularity (§V116/B163), never taken as written.
+    assert ann.date == "2026-01-02"
     assert ann.url == "https://canonical/url"
     assert ann.category == "canonical"
+
+
+def test_unplaceable_explicit_date_falls_through_to_day_month() -> None:
+    # §V116/B163 on the stored side: a date the window could never place is not stored as
+    # written -- the §V61 day+month path answers instead, and only if it also cannot,
+    # the date is absent rather than fabricated (§V26).
+    (placed,) = parse_announcements(
+        [{"announceId": "ann-1001", "date": "july", "day": 15, "month": 7}],
+        fetched_at=_FETCHED,
+    )
+    assert placed.date == "2026-07-15"
+    (unplaced,) = parse_announcements(
+        [{"announceId": "ann-1002", "date": "july"}], fetched_at=_FETCHED
+    )
+    assert unplaced.date is None
 
 
 def test_december_entry_seen_in_january_rolls_year_back() -> None:
