@@ -83,6 +83,68 @@ claude mcp add --transport stdio --scope user arknights \
      arknights-mcp --config /abs/path/to/config.toml serve --transport stdio
 ```
 
+## Option C — run it in Docker (`stdio`)
+
+The deploy image (`deploy/docker/Dockerfile`) serves either transport: the
+transport lives in `CMD`, so appending `serve --transport stdio` to `docker run`
+overrides the streamable-http default. Build it once from the repo root:
+
+```bash
+docker build -f deploy/docker/Dockerfile -t arknights-mcp .
+```
+
+Then run it as an MCP server on a pipe:
+
+```bash
+docker run --rm -i --user "$(id -u):$(id -g)" \
+  -v /abs/path/to/arknights-mcp/data:/app/data:ro \
+  -v /abs/path/to/arknights-mcp/config.toml:/app/config.toml:ro \
+  arknights-mcp serve --transport stdio
+```
+
+Register that with Claude Code:
+
+```bash
+claude mcp add --transport stdio --scope user arknights \
+  -- docker run --rm -i --user 1000:1000 \
+     -v /abs/path/to/arknights-mcp/data:/app/data:ro \
+     -v /abs/path/to/arknights-mcp/config.toml:/app/config.toml:ro \
+     arknights-mcp serve --transport stdio
+```
+
+Four things about that command line are load-bearing:
+
+- **`-i` is required.** Without it the container gets no stdin, so the server
+  reads EOF immediately and exits before the client's `initialize` arrives.
+- **Never pass `-t`.** A TTY merges stderr into stdout and rewrites newlines,
+  which corrupts the JSON-RPC framing stdout carries (§V13). `-i` alone is right.
+- **`--user` with your own uid, not root.** The image runs as its non-root
+  `arknights` user (uid 999) and reads the build through host file permissions —
+  but `import` writes `data/current.json` and the `.sqlite` builds mode `600`
+  owned by whoever ran it, so uid 999 gets `PermissionError` and every tool
+  answers `internal_error`. Pass `--user "$(id -u):$(id -g)"`. In a `.mcp.json` /
+  `claude mcp add` entry there is no shell to expand that, so write the numbers
+  (`--user 1000:1000`); check yours with `id -u`. The mounts stay `:ro`, so this
+  grants read access, never a write path (§V2).
+- **No `--config` flag.** The image's `ENTRYPOINT` already pins
+  `--config /app/config.toml`; the mount above is what decides its contents.
+
+The image is **code-only** (§V16): it contains no database. The promoted build
+arrives through the read-only `data` mount, so you still build it on the host
+first (see [Prerequisite](#prerequisite)) and a rebuilt image never carries game
+data. No OIDC or env file is involved — a stdio pipe has no bind and no bearer.
+
+For a smoke test rather than a client registration, `deploy/docker/docker-compose.yml`
+carries the same thing as a `stdio`-profile service:
+
+```bash
+ARKNIGHTS_MCP_UID=$(id -u) ARKNIGHTS_MCP_GID=$(id -g) \
+  docker compose -f deploy/docker/docker-compose.yml run --rm -T mcp-stdio
+```
+
+`-T` disables the TTY that `compose run` allocates by default, for the reason
+above. Compose's own progress lines go to stderr, so stdout stays protocol-only.
+
 ## Verify
 
 ```bash
@@ -110,6 +172,16 @@ Ask something a promoted build can answer, e.g. *"analyze stage 4-4"* or
 - **Stray text in the transport.** The server writes the MCP JSON-RPC stream to
   **stdout** and all operational notices to **stderr** (§V13); don't wrap the
   command in anything that prints to stdout.
+- **(Docker) every tool answers `internal_error`, or `arknights-mcp status` in
+  the container raises `PermissionError: [Errno 13] Permission denied:
+  'data/current.json'`.** The container uid cannot read the mounted build. Add
+  `--user "$(id -u):$(id -g)"` (numeric in a `.mcp.json` entry) — see
+  [Option C](#option-c--run-it-in-docker-stdio). The tool-level error is
+  deliberately redacted, so the container's **stderr** (or a `status` run) is
+  where you see the cause.
+- **(Docker) the container exits at once and the client reports the server
+  died.** `-i` is missing, so stdin is closed and the server sees EOF before
+  `initialize`. Never substitute `-t` for it.
 
 ## See also
 

@@ -1,9 +1,17 @@
-# Compose stack for the Arknights Intelligence MCP private remote (§T55).
+# Compose stack for the Arknights Intelligence MCP (§T55, §T215).
 #
-# Two services: the read-only MCP server (loopback-only, code-only image) and an
-# nginx TLS front. The app never publishes a public port itself -- only nginx
-# does (§V9). The app binds inside the compose network and is reachable solely
-# through the proxy, which terminates TLS and forwards to it.
+# One image, both transports (§V14). Two ways to run it:
+#
+#   # private remote: read-only MCP server + nginx TLS front
+#   docker compose -f deploy/docker/docker-compose.yml up --build
+#
+#   # local stdio: one-shot server on a pipe, for an MCP client or a smoke test
+#   docker compose -f deploy/docker/docker-compose.yml run --rm -T mcp-stdio
+#
+# The remote stack is two services: the read-only MCP server (loopback-only,
+# code-only image) and an nginx TLS front. The app never publishes a public port
+# itself -- only nginx does (§V9). The app binds inside the compose network and is
+# reachable solely through the proxy, which terminates TLS and forwards to it.
 #
 # Posture (§V9/§V40): config.toml must set `[mcp.remote] behind_proxy = true` so
 # the app enforces the §V9 HTTPS + OIDC gate and per-request bearer validation
@@ -11,28 +19,77 @@
 # come from arknights-mcp.env (env-only, §V12/§I.env) -- copy the .example, fill
 # it in, and keep it out of git.
 #
-#   docker compose -f deploy/docker/docker-compose.yml up --build
+# The stdio service sits behind a `profiles:` list so `up` never starts it: a
+# stdio server owns a pipe and exits at EOF on stdin, which is not something to
+# bring up alongside a listener. It also takes no env_file and no OIDC
+# descriptors -- a local pipe has no bind, no bearer, and no §V9 gate to satisfy.
+# For a real MCP client, prefer a plain `docker run --rm -i` (see
+# ../../docs/clients/claude-code.md): it invokes the container directly, with no
+# compose orchestration in the path.
+
+# Without this the project name is the directory name ("docker") and every
+# container/network is called docker-*, which is unreadable on a host running
+# other stacks.
+name: arknights-mcp
+
+# Shared by both app services so a change lands on one and not the other (§V37).
+# The tagged `image:` also means the two services resolve to the SAME built image
+# instead of two per-service tags holding identical content.
+x-mcp-app: &mcp-app
+  build:
+    # Build context is the repo root so the image sees src/, pyproject, uv.lock;
+    # .dockerignore bars data/snapshots/secrets from the context (§V16).
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  image: arknights-mcp:local
+  # The container runs non-root (§V1/§V2) and reads the mounted build through host
+  # file permissions, so its uid must be able to read data/ -- `import` writes the
+  # manifest and the .sqlite builds mode 600, owned by the operator who ran it, and
+  # uid 999 is not that operator. Default is the image's own arknights user; export
+  # ARKNIGHTS_MCP_UID/GID (e.g. `ARKNIGHTS_MCP_UID=$(id -u) ARKNIGHTS_MCP_GID=$(id -g)`)
+  # to read a build owned by you. Read-only either way -- this grants no write path.
+  user: "${ARKNIGHTS_MCP_UID:-999}:${ARKNIGHTS_MCP_GID:-999}"
+  volumes:
+    # The promoted build, mounted READ-ONLY (§V2/§V16): the image ships no data,
+    # the operator supplies a build. config.toml is mounted read-only too.
+    - ../../data:/app/data:ro
+    - ../../config.toml:/app/config.toml:ro
 
 services:
   mcp:
-    build:
-      # Build context is the repo root so the image sees src/, pyproject, uv.lock;
-      # .dockerignore bars data/snapshots/secrets from the context (§V16).
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
+    <<: *mcp-app
     # Non-secret OIDC descriptors + any ARKNIGHTS_MCP_* overrides (§V12/§I.env).
+    # `required: false` is load-bearing for the stdio path, NOT a relaxed posture:
+    # compose validates every service in the file, so a hard-required env_file made
+    # `run mcp-stdio` fail on a missing OIDC file that stdio has no use for. Serving
+    # remote without OIDC still fails closed at startup (§V9/§V40) -- the gate lives
+    # in the app, never in whether this file happened to exist.
     env_file:
-      - arknights-mcp.env
-    volumes:
-      # The promoted build, mounted READ-ONLY (§V2/§V16): the image ships no data,
-      # the operator supplies a build. config.toml is mounted read-only too.
-      - ../../data:/app/data:ro
-      - ../../config.toml:/app/config.toml:ro
+      - path: arknights-mcp.env
+        required: false
+    # Same as the image CMD; stated explicitly so the transport this posture
+    # depends on is readable beside it.
+    command: ["serve", "--transport", "streamable-http"]
     # No `ports:` -- the app is never exposed to the host/internet directly. Only
     # nginx reaches it, over the internal compose network (§V9).
     expose:
       - "8000"
     restart: on-failure
+
+  mcp-stdio:
+    <<: *mcp-app
+    # Never started by `up`; run it explicitly with `compose run --rm -T`.
+    profiles: ["stdio"]
+    command: ["serve", "--transport", "stdio"]
+    # stdin must stay open: stdio reads the client's JSON-RPC frames from it and
+    # shuts down cleanly at EOF.
+    stdin_open: true
+    # No TTY. A TTY merges stderr into stdout and rewrites newlines, which
+    # corrupts the JSON-RPC framing stdout carries (§V13). `compose run` allocates
+    # one by default, so pass -T on the command line as well.
+    tty: false
+    # No `ports:`/`expose:` -- stdio has no listener at all. No `restart:` either:
+    # exiting at EOF ends a stdio session normally, it is not a failure to retry.
 
   nginx:
     image: nginx:stable

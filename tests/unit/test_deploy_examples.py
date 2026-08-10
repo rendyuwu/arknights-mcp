@@ -1,9 +1,10 @@
-"""T55: the systemd + nginx + docker deploy examples exist and encode the
-safe private-remote posture.
+"""T55/T215: the systemd + nginx + docker deploy examples exist and encode the
+safe posture for both transports.
 
-These are reference deployments for the Streamable HTTP transport (§I.api). The
-assertions pin the load-bearing guardrails so an example can't silently drift
-into an unsafe shape:
+These are reference deployments for the Streamable HTTP transport (§I.api) and,
+since T215, for local ``stdio`` out of the same image (§V14). The assertions pin
+the load-bearing guardrails so an example can't silently drift into an unsafe or
+non-working shape:
 
 * §V9/§V40 — loopback bind fronted by a TLS proxy, with ``behind_proxy = true``
   the way the app forces the HTTPS + OIDC gate on a 127.0.0.1 bind.
@@ -13,6 +14,9 @@ into an unsafe shape:
 * §V16 — the Docker image is code-only: no data/DB baked in, ``.dockerignore``
   bars data + snapshots, the build is a read-only mounted volume.
 * §V11 — pre-auth flood protection lives at the nginx proxy (``limit_req``).
+* §V13/§V14 (T215) — the transport is in ``CMD``, never welded into
+  ``ENTRYPOINT``, so one image serves both; and the stdio service keeps stdin open
+  with no TTY, because a TTY folds stderr into the stdout the JSON-RPC frames own.
 """
 
 from __future__ import annotations
@@ -54,6 +58,36 @@ ALL_EXAMPLES = (
 def _read(path: Path) -> str:
     assert path.is_file(), f"missing deploy example: {path.relative_to(REPO_ROOT)}"
     return path.read_text(encoding="utf-8")
+
+
+def _dockerfile_directive(name: str) -> str:
+    """The single ``ENTRYPOINT``/``CMD`` line, ignoring the comment prose above it."""
+    matches = [ln for ln in _read(DOCKERFILE).splitlines() if ln.startswith(f"{name} ")]
+    assert len(matches) == 1, f"expected exactly one {name} in the Dockerfile, got {matches}"
+    return matches[0]
+
+
+def _compose_service(name: str) -> str:
+    """One service's own block from the compose file.
+
+    PyYAML is not a dependency, so this slices by indentation rather than parsing:
+    services sit at two spaces, their keys deeper. Slicing matters because the
+    absence assertions below (no ``ports:``, no ``env_file``) are about *this*
+    service -- the file as a whole legitimately contains both. Comment lines are
+    dropped for the same reason: a comment explaining *why* a key is absent must
+    not read as the key being present.
+    """
+    lines = _read(COMPOSE).splitlines()
+    starts = [i for i, ln in enumerate(lines) if ln == f"  {name}:"]
+    assert len(starts) == 1, f"expected exactly one `{name}:` service, got {len(starts)}"
+    block: list[str] = []
+    for line in lines[starts[0] + 1 :]:
+        if line.strip() and not line.startswith("   "):
+            break
+        if line.lstrip().startswith("#"):
+            continue
+        block.append(line)
+    return "\n".join(block)
 
 
 def test_all_examples_present() -> None:
@@ -150,6 +184,97 @@ def test_compose_mounts_data_read_only_and_no_direct_app_port() -> None:
     assert "env_file" in text
     # nginx is the sole public ingress; the app service publishes no host port.
     assert "443:443" in text
+
+
+def test_dockerfile_keeps_the_transport_out_of_entrypoint() -> None:
+    # T215/§V14: one image, both transports. The transport must stay in CMD so
+    # `docker run ... serve --transport stdio` overrides it; welding it into
+    # ENTRYPOINT would make stdio need a second image.
+    entrypoint = _dockerfile_directive("ENTRYPOINT")
+    assert "--transport" not in entrypoint, f"transport welded into ENTRYPOINT: {entrypoint}"
+    assert "streamable-http" not in entrypoint and "stdio" not in entrypoint
+    # ENTRYPOINT still pins the config path, so an argument override can't quietly
+    # swap in a different config.
+    assert "/app/config.toml" in entrypoint
+    # ...and the remote transport stays the default, in CMD.
+    cmd = _dockerfile_directive("CMD")
+    assert "serve" in cmd and "--transport" in cmd and "streamable-http" in cmd
+
+
+def test_dockerfile_is_unbuffered_so_stdio_replies_are_not_held_in_a_pipe() -> None:
+    # §V13: stdout carries the JSON-RPC frames. A block-buffered stdout parks a
+    # reply until the buffer fills, which reads to the client as a hung server.
+    assert "PYTHONUNBUFFERED=1" in _read(DOCKERFILE)
+
+
+def test_compose_stdio_service_is_profile_gated_and_pipe_shaped() -> None:
+    stdio = _compose_service("mcp-stdio")
+    # Behind a profile: `up` must not start it. A stdio server owns a pipe and
+    # exits at EOF -- it is not a listener to bring up beside nginx.
+    assert "profiles:" in stdio
+    assert '"stdio"' in stdio.split("profiles:")[1].splitlines()[0]
+    # The other services must NOT be profile-gated -- `up` still brings the remote
+    # stack up, which is what this file was for before T215.
+    for name in ("mcp", "nginx"):
+        assert "profiles:" not in _compose_service(name)
+    # The transport override is the whole point of the service.
+    assert '"--transport", "stdio"' in stdio
+    # stdin open, no TTY (§V13: a TTY folds stderr into stdout and rewrites
+    # newlines, corrupting the framing).
+    assert "stdin_open: true" in stdio
+    assert "tty: false" in stdio
+
+
+def test_compose_stdio_service_has_no_listener_and_no_oidc_env() -> None:
+    stdio = _compose_service("mcp-stdio")
+    # No bind at all: a local pipe publishes nothing.
+    assert "ports:" not in stdio and "expose:" not in stdio
+    # No env_file/OIDC: there is no §V9 gate on a pipe, so requiring the operator's
+    # OIDC template here would block stdio on a file it has no use for.
+    assert "env_file" not in stdio
+    for var in OIDC_ENV_VARS:
+        assert var not in stdio
+    # Exiting at EOF is a normal end of session, not something to restart.
+    assert "restart:" not in stdio
+
+
+def test_compose_remote_env_file_is_optional_so_stdio_validates() -> None:
+    # Compose validates EVERY service in the file, so a hard-required env_file made
+    # `compose run mcp-stdio` fail on a missing OIDC file. Optional here is safe: an
+    # OIDC-less remote start still fails closed in the app (§V9/§V40).
+    mcp = _compose_service("mcp")
+    assert "env_file" in mcp
+    assert "required: false" in mcp
+
+
+def test_compose_shares_one_image_between_both_transports() -> None:
+    text = _read(COMPOSE)
+    # §V37: one definition of build+image+mounts, so a change can't land on one
+    # transport and miss the other.
+    assert "&mcp-app" in text
+    assert text.count("<<: *mcp-app") == 2
+    for name in ("mcp", "mcp-stdio"):
+        assert "<<: *mcp-app" in _compose_service(name)
+
+
+def test_compose_runs_non_root_with_an_operator_overridable_uid() -> None:
+    # The container reads the mounted build through host permissions; `import`
+    # writes data/current.json mode 600 owned by the operator, so a fixed uid 999
+    # yields PermissionError and every tool answers internal_error. Default stays
+    # the image's non-root user (§V1/§V2); the override is read-only either way.
+    text = _read(COMPOSE)
+    assert 'user: "${ARKNIGHTS_MCP_UID:-999}:${ARKNIGHTS_MCP_GID:-999}"' in text
+    assert "user: root" not in text and "user: 0" not in text
+
+
+def test_deploy_readme_documents_the_stdio_docker_path() -> None:
+    text = _read(DEPLOY_README)
+    assert "--transport stdio" in text
+    assert "mcp-stdio" in text
+    # The three ways to break it silently, each named.
+    assert "-i" in text
+    assert "-t" in text and "TTY" in text
+    assert "--user" in text and "PermissionError" in text
 
 
 def test_env_templates_are_placeholders_only() -> None:

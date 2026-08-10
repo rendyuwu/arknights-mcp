@@ -75,6 +75,44 @@ args = [
 cwd = "/abs/path/to/arknights-mcp"
 ```
 
+## Option C — run it in Docker (`stdio`)
+
+The deploy image (`deploy/docker/Dockerfile`) serves either transport: the
+transport lives in `CMD`, so appending `serve --transport stdio` overrides the
+streamable-http default. Build it once from the repo root with `docker build -f
+deploy/docker/Dockerfile -t arknights-mcp .`, then:
+
+```toml
+[mcp_servers.arknights]
+command = "docker"
+args = [
+  "run", "--rm", "-i", "--user", "1000:1000",
+  "-v", "/abs/path/to/arknights-mcp/data:/app/data:ro",
+  "-v", "/abs/path/to/arknights-mcp/config.toml:/app/config.toml:ro",
+  "arknights-mcp", "serve", "--transport", "stdio",
+]
+# No cwd needed: the image's ENTRYPOINT pins --config /app/config.toml, and the
+# mounts above decide what that path and ./data contain.
+startup_timeout_sec = 30
+```
+
+Four things there are load-bearing:
+
+- **`-i` is required.** Without it the container has no stdin, reads EOF at once,
+  and exits before Codex's `initialize` arrives.
+- **Never pass `-t`.** A TTY merges stderr into stdout and rewrites newlines,
+  corrupting the JSON-RPC framing stdout carries (§V13).
+- **`--user` with your own uid, not root.** The image runs non-root as uid 999
+  and reads the build through host file permissions, but `import` writes
+  `data/current.json` and the `.sqlite` builds mode `600` owned by whoever ran
+  it — so uid 999 gets `PermissionError` and every tool answers
+  `internal_error`. There is no shell to expand `$(id -u)` inside a TOML `args`
+  list, so put the number in (check it with `id -u`). The mounts stay `:ro`: read
+  access only, never a write path (§V2).
+- **The image is code-only (§V16).** It holds no database; the promoted build
+  arrives through the read-only `data` mount, so you still build it on the host
+  first. No OIDC or env file is involved — a stdio pipe has no bind, no bearer.
+
 ## Verify
 
 ```bash
@@ -99,6 +137,12 @@ then ask something a promoted build can answer, e.g. *"analyze stage 4-4"*.
 - **Stray text in the transport.** The server writes the MCP JSON-RPC stream to
   **stdout** and all operational notices to **stderr** (§V13); don't wrap the
   command in anything that prints to stdout.
+- **(Docker) every tool answers `internal_error`.** The container uid cannot read
+  the mounted build; the container's stderr (or `docker run ... arknights-mcp
+  status`) shows `PermissionError: [Errno 13] Permission denied:
+  'data/current.json'`. Fix the `--user` numbers — see
+  [Option C](#option-c--run-it-in-docker-stdio).
+- **(Docker) the container exits immediately.** `-i` is missing.
 
 ## See also
 

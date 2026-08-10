@@ -1,12 +1,15 @@
-# Deployment examples — private remote (Streamable HTTP)
+# Deployment examples
 
-Reference deployments for the read-only Arknights Intelligence MCP **private
-remote** transport (§I.api; §T55). Three interchangeable fronts for the same
-posture:
+Reference deployments for the read-only Arknights Intelligence MCP. The bulk of
+this directory covers the **private remote** transport (§I.api; §T55) — three
+interchangeable fronts for one posture:
 
 - [`systemd/`](systemd/) — a hardened service unit for a bare-metal / VM host.
 - [`nginx/`](nginx/) — the TLS-terminating reverse proxy.
 - [`docker/`](docker/) — a code-only image + a compose stack (app + nginx).
+
+The Docker front also serves the local **`stdio`** transport from the same image
+— see [Local `stdio` in the same image](#local-stdio-in-the-same-image) below.
 
 > These are **examples**, not turnkey production configs. Replace every
 > `mcp.example.com`, certificate path, and OIDC value with your own, and review
@@ -60,6 +63,44 @@ from the build context so they cannot leak into a layer. Build a database first
 with the admin CLI (`import` / `sync`) — it is a separate step (§V28); the server
 never fetches source data at query time (§V1).
 
+## Local `stdio` in the same image
+
+One shared core, two transports (§V14) — and one image for both (§T215). The
+Dockerfile keeps only the console script and `--config /app/config.toml` in
+`ENTRYPOINT`; the transport lives in `CMD`, so a `docker run` argument list
+overrides it:
+
+```bash
+docker build -f deploy/docker/Dockerfile -t arknights-mcp .
+
+docker run --rm -i --user "$(id -u):$(id -g)" \
+  -v "$PWD/data:/app/data:ro" \
+  -v "$PWD/config.toml:/app/config.toml:ro" \
+  arknights-mcp serve --transport stdio
+```
+
+Or as a compose service, which `up` never starts because it sits behind the
+`stdio` profile (a stdio server owns a pipe and exits at EOF — it is not a
+listener to bring up):
+
+```bash
+ARKNIGHTS_MCP_UID=$(id -u) ARKNIGHTS_MCP_GID=$(id -g) \
+  docker compose -f deploy/docker/docker-compose.yml run --rm -T mcp-stdio
+```
+
+Four points, each of which silently breaks the transport if missed:
+
+| Requirement | Why |
+|---|---|
+| `-i` (compose: `stdin_open: true`) | No stdin ⇒ EOF before `initialize` ⇒ the server exits and the client reports it died. |
+| **No** `-t` (compose: `-T`) | A TTY merges stderr into stdout and rewrites newlines, corrupting the JSON-RPC framing stdout carries (§V13). `compose run` allocates one by default. |
+| `--user` = the uid that owns `data/` | The image runs non-root as uid 999 (§V1/§V2) and reads the build through host permissions, but `import` writes `data/current.json` and the `.sqlite` builds mode `600` owned by the operator who ran it. Mismatch ⇒ `PermissionError` on `data/current.json` ⇒ every tool answers `internal_error`. Mounts stay `:ro`, so this is read access, never a write path. |
+| No env file, no OIDC | A local pipe has no bind, no bearer, and no §V9 gate. The compose `mcp` service's `env_file` is `required: false` for exactly this reason — otherwise a missing OIDC file would fail validation of the whole file and block `run mcp-stdio`. Remote serving without OIDC still fails closed at startup (§V9/§V40); the gate is in the app, not in whether a file exists. |
+
+Everything else is unchanged from the remote posture: the image stays code-only
+(§V16), the build arrives on a read-only mount (§V2), and `import` / `sync` remain
+host-side admin CLI steps (§V28).
+
 ## Pre-auth flood protection is the proxy's job (§V11)
 
 The app's per-principal rate/concurrency limits (§V11) only meter **validated**
@@ -104,7 +145,8 @@ sudo nginx -t && sudo systemctl reload nginx
 ## See also
 
 - [`../docs/clients/claude-code.md`](../docs/clients/claude-code.md),
-  [`../docs/clients/codex.md`](../docs/clients/codex.md) — the local `stdio` setup.
+  [`../docs/clients/codex.md`](../docs/clients/codex.md) — the local `stdio` setup,
+  including the ready-to-paste Docker client entries (Option C in each).
 - [`../docs/adr/0006-oauth-oidc-remote-auth.md`](../docs/adr/0006-oauth-oidc-remote-auth.md)
   — the fail-closed OAuth/OIDC decision.
 - SPEC §V9/§V40 (auth posture), §V10 (bearer validation), §V11 (limits),

@@ -66,6 +66,25 @@ def test_both_docs_carry_guardrail_notes() -> None:
         assert "stdout" in text and "stderr" in text
 
 
+def test_both_docs_offer_the_docker_stdio_option() -> None:
+    # T215: the deploy image serves stdio too, and a client entry that misses any
+    # of these fails in a way that looks like a broken server rather than a wrong
+    # flag. Each doc must carry the working invocation, not just mention Docker.
+    for name in ("claude-code.md", "codex.md"):
+        text = _norm(name)
+        assert "docker run" in text
+        assert "serve --transport stdio" in text
+        # The build is a read-only mount, never in the image (§V16/§V2).
+        assert ":/app/data:ro" in text
+        # -i keeps stdin open; without it the server sees EOF before `initialize`.
+        assert '"-i"' in text or " -i " in text
+        # A TTY would fold stderr into the stdout the JSON-RPC frames own (§V13).
+        assert "-t" in text and "tty" in text
+        # The uid must own the promoted build or every tool answers internal_error.
+        assert "--user" in text
+        assert "permissionerror" in text
+
+
 def test_readme_links_both_client_docs() -> None:
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "docs/clients/claude-code.md" in text
