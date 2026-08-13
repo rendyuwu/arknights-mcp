@@ -21,6 +21,7 @@ proxy's job (§I.api); the process speaks plain HTTP on loopback.
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
 import time
@@ -30,6 +31,7 @@ import anyio
 import uvicorn
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.types import TextContent
 
 from arknights_mcp.app import build_application
 from arknights_mcp.cli import main
@@ -118,6 +120,13 @@ async def _drive(url: str) -> None:
                 # §V5: a factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"
+                # §V119 (a)/(c): the remote wire carries the same content mirror as
+                # stdio -- the content-only client that hit B166 can be pointed at
+                # either transport, so a mirror gated to one of them fixes nothing.
+                assert result.content, "empty content renders as (No response) for a text client"
+                block = result.content[0]
+                assert isinstance(block, TextContent)
+                assert json.loads(block.text) == envelope
 
 
 def test_serve_streamable_http_initialize_list_call(tmp_path: Path) -> None:

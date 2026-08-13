@@ -30,7 +30,7 @@ from pydantic import ValidationError
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, ok, serialized_size
+from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, ok, wire_size
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.models.common import PAGE_SIZE_MAX, PageParams
@@ -291,4 +291,6 @@ def test_oversized_payload_fails_closed_and_drops_data() -> None:
     # the emitted response is itself under the cap.
     rendered = str(envelope.to_dict())
     assert blob not in rendered
-    assert serialized_size(envelope) <= MAX_RESPONSE_BYTES
+    # Measured on the frame both payload copies ride in (§V119 e), so "under the cap"
+    # means under it on the wire, not per copy.
+    assert wire_size(envelope) <= MAX_RESPONSE_BYTES

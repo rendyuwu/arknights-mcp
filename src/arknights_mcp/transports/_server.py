@@ -10,11 +10,14 @@ session), so a query cannot diverge across modes.
 The two handlers are thin adapters over the shared registry -- no query logic
 lives here:
 
-* ``tools/list`` -> the shared registry's tool specs (read-only, bounded schema);
+* ``tools/list`` -> the shared registry's tool specs (read-only, bounded schema, and
+  the shared envelope ``outputSchema`` every tool declares, §V119 d);
 * ``tools/call`` -> the spec's handler, whose typed
-  :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§V23) is returned as the
-  call's structured content. A ``not_found``/degraded outcome is a normal result
-  carried in the envelope, never a protocol error.
+  :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§V23) is returned in *both*
+  halves of the result: as ``structuredContent`` and as the compact JSON mirror in
+  ``content`` (§V119 a/b), because a content-only client reads ``content`` alone. A
+  ``not_found``/degraded outcome is a normal result carried in the envelope, never a
+  protocol error.
 """
 
 from __future__ import annotations
@@ -22,13 +25,13 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.lowlevel import Server
-from mcp.types import CallToolResult, Tool
+from mcp.types import TextContent, Tool
 from pydantic import ValidationError
 
 from arknights_mcp import __version__
 from arknights_mcp.app import ApplicationCore
 from arknights_mcp.instructions import server_instructions
-from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, invalid_input
+from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, invalid_input, mirror_text
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 
 #: MCP ``serverInfo.name`` reported on ``initialize`` (matches the console script).
@@ -88,18 +91,27 @@ def build_server(core: ApplicationCore) -> Server[object, object]:
         return core.registry.to_mcp_tools()
 
     @server.call_tool()  # type: ignore[untyped-decorator]
-    async def _call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
+    async def _call_tool(
+        name: str, arguments: dict[str, Any]
+    ) -> tuple[list[TextContent], dict[str, Any]]:
         # Single dispatch home (§V14/§V37): look up the shared spec, run its handler,
         # and map an unknown name (§V23 not_found) or a malformed input model
         # (§V23/§V71 invalid_input) to a typed envelope -- never a bare protocol error.
         envelope = dispatch_tool_call(core.registry, name, arguments)
-        # Carry the envelope as structured content only -- a single copy on the wire
-        # (§V14; smoke test). Returning the dict would make the SDK ALSO emit an
-        # indented ``json.dumps(indent=2)`` copy in ``content``, so a payload the
-        # envelope builder measures once under the §V22 cap would ship ~2x that on
-        # the wire (the B21 wire-vs-measured gap, reintroduced by the transport).
-        # One copy keeps the measured cap == the wire bytes; returning a built
-        # CallToolResult short-circuits the SDK's dict->(structured+text) split.
-        return CallToolResult(content=[], structuredContent=envelope.to_dict())
+        # §V119: the envelope rides BOTH halves of the result -- ``structuredContent``
+        # for a structured client, and the same payload as compact JSON text in
+        # ``content`` for a content-only one. A content-only client reads ``content``
+        # alone (LibreChat: ``result?.content ?? []``), so the earlier structured-only
+        # result rendered every call as "(No response)" while initialize/tools/list
+        # looked healthy (B166). ``mirror_text`` is compact, not the SDK's ``indent=2``
+        # fallback, and it is the same function the §V22 cap measures (``wire_size``),
+        # so the duplication is accounted for rather than deleted -- B21's
+        # wire-vs-measured gap closed on the measure side.
+        #
+        # Returned as an (unstructured, structured) tuple rather than a built
+        # CallToolResult on purpose: the SDK validates structuredContent against the
+        # tool's declared ``outputSchema`` (§V119 d) on this path, and short-circuits
+        # that check for a prebuilt result.
+        return [TextContent(type="text", text=mirror_text(envelope))], envelope.to_dict()
 
     return server

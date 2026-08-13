@@ -21,7 +21,7 @@ from typing import Any
 
 from mcp.types import Tool, ToolAnnotations
 
-from arknights_mcp.mcp.envelopes import ResponseEnvelope
+from arknights_mcp.mcp.envelopes import ResponseEnvelope, envelope_output_schema
 
 #: A tool handler: called with validated keyword params, returns an envelope.
 #: The concrete parameter set is per-tool; the shared contract is the return
@@ -67,6 +67,11 @@ class ToolSpec:
     ``input_schema`` is a JSON Schema object describing the tool's parameters
     (bounded Pydantic models generate it in §T30). ``read_only`` must stay
     ``True`` for v0.1 (§V2/§V28); it becomes the ``readOnlyHint`` annotation.
+
+    ``output_schema`` defaults to the shared envelope schema (§V119 d) -- every tool
+    returns the same :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`, so the
+    contract is declared once and published on every tool. Without it ``tools/list``
+    never tells a client that results carry structured output (B166).
     """
 
     name: str
@@ -75,6 +80,7 @@ class ToolSpec:
     handler: ToolHandler
     input_schema: dict[str, Any] = field(default_factory=lambda: dict(_EMPTY_INPUT_SCHEMA))
     read_only: bool = True
+    output_schema: dict[str, Any] = field(default_factory=envelope_output_schema)
 
     def annotations(self) -> ToolAnnotations:
         """MCP behaviour hints. v0.1 tools are read-only + non-destructive."""
@@ -93,6 +99,7 @@ class ToolSpec:
             title=self.title,
             description=self.description,
             inputSchema=self.input_schema,
+            outputSchema=self.output_schema,
             annotations=self.annotations(),
         )
 

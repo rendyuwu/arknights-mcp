@@ -41,6 +41,7 @@ Offline + deterministic: the build is promoted from the pinned fixture (no netwo
 from __future__ import annotations
 
 import copy
+import json
 import os
 import sys
 from pathlib import Path
@@ -50,6 +51,7 @@ import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+from mcp.types import TextContent
 from tests.support.remote_harness import EXPECTED_TOOLS
 from tests.support.remote_harness import remote_server as _remote_server
 
@@ -116,6 +118,15 @@ async def _drive(session: ClientSession) -> dict[str, Any]:
         result = await session.call_tool(name, args)
         assert result.isError is False, f"{name} surfaced a protocol error, not a domain result"
         assert result.structuredContent is not None, f"{name} returned no structuredContent"
+        # §V119 (a)/(c): the content mirror is asserted per wire rather than compared
+        # across wires, because ``get_data_status``'s call-time fields live inside the
+        # mirror text too. Each wire mirroring its own structured payload + the
+        # structured payloads matching (below) is the same guarantee, and it keeps the
+        # transport-shape claim from riding on a snapshot diff nobody reads.
+        assert result.content, f"{name} returned empty content (a text client sees nothing)"
+        block = result.content[0]
+        assert isinstance(block, TextContent), name
+        assert json.loads(block.text) == result.structuredContent, name
         calls[name] = result.structuredContent
 
     return {

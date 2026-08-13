@@ -20,10 +20,12 @@ Two more of the five §V11 remote controls (rate + concurrency live in
   ``GET`` (SDK ``handle_request``), which is meant to stay open.
 
 Response cap: NOT re-buffered here. Every tool result is measured against the
-200 KB cap at the §V22 envelope builder (worst-case ``ensure_ascii=True`` bytes,
-which upper-bound the wire encoding -- the B21 fix), so the bound already holds on
-the remote wire. Buffering the response body in this middleware to re-check it would
-break the SSE stream and duplicate a guarantee the one home already provides (§V37).
+200 KB cap at the §V22 envelope builder (worst-case ``ensure_ascii=True`` bytes over
+the whole result frame -- both payload copies a ``tools/call`` carries, §V119 e; the
+B21 fix, with B166's second copy accounted for rather than deleted), so the bound
+already holds on the remote wire. Buffering the response body in this middleware to
+re-check it would break the SSE stream and duplicate a guarantee the one home already
+provides (§V37).
 
 The timeout uses :func:`anyio.move_on_after`; if it fires *after* the inner app has
 already started its response (``http.response.start`` sent), we can no longer inject a

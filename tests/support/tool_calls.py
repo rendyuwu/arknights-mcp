@@ -20,13 +20,20 @@ nothing, and B135's own ``map.map_version`` lived behind ``include_map``.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 from pathlib import Path
 
+import anyio
+from mcp import types
+
+from arknights_mcp.app import build_application
+from arknights_mcp.config import AppConfig
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.sources.registry import load_source_registry
+from arknights_mcp.transports._server import build_server
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_TOML = REPO_ROOT / "config" / "data_sources.toml"
@@ -145,6 +152,38 @@ def assert_every_tool_is_covered(registry: ToolRegistry) -> None:
     assert registered - set(FIXTURE_CALLS) == set(), "a registered tool has no fixture call set"
     assert registered - set(BUILD_CALLS) == set(), "a registered tool has no build call set"
     assert set(FIXTURE_CALLS) - registered == set(), "a call set names no registered tool"
+
+
+def call_over_wire(
+    registry: ToolRegistry, name: str, params: dict[str, object]
+) -> types.CallToolResult:
+    """Drive one ``tools/call`` through the real transport handler over ``registry``.
+
+    The registry-level sweeps above see the envelope; this sees the RESULT a client
+    receives -- both payload copies, the SDK's ``outputSchema`` validation, and the
+    content-block scaffolding (§V119). B166 lived entirely in that gap: every sweep read
+    ``structuredContent`` and the half a content-only client reads was empty.
+    """
+    core = dataclasses.replace(build_application(AppConfig()), registry=registry)
+    handler = build_server(core).request_handlers[types.CallToolRequest]
+    request = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(name=name, arguments=params),
+    )
+    result = anyio.run(handler, request).root
+    assert isinstance(result, types.CallToolResult)
+    return result
+
+
+def wire_results(
+    registry: ToolRegistry, calls: dict[str, tuple[dict[str, object], ...]]
+) -> list[tuple[str, types.CallToolResult]]:
+    """Every ``(tool_name, tools/call result)`` the call sets produce (§V119 f)."""
+    return [
+        (name, call_over_wire(registry, name, params))
+        for name in registry.names()
+        for params in calls[name]
+    ]
 
 
 def serialized_envelopes(

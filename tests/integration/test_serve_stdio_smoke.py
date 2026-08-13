@@ -22,6 +22,7 @@ via the real ``import`` path, so no network is touched (§V1).
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -29,6 +30,7 @@ from pathlib import Path
 import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.types import TextContent
 
 from arknights_mcp.cli import main
 from arknights_mcp.instructions import SERVER_INSTRUCTIONS
@@ -117,6 +119,15 @@ async def _drive(config: Path, cwd: Path) -> None:
                 # §V5: a factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"
+                # §V119 (a)/B166: what a CONTENT-ONLY client reads off this same real
+                # pipe. The pre-T216 server answered every call with ``content: []``,
+                # and this smoke passed anyway because it only ever read the structured
+                # half -- so the mirror is asserted here, on the wire, not just in the
+                # in-process contract test.
+                assert result.content, "empty content renders as (No response) for a text client"
+                block = result.content[0]
+                assert isinstance(block, TextContent)
+                assert json.loads(block.text) == envelope
 
 
 def test_serve_stdio_initialize_list_call(tmp_path: Path) -> None:

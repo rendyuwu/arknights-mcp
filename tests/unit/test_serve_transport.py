@@ -10,6 +10,7 @@ Streamable HTTP handshake by ``tests/integration/test_serve_streamable_http_smok
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import anyio
@@ -17,7 +18,8 @@ from mcp import types
 
 from arknights_mcp.app import build_application
 from arknights_mcp.config import AppConfig
-from arknights_mcp.mcp.envelopes import STATUS_VALUES
+from arknights_mcp.mcp.envelopes import STATUS_VALUES, wire_size
+from arknights_mcp.transports._server import dispatch_tool_call
 from arknights_mcp.transports.stdio import build_server
 
 
@@ -70,15 +72,34 @@ def test_build_server_exposes_shared_registry() -> None:
     assert server.instructions.startswith("Arknights Intelligence MCP")
 
 
-def test_result_carries_a_single_wire_copy() -> None:
-    # §V22 (B21 wire-vs-measured gap): the transport must not let the SDK emit the
-    # envelope twice (structuredContent + an indented text mirror), which would
-    # ship a payload the cap measured *once* at ~2x on the wire. The result carries
-    # the envelope only in structuredContent; ``content`` holds no duplicate copy.
+def test_result_carries_the_envelope_in_both_wire_halves() -> None:
+    # §V119 (a)/B166: a content-only client reads ``content`` and never looks at
+    # ``structuredContent``, so an empty ``content`` renders every call as
+    # "(No response)". The result carries the same envelope twice: structured, and as
+    # the compact JSON mirror in ``content``.
     result = _call_over_wire("get_enemy", {"server": "en", "game_id": "enemy_1007_slime"})
-    assert result.content == []
     assert result.structuredContent is not None
     assert result.structuredContent["schema_version"] == "0.3"
+    assert len(result.content) == 1
+    block = result.content[0]
+    assert isinstance(block, types.TextContent)
+    assert json.loads(block.text) == result.structuredContent
+    # §V119 (b): compact, not the SDK's indent=2 fallback (B21's ~15% of dead bytes).
+    assert "\n" not in block.text
+
+
+def test_cap_measure_upper_bounds_the_emitted_frame() -> None:
+    # §V22/§V119 (e): the number the cap is enforced on must not be smaller than the
+    # bytes the transport actually emits -- that gap (one measured copy, two shipped)
+    # is B21. Measure the real serialized result against ``wire_size`` of the same
+    # envelope.
+    core = build_application(AppConfig())
+    envelope = dispatch_tool_call(
+        core.registry, "get_enemy", {"server": "en", "game_id": "enemy_1007_slime"}
+    )
+    result = _call_over_wire("get_enemy", {"server": "en", "game_id": "enemy_1007_slime"})
+    emitted = len(result.model_dump_json(exclude_none=True).encode("utf-8"))
+    assert emitted <= wire_size(envelope)
 
 
 def test_unknown_tool_is_a_typed_envelope() -> None:

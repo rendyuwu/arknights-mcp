@@ -57,13 +57,23 @@ MAX_MAP_ROUTES = 1_000
 #: §V22 byte budget for one rendered map image, measured on the image's *wire*
 #: size -- the JSON-escaped bytes it contributes to the envelope (see
 #: :func:`_wire_bytes`), the same ``ensure_ascii`` measure the envelope cap uses
-#: (``envelopes.serialized_size``). The SVG is emitted as a JSON string value; its
+#: (``envelopes.wire_size``). The SVG is emitted as a JSON string value; its
 #: attributes are single-quoted (§V86 economy) so JSON escaping adds little, but the
 #: wire measure stays the budget's truth either way (fail-closed: it can only
 #: over-count, never under-count, a markup change). Set below the envelope cap so an
 #: over-budget image is dropped *here* (with a limitation, the rest of the response
 #: intact) rather than tripping the envelope cap and withholding the whole payload.
 #: Single §V37 home.
+#:
+#: T216 note (§V119 e): the envelope cap now counts BOTH payload copies a result
+#: carries, so the per-payload half of the 200 KB cap is ~97 KB and this budget alone
+#: no longer guarantees "image dropped instead of payload withheld". It is left where
+#: it is on purpose -- the largest image the promoted build renders is 90,365 wire
+#: bytes (8 of 4,967 exceed 80 KB), so lowering the budget would drop images that ship
+#: fine today, and the tightest real call is *not* image-heavy: ``cn/act1football_01``
+#: at max detail measures 199,324 of 200,000 with a 28,494-byte image (its bulk is
+#: spawns + routes). Shedding the heaviest opt-in section instead of the whole payload
+#: is the fix for that margin, tracked as its own task rather than smuggled in here.
 MAX_MAP_IMAGE_BYTES = 128_000
 
 #: SVG media type for the derived document (§T122). Inline ``image/svg+xml`` -- an
@@ -281,10 +291,12 @@ def _wire_bytes(svg: str) -> int:
     on-the-wire size is the JSON-escaped, ``ensure_ascii`` byte length. The markup's
     attributes are single-quoted (§V86 economy) so escaping now adds little, but
     measuring the escaped length (rather than ``svg.encode("utf-8")``) remains the
-    same measure ``envelopes.serialized_size`` applies to the whole envelope -- the
-    budget stays a true fraction of the 200 KB cap regardless of future markup
-    changes. ``json.dumps`` wraps the value in two extra quote bytes -- a
-    negligible, fail-closed over-count.
+    same measure ``envelopes.wire_size`` applies to the whole result -- the budget
+    stays a true fraction of the 200 KB cap regardless of future markup changes.
+    ``json.dumps`` wraps the value in two extra quote bytes -- a negligible,
+    fail-closed over-count. The image contributes these bytes *twice* to the result
+    frame (§V119: structured copy + content mirror), which the envelope cap accounts
+    for; this per-image budget is measured on one copy, as its constant documents.
     """
     return len(json.dumps(svg).encode("utf-8"))
 

@@ -11,10 +11,16 @@ Three invariants live here:
 * **§V21** -- every envelope stamps a stable :data:`SCHEMA_VERSION`. Required
   fields stay backward-compatible within a schema line (now v0.2); a breaking
   change bumps the constant and needs an ADR.
-* **§V22** -- a default tool response is capped at :data:`MAX_RESPONSE_BYTES`.
-  The builder measures the serialized envelope and, when a payload would exceed
-  the cap, fails closed to a bounded ``partial`` envelope (data dropped, a cap
+* **§V22/§V119 (e)** -- a default tool response is capped at
+  :data:`MAX_RESPONSE_BYTES`. The builder measures the *whole result frame* both
+  copies of the payload ride in (:func:`wire_size`) and, when it would exceed the
+  cap, fails closed to a bounded ``partial`` envelope (data dropped, a cap
   limitation added) rather than emitting an oversized response.
+* **§V119** -- a ``tools/call`` result carries the envelope twice: as
+  ``structuredContent`` and as the compact JSON mirror in ``content``
+  (:func:`mirror_text`), because a content-only client reads ``content`` alone.
+  The mirror text and the cap measure come from this one home, so the measured
+  bytes are the emitted bytes (B21's gap, B166's blackout).
 * **§V67/§V103** -- the payload rules, applied once here for every tool because
   four per-surface rollouts did not close them (B135): no ``null`` reaches the
   wire, and a masked source name/description carries its disclosure (B141). See
@@ -60,12 +66,24 @@ from arknights_mcp.mcp.payload_hygiene import clean_payload
 #:     (§V99/B148)
 SCHEMA_VERSION = "0.3"
 
-#: §V22 default response cap. The serialized envelope (as emitted by
-#: :meth:`ResponseEnvelope.to_dict` -> JSON) must stay under this size, measured
-#: at its worst-case ASCII-escaped byte length (see :func:`serialized_size`) so
-#: the cap holds on the wire regardless of the transport's encoding; large
-#: map/spawn payloads are opt-in via tool include flags + pagination (§T34).
+#: §V22 default response cap. The whole ``tools/call`` result frame -- both copies
+#: of the envelope (§V119: ``structuredContent`` + the ``content`` mirror) -- must
+#: stay under this size, measured at its worst-case ASCII-escaped byte length (see
+#: :func:`wire_size`) so the cap holds on the wire regardless of the transport's
+#: encoding; large map/spawn payloads are opt-in via tool include flags +
+#: pagination (§T34).
 MAX_RESPONSE_BYTES = 200_000
+
+#: §V119 (b): the mirror is compact JSON. The SDK's own fallback copy uses
+#: ``indent=2`` (~1.15x these bytes for no client benefit), which is what the
+#: single-copy transport (B21) was avoiding when it emptied ``content`` altogether.
+_COMPACT_SEPARATORS = (",", ":")
+
+#: §V119 (e): allowance for the JSON-RPC framing the result rides in
+#: (``{"jsonrpc":"2.0","id":<n>,"result":<frame>}`` = 38 bytes + the id), so the
+#: measure stays an upper bound on the message a client receives rather than on the
+#: result object alone. Fail-closed per §V22: over-measure, never under-measure.
+_JSONRPC_FRAMING_BYTES = 64
 
 #: §V23 typed status vocabulary. Every tool result reports exactly one of these.
 ToolStatus = Literal[
@@ -174,17 +192,101 @@ class ResponseEnvelope:
 
 
 def serialized_size(envelope: ResponseEnvelope) -> int:
-    """Worst-case wire byte size of ``envelope`` for the §V22 cap.
+    """Worst-case byte size of *one* serialized copy of ``envelope``.
 
     Measured with ``ensure_ascii=True`` (JSON's default): a CJK/astral character
     serializes to its ``\\uXXXX`` escape, whose byte length is >= its raw UTF-8
     encoding (a 3-byte CJK char -> 6 ASCII bytes). So this is an upper bound on the
-    bytes any JSON serializer can emit for the envelope -- the §V22 cap then holds
-    on the wire whether the transport (T51) emits compact UTF-8 or ASCII-escaped
-    JSON. Fail-closed: a CN-heavy payload is measured at its largest, never passing
-    a cap it would exceed once escaped.
+    bytes any JSON serializer can emit for the envelope, whether the transport (T51)
+    emits compact UTF-8 or ASCII-escaped JSON. Fail-closed: a CN-heavy payload is
+    measured at its largest.
+
+    This is *payload* accounting (what one copy of the answer costs). The §V22 cap
+    is enforced on :func:`wire_size`, which counts the copies a result actually
+    ships (§V119 e) -- measuring one copy while shipping two is the B21 defect.
     """
     return len(json.dumps(envelope.to_dict()).encode("utf-8"))
+
+
+def mirror_text(envelope: ResponseEnvelope) -> str:
+    """The ``content`` mirror of ``envelope``: compact JSON, one home (§V119 b).
+
+    MCP rev 2025-06-18 says a tool returning structured content SHOULD also return
+    the serialized JSON in a text block, and a *content-only* client (LibreChat reads
+    ``result?.content ?? []`` and never looks at ``structuredContent``) has nothing
+    else to read -- an empty ``content`` renders as "(No response)" for every call
+    while ``initialize``/``tools/list`` look healthy (B166).
+
+    Compact separators, not the SDK's ``indent=2`` fallback: the indentation is ~15%
+    more wire bytes no client reads. Emitter and cap measure both come here, so the
+    bytes counted are the bytes sent.
+    """
+    return json.dumps(envelope.to_dict(), separators=_COMPACT_SEPARATORS, ensure_ascii=False)
+
+
+def wire_size(envelope: ResponseEnvelope) -> int:
+    """Worst-case byte size of the whole ``tools/call`` result frame (§V22/§V119 e).
+
+    Counts what a client actually receives: the ``structuredContent`` copy, the
+    JSON-escaped ``content`` mirror (a JSON string, so every ``"`` in the payload
+    costs a second byte), the content-block scaffolding, and the JSON-RPC framing
+    allowance. Measured ``ensure_ascii=True`` for the same fail-closed reason as
+    :func:`serialized_size`.
+
+    B21 was a *measure* that counted one copy of a payload the SDK shipped twice; the
+    fix then was to stop shipping the second copy, which is what blacked out every
+    content-only client (B166). Both copies are contractual now, so the cap counts
+    both -- the accounting stays honest without deleting half the wire.
+    """
+    body = envelope.to_dict()
+    frame: dict[str, object] = {
+        "content": [{"type": "text", "text": mirror_text(envelope)}],
+        "structuredContent": body,
+        "isError": False,
+    }
+    return len(json.dumps(frame).encode("utf-8")) + _JSONRPC_FRAMING_BYTES
+
+
+def envelope_output_schema() -> dict[str, object]:
+    """JSON Schema for the envelope every tool returns (§V119 d).
+
+    Declared as each tool's ``outputSchema`` so ``tools/list`` states that results
+    carry structured output -- without it a client has no contract for the structured
+    half and (rightly) reads ``content`` only. One home, because every tool returns
+    the same envelope; the per-tool ``data`` payload is deliberately left open
+    (``type: object``): the SDK validates this schema on every call, so declaring an
+    unproven payload shape would convert a working result into a protocol error.
+
+    A fresh dict per call -- the caller (``ToolSpec``) owns the copy it publishes.
+    """
+    return {
+        "type": "object",
+        "title": "ArknightsToolResponse",
+        "description": (
+            "Typed response envelope: schema version, status, facts, region provenance, "
+            "limitations."
+        ),
+        "properties": {
+            "schema_version": {"type": "string"},
+            "status": {"type": "string", "enum": sorted(STATUS_VALUES)},
+            "data": {"type": "object"},
+            "provenance": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "server": {"type": "string"},
+                        "snapshot_id": {"type": "string"},
+                        "imported_at": {"type": "string"},
+                    },
+                    "required": ["server", "snapshot_id", "imported_at"],
+                },
+            },
+            "limitations": {"type": "array", "items": {"type": "string"}},
+            "analyzer_version": {"type": "string"},
+        },
+        "required": ["schema_version", "status", "data", "provenance", "limitations"],
+    }
 
 
 def _validate_status(status: str) -> None:
@@ -207,8 +309,11 @@ def _enforce_cap(envelope: ResponseEnvelope) -> ResponseEnvelope:
     Rather than emit an oversized response, drop the data payload (provenance +
     limitations stay -- they are small + carry the region attribution) and add a
     cap limitation so the client knows to narrow the request.
+
+    Measured on :func:`wire_size` -- the frame with both payload copies (§V119 e), so
+    the budget an answer is checked against is the budget it spends.
     """
-    if serialized_size(envelope) <= MAX_RESPONSE_BYTES:
+    if wire_size(envelope) <= MAX_RESPONSE_BYTES:
         return envelope
     return ResponseEnvelope(
         status="partial",

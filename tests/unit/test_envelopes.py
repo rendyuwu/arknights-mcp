@@ -14,12 +14,15 @@ from arknights_mcp.mcp.envelopes import (
     STATUS_VALUES,
     EnvelopeError,
     Provenance,
+    ResponseEnvelope,
     build_envelope,
     error,
     internal_error,
     invalid_input,
+    mirror_text,
     ok,
     serialized_size,
+    wire_size,
 )
 
 
@@ -64,7 +67,7 @@ def test_field_order_matches_interface_contract() -> None:
 def test_under_cap_response_passes_through() -> None:
     env = ok({"note": "small"}, provenance=[_prov()])
     assert env.status == "ok"
-    assert serialized_size(env) <= MAX_RESPONSE_BYTES
+    assert wire_size(env) <= MAX_RESPONSE_BYTES
 
 
 def test_oversized_response_fails_closed_to_partial() -> None:
@@ -73,10 +76,40 @@ def test_oversized_response_fails_closed_to_partial() -> None:
 
     assert env.status == "partial"
     assert env.data == {}  # payload dropped, not emitted oversized
-    assert serialized_size(env) <= MAX_RESPONSE_BYTES  # bounded response
+    assert wire_size(env) <= MAX_RESPONSE_BYTES  # bounded response, both copies counted
     assert any("cap" in limit for limit in env.limitations)
     # Provenance (small, region attribution) is retained through the downgrade.
     assert env.provenance and env.provenance[0].server == "en"
+
+
+# --- §V119: the content mirror + the cap accounting that pays for it -------------
+
+
+def test_mirror_text_round_trips_to_the_envelope_and_stays_compact() -> None:
+    # §V119 (a)/(b): the mirror a content-only client reads is the SAME payload as the
+    # structured half, serialized compactly -- not the SDK's indent=2 fallback.
+    env = ok({"note": "small", "n": 1}, provenance=[_prov()])
+    text = mirror_text(env)
+    assert json.loads(text) == env.to_dict()
+    assert "\n" not in text
+    assert ", " not in text and ": " not in text
+
+
+def test_cap_counts_both_wire_copies() -> None:
+    # §V119 (e)/B166: a payload that fits under the cap as ONE serialized copy but not
+    # as the frame that ships two must fail closed. This is the B21 accounting gap
+    # restated: measuring one copy of a two-copy wire under-measures, which §V22
+    # forbids. The pre-fix measure (serialized_size) would have passed this payload.
+    env = ok({"blob": "x" * 110_000}, provenance=[_prov()])
+    assert env.status == "partial"
+    assert env.data == {}
+    # The proof that the frame is what bit, not the payload: one copy of the same
+    # payload (built raw, bypassing the builder's cap) fits with room to spare.
+    raw = ResponseEnvelope(status="ok", data={"blob": "x" * 110_000}, provenance=(_prov(),))
+    assert serialized_size(raw) <= MAX_RESPONSE_BYTES
+    assert wire_size(raw) > MAX_RESPONSE_BYTES
+    # ... and the frame ratio is the duplication, not a surprise multiplier.
+    assert 2.0 <= wire_size(raw) / serialized_size(raw) <= 2.2
 
 
 # --- §V23: typed status vocabulary + safe error bodies ---

@@ -21,7 +21,7 @@ import pytest
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
-from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, serialized_size
+from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, wire_size
 from arknights_mcp.mcp.tools.stage import build_get_stage_spec
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import GetStageInput
@@ -527,8 +527,8 @@ def test_include_map_image_renders_main_story_stage(conn: sqlite3.Connection) ->
     low = svg.lower()
     for marker in _ART_MARKERS:
         assert marker not in low
-    # §V22: the whole envelope stays well under the response cap.
-    assert serialized_size(env) <= MAX_RESPONSE_BYTES
+    # §V22/§V119 (e): the whole result frame (both payload copies) stays under the cap.
+    assert wire_size(env) <= MAX_RESPONSE_BYTES
 
 
 def test_map_image_is_independent_of_include_map(conn: sqlite3.Connection) -> None:
