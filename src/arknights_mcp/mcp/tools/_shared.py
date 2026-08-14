@@ -24,7 +24,11 @@ from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation
 from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.db.connection import DatabaseUnavailable
 from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
-from arknights_mcp.services.image_refs import IMAGE_REFS_BASE_URL, IMAGE_REFS_LEGEND
+from arknights_mcp.services.image_refs import (
+    IMAGE_REFS_BASE_URL,
+    IMAGE_REFS_LEGEND,
+    SOURCE_ID,
+)
 from arknights_mcp.services.operators import cost_item_id
 from arknights_mcp.services.stages import SectionPage
 
@@ -127,27 +131,63 @@ IMAGE_REFS_PATH_NOTE = (
 )
 
 
+def image_ref_hoisted_fields() -> dict[str, object]:
+    """Every ``data``-level field the image-ref family hoists out of its rows (§V66).
+
+    The §V37 single home for the hoisted SET, not just for each member. Two clauses of
+    §V66 put keys here and a third takes them away again, so the membership has to be one
+    list read by all three rather than a literal repeated at each site:
+
+    * ``image_refs_base_url`` -- the VARYING half, hoisted by §T183/ADR 0014 so each ref
+      carries only its relative ``path``;
+    * ``image_refs_source_id`` -- the INVARIANT half, hoisted by §T219/§V66 (4)/ADR 0019.
+      It was a byte-identical 23-char constant on every ref (576 copies on one
+      ``get_banners`` page, 21.4% of that result frame), and removing it per-row is what
+      lets that page keep its references under the §V22 cap at all (B168 v);
+    * ``image_refs_legend`` -- the §V104/B145 decoder for the emitted ``category`` /
+      ``variant`` labels, which rides WITH the values it decodes rather than bloating a
+      tool description.
+
+    The set is what :func:`~arknights_mcp.mcp.tools.banners._shed_refs` retires when the
+    §V120 shed drops the refs (§V66 (4) (ii)): a hoisted key outliving the rows it
+    describes leaves an attribution, a base URL and a legend for references the response
+    no longer contains. Deriving the shed set from this function is why adding a fourth
+    hoisted key cannot leave the coupler one key short.
+
+    Fresh dicts per call -- the legend is nested, and a shared mutable would let one
+    response's payload hygiene reach another's.
+    """
+    return {
+        "image_refs_base_url": IMAGE_REFS_BASE_URL,
+        "image_refs_source_id": SOURCE_ID,
+        "image_refs_legend": {axis: dict(labels) for axis, labels in IMAGE_REFS_LEGEND.items()},
+    }
+
+
+#: The hoisted keys, derived from the one home above rather than restated (§V37). The shed
+#: coupler reads this; a key added to :func:`image_ref_hoisted_fields` joins it for free.
+IMAGE_REFS_HOISTED_KEYS: tuple[str, ...] = tuple(image_ref_hoisted_fields())
+
+
 def attach_image_ref_disclosures(
     data: dict[str, object], limitations: tuple[str, ...], *, emits_refs: bool
 ) -> tuple[str, ...]:
-    """Attach the two coupled image-ref envelope fields atomically (§T183/§V66, §V72).
+    """Attach the coupled image-ref envelope fields atomically (§T183/§V66, §V72).
 
     Every ref-emitting tool (``get_operator`` / ``get_enemy`` / ``get_banners``) must,
-    exactly when the response actually emits refs, hoist the shared mirror base onto
-    ``data`` as ``image_refs_base_url`` (once -- each ref carries only its relative
-    path), hoist the ``image_refs_legend`` decoding the emitted ``category`` /
-    ``variant`` labels (§V104/B145 -- the legend rides WITH the values it decodes
-    instead of bloating a tool description), AND append
-    :data:`IMAGE_REFS_LIMITATION`. The three are one predicate (§V63: "0 refs emitted
-    -> base key absent", §V67), so they live in one §V37 home: a surface can never ship
-    un-joinable relative paths (base forgotten), undecodable labels (legend forgotten),
-    or an undisclosed derived link (limitation forgotten). Mutates ``data`` in place and
-    returns the extended limitations tuple; a no-op when ``emits_refs`` is False.
+    exactly when the response actually emits refs, hoist :func:`image_ref_hoisted_fields`
+    onto ``data`` (the shared mirror base, the registry attribution, and the legend
+    decoding the emitted ``category`` / ``variant`` labels -- each once, never per ref)
+    AND append :data:`IMAGE_REFS_LIMITATION`. Those are one predicate (§V63: "0 refs
+    emitted -> base key absent", §V67), so they live in one §V37 home: a surface can never
+    ship un-joinable relative paths (base forgotten), unattributed references (source
+    forgotten), undecodable labels (legend forgotten), or an undisclosed derived link
+    (limitation forgotten). Mutates ``data`` in place and returns the extended limitations
+    tuple; a no-op when ``emits_refs`` is False.
     """
     if not emits_refs:
         return limitations
-    data["image_refs_base_url"] = IMAGE_REFS_BASE_URL
-    data["image_refs_legend"] = {axis: dict(labels) for axis, labels in IMAGE_REFS_LEGEND.items()}
+    data.update(image_ref_hoisted_fields())
     return (*limitations, IMAGE_REFS_LIMITATION)
 
 

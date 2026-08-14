@@ -24,7 +24,8 @@ One test group per cited invariant:
 
 * **§V63** -- an enabled image-ref source makes ``get_operator`` carry the exact DERIVED
   portrait ``_1``/``_2`` + avatar base/``_2`` + skin ``_1b``/``_2b`` URLs and ``get_enemy``
-  the enemy base URL, each stamped with the ``arknights_game_resource`` ``source_id``;
+  the enemy base URL, attributed to ``arknights_game_resource`` by the response-level
+  ``image_refs_source_id`` the §T219 hoist put there (§V66 (4) -- never per ref);
   the DEFAULT (shipped, source-enabled §T124) posture emits refs, and the §V20 kill switch
   (``source disable``) suppresses them; and the ``#``/``+`` percent-encode holds through the
   real tool path on a skin-suffix id.
@@ -182,21 +183,23 @@ def _seed_operator_db(tmp_path: Path, game_id: str) -> Path:
     return path
 
 
-# --- §V63: enabled source -> correct DERIVED urls + source_id -----------------
+# --- §V63: enabled source -> correct DERIVED urls + hoisted attribution --------
 
 
 def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) -> None:
     # §V63: through the shared registry + real gate, get_operator carries the exact
     # verified shape (portrait _1/_2, avatar base/_2) plus, on this skin-domain build,
     # the NAMED skin gallery -- one skin/<portraitId>b ref per imported row (§T182/§V88),
-    # each attributed.
+    # attributed once at the response level.
     tools = _tools(conn, _registry(image_source_enabled=True))
     data = tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]
     # §T183/§V66 (ADR 0014): the shared base is hoisted once; refs carry relative paths.
+    # §T219/§V66 (4) (ADR 0019): so is the §V27 attribution -- once, never per ref.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     op = data["operator"]  # type: ignore[index]
     refs = op["image_refs"]  # type: ignore[index]
-    assert all(r["source_id"] == SOURCE_ID for r in refs)
+    assert all("source_id" not in r for r in refs)
     by_cat: dict[str, list[str]] = {}
     for r in refs:
         by_cat.setdefault(r["category"], []).append(r["path"])
@@ -224,18 +227,18 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
 
 
 def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> None:
-    # §V63: get_enemy carries the single derived enemy-sprite ref + source_id attribution;
-    # the shared base is hoisted once at the data level (§T183/§V66).
+    # §V63: get_enemy carries the single derived enemy-sprite ref; the shared base AND the
+    # §V27 attribution are both hoisted once at the data level (§T183/§V66, §T219/§V66 (4)).
     tools = _tools(conn, _registry(image_source_enabled=True))
     data = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     enemy = data["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
         {
             "category": "enemy",
             "path": f"enemy/{_SLIME}.png",
             "variant": "base",
-            "source_id": SOURCE_ID,
         }
     ]
 

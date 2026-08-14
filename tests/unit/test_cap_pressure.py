@@ -35,11 +35,13 @@ from arknights_mcp.mcp.cap_pressure import (
     CapPressureError,
     EnumKnob,
     InputKind,
+    ShedStatus,
     ToolFramePressure,
     classify_inputs,
     enum_filter_variants,
     widest_knobs,
 )
+from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.sources.registry import load_source_registry
@@ -70,11 +72,39 @@ def _blank(tool: str = "synthetic") -> ToolFramePressure:
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=1,
         peak_at="-",
         counted="-",
     )
+
+
+def test_the_shed_status_agrees_with_the_declared_peak() -> None:
+    # §T219/§V120 (f), offline: the contract sweep proves `shed` against a MEASURED peak, but
+    # it costs 75 seconds and needs a promoted build. The declaration also has to be
+    # self-consistent, and that is free: LIVE means "exceeds the cap", so its own pinned peak
+    # must be over; DEAD_TODAY and NONE both mean "fits", so theirs must be under. A status
+    # flipped by hand fails here first, before anyone waits for the sweep.
+    for row in FRAME_PRESSURE:
+        over = row.peak_frame_bytes > MAX_RESPONSE_BYTES
+        assert over == (row.shed is ShedStatus.LIVE), (
+            f"{row.tool} declares {row.shed.value} with a pinned peak of "
+            f"{row.peak_frame_bytes} against a {MAX_RESPONSE_BYTES} cap"
+        )
+
+
+def test_exactly_one_tool_keeps_a_plan_no_build_reaches() -> None:
+    # DEAD_TODAY is a real exemption from "the shedder set is the over-cap set", so it stays
+    # enumerated rather than counted: a second tool acquiring one is a decision, not a
+    # detail, and §V117 wants each such arm declared with the count that makes its status
+    # true. get_banners is the one -- 86.5% of cap since §T219, plan kept because page_size
+    # tops out at 100 while featured_ops per banner is the source's to decide.
+    parked = {row.tool for row in FRAME_PRESSURE if row.shed is ShedStatus.DEAD_TODAY}
+    assert parked == {"get_banners"}
+    assert {row.tool for row in FRAME_PRESSURE if row.declares_plan} == {
+        "get_banners",
+        "get_stage",
+    }
 
 
 def test_only_a_wall_clock_payload_declares_a_volatile_field() -> None:
@@ -280,7 +310,7 @@ def test_a_declared_widest_member_outside_the_domain_is_still_applied() -> None:
         selectors=(),
         filters=(),
         enum_knobs=(EnumKnob(name="depth", widest="b", domain=("a", "b")),),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=1,
         peak_at="-",
         counted="-",

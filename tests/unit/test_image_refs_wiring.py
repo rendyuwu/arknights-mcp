@@ -34,6 +34,7 @@ from arknights_mcp.importers.banners import ParsedBanner, insert_banners
 from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_HOISTED_KEYS,
     IMAGE_REFS_LIMITATION,
     SKIN_ALT_FORM_NOTE,
     SKIN_GALLERY_PARTIAL_LIMITATION,
@@ -154,9 +155,12 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
     # §T183/§V66: the shared base is hoisted ONCE at the data level; each ref carries a
     # RELATIVE path the client joins onto it.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    # §T219/§V66 (4): the registry attribution is hoisted the same way, ONCE beside the
+    # base, and no ref carries its own copy.
+    assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     op = data["operator"]  # type: ignore[index]
     refs = op["image_refs"]  # type: ignore[index]
-    assert all(r["source_id"] == SOURCE_ID for r in refs)
+    assert all("source_id" not in r for r in refs)
     by_cat: dict[str, list[str]] = {}
     for r in refs:
         by_cat.setdefault(r["category"], []).append(r["path"])
@@ -213,13 +217,17 @@ def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> Non
     handler = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler
     data = handler(server="en", game_id=_SLIME).to_dict()["data"]
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    # §T219/§V67: this tool emits exactly ONE ref, so the hoist COSTS it 22 bytes -- a
+    # response-level key is wider than the single per-ref constant it replaces. Taken
+    # anyway, and pinned here: a hoisted key living per-ROW on one tool and per-RESPONSE
+    # on another would make one key mean two things (B168 iv).
+    assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     enemy = data["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
         {
             "category": "enemy",
             "path": f"enemy/{_SLIME}.png",
             "variant": "base",
-            "source_id": SOURCE_ID,
         }
     ]
 
@@ -233,36 +241,20 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
     # §T183/§V66: the base is hoisted ONCE at the data level for the WHOLE page -- never
     # repeated per featured op or per ref.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
+    # §T219/§V66 (4): so is the attribution -- once for the WHOLE page. This is the surface
+    # the hoist was counted on: at page_size=100 the per-ref copy was 576 duplicates of one
+    # 23-char constant, 21.4% of the whole result frame (B168 i).
+    assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     ops = data["banners"][0]["featured_ops"]  # type: ignore[index]
     resolved = {o["char_id"]: o for o in ops}
     # §V72/§V63/§V62: the resolved featured op (char_id == operator game_id) carries BOTH
     # portrait (E0/E2) AND avatar (base/E2) -- the avatar rides ALONGSIDE the portrait so
     # the mirror's lagging portrait tree never leaves a portrait-only (possibly dead) ref.
     assert resolved[_AMIYA]["image_refs"] == [
-        {
-            "category": "portrait",
-            "path": f"portrait/{_AMIYA}_1.png",
-            "variant": "e0",
-            "source_id": SOURCE_ID,
-        },
-        {
-            "category": "portrait",
-            "path": f"portrait/{_AMIYA}_2.png",
-            "variant": "e2",
-            "source_id": SOURCE_ID,
-        },
-        {
-            "category": "avatar",
-            "path": f"avatar/{_AMIYA}.png",
-            "variant": "base",
-            "source_id": SOURCE_ID,
-        },
-        {
-            "category": "avatar",
-            "path": f"avatar/{_AMIYA}_2.png",
-            "variant": "e2",
-            "source_id": SOURCE_ID,
-        },
+        {"category": "portrait", "path": f"portrait/{_AMIYA}_1.png", "variant": "e0"},
+        {"category": "portrait", "path": f"portrait/{_AMIYA}_2.png", "variant": "e2"},
+        {"category": "avatar", "path": f"avatar/{_AMIYA}.png", "variant": "base"},
+        {"category": "avatar", "path": f"avatar/{_AMIYA}_2.png", "variant": "e2"},
     ]
     # An UNRESOLVED featured op carries no ref (its raw char id may not name an operator).
     assert "image_refs" not in resolved["char_999_ghost"]
@@ -303,10 +295,38 @@ def test_base_url_hoisted_once_and_join_rebuilds_verified_urls(
 
 def test_no_base_url_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
     # §V67/§T183: a page that emits no image_refs list emits no base key either --
-    # the hoisted base tracks actual refs exactly like the §V72 caveat.
+    # the hoisted base tracks actual refs exactly like the §V72 caveat. §T219: and neither
+    # does the attribution -- an unconditional source_id would claim a source for
+    # references the response does not carry.
     conn = open_read_only(_seed_banner_db(tmp_path, with_operator=False))
     env = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler(server="en")
-    assert "image_refs_base_url" not in env.to_dict()["data"]  # type: ignore[operator]
+    data = env.to_dict()["data"]
+    for key in IMAGE_REFS_HOISTED_KEYS:
+        assert key not in data  # type: ignore[operator]
+
+
+def test_the_ref_source_id_rides_the_response_once(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    # §T219/§V66 (4) on all three emitting surfaces at once: the attribution appears
+    # EXACTLY once in the serialized envelope, and no ref carries it. Counted over the
+    # serialized payload rather than asserted per key, because the defect B168 filed was a
+    # COUNT -- 576 copies of one constant -- and a per-key assertion passes just as well
+    # while every row still repeats it.
+    banner_conn = open_read_only(_seed_banner_db(tmp_path))
+    envelopes = (
+        build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
+            server="en", game_id=_AMIYA
+        ),
+        build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler(
+            server="en", game_id=_SLIME
+        ),
+        build_get_banners_spec(lambda: banner_conn, image_refs_enabled=True).handler(server="en"),
+    )
+    for env in envelopes:
+        payload = env.to_dict()
+        assert json.dumps(payload).count(SOURCE_ID) == 1, payload["status"]
+        assert payload["data"]["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
 
 
 def test_refs_enabled_gate_needs_both_config_and_registry() -> None:

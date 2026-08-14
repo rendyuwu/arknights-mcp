@@ -74,6 +74,45 @@ class CapPressureError(ValueError):
     """
 
 
+class ShedStatus(Enum):
+    """Whether a tool declares a §V120 shed plan, and whether a build still exercises it.
+
+    §T219 forced this open. It replaced a boolean that conflated two questions, and the
+    conflation only stayed invisible while both answers happened to agree: ``get_banners``
+    declared a plan AND overran the cap, so one flag served. Hoisting the per-ref
+    ``source_id`` took its peak to 86.5% of the cap without retiring the plan, and a boolean
+    then had no honest value -- ``True`` fails §V120 (f)'s "the shedder set is exactly the
+    over-cap set", ``False`` says the code carries no plan when it does.
+
+    So the three states are separated, in §V117's own vocabulary (``live`` / ``dead_today``):
+
+    * :attr:`NONE` -- no plan; over the cap this tool takes the §V22 fail-closed withhold.
+    * :attr:`LIVE` -- a plan, and the promoted build reaches it.
+    * :attr:`DEAD_TODAY` -- a plan the promoted build does not reach, kept because it is
+      reachable BY CONSTRUCTION. §V117 is what makes this a declaration rather than an
+      excuse: a ``dead_today`` arm must stay reachable and be PROVEN so synthetically, and
+      an arm that is unreachable is retired instead. The alternative -- delete a plan the
+      moment a build stops needing it -- trades §V120's guarantee for an economy, which is
+      exactly the swap B168 warned against ("economy buys margin, the rule buys the
+      guarantee -- ship both").
+
+    Both directions are checked by ``tests/contract/test_frame_pressure.py``: a
+    ``dead_today`` plan must still fire under a synthetically lowered cap, and a ``NONE``
+    tool must still withhold under one. Without that second half the two states would be
+    indistinguishable by execution, and ``dead_today`` would become a way to keep a
+    declaration for a plan somebody had already deleted.
+    """
+
+    NONE = "none"
+    LIVE = "live"
+    DEAD_TODAY = "dead_today"
+
+
+#: The states that mean "this tool declares a plan", so the plan is expected to fire when
+#: the frame does not fit. Derived once here rather than spelled at each guard (§V37).
+PLAN_DECLARED = frozenset({ShedStatus.LIVE, ShedStatus.DEAD_TODAY})
+
+
 class InputKind(Enum):
     """What a published tool parameter is, for the purpose of widening a request.
 
@@ -140,11 +179,12 @@ class ToolFramePressure:
     ``query`` are both "optional string" -- and getting it wrong in the lenient direction
     would sweep a tool at a narrowed window while reporting full coverage.
 
-    ``sheds`` is the §V120 (f) claim: this tool can exceed the cap at its widest legal
-    request, so it must answer by shedding rather than by withholding. The guard checks it
-    against the measured peak in both directions, and checks the behaviour (a non-empty
-    answer under the cap) rather than the presence of a ``shed_plan=`` argument, so the
-    declaration cannot drift from what the tool actually does.
+    ``shed`` is the §V120 (f) claim, in three states rather than two (:class:`ShedStatus`):
+    whether this tool declares a plan, and whether the promoted build still reaches it. The
+    guard checks it against the measured peak in both directions, and checks the BEHAVIOUR
+    (a non-empty answer under the cap; a ``dead_today`` plan firing under a lowered cap;
+    a plan-less tool withholding under one) rather than the presence of a ``shed_plan=``
+    argument, so the declaration cannot drift from what the tool actually does.
 
     ``peak_frame_bytes``/``peak_at``/``counted`` are the pinned distribution. The unit is
     the whole ``tools/call`` result frame (:func:`~arknights_mcp.mcp.envelopes.wire_size`:
@@ -162,17 +202,22 @@ class ToolFramePressure:
     selectors: tuple[str, ...]
     filters: tuple[str, ...]
     enum_knobs: tuple[EnumKnob, ...]
-    sheds: bool
+    shed: ShedStatus
     peak_frame_bytes: int
     peak_at: str
     counted: str
     volatile: tuple[str, ...] = ()
 
+    @property
+    def declares_plan(self) -> bool:
+        """True when this tool carries a §V120 shed plan, live or ``dead_today``."""
+        return self.shed in PLAN_DECLARED
+
 
 #: §V120 (f)/§V121 (c): every registered tool's peak result frame at its widest legal
 #: request over the whole promoted build :data:`CAP_PRESSURE_BASIS`, in registration order.
 #: Pinned by ``tests/contract/test_frame_pressure.py``, which re-measures on whatever build
-#: is promoted and fails when a peak leaves its band, when ``sheds`` disagrees with the
+#: is promoted and fails when a peak leaves its band, when ``shed`` disagrees with the
 #: measurement in either direction, or when a tool is registered without a row here.
 #:
 #: Three of these figures reproduce the spec verbatim -- ``get_stage`` 302656 (B169),
@@ -184,7 +229,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=30285,
         peak_at="query 'g', entity_type=stage, server=cn",
         counted=(
@@ -199,7 +244,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=30285,
         peak_at="query 'g', server=cn",
         counted=(
@@ -213,7 +258,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=("stage_code", "game_id"),
         filters=(),
         enum_knobs=(),
-        sheds=True,
+        shed=ShedStatus.LIVE,
         peak_frame_bytes=302656,
         peak_at="cn/act1football_01",
         counted=(
@@ -229,12 +274,16 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
-        peak_frame_bytes=7925,
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=7947,
         peak_at="en/enemy_1550_dhnzzh",
         counted=(
             "4.0% of cap. 3879 enemies, pre-shed frame bytes; the tool publishes no flag "
-            "and no page, so one shape per enemy IS its widest legal request."
+            "and no page, so one shape per enemy IS its widest legal request. This is the "
+            "one surface the §T219 hoist COSTS: a response carries exactly one ref, so the "
+            "response-level image_refs_source_id is wider than the per-ref copy it replaced "
+            "and the peak grew 22 bytes from 7925. Declared, not discovered -- the hoist has "
+            "to be uniform or one key means two things (§V67/B168 iv)."
         ),
     ),
     ToolFramePressure(
@@ -242,13 +291,17 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
-        peak_frame_bytes=98309,
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=97839,
         peak_at="cn/char_1033_swire2",
         counted=(
-            "49.2% of cap -- the widest headroom of any non-shedding tool, and the row to "
-            "watch: B168's un-counted skin/portrait image_refs ride this surface. 884 "
-            "operators x all six include flags, pre-shed frame bytes."
+            "48.9% of cap -- the widest headroom of any tool that declares no plan. 884 "
+            "operators x all six include flags, pre-shed frame bytes. This row is where "
+            "B168's scope claim was tested and failed: it called the per-ref source_id the "
+            "biggest lever for every refs-bearing surface, and counted, this surface carries "
+            "6167 refs over 884 rows -- about 7 a row, not the fat gallery the claim assumed. "
+            "The §T219 hoist moved this peak 470 bytes, 0.24% of cap, from 98309. It rides "
+            "along for shape uniformity (§V67), not for bytes."
         ),
     ),
     ToolFramePressure(
@@ -260,7 +313,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
                 name="mode", widest="with_observations", domain=("facts_only", "with_observations")
             ),
         ),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=40900,
         peak_at="cn/char_1033_swire2",
         counted=(
@@ -276,7 +329,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         enum_knobs=(
             EnumKnob(name="depth", widest="detailed", domain=("summary", "standard", "detailed")),
         ),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=85128,
         peak_at="cn/act1football_s02",
         counted=(
@@ -290,7 +343,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=("stage_code", "game_id"),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=14321,
         peak_at="cn/main_06-11",
         counted=(
@@ -303,7 +356,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=41737,
         peak_at="en/randomMaterial_8",
         counted=(
@@ -317,7 +370,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=("since", "until"),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=11013,
         peak_at="cn page 1, page_size=100",
         counted=(
@@ -332,14 +385,19 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=("since", "until", "query"),
         enum_knobs=(),
-        sheds=True,
-        peak_frame_bytes=220131,
+        shed=ShedStatus.DEAD_TODAY,
+        peak_frame_bytes=173003,
         peak_at="en page 1, page_size=100",
         counted=(
-            "110.1% of cap -- B167's shape, and the reason arm (a) exists. Every page of "
-            "both regions at page_size=100, no date or text filter, pre-shed frame bytes. "
-            "image_refs are 55-71% of row bytes on every real page, so the plan sheds them "
-            "before the rows (§V120 b)."
+            "86.5% of cap. Every page of both regions at page_size=100, no date or text "
+            "filter, pre-shed frame bytes; all nine reachable windows land in [9.3%, 86.5%]. "
+            "This shape is B167's -- it read 220131 (110.1%) until §T219 hoisted the per-ref "
+            "source_id, and 21.4% of the frame was that one repeated constant. So the plan "
+            "arm (a) built is DEAD_TODAY rather than retired: nothing live reaches it, but "
+            "page_size tops out at 100 while a banner's featured_ops count is the source's "
+            "to decide, so a fat event re-crosses 13.5 points of margin. Its order still "
+            "holds where it matters -- the ref step takes this window to 68444 with all 100 "
+            "rows aboard, and trimming rows to that size keeps 6 (§V120 b)."
         ),
     ),
     ToolFramePressure(
@@ -347,7 +405,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=3823,
         peak_at="no parameters",
         counted=(
@@ -362,7 +420,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         selectors=(),
         filters=(),
         enum_knobs=(),
-        sheds=False,
+        shed=ShedStatus.NONE,
         peak_frame_bytes=17601,
         peak_at="no parameters",
         counted=(

@@ -46,7 +46,11 @@ def test_schema_version_is_stable_string() -> None:
     # v0.3 = the coordinated T198 reshape (ADR 0017): item rarity as a 1-indexed int,
     # entity-prefixed ranking keys, snake_case change bundles with one phase encoding,
     # empty-set queries answering ok, and the get_data_status key collisions.
-    assert SCHEMA_VERSION == "0.3"
+    # v0.4 = the T219 image-ref hoist (ADR 0019): ``image_refs[].source_id`` REMOVED and
+    # carried once as ``image_refs_source_id`` (§V66 (4)/B168). One member, breaking
+    # because it removes a published per-row key -- not additive, which is what B168's
+    # cell claimed before the count.
+    assert SCHEMA_VERSION == "0.4"
 
 
 def test_field_order_matches_interface_contract() -> None:

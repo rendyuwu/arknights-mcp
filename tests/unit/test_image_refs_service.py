@@ -33,6 +33,8 @@ from arknights_mcp.services import image_refs
 from arknights_mcp.services.image_refs import (
     IMAGE_REFS_BASE_URL,
     SOURCE_ID,
+    ImageRef,
+    ImageRefSourceError,
     enemy_image_path,
     enemy_image_refs,
     image_ref_to_dict,
@@ -132,14 +134,45 @@ def test_v78_enemy_ref_variant_is_base() -> None:
 
 
 def test_v78_wire_dict_carries_variant() -> None:
-    # §V21/§V78: the {category, path, variant, source_id} wire shape includes variant.
+    # §V21/§V78: the {category, path, variant} wire shape includes variant. §T219/§V66 (4):
+    # and NOTHING else -- source_id was byte-identical on every ref of every response, so
+    # it left the row for a single response-level ``image_refs_source_id``. This equality is
+    # exact on purpose: a fourth key reappearing per ref is the regression B168 counted.
     (ref,) = enemy_image_refs(ENEMY_ID)
     assert image_ref_to_dict(ref) == {
         "category": "enemy",
         "path": f"enemy/{ENEMY_ID}.png",
         "variant": "base",
-        "source_id": SOURCE_ID,
     }
+
+
+# --- §V66 (4) (i): the hoist fails closed on a ref it cannot speak for -------------
+
+
+def test_a_ref_from_a_second_source_raises() -> None:
+    # §V66 (4) (i), proven SYNTHETICALLY per §V113 (b): every derive function in the module
+    # takes ImageRef's SOURCE_ID default, so no live shape reaches this arm -- and an arm
+    # that cannot be reached is not a guard. A second mirror is what would reach it, and
+    # the harm is silent: with the attribution hoisted, one such ref is re-labelled as
+    # arknights_game_resource by the response-level key, on every row, with nothing on the
+    # wire able to contradict it (§V27).
+    ref = ImageRef(category="portrait", path="portrait/x_1.png", variant="e0", source_id="mirror_2")
+    with pytest.raises(ImageRefSourceError, match="hoists 'arknights_game_resource'"):
+        image_ref_to_dict(ref)
+
+
+def test_the_hoist_premise_holds_by_construction() -> None:
+    # The other half of §V66 (4) (i): the invariance is COUNTED, not assumed. Counted here
+    # over every ref the module can derive rather than over one call's output -- what makes
+    # the hoist legal is that no derive path passes source_id at all, so the default is the
+    # only value any of them can produce.
+    derived = [
+        *operator_image_refs(OPERATOR_ID),
+        *operator_banner_refs(OPERATOR_ID),
+        *enemy_image_refs(ENEMY_ID),
+    ]
+    assert derived, "the sweep found no refs: a guard over an empty set passes anything"
+    assert {ref.source_id for ref in derived} == {SOURCE_ID}
 
 
 # --- §V63: unconditional percent-encode -------------------------------------------
@@ -204,7 +237,9 @@ def test_named_skin_ref_omit_discipline() -> None:
     bare = named_skin_ref_to_dict(skin_id="char_002_amiya#1", portrait_id="char_002_amiya_1")
     assert bare["category"] == "skin"
     assert bare["skin_id"] == "char_002_amiya#1"
-    assert bare["source_id"] == SOURCE_ID
+    # §T219: the named-gallery ref routes its base keys through image_ref_to_dict (§V37),
+    # so the hoist reached this surface with no edit of its own -- and must have.
+    assert "source_id" not in bare
     for absent in ("skin_name", "skin_group", "alt_form", "paid"):
         assert absent not in bare
 

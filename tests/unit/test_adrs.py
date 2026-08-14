@@ -208,8 +208,74 @@ def test_adr_0017_indexed_in_readme() -> None:
     assert ADR_0017 in readme, "ADR 0017 not linked from the ADR index"
 
 
-def test_schema_version_matches_flipped_v03() -> None:
-    # The flip is the operative half of T198: the constant and the ADR agree.
+# ---------------------------------------------------------------------------
+# T219: ADR 0019 — response-shape v0.4. ONE member: `image_refs[].source_id` is
+# REMOVED and hoisted to a response-level `image_refs_source_id` (§V66 (4)/B168).
+# Like 0011/0012/0017 it is a §V21-mandated wire-contract ADR (reverses no founder
+# decision), so it is checked on its own for shape + the invariants it coordinates.
+#
+# It OPENS 0.4 rather than widening 0.3 for the reason ADR 0017 opened 0.3: the
+# v0.2 fold precedent rested on ADR 0012's release gate, and T146 discharged it.
+# The same reasoning one version out, so the record has to carry it -- otherwise
+# the next reader reads 0017 as a one-off and folds a breaking change into a
+# shipped tag.
+# ---------------------------------------------------------------------------
+
+ADR_0019 = "0019-response-shape-v0.4.md"
+
+#: The invariants T219 coordinates under the single 0.3 -> 0.4 bump.
+ADR_0019_INVARIANT_CITES = ["V21", "V66", "V63", "V27", "V67", "V120"]
+
+
+def test_adr_0019_present() -> None:
+    assert (ADR_DIR / ADR_0019).is_file(), f"missing ADR: {ADR_0019}"
+
+
+def test_adr_0019_shape() -> None:
+    text = (ADR_DIR / ADR_0019).read_text(encoding="utf-8")
+    assert "Status:" in text and "Accepted" in text
+    assert "## Context" in text
+    assert "## Decision" in text
+    assert "## Consequences" in text
+
+
+def test_adr_0019_cites_coordinated_invariants() -> None:
+    text = (ADR_DIR / ADR_0019).read_text(encoding="utf-8")
+    for inv in ADR_0019_INVARIANT_CITES:
+        assert f"§{inv}" in text, f"ADR 0019 does not cite §{inv}"
+
+
+def test_adr_0019_records_the_single_coordinated_bump() -> None:
+    text = (ADR_DIR / ADR_0019).read_text(encoding="utf-8")
+    assert "schema_version" in text.lower()
+    assert "0.3" in text and "0.4" in text
+
+
+def test_adr_0019_records_that_the_removal_is_breaking() -> None:
+    # B168 filed this change as "additive optional field" and it is not: a client reading
+    # `ref["source_id"]` gets a KeyError. The ADR is where that correction lives, because
+    # the row's own cell was the thing that was wrong (§V21).
+    text = (ADR_DIR / ADR_0019).read_text(encoding="utf-8")
+    assert "breaking" in text.lower()
+    assert "image_refs_source_id" in text
+    assert "B168" in text
+
+
+def test_adr_0019_justifies_opening_a_version_instead_of_folding() -> None:
+    # Same duty ADR 0017 carried: minting a version rather than widening the last one is a
+    # departure from the 0011-0014 fold precedent, so the reason stays on the record.
+    text = (ADR_DIR / ADR_0019).read_text(encoding="utf-8")
+    assert "T146" in text
+    assert "0017" in text, "ADR 0019 does not name the version line it continues"
+
+
+def test_adr_0019_indexed_in_readme() -> None:
+    readme = (ADR_DIR / "README.md").read_text(encoding="utf-8")
+    assert ADR_0019 in readme, "ADR 0019 not linked from the ADR index"
+
+
+def test_schema_version_matches_flipped_v04() -> None:
+    # The flip is the operative half of T219: the constant and the ADR agree.
     from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 
-    assert SCHEMA_VERSION == "0.3"
+    assert SCHEMA_VERSION == "0.4"

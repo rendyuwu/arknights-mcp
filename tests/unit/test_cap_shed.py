@@ -28,7 +28,11 @@ from arknights_mcp.mcp.envelopes import (
     wire_size,
 )
 from arknights_mcp.mcp.shed import ShedFrame, ShedStep, shed_to_fit
-from arknights_mcp.mcp.tools._shared import IMAGE_REFS_LIMITATION
+from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_HOISTED_KEYS,
+    IMAGE_REFS_LIMITATION,
+    image_ref_hoisted_fields,
+)
 from arknights_mcp.mcp.tools.banners import _SHED_ORDER, _shed_plan
 from arknights_mcp.services.image_refs import IMAGE_REFS_BASE_URL
 
@@ -73,8 +77,12 @@ def _payload(
             _row(i, refs=refs, ref_bytes=ref_bytes, name_bytes=name_bytes) for i in range(rows)
         ],
         "page": {"page": 1, "page_size": rows, "total": total, "has_more": True},
-        "image_refs_base_url": IMAGE_REFS_BASE_URL,
-        "image_refs_legend": {"category": {"portrait": "full-body art"}},
+        # The coupler as the real shapers attach it (§V37): every hoisted key, from the one
+        # home. Spelled through image_ref_hoisted_fields rather than as a literal so a key
+        # added there lands in this fixture too -- the alternative is a synthetic payload
+        # that stops resembling the wire, which is how a shed step keeps passing while the
+        # live response ships a key it forgot to retire (§V66 (4) (ii)).
+        **image_ref_hoisted_fields(),
     }
 
 
@@ -89,9 +97,21 @@ def _banners_ok(payload: dict[str, Any]) -> ResponseEnvelope:
 
 
 #: Rows heavy enough in refs that the frame is over cap, light enough that it fits once
-#: the refs go -- the live en page-1 ``page_size=100`` shape (220131 -> 68444 bytes,
-#: ``wire_size`` on ``2026-08-13T220624Z-en-cn``). B171: this read 215990 -> 65110, both
-#: measured on a hand-assembled subset envelope that under-counts the frame by 4141 bytes.
+#: the refs go -- shaped after the heaviest live ``get_banners`` window (en page 1 at
+#: ``page_size=100``), whose ref step takes the frame to 68444 bytes with all 100 rows
+#: aboard, ``wire_size`` on ``2026-08-13T220624Z-en-cn``.
+#:
+#: Two corrections have reached this figure, both owed under §V121 (f) (i) rather than
+#: optional: B171 (it read 215990 -> 65110, measured on a hand-assembled subset envelope
+#: that under-counts the frame by 4141 bytes -- the one direction §V22 forbids) and §T219
+#: (that window's pre-shed frame reads 173003, not 220131, now that
+#: ``image_refs_source_id`` is hoisted; the post-shed 68444 is unchanged, since this step
+#: retires the hoisted keys with the refs either way).
+#:
+#: §T219 also makes THIS page the reachability proof rather than an illustration of it: at
+#: 86.5% of cap no live window reaches the plan any more, so the plan is declared
+#: ``dead_today`` in :data:`~arknights_mcp.mcp.cap_pressure.FRAME_PRESSURE` and §V113 (b)
+#: owes a synthetic proof that it still fires. This is that proof.
 _REF_HEAVY = dict(rows=100, refs=4, ref_bytes=200)
 
 #: Rows whose own metadata still overruns the frame after every ref is shed, so the
@@ -198,12 +218,29 @@ def test_row_shed_limitation_names_the_fitting_page_size() -> None:
 
 
 def test_ref_shed_retires_base_url_legend_and_limitation() -> None:
-    # Leaving these behind ships a base URL for paths that are gone, a legend for labels
-    # nothing carries, and a caveat about links the response does not contain.
+    # Leaving these behind ships a base URL for paths that are gone, an attribution for
+    # references nothing carries, a legend for labels nothing uses, and a caveat about links
+    # the response does not contain.
     env = _banners_ok(_payload(**_REF_HEAVY))
     assert "image_refs_base_url" not in env.data
     assert "image_refs_legend" not in env.data
+    assert "image_refs_source_id" not in env.data
     assert IMAGE_REFS_LIMITATION not in env.limitations
+
+
+def test_the_ref_shed_retires_every_hoisted_key() -> None:
+    # §V66 (4) (ii)/§V37, both ways: the retirement set and the attach set are ONE list, so
+    # this is derived from the home rather than enumerated. §T219 is why the assertion has to
+    # be shaped this way -- the hoist added a third key, and a shed step holding a literal
+    # two-tuple would have shipped a page that dropped every ref and kept claiming a source
+    # for them. Named keys above catch a wrong key; this catches a MISSING one.
+    env = _banners_ok(_payload(**_REF_HEAVY))
+    assert IMAGE_REFS_HOISTED_KEYS, "an empty hoist set makes the assertion below vacuous"
+    assert set(IMAGE_REFS_HOISTED_KEYS) & set(env.data) == set()
+    # And the other direction: an unshed page carries all of them, so the emptiness above is
+    # the shed's work and not a fixture that never had them.
+    kept = _banners_ok(_payload(rows=5))
+    assert set(IMAGE_REFS_HOISTED_KEYS) <= set(kept.data)
 
 
 def test_refs_leave_the_whole_page_never_half_of_it() -> None:
@@ -270,9 +307,10 @@ def test_a_plan_that_cannot_fit_still_withholds() -> None:
 
 
 def test_row_step_is_reachable_by_construction() -> None:
-    # §V113 (b): the second step of the plan does not fire on any live page today (the
-    # ref shed alone closes every real shape), so its reachability is proven here rather
-    # than declared -- an unfirable step is an absent step.
+    # §V113 (b): the second step of the plan does not fire on any live page today -- and
+    # since §T219 neither does the first, because the heaviest window sits at 86.5% of cap.
+    # So the whole plan's reachability is proven here rather than declared, and an unfirable
+    # step is an absent step.
     env = _banners_ok(_payload(**_ROW_HEAVY))
     assert len(env.data["banners"]) < _ROW_HEAVY["rows"]
 

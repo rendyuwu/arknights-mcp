@@ -1,17 +1,24 @@
-"""T217 (a): §V120 on the corpus the harm was counted over (B167).
+"""T217 (a) + T219: §V120 on the corpus the harm was counted over (B167, B168 v).
 
-The unit guard beside this one drives synthetic payloads through the chokepoint. This
-one drives the two calls a client actually made: ``get_banners`` en page 1 at
-``page_size`` 100 and 90, which returned ``status: partial`` with ``data: {}`` after
-T216 re-based the §V22 cap onto the full result frame -- while ``page_size<=80``
-returned the same rows fine, so the data was reachable by a legal request and the
-server withheld it anyway.
+The unit guard beside this one drives synthetic payloads through the chokepoint. This one
+drives the two calls a client actually made: ``get_banners`` en page 1 at ``page_size`` 100
+and 90. Those returned ``status: partial`` with ``data: {}`` after T216 re-based the §V22
+cap onto the full result frame -- while ``page_size<=80`` returned the same rows fine, so
+the data was reachable by a legal request and the server withheld it anyway. T217 (a) got
+the rows back by shedding the image refs instead of the answer.
 
-Both arms matter and neither replaces the other. Only the build says whether the shed
-ORDER was counted right: a rows-first plan would also pass "the response is under the
-cap and non-empty", and would ship a third of the page. And only the build carries a
-window that sits just under the cap (cn page 2 at ``page_size=100``, 99.0%), which is
-the control proving the plan does not fire on a page that fits.
+**T219 finished the recovery.** Those pages were still incomplete: they came back without
+their ``image_refs``, and en page 1 at ``page_size=100`` was the only reachable window that
+lost them. Hoisting the per-ref ``source_id`` took that frame from 220131 to 173003 bytes
+(110.1% -> 86.5% of cap), so the references ride the answer again. That is what these guards
+now assert -- rows AND refs, not rows instead of refs -- and it is why the assertions here
+inverted rather than being deleted: the shed firing on this shape would today mean the
+economy regressed.
+
+Only the build can say either thing. A rows-first plan would also pass "the response is
+under the cap and non-empty" while shipping six rows of a hundred, and only the build
+carries the window that used to sit at 99.0% of the cap (cn page 2 at ``page_size=100``,
+now 79.1%) -- the control proving nothing sheds on a page that fits.
 
 Skipped without a promoted build, like every other real-corpus contract guard. Not
 added to ``ci.yml``'s enumerated module list on purpose -- that list names the modules
@@ -29,6 +36,7 @@ from tests.support.tool_calls import active_build, registry_for
 
 from arknights_mcp.db.connection import open_read_only
 from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, ResponseEnvelope, wire_size
+from arknights_mcp.mcp.tools._shared import IMAGE_REFS_HOISTED_KEYS
 
 BUILD = active_build()
 
@@ -38,11 +46,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: The two shapes B167 counted as withheld, and the region/page they were counted on.
+#: B168 (v) then counted what T217 (a) still cost them -- their image refs -- and §T219 gave
+#: those back, so the same two shapes now carry the recovery guards.
 _WITHHELD_SHAPES = (("en", 1, 100), ("en", 1, 90))
 
-#: The near-cap control: 99.0% of the frame cap on the promoted build, so it fits and
-#: must come back untouched. A shed that ran unconditionally would strip this one too.
+#: The tightest control: 79.1% of the frame cap on the promoted build (99.0% before §T219),
+#: so it fits and must come back untouched. A shed that ran unconditionally would strip this
+#: one too.
 _FITTING_SHAPE = ("cn", 2, 100)
+
+#: Every reachable window at the maximum ``page_size``, region by region: four en pages and
+#: five cn. Enumerated because the count is a COUNTED fact about the corpus (§V121 c) and a
+#: sweep that silently found three would report green on a third of the surface.
+_REACHABLE_MAX_WINDOWS = 9
 
 
 @pytest.fixture(scope="module")
@@ -81,16 +97,23 @@ def test_the_withheld_windows_answer(
 
 
 @pytest.mark.parametrize(("server", "page", "page_size"), _WITHHELD_SHAPES)
-def test_the_shed_window_keeps_its_rows_and_sheds_its_refs(
+def test_the_recovered_windows_keep_their_refs(
     conn: sqlite3.Connection, server: str, page: int, page_size: int
 ) -> None:
-    # §V120 (b) on the corpus the order was counted over: image refs are 55-71% of row
-    # bytes on every real page, so shedding them fits the frame with every row intact.
-    # A rows-first plan fits too -- by dropping about two thirds of the page.
+    # B168 (v) verbatim, in the direction §T219 fixed. T217 (a) got these two windows their
+    # rows back by shedding the image refs; en page 1 at page_size=100 was the ONE reachable
+    # window that answered ref-less, and hoisting the per-ref source_id (110.1% -> 86.5% of
+    # cap) is what put the references back on the wire. So the shed must NOT fire here: the
+    # refs are present, the whole coupler rides along, and no limitation mentions page_size.
+    #
+    # This assertion is the inverse of the one it replaces, deliberately. The shed firing on
+    # this shape again would mean the frame crossed the cap once more -- which is news, not a
+    # detail, and is exactly what the old assertion would have hidden by expecting it.
     env = _call(conn, server, page, page_size)
-    assert _refs(env) == 0
-    assert "image_refs_base_url" not in env.data
-    assert any("page_size" in limit for limit in env.limitations)
+    assert _refs(env) > 0
+    for key in IMAGE_REFS_HOISTED_KEYS:
+        assert key in env.data, key
+    assert not any("page_size" in limit for limit in env.limitations)
 
 
 @pytest.mark.parametrize(("server", "page", "page_size"), _WITHHELD_SHAPES)
@@ -119,9 +142,9 @@ def test_the_shed_window_returns_rows_a_smaller_page_size_already_serves(
 
 
 def test_a_window_that_fits_is_left_alone(conn: sqlite3.Connection) -> None:
-    # §V96 non-degenerate: at 99.0% of the cap this is the tightest live window that
-    # still fits, and it must come back with every ref -- a shed that fired on measure
-    # alone, or a cap that drifted a few KB low, fails here.
+    # §V96 non-degenerate: this is the tightest live window on the build -- 79.1% of the cap
+    # since §T219, 99.0% before it -- and it must come back with every ref. A shed that fired
+    # on measure alone, or a cap that drifted a few KB low, fails here.
     server, page, page_size = _FITTING_SHAPE
     env = _call(conn, server, page, page_size)
     assert env.status == "ok"
@@ -142,3 +165,35 @@ def test_every_reachable_banner_window_is_under_the_cap_and_answers(
     assert wire_size(env) <= MAX_RESPONSE_BYTES
     assert env.status == "ok"
     assert env.data["banners"] or env.data["page"]["total"] < (page - 1) * page_size + 1
+
+
+def test_every_reachable_max_window_is_under_the_cap_with_its_refs(
+    conn: sqlite3.Connection,
+) -> None:
+    # §T219's economy claim, on every window rather than on the shape it was counted on
+    # (§V121 g -- one counted member is what made B168's scope claim wrong about two others).
+    # Walks page 1 to the end of both regions at page_size=100, the widest legal window, and
+    # requires each page to be under the cap AND still carrying its refs.
+    #
+    # The exception is stated rather than tolerated: a page whose featured ops all failed to
+    # resolve emits no refs at all, so it emits no hoisted key either (§V67) -- cn's last
+    # page is one. That is an absence of refs, not a shed, and the two are told apart by the
+    # shed limitation, which is the only thing that would name page_size.
+    seen = 0
+    for server in ("en", "cn"):
+        for page in range(1, 100):
+            env = _call(conn, server, page, 100)
+            seen += 1
+            where = f"{server} page {page}"
+            assert env.status == "ok", where
+            assert wire_size(env) <= MAX_RESPONSE_BYTES, where
+            assert not any("page_size" in limit for limit in env.limitations), where
+            carries_refs = _refs(env) > 0
+            for key in IMAGE_REFS_HOISTED_KEYS:
+                assert (key in env.data) is carries_refs, (where, key)
+            if not env.data["page"]["has_more"]:
+                break
+    assert seen == _REACHABLE_MAX_WINDOWS, (
+        f"walked {seen} windows at page_size=100; {_REACHABLE_MAX_WINDOWS} were counted on "
+        "the promoted build. Re-count -- the corpus grew or shrank a page (§V121 c)"
+    )

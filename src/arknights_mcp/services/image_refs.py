@@ -36,7 +36,13 @@ On the wire the shared base is hoisted (§T183/§V66, ADR 0014): each ref carrie
 RELATIVE ``path`` (``<folder>/<file>.png``) and the response emits
 :data:`IMAGE_REFS_BASE_URL` once; the client joins ``base_url + "/" + path`` for the
 full URL. The derivation functions therefore build paths, not absolute URLs -- the base
-never repeats per ref.
+never repeats per ref. §T219/§V66 (4) (ADR 0019, B168) hoists the ref family's other
+response-wide constant the same way: :data:`SOURCE_ID` rides the response once as
+``image_refs_source_id`` instead of once per ref. It was a byte-identical 23-char copy on
+every entry -- 576 of them on one ``get_banners`` page, 21.4% of that whole result frame --
+and the hoist is what lets that page keep its references under the §V22 cap at all
+(B168 v). The invariance is not assumed: :func:`image_ref_to_dict` fails closed on a ref
+whose ``source_id`` is not the hoisted constant (§V66 (4) (i)).
 
 Base ids never contain ``%``/``#``/``+``, but skin-variant filenames can, so the
 derivation percent-encodes ``%``→``%25`` (first, so encoding stays injective for
@@ -60,8 +66,12 @@ if TYPE_CHECKING:
     from arknights_mcp.sources.registry import SourceRegistry
 
 #: The registry ``source_id`` (§V27) for these references. Single home (§V37) for the
-#: id the §T120 tool wiring stamps onto each emitted ``{category, url, source_id}`` entry
-#: and checks for ``enabled`` before emitting.
+#: id the §T120 tool wiring checks for ``enabled`` before emitting, and -- since §T219 --
+#: for the attribution the response carries ONCE as ``image_refs_source_id`` rather than
+#: on every ref (§V66 (4), ADR 0019). The hoist home is
+#: :func:`~arknights_mcp.mcp.tools._shared.image_ref_hoisted_fields`; what makes it legal
+#: is that this is a module constant no derivation overrides, which
+#: :func:`image_ref_to_dict` enforces rather than trusts.
 SOURCE_ID = "arknights_game_resource"
 
 #: The first-cut image categories (§V63). ``portrait``/``avatar``/``skin`` attach to an
@@ -127,6 +137,27 @@ IMAGE_REFS_LEGEND: dict[str, dict[str, str]] = {
 #: literal has exactly ONE home in the codebase (§V37); every derived path resolves
 #: against it.
 IMAGE_REFS_BASE_URL = "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main"
+
+
+class ImageRefSourceError(ValueError):
+    """A ref whose ``source_id`` is not the hoisted constant (§V66 (4) (i); §T219).
+
+    The fail-closed half of the hoist. Once the attribution rides the response ONCE, a ref
+    carrying some other source is attributed to :data:`SOURCE_ID` by the response-level key
+    -- silently, on every row, which is the §V27 attribution error the per-ref copy could
+    not make. §V66 (4) (i) requires the invariance be COUNTED rather than assumed and the
+    shaper fail closed when it does not hold, so this raises instead of emitting a
+    mis-attributed page.
+
+    Counted on the promoted build: ONE distinct value over every emitted ref, invariant by
+    construction because no derive function passes ``source_id`` at all. So this arm fires
+    on no live shape and its reachability is proven synthetically instead (§V113 b) -- the
+    same call the ``map_image`` shed step got in §T217 (b).
+
+    Loud rather than lenient, for the reason
+    :class:`~arknights_mcp.mcp.cap_pressure.CapPressureError` is: a second mirror added
+    later must stop the response, not be folded into the first mirror's name.
+    """
 
 
 def _encode(filename: str) -> str:
@@ -218,7 +249,7 @@ def named_skin_ref_to_dict(
 ) -> dict[str, object]:
     """One named-gallery skin ref for the wire (§T182/§V88): the §V37 single home.
 
-    Extends the ``{category, path, variant, source_id}`` shape with additive fields
+    Extends the ``{category, path, variant}`` shape with additive fields
     (§V21): ``skin_id`` always; ``skin_name``/``skin_group`` only when imported
     (absent = default art with no outfit name, §V67 omit-discipline); ``alt_form``/
     ``paid`` only when true (§V67 -- an absent flag is the default, never ``null``).
@@ -227,8 +258,9 @@ def named_skin_ref_to_dict(
     On an ``alt_form`` ref that variant names the ALTERNATE form's elite art, not the
     base operator's -- clients must read the flag beside the variant.
     ``path`` is relative to the response's hoisted ``image_refs_base_url`` (§T183/§V66).
-    The base four keys route through :class:`ImageRef` + :func:`image_ref_to_dict` so
-    the shared wire shape keeps exactly one constructor (§V37); only the additive
+    The base three keys route through :class:`ImageRef` + :func:`image_ref_to_dict` so
+    the shared wire shape keeps exactly one constructor (§V37) -- which is also why the
+    §T219 ``source_id`` hoist reached this surface without a second edit; only the additive
     named-gallery fields are assembled here.
     """
     ref = image_ref_to_dict(
@@ -300,13 +332,19 @@ def enemy_image_path(game_id: str) -> str:
 class ImageRef:
     """One derived image reference for the wire (§T120/§V63).
 
-    A ``{category, path, variant, source_id}`` entry: ``path`` is a query-time DERIVED
+    A ``{category, path, variant}`` entry: ``path`` is a query-time DERIVED
     link, relative to the response's hoisted ``image_refs_base_url`` (§T183/§V66; never
     stored, never fetched -- §V63); ``category`` is one of the :data:`CATEGORY_*` labels;
     ``variant`` is one of the :data:`VARIANT_*` labels naming the E0/E2/skin/base art the
     mirror filename suffix encodes (§V78/B80), stated on the wire so a client picks
-    E0-vs-E2 without filename-convention knowledge; ``source_id`` is the §V27 registry
-    attribution the wiring stamps on every ref.
+    E0-vs-E2 without filename-convention knowledge.
+
+    ``source_id`` is the §V27 registry attribution, and since §T219 it does NOT reach the
+    wire per ref: the response carries it once as ``image_refs_source_id`` (§V66 (4),
+    ADR 0019). The field stays on this dataclass because it is what
+    :func:`image_ref_to_dict` checks the hoist against -- dropping it would leave the
+    hoisted key claiming an attribution nothing can contradict, which is the shape §V66
+    (4) (i) forbids.
     """
 
     category: str
@@ -316,28 +354,51 @@ class ImageRef:
 
 
 def image_ref_to_dict(ref: ImageRef) -> dict[str, object]:
-    """One derived image ref for the wire (§T120/§V63): {category, path, variant, source_id}.
+    """One derived image ref for the wire (§T120/§V63): ``{category, path, variant}``.
 
-    The single §V37 home for the ``{category, path, variant, source_id}`` wire shape shared
-    by every image-ref-bearing tool (get_operator/get_enemy/get_banners). ``path`` is a
-    query-time DERIVED link relative to the hoisted ``image_refs_base_url`` (§T183/§V66;
-    never stored, never fetched); ``variant`` names the E0/E2/skin/base art (§V78/B80);
-    ``source_id`` is the §V27 registry attribution.
+    The single §V37 home for the ``{category, path, variant}`` wire shape shared by every
+    image-ref-bearing tool (get_operator/get_enemy/get_banners). ``path`` is a query-time
+    DERIVED link relative to the hoisted ``image_refs_base_url`` (§T183/§V66; never stored,
+    never fetched); ``variant`` names the E0/E2/skin/base art (§V78/B80).
+
+    ``source_id`` is NOT emitted here (§T219/§V66 (4), ADR 0019). It was byte-identical on
+    every ref of every response -- 576 copies of one 23-char constant on a single
+    ``get_banners`` page -- while the response already hoisted the *varying* half of the
+    same family (``image_refs_base_url``). The attribution now rides the response once,
+    beside that base, from
+    :func:`~arknights_mcp.mcp.tools._shared.image_ref_hoisted_fields`.
+
+    Because the hoisted key speaks for every ref in the response, a ref disagreeing with
+    it would be mis-attributed silently on every row. So the invariance is enforced at this
+    one gate rather than assumed: a ``source_id`` that is not :data:`SOURCE_ID` raises
+    :class:`ImageRefSourceError` (§V66 (4) (i) fail-closed). The check is on the VALUE, not
+    on "two distinct values in one response" -- a response uniformly carrying some other
+    mirror is equally mis-attributed by the hoisted constant, and equally has to stop.
     """
+    if ref.source_id != SOURCE_ID:
+        raise ImageRefSourceError(
+            f"image ref {ref.path!r} carries source_id {ref.source_id!r}, but the response "
+            f"hoists {SOURCE_ID!r} for every ref (§V66 (4) (i)). A second mirror needs a "
+            "per-ref attribution again, or a grouped reshape -- it cannot ride this hoist"
+        )
     return {
         "category": ref.category,
         "path": ref.path,
         "variant": ref.variant,
-        "source_id": ref.source_id,
     }
 
 
 def _refs(category: str, paths: tuple[str, ...], variants: tuple[str, ...]) -> list[ImageRef]:
-    """Stamp ``category`` + per-path ``variant`` + :data:`SOURCE_ID` onto each derived path.
+    """Stamp ``category`` + per-path ``variant`` onto each derived path.
 
     ``paths`` and ``variants`` are zipped in order (§T120/§V37/§V78); ``zip(strict=True)``
     fails closed on any length mismatch so the ordered ``*_paths`` tuple and its
     :data:`_PORTRAIT_VARIANTS`-style variant tuple can never silently drift apart.
+
+    ``source_id`` is deliberately NOT passed: it takes :class:`ImageRef`'s
+    :data:`SOURCE_ID` default at every construction site in this module, which is what
+    makes the §T219 response-level hoist invariant BY CONSTRUCTION rather than by
+    coincidence of today's corpus (§V66 (4) (i)).
     """
     return [
         ImageRef(category=category, path=path, variant=variant)

@@ -25,3 +25,4 @@ binding; **changing one requires a new ADR and explicit approval** (SPEC line
 | [0016](0016-threat-rule-retirement.md) | Retire three threat rules no source can feed; revive `ranged_arts` from the §V30 bridge | D5, D8 | §V113, §V26, §V96, §V67, §V103 |
 | [0017](0017-response-shape-v0.3.md) | Response-shape v0.3 — one coordinated `schema_version` `0.2`→`0.3` for five parked breaking fixes; closes the v0.2 line | none (§V21-mandated) | §V21, §V99, §V100, §V71, §V106 |
 | [0018](0018-module-observation-retirement.md) | Retire the two module observations that restate their own payload; keep the computed stat delta | D5, D8 | §V66, §V101, §V6, §V26 |
+| [0019](0019-response-shape-v0.4.md) | Response-shape v0.4 — `image_refs[].source_id` removed, hoisted to one `image_refs_source_id`; `schema_version` `0.3`→`0.4`; closes the v0.3 line | none (§V21-mandated) | §V21, §V66, §V63, §V27, §V67, §V120 |

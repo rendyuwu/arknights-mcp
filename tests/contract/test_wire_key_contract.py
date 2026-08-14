@@ -258,6 +258,55 @@ def test_the_collision_detector_would_have_caught_b148(fixture_conn: sqlite3.Con
         assert "status" not in snapshot
 
 
+# --- §V66 (4)/§V67 (T219): the image-ref attribution lives at ONE level ---------
+
+
+def _ref_attribution(body: object) -> tuple[int, int]:
+    """``(per-ref copies, response-level keys)`` in one serialized envelope.
+
+    Counts both halves of the §T219 hoist so the two failure directions are distinguishable:
+    a per-row copy coming back, and a hoisted key going missing on a page that has refs.
+    """
+    per_ref = sum(1 for row in _rows_under(body, "image_refs") if "source_id" in row)
+    hoisted = sum(1 for key, _path in _keys(body) if key == "image_refs_source_id")
+    return per_ref, hoisted
+
+
+def _ref_bearing(body: object) -> bool:
+    return any(True for _ in _rows_under(body, "image_refs"))
+
+
+def test_the_ref_attribution_is_uniform_across_every_emitting_tool(
+    fixture_conn: sqlite3.Connection,
+) -> None:
+    # §T219/§V67: three tools emit image_refs (get_operator / get_enemy / get_banners) and
+    # the attribution has to live at the same level on all of them. A key living per-ROW on
+    # one tool and per-RESPONSE on another makes one key mean two things, and a client would
+    # have to know which tool it called to know where to read it (B168 iv). Swept over the
+    # registry rather than asserted per tool, for the reason B134's root note gives: the
+    # shape came from a shared §V37 home, so a per-emitter assertion fixes a call site and
+    # leaves the rule.
+    #
+    # Read off the SERIALIZED envelope, so this also fails when the hoist is present but the
+    # per-ref copy came back beside it -- 576 duplicates of one constant is what B168 counted,
+    # and both keys existing at once would satisfy any assertion that only looked for one.
+    emitting = []
+    for name, body in serialized_envelopes(registry_for(fixture_conn), FIXTURE_CALLS):
+        per_ref, hoisted = _ref_attribution(body)
+        assert per_ref == 0, f"{name}: {per_ref} image_refs rows still carry their own source_id"
+        assert hoisted == (1 if _ref_bearing(body) else 0), (
+            f"{name}: {hoisted} response-level image_refs_source_id keys for a payload that "
+            f"{'does' if _ref_bearing(body) else 'does not'} emit refs (§V67)"
+        )
+        if _ref_bearing(body):
+            emitting.append(name)
+    # §V96 non-degenerate: a sweep over zero ref-bearing responses passes every assertion
+    # above vacuously. All three emitting tools reach it on the fixture corpus, which is what
+    # makes "uniform across every emitting tool" a claim this arm can actually test rather
+    # than one deferred to the build arm.
+    assert sorted(set(emitting)) == ["get_banners", "get_enemy", "get_operator"], emitting
+
+
 # --- the promoted-build arm ----------------------------------------------------
 
 
@@ -282,3 +331,15 @@ def test_wire_key_rules_hold_on_the_promoted_build() -> None:
         )
         assert camel == [], f"camelCase keys on the wire (§V71 d): {camel}"
         assert _ranking_offenders(conn, BUILD_CALLS) == []
+        # §T219/§V66 (4) on the corpus the hoist was counted over. The fixture arm already
+        # reaches all three tools, so what this adds is scale: a real gacha_table page
+        # carrying a hundred banners and 576 refs, which is where 576 stray per-ref copies
+        # would show up and a two-banner fixture would not notice.
+        emitting = []
+        for name, body in serialized_envelopes(registry_for(conn), BUILD_CALLS):
+            per_ref, hoisted = _ref_attribution(body)
+            assert per_ref == 0, f"{name}: {per_ref} refs carry their own source_id"
+            assert hoisted == (1 if _ref_bearing(body) else 0), (name, hoisted)
+            if _ref_bearing(body):
+                emitting.append(name)
+        assert sorted(set(emitting)) == ["get_banners", "get_enemy", "get_operator"], emitting

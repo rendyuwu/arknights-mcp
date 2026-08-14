@@ -13,12 +13,18 @@ Four things then have to hold:
 
 * the measured peak sits inside the band its declaration pinned (the distribution half of
   §V120 f, and the part that fires when a new event grows a fatter window);
-* the set of tools that exceed the cap is *exactly* the set that declares ``sheds``, in both
-  directions;
+* the set of tools that exceed the cap is *exactly* the set declaring ``ShedStatus.LIVE``,
+  in both directions;
 * every tool that exceeds it answers -- non-empty ``data`` under the cap -- which is the
   B167/B169 harm itself, checked as behaviour rather than as the presence of a
   ``shed_plan=`` argument, so the declaration cannot drift from the code;
-* every tool that fits is byte-identical with the cap lifted, so nothing sheds spuriously.
+* every tool that fits is byte-identical with the cap lifted, so nothing sheds spuriously;
+* the two ways of fitting stay distinguishable BY EXECUTION (§T219): a ``DEAD_TODAY`` plan
+  still fires when the cap is lowered under the tool's own peak, and a ``NONE`` tool still
+  withholds when it is. Without that pair, ``dead_today`` would be a place to park a
+  declaration for a plan somebody had already deleted -- a guard that cannot fail (§V117) --
+  and the lowered cap is the synthetic value §V113 (b) requires, because the promoted build
+  no longer reaches the arm.
 
 Skipped without a promoted build. Not added to ``ci.yml``'s enumerated module list on
 purpose: that list names the modules the live-upstream job guards and this needs no network
@@ -47,6 +53,7 @@ from arknights_mcp.mcp.cap_pressure import (
     PRESSURE_BY_TOOL,
     STALE_FLOOR,
     InputKind,
+    ShedStatus,
     ToolFramePressure,
     classify_inputs,
     enum_filter_variants,
@@ -287,19 +294,24 @@ def test_the_peak_shape_is_where_the_declaration_says(
     assert peaks[row.tool].label == row.peak_at
 
 
-# --- §V120 (f): able to exceed ⇒ sheds, and sheds ⇒ answers ---------------------
+# --- §V120 (f): able to exceed ⇒ a LIVE plan, and a live plan ⇒ answers ---------
 
 
-def test_the_declared_shedder_set_is_exactly_the_over_cap_set(peaks: dict[str, Peak]) -> None:
-    # The clause itself, failing both ways. A tool that can exceed and declares no plan is
-    # the next B167; a tool that declares one and cannot exceed is a plan no build exercises,
-    # which is a guard that cannot fail (§V117).
+def test_the_declared_live_shedder_set_is_exactly_the_over_cap_set(peaks: dict[str, Peak]) -> None:
+    # The clause itself, failing both ways. A tool that can exceed and declares no live plan
+    # is the next B167; a tool declaring LIVE that cannot exceed is a claim no build backs.
+    # The second direction is why §T219 had to split the declaration: hoisting the per-ref
+    # source_id took get_banners to 86.5% of cap while its plan stayed, so LIVE became false
+    # and NONE would have been false too -- the plan is DEAD_TODAY, and the probes below are
+    # what keep that from being a way to escape this assertion.
     over = {name for name, peak in peaks.items() if peak.frame > MAX_RESPONSE_BYTES}
-    declared = {row.tool for row in FRAME_PRESSURE if row.sheds}
+    declared = {row.tool for row in FRAME_PRESSURE if row.shed is ShedStatus.LIVE}
     assert over == declared
 
 
-@pytest.mark.parametrize("row", [r for r in FRAME_PRESSURE if r.sheds], ids=lambda row: row.tool)
+@pytest.mark.parametrize(
+    "row", [r for r in FRAME_PRESSURE if r.shed is ShedStatus.LIVE], ids=lambda row: row.tool
+)
 def test_every_over_cap_tool_answers_instead_of_withholding(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
@@ -312,8 +324,68 @@ def test_every_over_cap_tool_answers_instead_of_withholding(
     assert env.status in {"ok", "partial"}, row.tool
 
 
+# --- §V113 (b)/§V117: a plan no build reaches, proven reachable rather than claimed
+
+
+@contextlib.contextmanager
+def _cap_at(limit: int) -> Iterator[None]:
+    """Drive the cap to a synthetic value the promoted corpus does not produce.
+
+    §V113 (b)'s "proven by a value the real corpus does not carry", applied to the cap
+    instead of to a column: a ``DEAD_TODAY`` plan is unreachable on this build precisely
+    because every window fits, so the only honest proof drives the boundary rather than the
+    payload. Lowering the cap is the same synthetic move §T217 (b) used for the ``map_image``
+    step, which fires on no live stage either.
+    """
+    original = envelopes.MAX_RESPONSE_BYTES
+    envelopes.MAX_RESPONSE_BYTES = limit
+    try:
+        yield
+    finally:
+        envelopes.MAX_RESPONSE_BYTES = original
+
+
 @pytest.mark.parametrize(
-    "row", [r for r in FRAME_PRESSURE if not r.sheds], ids=lambda row: row.tool
+    "row", [r for r in FRAME_PRESSURE if r.shed is ShedStatus.DEAD_TODAY], ids=lambda row: row.tool
+)
+def test_a_dead_today_plan_still_fires_under_a_lowered_cap(
+    registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
+) -> None:
+    # The declaration's load-bearing half. DEAD_TODAY says "the plan is kept because it is
+    # reachable by construction", and §V117 makes that a proof rather than a sentence: with
+    # the cap under this tool's own peak the plan has to fire and the answer has to survive
+    # -- non-empty data, under the lowered cap, with a limitation naming what left (§V120 c).
+    # A plan that had been deleted while the declaration stayed fails here, which is exactly
+    # the drift a third status could otherwise hide.
+    peak = peaks[row.tool]
+    with _cap_at(peak.frame - 1):
+        env = registry.get(row.tool).handler(**peak.params)
+        assert env.data != {}, row.tool
+        assert wire_size(env) <= peak.frame - 1, row.tool
+        assert env.status in {"ok", "partial"}, row.tool
+        assert env.limitations != (), row.tool
+
+
+@pytest.mark.parametrize(
+    "row", [r for r in FRAME_PRESSURE if not r.declares_plan], ids=lambda row: row.tool
+)
+def test_a_tool_with_no_plan_withholds_under_a_lowered_cap(
+    registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
+) -> None:
+    # The other direction, and the reason the pair is one guard: without it, NONE and
+    # DEAD_TODAY are indistinguishable by execution and the difference is prose. A tool
+    # declaring no plan must take the §V22 fail-closed withhold when its frame does not fit
+    # -- empty data, `partial`, and never an oversized frame on the wire.
+    peak = peaks[row.tool]
+    with _cap_at(peak.frame - 1):
+        env = registry.get(row.tool).handler(**peak.params)
+        assert dict(env.data) == {}, row.tool
+        assert env.status == "partial", row.tool
+        assert wire_size(env) <= peak.frame - 1, row.tool
+
+
+@pytest.mark.parametrize(
+    "row", [r for r in FRAME_PRESSURE if r.shed is not ShedStatus.LIVE], ids=lambda row: row.tool
 )
 def test_a_tool_that_fits_is_untouched_by_the_cap(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure

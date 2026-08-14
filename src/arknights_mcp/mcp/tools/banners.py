@@ -21,11 +21,14 @@ The load-bearing invariants:
 * **§V19/§V22** -- the list is paged through a bounded window (``page``); the ranking is
   fixed (newest first) + provenance computed over the FULL set upstream, so a page never
   shifts them, and the size-capped envelope keeps the default response small.
-* **§V120** -- the max page window is the one live shape that overruns the frame cap, and
-  ``page_size`` is a knob that bounds it, so this tool declares an ordered shed plan
-  (image refs, then rows) the envelope chokepoint applies. An over-cap page comes back as
-  a smaller ``ok`` answer with a limitation naming what left, never as the empty payload
-  the cap used to return for a window ``page_size<=80`` serves fine (B167).
+* **§V120** -- the max page window used to overrun the frame cap, and ``page_size`` is a
+  knob that bounds it, so this tool declares an ordered shed plan (image refs, then rows)
+  the envelope chokepoint applies: an over-cap page comes back as a smaller ``ok`` answer
+  with a limitation naming what left, never as the empty payload the cap used to return for
+  a window ``page_size<=80`` serves fine (B167). Since §T219 hoisted the per-ref
+  ``source_id`` no live window overruns (the heaviest is 86.5% of cap), so the plan is
+  declared ``dead_today`` -- kept because it is reachable by construction and proven by
+  synthetic pages, not because a build exercises it (§V113 b/§V117).
 * **§V23** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the shared
   :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
@@ -41,6 +44,7 @@ from arknights_mcp.mcp.tools._enum_legend import (
     attach_enum_legend,
 )
 from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_HOISTED_KEYS,
     IMAGE_REFS_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     ConnectionProvider,
@@ -142,20 +146,32 @@ def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[st
 
 
 #: §V120 (b): the ORDERED shed plan for this tool, heaviest part first. Counted over the
-#: promoted build rather than guessed -- ``image_refs`` are 55-71% of row bytes on every
-#: real page (en page 1 at page_size 100: 73064 of 104559), so shedding them takes the
-#: worst live frame from 220131 bytes to 68444 with every row still on the wire. Rows are
-#: the fallback, and only for a page whose bare metadata still will not fit.
+#: promoted build rather than guessed: on the heaviest live window (en page 1 at
+#: ``page_size`` 100) the ref step alone takes the frame from 173003 bytes to 68444 with
+#: every one of the 100 rows still on the wire, while trimming ROWS to reach that same size
+#: keeps 6 of them. Rows are the fallback, and only for a page whose bare metadata will not
+#: fit.
 #:
-#: Those two frame figures are :func:`~arknights_mcp.mcp.envelopes.wire_size` of the
-#: envelope this tool actually emits, on ``2026-08-13T220624Z-en-cn``. They read 215990 and
-#: 65110 until B171: both were taken on a hand-assembled ``{server, banners, page}`` subset
-#: with the legends, the limitations and the provenance stripped, which under-measures by
-#: 4141 bytes -- the one direction §V22 forbids. §V121 (f) is why the correction had to
-#: reach this comment and not only the §T217 (a) row: a figure documenting a §V-enforced
-#: measure is the same claim wherever it lives, and this is the comment the next shed plan
-#: gets copied from. The two payload figures above are a different unit (payload bytes, and
-#: the 73064 includes the ``image_refs`` key itself) and are not what the cap counts.
+#: Every frame figure here is :func:`~arknights_mcp.mcp.envelopes.wire_size` of the envelope
+#: this tool actually emits, on ``2026-08-13T220624Z-en-cn``. §V121 (f) (i) is why a
+#: correction has to reach this comment and not only the §T217 (a) row -- a figure
+#: documenting a §V-enforced measure is the same claim wherever it lives, and this is the
+#: comment the next shed plan gets copied from. Two corrections have already landed that
+#: way: B171 (the pre-shed figure was taken on a hand-assembled ``{server, banners, page}``
+#: subset, under-measuring by 4141 bytes, the one direction §V22 forbids) and §T219 (the
+#: same shape reads 173003 rather than 220131 now that ``image_refs_source_id`` is hoisted;
+#: the post-shed 68444 is unchanged, because this step retires the hoisted keys along with
+#: the refs either way).
+#:
+#: §T219/§V120 (f): that leaves this plan DEAD ON TODAY'S CORPUS -- 173003 is 86.5% of the
+#: cap, so no live window reaches the shed at all, and the declaration in
+#: :data:`~arknights_mcp.mcp.cap_pressure.FRAME_PRESSURE` says ``dead_today`` rather than
+#: ``live``. The plan STAYS because it is reachable by construction, not by hope:
+#: ``page_size`` reaches 100 while a banner's ``featured_ops`` count is the source's to
+#: decide, so one fat event re-crosses the cap and 86.5% is 13.5 points of margin, not a
+#: guarantee. §V113 (b) then owes a proof rather than a claim, which
+#: ``tests/unit/test_cap_shed.py`` supplies by driving this plan through the real
+#: :func:`~arknights_mcp.mcp.envelopes.ok` chokepoint on synthetic pages.
 _SHED_ORDER = ("image_refs", "banners")
 
 #: §V120 (c): what left, and the knob that returns it (§V108 routing). The counts are
@@ -197,14 +213,20 @@ def _ref_depths(frame: ShedFrame) -> int:
 
 
 def _shed_refs(frame: ShedFrame, depth: int) -> ShedFrame:
-    """Drop every image ref on the page, and the three fields coupled to them.
+    """Drop every image ref on the page, and every field coupled to them.
 
-    §V63/§V66: ``image_refs_base_url``, ``image_refs_legend`` and
-    :data:`IMAGE_REFS_LIMITATION` ride a response exactly when it emits refs -- one
-    predicate, one home (:func:`attach_image_ref_disclosures`). Shedding the refs and
-    leaving those behind would ship a base URL for paths that are gone, a legend for
-    labels nothing carries, and a caveat about links this response does not contain, so
-    the step retires all four together and states its own reason instead.
+    §V63/§V66: the :data:`IMAGE_REFS_HOISTED_KEYS` set and :data:`IMAGE_REFS_LIMITATION`
+    ride a response exactly when it emits refs -- one predicate, one home
+    (:func:`attach_image_ref_disclosures`). Shedding the refs and leaving those behind
+    would ship a base URL for paths that are gone, an attribution for references nothing
+    carries, a legend for labels nothing uses, and a caveat about links this response does
+    not contain, so the step retires them together and states its own reason instead.
+
+    The retirement set is DERIVED from the attach home rather than restated here (§V37):
+    §V66 (4) (ii) makes joining this coupler a duty of every newly hoisted key, and a
+    literal tuple in this function is exactly where that duty would be forgotten -- the
+    ``image_refs_source_id`` §T219 added would have shipped a shed page still claiming
+    attribution for refs it had just removed.
 
     The refs go from the WHOLE page, never from some rows only: an ``image_refs`` key
     absent on one row and present on another would mean "this operator has no derived
@@ -213,7 +235,7 @@ def _shed_refs(frame: ShedFrame, depth: int) -> ShedFrame:
     del depth  # one depth only: the part is shed whole (§V67), never half a page
     payload: dict[str, object] = {}
     for key, value in frame.payload.items():
-        if key in ("image_refs_base_url", "image_refs_legend"):
+        if key in IMAGE_REFS_HOISTED_KEYS:
             continue
         if key != "banners":
             payload[key] = value

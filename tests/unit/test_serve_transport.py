@@ -79,7 +79,7 @@ def test_result_carries_the_envelope_in_both_wire_halves() -> None:
     # the compact JSON mirror in ``content``.
     result = _call_over_wire("get_enemy", {"server": "en", "game_id": "enemy_1007_slime"})
     assert result.structuredContent is not None
-    assert result.structuredContent["schema_version"] == "0.3"
+    assert result.structuredContent["schema_version"] == "0.4"
     assert len(result.content) == 1
     block = result.content[0]
     assert isinstance(block, types.TextContent)

@@ -70,7 +70,16 @@ from arknights_mcp.mcp.shed import ShedFrame, ShedPlan, shed_to_fit
 #:   * empty SET query -> ``ok`` + empty collection + limitation (§V106/B147)
 #:   * ``get_data_status``: ``db_schema_version`` / ``import_status``, echoes dropped
 #:     (§V99/B148)
-SCHEMA_VERSION = "0.3"
+#:
+#: v0.4 (T219, ADR 0019) has ONE member, and it is breaking because it REMOVES a published
+#: per-row key: ``image_refs[].source_id`` is gone, hoisted to a response-level
+#: ``image_refs_source_id`` beside the ``image_refs_base_url`` that was already there
+#: (§V66 (4)/B168). It was byte-identical on every ref -- 576 copies of one 23-char
+#: constant on a single ``get_banners`` page -- and dropping it is what lets that page keep
+#: its references under the §V22 cap instead of shedding them. B168 filed the change as
+#: "additive"; removing a key a client reads is not, which is why this is a bump and not a
+#: footnote (§V21, and B69's lesson that the flip must be its own tracked row).
+SCHEMA_VERSION = "0.4"
 
 #: §V22 default response cap. The whole ``tools/call`` result frame -- both copies
 #: of the envelope (§V119: ``structuredContent`` + the ``content`` mirror) -- must
