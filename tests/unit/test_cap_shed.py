@@ -89,7 +89,9 @@ def _banners_ok(payload: dict[str, Any]) -> ResponseEnvelope:
 
 
 #: Rows heavy enough in refs that the frame is over cap, light enough that it fits once
-#: the refs go -- the live en page-1 ``page_size=100`` shape (215990 -> 65110 bytes).
+#: the refs go -- the live en page-1 ``page_size=100`` shape (220131 -> 68444 bytes,
+#: ``wire_size`` on ``2026-08-13T220624Z-en-cn``). B171: this read 215990 -> 65110, both
+#: measured on a hand-assembled subset envelope that under-counts the frame by 4141 bytes.
 _REF_HEAVY = dict(rows=100, refs=4, ref_bytes=200)
 
 #: Rows whose own metadata still overruns the frame after every ref is shed, so the

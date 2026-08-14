@@ -144,8 +144,18 @@ def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[st
 #: §V120 (b): the ORDERED shed plan for this tool, heaviest part first. Counted over the
 #: promoted build rather than guessed -- ``image_refs`` are 55-71% of row bytes on every
 #: real page (en page 1 at page_size 100: 73064 of 104559), so shedding them takes the
-#: worst live frame from 215990 bytes to 65110 with every row still on the wire. Rows are
+#: worst live frame from 220131 bytes to 68444 with every row still on the wire. Rows are
 #: the fallback, and only for a page whose bare metadata still will not fit.
+#:
+#: Those two frame figures are :func:`~arknights_mcp.mcp.envelopes.wire_size` of the
+#: envelope this tool actually emits, on ``2026-08-13T220624Z-en-cn``. They read 215990 and
+#: 65110 until B171: both were taken on a hand-assembled ``{server, banners, page}`` subset
+#: with the legends, the limitations and the provenance stripped, which under-measures by
+#: 4141 bytes -- the one direction §V22 forbids. §V121 (f) is why the correction had to
+#: reach this comment and not only the §T217 (a) row: a figure documenting a §V-enforced
+#: measure is the same claim wherever it lives, and this is the comment the next shed plan
+#: gets copied from. The two payload figures above are a different unit (payload bytes, and
+#: the 73064 includes the ``image_refs`` key itself) and are not what the cap counts.
 _SHED_ORDER = ("image_refs", "banners")
 
 #: §V120 (c): what left, and the knob that returns it (§V108 routing). The counts are
