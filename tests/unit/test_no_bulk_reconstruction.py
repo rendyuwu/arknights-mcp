@@ -16,8 +16,18 @@ asserts the systemic properties, not the individual bounds again (§V37 DRY):
 3. search is a hard cap with no walk (no offset/page/cursor), and the entity tools
    are selector-gated, so neither the search window nor pagination can be walked to
    enumerate the whole dataset;
-4. the §V22 response cap withholds (fails closed to ``partial`` with data dropped)
-   rather than leaking an oversized payload, so it is not a reconstruction vector.
+4. the §V22 response cap never leaks an oversized payload, so it is not a
+   reconstruction vector.
+
+On (4), read §V120 (e) before touching anything: **the §V19 property is the bounded
+window and the absence of a walk, not the emptiness of an over-cap reply.** Withholding
+is a fail-closed *mechanism* for a payload no request knob bounds; where a knob does
+bound it, the response now shrinks that part instead and hands back a prefix of the same
+page (T217 a). That is not a weakening -- the rows a shed returns are rows the same
+caller may already request at a smaller ``page_size``, still one page per call, still no
+offset/cursor to walk. This note is here because the prose it replaces read the emptiness
+as the security property, and on that reading a reviewer would "restore" the behaviour
+that made two legal windows answer with nothing (B167).
 """
 
 from __future__ import annotations
@@ -33,6 +43,7 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, ok, wire_size
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools.banners import _shed_plan
 from arknights_mcp.models.common import PAGE_SIZE_MAX, PageParams
 from arknights_mcp.models.search import SearchEntitiesInput
 from arknights_mcp.models.stages import GetStageInput, SearchStagesInput
@@ -268,7 +279,7 @@ def test_stage_pagination_requires_a_selector_so_stages_are_not_listable(
     assert page is not None and page.page_size == 1 and page.total >= len(("only-a-cap-check",))
 
 
-# --- (4) the §V22 response cap withholds; it is not a reconstruction vector ------
+# --- (4) the §V22 response cap bounds the wire; it is not a reconstruction vector -
 
 
 def test_response_cap_is_the_documented_200kb_ceiling() -> None:
@@ -277,11 +288,11 @@ def test_response_cap_is_the_documented_200kb_ceiling() -> None:
     assert MAX_RESPONSE_BYTES == 200_000
 
 
-def test_oversized_payload_fails_closed_and_drops_data() -> None:
-    # §V22: an oversized payload is not emitted -- the builder fails closed to a
-    # bounded ``partial`` with the data dropped + a cap limitation. So a caller
-    # cannot use one huge response to exfiltrate a bulk slice; the data is withheld,
-    # never truncated-but-leaked.
+def test_oversized_payload_with_no_bounding_knob_fails_closed() -> None:
+    # §V22: an oversized payload is not emitted. With no shed plan -- nothing in the
+    # request bounds this payload -- the builder fails closed to a bounded ``partial``
+    # with the data dropped + a cap limitation, so a caller cannot use one huge response
+    # to exfiltrate a bulk slice; the data is withheld, never truncated-but-leaked.
     blob = "x" * (MAX_RESPONSE_BYTES + 50_000)
     envelope = ok({"blob": blob})
     assert envelope.status == "partial"
@@ -293,4 +304,28 @@ def test_oversized_payload_fails_closed_and_drops_data() -> None:
     assert blob not in rendered
     # Measured on the frame both payload copies ride in (§V119 e), so "under the cap"
     # means under it on the wire, not per copy.
+    assert wire_size(envelope) <= MAX_RESPONSE_BYTES
+
+
+def test_a_shed_response_is_still_one_bounded_page_with_no_walk() -> None:
+    # §V120 (e): where a knob DOES bound the payload the response shrinks that part and
+    # answers (T217 a). The §V19 claim survives intact, and this is what it rests on: the
+    # shed returns a prefix of the page already asked for, adds no offset/cursor/page
+    # field a caller could walk, and does not raise the ceiling on what one call returns.
+    payload = {
+        "server": "en",
+        "banners": [{"game_id": f"pool_{i:04d}", "blob": "b" * 900} for i in range(100)],
+        "page": {"page": 1, "page_size": 100, "total": 4321, "has_more": True},
+    }
+    envelope = ok(dict(payload), shed_plan=_shed_plan())
+    rows = envelope.data["banners"]
+    assert isinstance(rows, list)
+    # A prefix of the requested page -- never more rows than were asked for, and never a
+    # row from outside the window (which is what a "compensating" refetch would smuggle).
+    assert 0 < len(rows) <= 100
+    assert rows == payload["banners"][: len(rows)]
+    # No new enumeration knob appears on the way out, and the page descriptor stays the
+    # bounded one the model validated.
+    assert (set(envelope.data) & _ENUMERATION_KNOBS) == {"page"}
+    assert envelope.data["page"] == payload["page"]
     assert wire_size(envelope) <= MAX_RESPONSE_BYTES

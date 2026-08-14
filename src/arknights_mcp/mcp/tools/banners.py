@@ -21,6 +21,11 @@ The load-bearing invariants:
 * **§V19/§V22** -- the list is paged through a bounded window (``page``); the ranking is
   fixed (newest first) + provenance computed over the FULL set upstream, so a page never
   shifts them, and the size-capped envelope keeps the default response small.
+* **§V120** -- the max page window is the one live shape that overruns the frame cap, and
+  ``page_size`` is a knob that bounds it, so this tool declares an ordered shed plan
+  (image refs, then rows) the envelope chokepoint applies. An over-cap page comes back as
+  a smaller ``ok`` answer with a limitation naming what left, never as the empty payload
+  the cap used to return for a window ``page_size<=80`` serves fine (B167).
 * **§V23** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the shared
   :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
@@ -29,12 +34,14 @@ The load-bearing invariants:
 from __future__ import annotations
 
 from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, ok
+from arknights_mcp.mcp.shed import ShedFrame, ShedPlan, ShedStep
 from arknights_mcp.mcp.tool_registry import ToolSpec
 from arknights_mcp.mcp.tools._enum_legend import (
     TOOL_ENUM_LEGEND_FIELDS,
     attach_enum_legend,
 )
 from arknights_mcp.mcp.tools._shared import (
+    IMAGE_REFS_LIMITATION,
     IMAGE_REFS_PATH_NOTE,
     ConnectionProvider,
     attach_image_ref_disclosures,
@@ -134,6 +141,132 @@ def _banner_to_dict(banner: BannerFacts, *, image_refs_enabled: bool) -> dict[st
     return data
 
 
+#: §V120 (b): the ORDERED shed plan for this tool, heaviest part first. Counted over the
+#: promoted build rather than guessed -- ``image_refs`` are 55-71% of row bytes on every
+#: real page (en page 1 at page_size 100: 73064 of 104559), so shedding them takes the
+#: worst live frame from 215990 bytes to 65110 with every row still on the wire. Rows are
+#: the fallback, and only for a page whose bare metadata still will not fit.
+_SHED_ORDER = ("image_refs", "banners")
+
+#: §V120 (c): what left, and the knob that returns it (§V108 routing). The counts are
+#: untouched by this shed -- only the derived links are gone -- so the list still reads as
+#: complete. Client-facing text, so no internal cites/jargon (§V71 b): the cites live in
+#: this comment, never the string; short sentences (§V71 f).
+_REFS_SHED_LIMITATION = (
+    "Image references were left out of this page to keep the response under its size "
+    "limit. The banner list itself is complete and its counts are unchanged. Request a "
+    "smaller page_size to receive the image references."
+)
+
+
+def _rows_shed_limitation(kept: int, on_page: int) -> str:
+    """§V120 (c): the rows that left + the ``page_size`` that returns them.
+
+    ``page.total`` is deliberately NOT rewritten to ``kept`` -- a trimmed list whose
+    total shrank with it would read as §V67 CONFIRMED-none ("that is all there is"),
+    which is the false claim §V120 (c) exists to prevent. So the count stays truthful and
+    the shortfall is stated here, naming the page_size that fits as the way back to the
+    rows this response dropped. Client-facing text, so no cites/jargon (§V71 b).
+    """
+    return (
+        f"Only the first {kept} of this page's {on_page} banners are included, to keep "
+        f"the response under its size limit. The total count is unchanged. Request a "
+        f"page_size of {kept} or smaller to receive every banner."
+    )
+
+
+def _rows(frame: ShedFrame) -> list[dict[str, object]]:
+    """This page's banner rows, or an empty list when the payload carries none."""
+    rows = frame.payload.get("banners")
+    return list(rows) if isinstance(rows, list) else []
+
+
+def _ref_depths(frame: ShedFrame) -> int:
+    """One shed depth when this page emits any image ref, else nothing to shed."""
+    return 1 if "image_refs_base_url" in frame.payload else 0
+
+
+def _shed_refs(frame: ShedFrame, depth: int) -> ShedFrame:
+    """Drop every image ref on the page, and the three fields coupled to them.
+
+    §V63/§V66: ``image_refs_base_url``, ``image_refs_legend`` and
+    :data:`IMAGE_REFS_LIMITATION` ride a response exactly when it emits refs -- one
+    predicate, one home (:func:`attach_image_ref_disclosures`). Shedding the refs and
+    leaving those behind would ship a base URL for paths that are gone, a legend for
+    labels nothing carries, and a caveat about links this response does not contain, so
+    the step retires all four together and states its own reason instead.
+
+    The refs go from the WHOLE page, never from some rows only: an ``image_refs`` key
+    absent on one row and present on another would mean "this operator has no derived
+    art" in one place and "the response dropped it" in the other (§V67).
+    """
+    del depth  # one depth only: the part is shed whole (§V67), never half a page
+    payload: dict[str, object] = {}
+    for key, value in frame.payload.items():
+        if key in ("image_refs_base_url", "image_refs_legend"):
+            continue
+        if key != "banners":
+            payload[key] = value
+            continue
+        payload[key] = [
+            {
+                field: (
+                    [{k: v for k, v in op.items() if k != "image_refs"} for op in cell]
+                    if field == "featured_ops" and isinstance(cell, list)
+                    else cell
+                )
+                for field, cell in row.items()
+            }
+            for row in (r for r in _rows(frame) if isinstance(r, dict))
+        ]
+    limitations = tuple(limit for limit in frame.limitations if limit != IMAGE_REFS_LIMITATION)
+    return ShedFrame(payload=payload, limitations=(*limitations, _REFS_SHED_LIMITATION))
+
+
+def _row_depths(frame: ShedFrame) -> int:
+    """Depths available on the rows: one per row that can be dropped down to a single one.
+
+    A page of one row offers no depth -- there is nothing left to trim that would still
+    be an answer, so the plan runs out and the §V22 withhold takes over.
+    """
+    return max(len(_rows(frame)) - 1, 0)
+
+
+def _shed_rows(frame: ShedFrame, depth: int) -> ShedFrame:
+    """Keep the first ``len(rows) - 1 - depth`` rows: deeper index, strictly fewer rows.
+
+    A prefix, not a sample: the ranking is fixed newest-first upstream (§V19), so the
+    rows a client keeps are the same rows the head of a smaller ``page_size`` would have
+    returned. ``page`` is passed through untouched (§V120 c).
+    """
+    rows = _rows(frame)
+    kept = len(rows) - 1 - depth
+    payload = dict(frame.payload)
+    payload["banners"] = rows[:kept]
+    return ShedFrame(
+        payload=payload,
+        limitations=(*frame.limitations, _rows_shed_limitation(kept, len(rows))),
+    )
+
+
+def _shed_plan() -> ShedPlan:
+    """The declared §V120 plan for ``get_banners``: refs, then rows.
+
+    Both steps are paginated (§V120 d) -- what a shed returns here is a smaller window
+    of the same page, reachable by a ``page_size`` the caller may already request, so the
+    result keeps its ``ok`` status rather than reporting a section the client asked for
+    and did not get. Built from :data:`_SHED_ORDER` so the declared order and the applied
+    order have one home.
+    """
+    steps: dict[str, ShedStep] = {
+        "image_refs": ShedStep(
+            part="image_refs", paginated=True, depths=_ref_depths, apply=_shed_refs
+        ),
+        "banners": ShedStep(part="banners", paginated=True, depths=_row_depths, apply=_shed_rows),
+    }
+    return tuple(steps[part] for part in _SHED_ORDER)
+
+
 def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelope:
     """Map the domain result to a typed §V23 ``ok`` envelope (§V5 region + provenance).
 
@@ -176,6 +309,9 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
     limitations = attach_enum_legend(
         data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME] if result.banners else (), limitations
     )
+    # §V120 (a)/(b): the max page window is the one real shape that overruns the §V22
+    # frame cap, and page_size is the knob that bounds it -- so the chokepoint shrinks
+    # this payload along the declared plan instead of withholding all of it (B167).
     return ok(
         data,
         provenance=tuple(
@@ -183,6 +319,7 @@ def _shape(result: BannersResult, *, image_refs_enabled: bool) -> ResponseEnvelo
             for p in result.provenance
         ),
         limitations=limitations,
+        shed_plan=_shed_plan(),
     )
 
 

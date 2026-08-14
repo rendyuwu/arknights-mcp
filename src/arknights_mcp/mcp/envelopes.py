@@ -13,9 +13,13 @@ Three invariants live here:
   change bumps the constant and needs an ADR.
 * **§V22/§V119 (e)** -- a default tool response is capped at
   :data:`MAX_RESPONSE_BYTES`. The builder measures the *whole result frame* both
-  copies of the payload ride in (:func:`wire_size`) and, when it would exceed the
-  cap, fails closed to a bounded ``partial`` envelope (data dropped, a cap
-  limitation added) rather than emitting an oversized response.
+  copies of the payload ride in (:func:`wire_size`) rather than emitting an
+  oversized response.
+* **§V120** -- what an over-cap response *emits*. When the tool declares a shed plan
+  (:mod:`arknights_mcp.mcp.shed`), the knob-bounded part of the payload is shrunk
+  until the frame fits and the client gets a smaller legal answer with a limitation
+  naming what left. Withholding the whole payload is the floor for a response with
+  no such knob, not the answer to every over-cap reply (B167).
 * **§V119** -- a ``tools/call`` result carries the envelope twice: as
   ``structuredContent`` and as the compact JSON mirror in ``content``
   (:func:`mirror_text`), because a content-only client reads ``content`` alone.
@@ -37,6 +41,7 @@ Envelopes are plain frozen dataclasses (matching the service layer) with a
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -45,6 +50,7 @@ from typing import Literal, get_args
 from pydantic import ValidationError
 
 from arknights_mcp.mcp.payload_hygiene import clean_payload
+from arknights_mcp.mcp.shed import ShedFrame, ShedPlan, shed_to_fit
 
 #: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
@@ -303,18 +309,48 @@ def _cap_limitation() -> str:
     )
 
 
-def _enforce_cap(envelope: ResponseEnvelope) -> ResponseEnvelope:
-    """Fail closed to a bounded ``partial`` envelope when over the §V22 cap.
-
-    Rather than emit an oversized response, drop the data payload (provenance +
-    limitations stay -- they are small + carry the region attribution) and add a
-    cap limitation so the client knows to narrow the request.
+def _enforce_cap(envelope: ResponseEnvelope, plan: ShedPlan) -> ResponseEnvelope:
+    """Bring an over-cap envelope under the §V22 cap (§V120).
 
     Measured on :func:`wire_size` -- the frame with both payload copies (§V119 e), so
     the budget an answer is checked against is the budget it spends.
+
+    Over cap, the declared shed plan runs first (§V120 a): the knob-bounded part of the
+    payload is shrunk until the frame fits, the client is told what left and which knob
+    returns it, and a paginated trim keeps its ``ok`` status because a smaller page is a
+    smaller *legal* window (§V120 d). Only when no plan can fit the frame -- or the tool
+    declares none, because nothing in the request bounds the payload -- does the response
+    fail closed to a bounded ``partial`` with the data dropped (provenance + limitations
+    stay: small, and they carry the region attribution).
+
+    That order is the whole of B167. Withholding was the *only* move here, so two legal
+    ``get_banners`` windows whose rows ``page_size<=80`` returns fine came back empty.
     """
     if wire_size(envelope) <= MAX_RESPONSE_BYTES:
         return envelope
+
+    def _rebuild(frame: ShedFrame) -> ResponseEnvelope:
+        return ResponseEnvelope(
+            status=envelope.status,
+            data=frame.payload,
+            provenance=envelope.provenance,
+            limitations=frame.limitations,
+            analyzer_version=envelope.analyzer_version,
+            schema_version=envelope.schema_version,
+        )
+
+    shed = shed_to_fit(
+        ShedFrame(payload=envelope.data, limitations=envelope.limitations),
+        plan,
+        lambda frame: wire_size(_rebuild(frame)) <= MAX_RESPONSE_BYTES,
+    )
+    if shed is not None:
+        frame, section_shed = shed
+        fitted = _rebuild(frame)
+        # §V120 (d): a client-flagged section the caller asked for and did not get is a
+        # ``partial`` result; a trimmed page is not.
+        return dataclasses.replace(fitted, status="partial") if section_shed else fitted
+
     return ResponseEnvelope(
         status="partial",
         data={},
@@ -332,12 +368,16 @@ def build_envelope(
     provenance: Iterable[Provenance] = (),
     limitations: Iterable[str] = (),
     analyzer_version: str | None = None,
+    shed_plan: ShedPlan = (),
 ) -> ResponseEnvelope:
-    """Build a validated, size-bounded envelope (§V21/§V22/§V23).
+    """Build a validated, size-bounded envelope (§V21/§V22/§V23/§V120).
 
-    Rejects an unknown ``status`` (§V23) and enforces the §V22 cap: a payload
-    that would serialize over :data:`MAX_RESPONSE_BYTES` is returned as a bounded
-    ``partial`` envelope instead.
+    Rejects an unknown ``status`` (§V23) and enforces the §V22 cap: a payload that would
+    put the result frame over :data:`MAX_RESPONSE_BYTES` is shrunk along ``shed_plan``
+    (§V120) and, if nothing in the plan fits, returned as a bounded ``partial`` envelope
+    instead. ``shed_plan`` is the tool's own ordered declaration of which part of ITS
+    payload a client knob bounds -- it is applied here, at the one chokepoint every tool
+    result converges on, rather than by a measure-and-trim copy in each service.
 
     Every tool result converges here, so this is where the two payload rules apply
     (:func:`~arknights_mcp.mcp.payload_hygiene.clean_payload`): ``null`` leaves are
@@ -357,7 +397,7 @@ def build_envelope(
         limitations=(*limitations, *payload_limitations),
         analyzer_version=analyzer_version,
     )
-    return _enforce_cap(envelope)
+    return _enforce_cap(envelope, shed_plan)
 
 
 def ok(
@@ -366,14 +406,16 @@ def ok(
     provenance: Iterable[Provenance] = (),
     limitations: Iterable[str] = (),
     analyzer_version: str | None = None,
+    shed_plan: ShedPlan = (),
 ) -> ResponseEnvelope:
-    """A successful (``ok``) result envelope (§V23). Size-bounded (§V22)."""
+    """A successful (``ok``) result envelope (§V23). Size-bounded (§V22/§V120)."""
     return build_envelope(
         "ok",
         data=data,
         provenance=provenance,
         limitations=limitations,
         analyzer_version=analyzer_version,
+        shed_plan=shed_plan,
     )
 
 
