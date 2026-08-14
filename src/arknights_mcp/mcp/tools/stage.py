@@ -58,6 +58,7 @@ from arknights_mcp.mcp.tools._stage_selector import (
     STAGE_SELECTOR_NOTE,
     stage_ambiguity_limitation,
 )
+from arknights_mcp.mcp.tools._stage_shed import stage_shed_plan
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.stages import AnalysisDepth, AnalyzeStageInput, GetStageInput
 from arknights_mcp.services.stage_map_render import RenderedMap
@@ -345,6 +346,13 @@ def _shape(result: StageDetailResult) -> ResponseEnvelope:
             *_stage_absent_field_limitations(result.stage),
             *enum_limitations,
         ),
+        # §V120 (a)/(b) (B169): a max-detail call on a route-dense stage overruns the
+        # §V22 frame cap, and every heavy part of it is bounded by a knob the caller
+        # already holds -- so the chokepoint shrinks the payload along the plan counted
+        # for THIS response instead of withholding all of it. Before this, one real
+        # stage answered `partial` with an empty payload for every flag combination that
+        # asked for its routes, while a smaller routes_page.page_size returned them fine.
+        shed_plan=stage_shed_plan(data),
     )
 
 
