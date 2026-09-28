@@ -63,8 +63,8 @@ class FakeYostar:
     """A :data:`~arknights_mcp.sources.yostar.YostarSend` that answers by path suffix
     and records every ``(method, url)``."""
 
-    def __init__(self, *, reject_token: bool = False) -> None:
-        self.reject_token = reject_token
+    def __init__(self, *, token_answer: object = None) -> None:
+        self.token_answer = token_answer
         self.calls: list[tuple[str, str]] = []
 
     def __call__(
@@ -86,8 +86,8 @@ class FakeYostar:
                 "Data": {"UserInfo": {"ID": "yostar-uid-1", "Token": "yostar-token-1"}},
             }
         if url.endswith("/user/v1/getToken"):
-            if self.reject_token:
-                return {"result": 1}
+            if self.token_answer is not None:
+                return self.token_answer
             return {"result": 0, "uid": "game-uid-1", "token": "u8-token-1"}
         if url.endswith("/version"):
             return {"resVersion": "26-09-01", "clientVersion": "2.6.41"}

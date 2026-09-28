@@ -66,8 +66,6 @@ _ALLOWED: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".yo-star.com", ("/official/Android/version",)),
 )
 
-_CAPTCHA_MESSAGE = "Yostar asked for a captcha; log in once in the game client, then retry"
-
 
 @dataclass(frozen=True)
 class YostarSession:
@@ -139,12 +137,17 @@ def _dict(value: Any, step: str) -> dict[str, Any]:
 
 
 def _check_game(data: Mapping[str, Any], step: str, hint: str = "") -> None:
-    if "captcha" in data:
-        raise SourceAdapterError(_CAPTCHA_MESSAGE)
     result = data.get("result")
     is_int = isinstance(result, int) and not isinstance(result, bool)
-    if data.get("error") or (is_int and result != 0):
+    # u8 rejects a stale token as {"message": "verify fail"}, with no result.
+    if data.get("error") or (is_int and result != 0) or (result is None and "message" in data):
         shown = result if is_int else "?"
+        # Like ArkPRTS: a captcha key only matters on a rejected response.
+        if "captcha" in data:
+            raise SourceAdapterError(
+                f"the game server asked for a captcha on {step} (result {shown}); "
+                "log in once in the game client, then retry"
+            )
         raise SourceAdapterError(f"the game server rejected {step} (result {shown}){hint}")
 
 

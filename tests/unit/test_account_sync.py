@@ -134,8 +134,13 @@ def test_login_then_sync_stores_only_the_allowlisted_roster(
         assert secret not in out.out and secret not in out.err
 
 
+# {"message": "verify fail"} is what the live u8 server sends for a stale token.
+@pytest.mark.parametrize("rejection", [{"result": 1}, {"message": "verify fail"}])
 def test_a_rejected_token_keeps_the_previous_roster(
-    url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    rejection: dict[str, object],
+    url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _login_and_sync(monkeypatch, FakeYostar())
     before = AccountStore(url).load("en")
@@ -143,11 +148,30 @@ def test_a_rejected_token_keeps_the_previous_roster(
     capsys.readouterr()
 
     _answer(monkeypatch, "")
-    assert main(["account", "sync"], yostar_send=FakeYostar(reject_token=True)) == 1
+    assert main(["account", "sync"], yostar_send=FakeYostar(token_answer=rejection)) == 1
     assert "account login" in capsys.readouterr().err
     after = AccountStore(url).load("en")
     assert after is not None
     assert (after.snapshot_id, after.content_hash) == (before.snapshot_id, before.content_hash)
+
+
+@pytest.mark.parametrize(
+    ("token_answer", "error"),
+    [
+        ({"result": 0, "uid": "game-uid-1", "token": "u8-token-1", "captcha": None}, None),
+        ({"result": 1, "captcha": {"gt": "g", "challenge": "c"}}, "captcha on the saved session"),
+    ],
+)
+def test_a_captcha_key_fails_the_sync_only_on_a_rejected_response(
+    token_answer: dict[str, object], error: str | None
+) -> None:
+    client = yostar.YostarClient(send=FakeYostar(token_answer=token_answer))
+    session = YostarSession("yostar-uid-1", "yostar-token-1")
+    if error is None:
+        assert "troop" in client.fetch_sync_data(session)
+    else:
+        with pytest.raises(SourceAdapterError, match=error):
+            client.fetch_sync_data(session)
 
 
 def test_sync_without_a_session_says_not_logged_in(
