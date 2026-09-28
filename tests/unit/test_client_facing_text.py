@@ -623,6 +623,9 @@ _LEADING_SELECTOR: dict[str, str] = {
     "get_item_drops": "item game_id",
     "get_announcements": "region",
     "get_banners": "region",
+    "get_my_roster": "region",
+    "get_my_operator": "game_id",
+    "get_my_inventory": "region",
     "get_data_status": "build",
     "get_data_sources": "source",
 }

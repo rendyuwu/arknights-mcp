@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from arknights_mcp.config import AppConfig, ConfigError, load_config
+from arknights_mcp.db.account import AccountStoreError
 from arknights_mcp.db.migrations import default_migrations_dir
 from arknights_mcp.db.policy_events import read_events
 from arknights_mcp.db.promotion import PromotionError, promote_candidate, resolve_active_database
@@ -28,6 +29,7 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.sources.base import SourceAdapterError
 from arknights_mcp.sources.http_fetch import Fetcher
 from arknights_mcp.sources.registry import RegistryError, SourceRegistry, load_source_registry
+from arknights_mcp.sources.yostar import YostarSend
 
 DEFAULT_CONFIG_PATH = "config.toml"
 _PRIMARY_SOURCE_ID = "arknights_assets_gamedata"
@@ -44,6 +46,7 @@ _HANDLED_ERRORS = (
     ImporterError,
     ValueError,
     FileNotFoundError,
+    AccountStoreError,
 )
 
 
@@ -52,6 +55,7 @@ class CliContext:
     """Cross-cutting dependencies injectable for testing (e.g. a fake fetcher)."""
 
     fetcher: Fetcher | None = None
+    yostar_send: YostarSend | None = None
 
 
 def _err(message: str) -> None:

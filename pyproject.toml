@@ -10,6 +10,7 @@ requires-python = ">=3.12,<3.13"
 # Runtime dependencies are declared and locked in task T3 (V25: mcp>=1.28.1,<2).
 dependencies = [
     "mcp>=1.28.1,<2",
+    "pg8000>=1.31,<2",
     "pydantic>=2,<3",
     "pyjwt[crypto]>=2.10,<3",
     "sqlalchemy>=2,<3",

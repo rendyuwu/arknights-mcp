@@ -40,6 +40,7 @@ coverage.xml
 # --- Secrets / local env (auth secrets are env-only, never committed) ---
 .env
 .env.*
+*.env
 !.env.example
 # Runtime config carries deployment-specific values (tunnel host, OIDC descriptors);
 # only the config.example.toml template is tracked.

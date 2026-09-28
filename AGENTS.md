@@ -24,8 +24,8 @@ CLI only; user-facing tools query SQLite and never touch the network.
   (allowlist), `importers/` (parsers), `db/` + `db/repositories/` (data access),
   `analyzers/` (rules), `models/` + `mcp/` (schemas), `transports/`, `auth/`,
   `middleware/`.
-- Admin operations (`sync`, `import`, `validate`, `purge`, source management)
-  are **CLI-only** and are never exposed as MCP tools (§V28).
+- Admin operations (`sync`, `import`, `validate`, `purge`, source management,
+  `account`) are **CLI-only** and are never exposed as MCP tools (§V28).
 - Write tests before broadening parsers. Prefer property tests (Hypothesis) for
   parsing/normalization.
 
@@ -34,7 +34,9 @@ CLI only; user-facing tools query SQLite and never touch the network.
 - Make an outbound/source-network request from any MCP tool at query time
   (§V1); no query-time download/scrape fallback (§V24).
 - Open SQLite writable in an MCP process; run arbitrary SQL, shell, filesystem,
-  or a source-download tool; build SQL by string interpolation (§V2).
+  or a source-download tool; build SQL by string interpolation (§V2); connect
+  to the account roster database from an MCP process with a role that can
+  write (ADR 0020).
 - Replace the active DB on a failed/incompatible sync, or mutate the active DB
   in place. Promote only after validation, atomically via `current.json`
   (§V3, §V4).
@@ -53,7 +55,9 @@ CLI only; user-facing tools query SQLite and never touch the network.
   headers, bearer tokens, raw source records, or roster/account data; leak
   stack traces or local paths in errors (§V12, §V23).
 - Request, store, or transmit Arknights game credentials or account IDs
-  (§V15).
+  outside the CLI-only `account` group (ADR 0020); let any MCP process read
+  the Yostar session; log or print email, OTP, tokens, or roster data (§V15,
+  §V12).
 - Commit or ship raw snapshots, prebuilt databases, artwork, audio, story
   scripts, voice lines, wiki/community prose, or full announcement bodies
   (§V16). `data/builds/` and `*.sqlite` are git-ignored.
@@ -74,7 +78,8 @@ CLI only; user-facing tools query SQLite and never touch the network.
   (§V2).
 - Stamp every imported record with `snapshot_id` + `source_path`/key +
   `transform_version` + `record_hash`; apply the explicit field allowlist
-  (§V17, §V18).
+  (§V17, §V18) (account roster: its one `account_roster` provenance row per
+  server, ADR 0020).
 - Return a typed `status` ∈ {ok, partial, not_found, ambiguous,
   unsupported_server, data_stale, database_unavailable, schema_incompatible,
   analysis_unavailable, internal_error} (§V23).
@@ -89,8 +94,8 @@ CLI only; user-facing tools query SQLite and never touch the network.
 ## Toolchain & workflow
 
 - Python 3.12, managed with `uv`. Dependencies are locked in `uv.lock`
-  (`mcp>=1.28.1,<2`, Pydantic v2, SQLAlchemy Core, Ruff, mypy, pytest,
-  pytest-cov, Hypothesis).
+  (`mcp>=1.28.1,<2`, Pydantic v2, SQLAlchemy Core, `pg8000`, Ruff, mypy,
+  pytest, pytest-cov, Hypothesis).
 - Verification gate (run before every commit):
 
   ```bash

@@ -46,7 +46,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-#: §V121 (c): the promoted build every figure in :data:`FRAME_PRESSURE` was counted on.
+#: §V121 (c): the promoted build every figure in :data:`FRAME_PRESSURE` was counted on,
+#: except the three account-tool rows, which name their own counting build.
 #: The guard re-derives the *classification* from whatever build is promoted, so this is
 #: the basis of the numbers, not a gate on running.
 CAP_PRESSURE_BASIS = "2026-08-13T220624Z-en-cn"
@@ -222,7 +223,7 @@ class ToolFramePressure:
 #:
 #: Three of these figures reproduce the spec verbatim -- ``get_stage`` 302656 (B169),
 #: ``analyze_stage`` 85128 (B169), ``get_announcements`` 11013 (§T217 a) -- which is what
-#: made the sweep trustworthy enough to pin the other ten.
+#: made the sweep trustworthy enough to pin the other thirteen.
 FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
     ToolFramePressure(
         tool="search_entities",
@@ -398,6 +399,51 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
             "to decide, so a fat event re-crosses 13.5 points of margin. Its order still "
             "holds where it matters -- the ref step takes this window to 68444 with all 100 "
             "rows aboard, and trimming rows to that size keeps 6 (§V120 b)."
+        ),
+    ),
+    ToolFramePressure(
+        tool="get_my_roster",
+        selectors=(),
+        filters=("min_rarity", "min_elite"),
+        enum_knobs=(),
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=2874,
+        peak_at="en page 1, page_size=100",
+        counted=(
+            "1.4% of cap, counted on build 2026-09-27T220724Z-en-cn.sqlite with the synthetic "
+            "account fixture tests/fixtures/account/sync_data_en.json, pre-shed frame bytes. "
+            "A real roster is personal and never in the basis; a full 100-row page of real "
+            "operator ids is proven under the cap by the account roster cap contract test."
+        ),
+    ),
+    ToolFramePressure(
+        tool="get_my_operator",
+        selectors=(),
+        filters=(),
+        enum_knobs=(),
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=3657,
+        peak_at="en/char_002_amiya",
+        counted=(
+            "1.8% of cap, counted on build 2026-09-27T220724Z-en-cn.sqlite with the synthetic "
+            "account fixture tests/fixtures/account/sync_data_en.json, pre-shed frame bytes. "
+            "A real roster is personal and never in the basis; a full 100-row page of real "
+            "operator ids is proven under the cap by the account roster cap contract test."
+        ),
+    ),
+    ToolFramePressure(
+        tool="get_my_inventory",
+        selectors=(),
+        filters=(),
+        enum_knobs=(),
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=2190,
+        peak_at="en page 1, page_size=100",
+        counted=(
+            "1.1% of cap, counted on build 2026-09-27T220724Z-en-cn.sqlite with the synthetic "
+            "account fixture tests/fixtures/account/sync_data_en.json, pre-shed frame bytes. "
+            "A real roster is personal and never in the basis; a full 100-row page of real "
+            "operator ids is proven under the cap by the account roster cap contract test."
         ),
     ),
     ToolFramePressure(

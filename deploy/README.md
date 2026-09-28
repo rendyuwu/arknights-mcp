@@ -50,6 +50,7 @@ files:
 | `ARKNIGHTS_MCP_OIDC_ISSUER` | Token issuer, exact match incl. trailing slash (§V10) |
 | `ARKNIGHTS_MCP_OIDC_AUDIENCE` | The MCP resource-server audience this deployment accepts |
 | `ARKNIGHTS_MCP_OIDC_JWKS_URL` | JWKS endpoint; keys selected by `kid` |
+| `ARKNIGHTS_MCP_ACCOUNT_DB_URL` | Personal account roster database (ADR 0020): read-only role URL for `serve`, writer role URL on the machine that runs `account login` / `account sync`; unset means the three account tools answer `database_unavailable` |
 
 Each example ships an `arknights-mcp.env.example` with placeholders only. Copy it,
 fill in real values, and keep it out of git (`chmod 600` for the systemd file).
@@ -100,6 +101,47 @@ Four points, each of which silently breaks the transport if missed:
 Everything else is unchanged from the remote posture: the image stays code-only
 (§V16), the build arrives on a read-only mount (§V2), and `import` / `sync` remain
 host-side admin CLI steps (§V28).
+
+## Personal account roster database (ADR 0020)
+
+Optional, and separate from everything above: a personal Yostar (en) account
+roster, synced by a CLI-only `account` command group and read by three
+read-only MCP tools. Game-data builds stay exactly as they are — SQLite under
+`data/builds/`, built by `sync` on this host. Only the personal roster moves to
+PostgreSQL, and only the owner's own machine ever logs in to Yostar.
+
+**Server (the host running `serve`).**
+
+```bash
+cp deploy/docker/account-db.env.example deploy/docker/account-db.env
+# set three passwords in account-db.env, then:
+docker compose -f deploy/docker/docker-compose.yml --profile account up -d account-db
+```
+
+Put the reader role's URL in `arknights-mcp.env` (compose: host `account-db:5432`;
+systemd: `127.0.0.1:5433`), then restart `mcp`. With the database down or the
+variable unset, the three account tools answer `database_unavailable`; every
+other tool is unaffected.
+
+**Sync machine (the owner's own PC, not this host).** Clone the repository,
+`uv sync`, `cp .env.example .env` with the writer role's password, then in a
+second terminal keep open:
+
+```bash
+ssh -N -L 15432:127.0.0.1:5433 <user>@<server>
+```
+
+With that forward open: `uv run --env-file .env arknights-mcp account login`
+once, and `uv run --env-file .env arknights-mcp account sync` — with the game
+fully closed — whenever the roster should refresh. `account status`, `logout`
+and `purge` work the same way.
+
+Why the split: the Yostar login must come from the machine the owner normally
+plays from, never from this server, so an account ban tied to server traffic
+can't happen. The SSH forward carries only database traffic — no Yostar
+request ever crosses it. This server never holds the writer role's URL or the
+Yostar session token; it only ever reads the roster through the SELECT-only
+reader role.
 
 ## Pre-auth flood protection is the proxy's job (§V11)
 

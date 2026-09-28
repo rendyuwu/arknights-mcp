@@ -28,4 +28,7 @@ entity is absent, tools return a typed `not_found` / `region_unavailable` /
   never).
 - Freshness is an operational concern surfaced via `get_data_status` and typed
   `data_stale` results, not fixed by silent fetching.
+- Amended by ADR 0020: the three account tools also read the owner's account
+  roster database. That is the project's own store, not an upstream source,
+  so no upstream access happens at query time.
 - Reversal (any runtime fetch) would require a new ADR and a security review.

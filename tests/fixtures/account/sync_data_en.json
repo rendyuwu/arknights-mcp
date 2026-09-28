@@ -1,0 +1,90 @@
+{
+  "status": {
+    "gold": 4200000,
+    "level": 120,
+    "nickName": "SENTINEL_NICK",
+    "uid": "SENTINEL_UID"
+  },
+  "troop": {
+    "chars": {
+      "1": {
+        "instId": 1,
+        "charId": "char_002_amiya",
+        "favorPoint": 25570,
+        "potentialRank": 5,
+        "mainSkillLvl": 7,
+        "skin": "char_002_amiya#1",
+        "level": 80,
+        "exp": 0,
+        "evolvePhase": 2,
+        "defaultSkillIndex": 0,
+        "gainTime": 1600000000,
+        "skills": [],
+        "currentEquip": null,
+        "equip": {},
+        "voiceLan": "EN",
+        "currentTmpl": "char_002_amiya",
+        "tmpl": {
+          "char_002_amiya": {
+            "skinId": "char_002_amiya#1",
+            "defaultSkillIndex": 1,
+            "skills": [
+              {"skillId": "skchr_amiya_1", "unlock": 1, "state": 0, "specializeLevel": 3, "completeUpgradeTime": -1},
+              {"skillId": "skchr_amiya_2", "unlock": 1, "state": 0, "specializeLevel": 2, "completeUpgradeTime": -1}
+            ],
+            "currentEquip": "uniequip_002_amiya",
+            "equip": {
+              "uniequip_001_amiya": {"hide": 0, "locked": 0, "level": 1},
+              "uniequip_002_amiya": {"hide": 0, "locked": 0, "level": 3}
+            }
+          },
+          "char_1001_amiya2": {
+            "skinId": "char_1001_amiya2#2",
+            "defaultSkillIndex": 0,
+            "skills": [
+              {"skillId": "skchr_amiya2_1", "unlock": 1, "state": 0, "specializeLevel": 1, "completeUpgradeTime": -1}
+            ],
+            "currentEquip": null,
+            "equip": {}
+          }
+        }
+      },
+      "2": {
+        "instId": 2,
+        "charId": "char_9999_synthetic",
+        "favorPoint": 0,
+        "potentialRank": 0,
+        "mainSkillLvl": 4,
+        "skin": "char_9999_synthetic#1",
+        "level": 50,
+        "exp": 0,
+        "evolvePhase": 1,
+        "defaultSkillIndex": 0,
+        "gainTime": 1700000000,
+        "skills": [
+          {"skillId": "skchr_synthetic_1", "unlock": 1, "state": 0, "specializeLevel": 0, "completeUpgradeTime": -1}
+        ],
+        "currentEquip": null,
+        "equip": {
+          "uniequip_002_synthetic": {"hide": 0, "locked": 1, "level": 0}
+        }
+      },
+      "3": {"charId": 7}
+    },
+    "squads": {"0": {"squadId": "0", "name": "SENTINEL_SQUAD", "slots": []}}
+  },
+  "skin": {
+    "characterSkins": {
+      "char_002_amiya#1": 1,
+      "char_002_amiya@epoque#4": 1,
+      "char_1001_amiya2#2": 1,
+      "char_9999_synthetic#1": 1
+    }
+  },
+  "inventory": {
+    "sugar": 12,
+    "30012": 250,
+    "mod_unlock_token": 3,
+    "zero_item": 0
+  }
+}

@@ -4,16 +4,36 @@ This document explains what this project does and does not process, store, and
 log. It reflects the founder-approved decisions (D10, D15) and the privacy and
 logging rules in the PRD (Section 17.5) and [`SPEC.md`](SPEC.md).
 
-## No game credentials, no accounts (SPEC §V15)
+## Personal account sync (opt-in, CLI-only; ADR 0020)
 
-- The project **never requests, stores, or transmits Arknights game
-  credentials** or player account identifiers.
-- There is **no game-server login** and no direct game-server interaction.
+This project can optionally sync one owner-controlled Yostar (`en`) account,
+driven entirely by the CLI `account` command group (`login`, `sync`,
+`status`, `logout`, `purge`). Nothing about this is automatic: it never runs
+on a schedule and is never exposed as an MCP tool. This is the one exception
+to this project's no-game-credentials posture (SPEC §V15): the resulting
+Yostar session token functions as a game credential, and its storage is
+deliberately scoped to the machine that requested it.
 
-## No roster storage in v0.1 (D10)
+**What is stored:**
 
-- Player rosters are **not stored** in v0.1. If roster support is ever added,
-  it will be opt-in, with an explicit deletion command and a retention policy.
+- The Yostar session (account uid + a long-lived token) is written to
+  `$XDG_CONFIG_HOME/arknights-mcp/yostar_session.json`, file mode 600, kept
+  only on the machine that runs `account login` / `account sync`.
+- The allowlisted roster fields — owned operators with elite, level,
+  potential, skill level, per-skill mastery, unlocked modules and levels,
+  the equipped module, the current skin, owned skins, and inventory — are
+  kept in the owner's own PostgreSQL database, table `account_roster`, one
+  row per server.
+
+**What is never stored:** the login email address, the one-time code, the
+game player uid, the account nickname, friends, and squads.
+
+**Deletion:** `account logout` deletes the saved session token only.
+`account purge` deletes the synced roster row and the session token.
+
+**Retention:** the synced roster is kept until the next successful
+`account sync` or until `account purge` is run; there is no separate
+expiry.
 
 ## Local `stdio` mode
 

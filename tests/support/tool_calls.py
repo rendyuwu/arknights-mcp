@@ -34,6 +34,7 @@ from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
 from arknights_mcp.sources.registry import load_source_registry
 from arknights_mcp.transports._server import build_server
+from tests.support.account import account_fixture_store
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_TOML = REPO_ROOT / "config" / "data_sources.toml"
@@ -71,6 +72,9 @@ FIXTURE_CALLS: dict[str, tuple[dict[str, object], ...]] = {
     "get_item_drops": ({"server": "en", "game_id": "sugar", "include_efficiency": True},),
     "get_announcements": ({"server": "en"},),
     "get_banners": ({"server": "en"},),
+    "get_my_roster": ({"server": "en"}, {"server": "en", "min_rarity": 5}),
+    "get_my_operator": ({"server": "en", "game_id": "char_002_amiya"},),
+    "get_my_inventory": ({"server": "en"},),
     "get_data_status": ({},),
     "get_data_sources": ({},),
 }
@@ -137,6 +141,7 @@ def registry_for(conn: sqlite3.Connection) -> ToolRegistry:
         registry=load_source_registry(REGISTRY_TOML),
         mode="local",
         image_refs_enabled=True,
+        account_store=account_fixture_store(),
     )
 
 

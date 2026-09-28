@@ -29,6 +29,10 @@ ENV_OIDC_ISSUER = "ARKNIGHTS_MCP_OIDC_ISSUER"
 ENV_OIDC_AUDIENCE = "ARKNIGHTS_MCP_OIDC_AUDIENCE"
 ENV_OIDC_JWKS_URL = "ARKNIGHTS_MCP_OIDC_JWKS_URL"
 
+# Account roster database URL (secret, env-only; ADR 0020). Never enters AppConfig,
+# so no config dump can carry it.
+ENV_ACCOUNT_DB_URL = "ARKNIGHTS_MCP_ACCOUNT_DB_URL"
+
 # Scalar keys of the ``[sync]`` table; any other dict-valued key is a per-source
 # subtable (``[sync.<source_id>]``). Kept at module scope so Pydantic does not
 # capture it as a private model attribute.

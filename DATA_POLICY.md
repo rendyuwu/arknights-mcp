@@ -20,7 +20,8 @@ invariants in [`SPEC.md`](SPEC.md).
    transform version, and content hash** (SPEC §V17).
 7. The README includes an **unofficial-project disclaimer and trademark
    notice**.
-8. **No game credentials** are requested, stored, or transmitted (SPEC §V15).
+8. **No game credentials** are requested, stored, or transmitted, except the
+   CLI-only personal account session described in ADR 0020 (SPEC §V15).
 9. v0.1 remains **private and non-commercial**.
 10. No tool supports **bulk dump, arbitrary SQL, unbounded pagination, or
     database download** (SPEC §V19).

@@ -96,7 +96,15 @@ _ALIASES: dict[str, str] = {
     "isc": "ISC",
     "isc license (iscl)": "ISC",
     "0bsd": "0BSD",
+    "bsd 3-clause license": "BSD-3-Clause",
+    "mit no attribution license (mit-0)": "MIT-0",
 }
+
+#: ``License`` field values that are prose, not an id. python-dateutil ships
+#: ``License: Dual License`` plus the classifiers ``Apache Software License`` and
+#: ``BSD License`` (Apache-2.0 OR BSD-3-Clause per its README), so the field is
+#: skipped and the classifiers carry the ids. Still fail-closed: they must resolve.
+_PROSE_LICENSE_FIELDS: frozenset[str] = frozenset({"dual license"})
 
 #: Windows-only deps (``sys_platform == 'win32'`` in uv.lock) not installed on
 #: this gate. Licenses verified from upstream project metadata; both permissive.
@@ -148,7 +156,7 @@ def _resolve_license_tokens(name: str) -> frozenset[str]:
         first_line = lic.strip().splitlines()[0].strip()
         # A short first line is an id ("MIT", "Apache 2.0"); a long one is the
         # full license text pasted into the field -- ignore that.
-        if first_line and len(first_line) <= 60:
+        if first_line and len(first_line) <= 60 and first_line.lower() not in _PROSE_LICENSE_FIELDS:
             tokens.update(_normalize(term) for term in _split_expr(first_line))
 
     for raw in md.get_all("Classifier") or []:

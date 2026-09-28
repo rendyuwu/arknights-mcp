@@ -13,6 +13,7 @@ snapshots/
 # --- Secrets / local env: env-only, never in an image layer (§V12/§I.env) ---
 .env
 .env.*
+**/*.env
 !.env.example
 config.toml
 

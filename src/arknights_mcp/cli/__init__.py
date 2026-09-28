@@ -1,8 +1,9 @@
 """``arknights-mcp`` command-line entry point (admin-only).
 
 Admin operations (``sync``, ``import``, ``validate``, ``status``, ``doctor``,
-``source ...``) are CLI-only and are never exposed as MCP tools (§V28). Network
-access happens only here, in ``sync`` -- never at query time (§V1). Every build
+``source ...``, ``account ...``) are CLI-only and are never exposed as MCP tools
+(§V28). Network access happens only here, in ``sync`` and ``account login|sync``
+-- never at query time (§V1). Every build
 produces a *candidate* that is promoted only after it passes validation, and the
 active database is never mutated in place (§V3, §V4).
 
@@ -10,9 +11,10 @@ This package splits the former ``cli.py`` (§V38): one module per command group
 (:mod:`~arknights_mcp.cli.sync` §T21, :mod:`~arknights_mcp.cli.import_` §T22,
 :mod:`~arknights_mcp.cli.validate` §T23, :mod:`~arknights_mcp.cli.status`
 status+doctor §T25, :mod:`~arknights_mcp.cli.source` §T26, :mod:`~arknights_mcp.cli.serve` stdio
-§T47) over shared helpers in :mod:`~arknights_mcp.cli._shared`. This module wires
-the argument parser and dispatches. ``serve --transport streamable-http`` (M6)
-lands with §T51.
+§T47, :mod:`~arknights_mcp.cli.account` personal Yostar en account roster, ADR 0020)
+over shared helpers in :mod:`~arknights_mcp.cli._shared`. This module wires the
+argument parser and dispatches. ``serve --transport streamable-http`` (M6) lands
+with §T51.
 """
 
 from __future__ import annotations
@@ -26,6 +28,13 @@ from arknights_mcp.cli._shared import (
     CliContext,
     _err,
 )
+from arknights_mcp.cli.account import (
+    _cmd_account_login,
+    _cmd_account_logout,
+    _cmd_account_purge,
+    _cmd_account_status,
+    _cmd_account_sync,
+)
 from arknights_mcp.cli.import_ import _cmd_import
 from arknights_mcp.cli.serve import _cmd_serve
 from arknights_mcp.cli.source import (
@@ -38,6 +47,7 @@ from arknights_mcp.cli.status import _cmd_doctor, _cmd_status
 from arknights_mcp.cli.sync import _cmd_sync
 from arknights_mcp.cli.validate import _cmd_validate
 from arknights_mcp.sources.http_fetch import Fetcher
+from arknights_mcp.sources.yostar import YostarSend
 
 # Re-exported so ``arknights_mcp.cli.is_placeholder`` resolves to the single
 # shared home and the §V37 no-re-duplication guard (test_text.py) still holds.
@@ -119,18 +129,50 @@ def _build_parser() -> argparse.ArgumentParser:
     p_src_purge.add_argument("--reason", help="note recorded in the policy-event journal")
     p_src_purge.set_defaults(func=_cmd_source_purge)
 
+    p_account = sub.add_parser(
+        "account",
+        help="personal Yostar (en) account roster: login/sync/status/logout/purge (ADR 0020)",
+    )
+    account_sub = p_account.add_subparsers(dest="account_command", metavar="<action>")
+
+    p_acc_login = account_sub.add_parser(
+        "login", help="sign in with email + one-time code; saves the session (mode 600)"
+    )
+    p_acc_login.add_argument("--email", help="Yostar account email (prompted when omitted)")
+    p_acc_login.set_defaults(func=_cmd_account_login)
+
+    p_acc_sync = account_sub.add_parser(
+        "sync", help="pull the roster into the account database (close Arknights first)"
+    )
+    p_acc_sync.set_defaults(func=_cmd_account_sync)
+
+    p_acc_status = account_sub.add_parser("status", help="show the saved session + synced roster")
+    p_acc_status.set_defaults(func=_cmd_account_status)
+
+    p_acc_logout = account_sub.add_parser("logout", help="delete the saved session (keeps roster)")
+    p_acc_logout.set_defaults(func=_cmd_account_logout)
+
+    p_acc_purge = account_sub.add_parser("purge", help="delete the synced roster and the session")
+    p_acc_purge.set_defaults(func=_cmd_account_purge)
+
     return parser
 
 
-def main(argv: list[str] | None = None, *, fetcher: Fetcher | None = None) -> int:
-    """Console-script entry point. ``fetcher`` is a test seam for ``sync`` (§T21)."""
+def main(
+    argv: list[str] | None = None,
+    *,
+    fetcher: Fetcher | None = None,
+    yostar_send: YostarSend | None = None,
+) -> int:
+    """Console-script entry point. ``fetcher`` (``sync``, §T21) and ``yostar_send``
+    (``account``, ADR 0020) are test seams."""
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     func = getattr(args, "func", None)
     if func is None:
         parser.print_help(sys.stderr)
         return 2
-    ctx = CliContext(fetcher=fetcher)
+    ctx = CliContext(fetcher=fetcher, yostar_send=yostar_send)
     try:
         return int(func(args, ctx))
     except _HANDLED_ERRORS as exc:

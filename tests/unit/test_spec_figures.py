@@ -103,6 +103,10 @@ HISTORICAL_FIGURES: Mapping[tuple[str, str], int] = {
     ("mcp/tools/_shared.py", "T195"): 878,
     # 791 at 6bdef3d, the commit the row describes.
     ("mcp/tools/_shared.py", "T196"): 791,
+    # 596 lines at T219; T220 added the three account-tool FRAME_PRESSURE rows.
+    ("mcp/cap_pressure.py", "T219"): 596,
+    # 67 collected at T219; T220's three account tools each added a parametrized row.
+    ("tests/contract/test_frame_pressure.py", "T219"): 67,
 }
 
 #: Floors for :func:`test_the_parser_still_finds_figures`. A regex that quietly stops

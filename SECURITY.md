@@ -31,10 +31,12 @@ The project is designed to fail closed and to minimize attack surface
 
 - **Read-only data plane.** SQLite is opened read-only in every MCP process.
   Queries are parameterized only. There is no arbitrary SQL, filesystem, shell,
-  or source-download tool (§V2).
+  or source-download tool (§V2). The personal account roster database
+  (ADR 0020) is read through a SELECT-only role whose transactions default to
+  read-only.
 - **No query-time network.** User-facing MCP tools never reach an upstream
-  source; only explicit CLI `sync` / `import` commands touch allowlisted
-  sources (§V1).
+  source; only explicit CLI `sync` / `import` and `account login` /
+  `account sync` commands touch allowlisted endpoints (§V1).
 - **Bounded outputs.** No bulk-dump endpoint, no database download, no
   unbounded pagination or entity enumeration; search and page-size limits and a
   response-size cap are enforced (§V19, §V22).
@@ -55,8 +57,12 @@ The project is designed to fail closed and to minimize attack surface
   arguments, response bodies, authorization headers, bearer tokens, raw source
   records, or roster/account data (§V12). Errors never expose stack traces or
   local paths (§V23).
-- **No credentials.** The project never requests, stores, or transmits game
-  credentials (§V15).
+- **Account session handling.** `account login` / `account sync` are the only
+  CLI-only exception to the no-credentials rule (ADR 0020): the email and
+  one-time code are used once and never stored; the resulting Yostar session
+  token is stored only in a mode-600 file on the machine that ran the
+  command, is never read by any MCP process, and is sent only to the
+  allowlisted account endpoints (§V15).
 
 ## Synchronization security
 
@@ -65,4 +71,16 @@ same-domain limits, per-file and total-download size caps, JSON depth and
 record-count limits, safe archive extraction with path-traversal prevention,
 checksum manifests, temporary-directory isolation, no shell interpolation of
 remote values, and a source kill switch with an audit event
-(PRD Section 17.4).
+(PRD Section 17.4). CLI `account login` / `account sync` apply a separate
+host+path allowlist scoped to the Yostar/Arknights account endpoints
+(ADR 0020); no asset or game-data endpoint is reachable through it.
+
+## Account roster store (ADR 0020)
+
+PostgreSQL publishes `127.0.0.1:5433` on the serving host only and is reached
+from the sync machine through an SSH local forward; the serving host holds
+only the reader credential; the Yostar session file never leaves the sync
+machine. `ARKNIGHTS_MCP_ACCOUNT_DB_URL` is env-only, never printed or
+logged, and errors name the exception class only. `account login` /
+`account sync` refuse to contact Yostar unless the account database is
+reachable and writable.

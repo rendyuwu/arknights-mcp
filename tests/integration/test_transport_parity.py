@@ -55,6 +55,8 @@ from mcp.types import TextContent
 from tests.support.remote_harness import EXPECTED_TOOLS
 from tests.support.remote_harness import remote_server as _remote_server
 
+from arknights_mcp.config import ENV_ACCOUNT_DB_URL
+
 #: One representative call per §I.tool tool -- the exact matrix both wires dispatch.
 #: Covers the region + exactly-one-of selectors, the heavy ``get_stage`` include
 #: flags (map/routes/spawns, the §V22 opt-in sections), the depth-defaulted
@@ -93,6 +95,11 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     # resolves to an empty ``ok`` list -- a legitimate identical domain result across
     # both wires, which the parity check still covers.
     ("get_banners", {"server": "en"}),
+    # Neither wire has an account database (the stdio env drops the URL below), so the
+    # three account tools answer database_unavailable on both.
+    ("get_my_roster", {"server": "en"}),
+    ("get_my_operator", {"server": "en", "game_id": "char_002_amiya"}),
+    ("get_my_inventory", {"server": "en"}),
     ("get_data_status", {}),
     ("get_data_sources", {}),
 )
@@ -155,7 +162,7 @@ async def _local_snapshot(config: Path, cwd: Path) -> dict[str, Any]:
         command=sys.executable,
         args=["-m", "arknights_mcp", "--config", str(config), "serve", "--transport", "stdio"],
         cwd=str(cwd),
-        env=dict(os.environ),
+        env={k: v for k, v in os.environ.items() if k != ENV_ACCOUNT_DB_URL},
     )
     with anyio.fail_after(90):
         async with stdio_client(params) as (read_stream, write_stream):

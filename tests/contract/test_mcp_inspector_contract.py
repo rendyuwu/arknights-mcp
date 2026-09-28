@@ -38,6 +38,7 @@ from pathlib import Path
 import pytest
 from mcp.types import Tool
 from pydantic import ValidationError
+from tests.support.account import account_fixture_store
 from tests.support.drops import seed_stage_drop
 
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
@@ -76,6 +77,9 @@ _EXPECTED_TOOLS = (
     "get_item_drops",
     "get_announcements",
     "get_banners",
+    "get_my_roster",
+    "get_my_operator",
+    "get_my_inventory",
     "get_data_status",
     "get_data_sources",
 )
@@ -94,6 +98,9 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
     "get_item_drops": {"server": "en", "game_id": "sugar"},
     "get_announcements": {"server": "en"},
     "get_banners": {"server": "en"},
+    "get_my_roster": {"server": "en"},
+    "get_my_operator": {"server": "en", "game_id": "char_002_amiya"},
+    "get_my_inventory": {"server": "en"},
     "get_data_status": {},
     "get_data_sources": {},
 }
@@ -112,6 +119,7 @@ _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "analyze_stage": {"server": "en", "stage_code": "99-99"},
     "get_stage_drops": {"server": "en", "stage_code": "99-99"},
     "get_item_drops": {"server": "en", "game_id": "nosuchitem"},
+    "get_my_operator": {"server": "en", "game_id": "char_999_ghost"},
 }
 
 #: §V106 (b): one well-formed call per SET-query tool whose answer is legitimately empty.
@@ -151,7 +159,12 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 @pytest.fixture
 def registry(conn: sqlite3.Connection) -> ToolRegistry:
     """The shared registry both transports dispatch from (§V14)."""
-    return build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY), mode="local")
+    return build_tool_registry(
+        lambda: conn,
+        registry=load_source_registry(REGISTRY),
+        mode="local",
+        account_store=account_fixture_store(),
+    )
 
 
 def _call(registry: ToolRegistry, name: str, **params: object) -> ResponseEnvelope:

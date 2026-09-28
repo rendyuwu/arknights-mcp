@@ -11,6 +11,11 @@ set. Streamable HTTP enforces OAuth/OIDC bearer validation (§T52) whenever the
 deployment requires auth (§V40: non-loopback bind, or loopback ``behind_proxy``); a
 genuine loopback dev bind stays authless (§V9 exception). Non-secret OIDC
 descriptors are overlaid from the environment (§I.env) before the startup gate runs.
+
+``serve`` also reads the optional personal account roster database (ADR 0020),
+read-only through a SELECT-only role, from ``ARKNIGHTS_MCP_ACCOUNT_DB_URL``. A
+malformed URL fails startup; an unreachable database does not (the account tools then
+answer ``database_unavailable``).
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import sys
 from arknights_mcp.app import build_application
 from arknights_mcp.cli._shared import CliContext
 from arknights_mcp.config import load_config
+from arknights_mcp.db.account import AccountStore
 from arknights_mcp.mcp.envelopes import SCHEMA_VERSION
 from arknights_mcp.transports.stdio import serve_stdio
 from arknights_mcp.transports.streamable_http import serve_streamable_http
@@ -42,7 +48,7 @@ def _cmd_serve(args: argparse.Namespace, ctx: CliContext) -> int:
     # Overlay non-secret OIDC descriptors from the environment (§I.env): issuer,
     # audience, jwks_url are supplied via env for remote serving.
     config = load_config(args.config, env=os.environ)
-    core = build_application(config)
+    core = build_application(config, account_store=AccountStore.from_env(os.environ))
     try:
         if args.transport == "streamable-http":
             remote = config.mcp.remote

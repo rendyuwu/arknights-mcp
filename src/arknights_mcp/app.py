@@ -19,6 +19,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from arknights_mcp.config import AppConfig
+from arknights_mcp.db.account import AccountStore
 from arknights_mcp.db.connection import DatabaseUnavailable, open_read_only
 from arknights_mcp.db.promotion import resolve_active_database
 from arknights_mcp.mcp.tool_registry import ToolRegistry
@@ -77,7 +78,9 @@ class ApplicationCore:
     provider: ActiveDatabaseProvider
 
 
-def build_application(config: AppConfig) -> ApplicationCore:
+def build_application(
+    config: AppConfig, *, account_store: AccountStore | None = None
+) -> ApplicationCore:
     """Assemble the shared core: read-only connection provider + tool registry.
 
     One home for the core wiring (§V14/§V37): both transports call this so they
@@ -88,7 +91,9 @@ def build_application(config: AppConfig) -> ApplicationCore:
     enable``/``disable`` run against a live server (§V20 kill switch) is picked up
     only on restart, mirroring the active-build refresh policy on
     :class:`ActiveDatabaseProvider`. The deployment mode is threaded to
-    ``get_data_status`` (§T77).
+    ``get_data_status`` (§T77). ``account_store`` is the optional owner account roster
+    database (ADR 0020); it is passed in, never read from the environment here, so a
+    caller that omits it gets no account database whatever the shell holds.
     """
     provider = ActiveDatabaseProvider(
         config.database.data_dir,
@@ -107,5 +112,6 @@ def build_application(config: AppConfig) -> ApplicationCore:
         registry=source_registry,
         mode=config.deployment_mode,
         image_refs_enabled=image_refs_enabled,
+        account_store=account_store,
     )
     return ApplicationCore(config=config, registry=registry, provider=provider)

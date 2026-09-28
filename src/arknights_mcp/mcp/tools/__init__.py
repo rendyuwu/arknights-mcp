@@ -18,8 +18,14 @@ depends on the concrete tool modules, which in turn import ``ToolSpec`` from
 
 from __future__ import annotations
 
+from arknights_mcp.db.account import AccountStore
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools._shared import ConnectionProvider
+from arknights_mcp.mcp.tools.account import (
+    build_get_my_inventory_spec,
+    build_get_my_operator_spec,
+    build_get_my_roster_spec,
+)
 from arknights_mcp.mcp.tools.announcements import build_get_announcements_spec
 from arknights_mcp.mcp.tools.banners import build_get_banners_spec
 from arknights_mcp.mcp.tools.drops import (
@@ -40,9 +46,10 @@ from arknights_mcp.sources.registry import SourceRegistry
 #: :func:`build_tool_registry` is the single §V37 home for *which* tools exist + their
 #: registration order. Most builders need only the read-only connection; the three
 #: image-ref-bearing builders (get_enemy/get_operator/get_banners, §T120) take the extra
-#: image-ref emission gate, and the two data-metadata tools (get_data_status/
-#: get_data_sources) take the deployment mode / live source registry. Both transports
-#: pick up the identical assembled set (§V14); the fixed order keeps ``list_tools`` stable.
+#: image-ref emission gate, the three account tools (ADR 0020) take the optional account
+#: roster store, and the two data-metadata tools (get_data_status/get_data_sources) take
+#: the deployment mode / live source registry. Both transports pick up the identical
+#: assembled set (§V14); the fixed order keeps ``list_tools`` stable.
 
 
 def build_tool_registry(
@@ -51,6 +58,7 @@ def build_tool_registry(
     registry: SourceRegistry,
     mode: str,
     image_refs_enabled: bool = False,
+    account_store: AccountStore | None = None,
 ) -> ToolRegistry:
     """Assemble the shared MCP tool registry with every available tool (§V14/§V37).
 
@@ -63,10 +71,12 @@ def build_tool_registry(
     :func:`~arknights_mcp.services.image_refs.refs_enabled`); it is threaded into
     ``get_operator``/``get_enemy``/``get_banners`` so the additive ``image_refs`` field
     is emitted only when the source is enabled (§V21/§V63), and defaults ``False`` so a
-    caller that does not opt in never emits it. Both transports call this so they
-    dispatch one identical tool set of every §I.tool tool (§V14) -- there is no
-    per-transport tool list to drift. Registration order is deterministic (the order
-    below), so ``list_tools`` is stable.
+    caller that does not opt in never emits it. ``account_store`` is the owner's account
+    roster database (ADR 0020, read through a SELECT-only role); the three account tools
+    are always registered and answer ``database_unavailable`` when it is ``None``. Both
+    transports call this so they dispatch one identical tool set of every §I.tool tool
+    (§V14) -- there is no per-transport tool list to drift. Registration order is
+    deterministic (the order below), so ``list_tools`` is stable.
     """
     tool_registry = ToolRegistry()
     # Explicit, ordered assembly so ``list_tools`` stays stable (§V14): the three
@@ -84,6 +94,9 @@ def build_tool_registry(
         build_get_item_drops_spec(get_conn),
         build_get_announcements_spec(get_conn),
         build_get_banners_spec(get_conn, image_refs_enabled=image_refs_enabled),
+        build_get_my_roster_spec(get_conn, account_store=account_store),
+        build_get_my_operator_spec(get_conn, account_store=account_store),
+        build_get_my_inventory_spec(get_conn, account_store=account_store),
     )
     for spec in ordered:
         tool_registry.register(spec)

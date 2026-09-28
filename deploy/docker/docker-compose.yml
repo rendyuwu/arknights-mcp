@@ -8,6 +8,9 @@
 #   # local stdio: one-shot server on a pipe, for an MCP client or a smoke test
 #   docker compose -f deploy/docker/docker-compose.yml run --rm -T mcp-stdio
 #
+#   # personal account roster database (ADR 0020): loopback-only PostgreSQL
+#   docker compose -f deploy/docker/docker-compose.yml --profile account up -d account-db
+#
 # The remote stack is two services: the read-only MCP server (loopback-only,
 # code-only image) and an nginx TLS front. The app never publishes a public port
 # itself -- only nginx does (§V9). The app binds inside the compose network and is
@@ -105,3 +108,29 @@ services:
       # Mount your real TLS certs here (§V9). Read-only.
       - /etc/letsencrypt:/etc/letsencrypt:ro
     restart: on-failure
+
+  account-db:
+    # Personal account roster store (ADR 0020). Started only with
+    # `--profile account`, so the default stack is unchanged.
+    image: postgres:17
+    profiles: ["account"]
+    environment:
+      POSTGRES_DB: arknights_account
+      POSTGRES_USER: arknights_admin
+    # POSTGRES_PASSWORD + the two role passwords (secrets, env-only, §V12).
+    # Optional for the same reason as the mcp env_file: compose validates
+    # every service, and the image itself refuses to start without a password.
+    env_file:
+      - path: account-db.env
+        required: false
+    volumes:
+      - account-db-data:/var/lib/postgresql/data
+      - ./account-db-init.sh:/docker-entrypoint-initdb.d/10-arknights-roles.sh:ro
+    # Loopback only: the sync machine reaches it through `ssh -L`, never the
+    # internet. 5433 because host port 5432 is often taken by another PostgreSQL.
+    ports:
+      - "127.0.0.1:5433:5432"
+    restart: unless-stopped
+
+volumes:
+  account-db-data:

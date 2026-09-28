@@ -1,6 +1,6 @@
 # Threat Model — Arknights Intelligence MCP (v0.1, private alpha)
 
-Last reviewed: 2026-07-19 · Scope: `v0.1.x` · Review cadence: per release +
+Last reviewed: 2026-09-29 · Scope: `v0.1.x` · Review cadence: per release +
 on any change to a trust boundary (auth, transports, importer, source registry).
 
 This document is the M7 threat-model review (SPEC §T58). It records the system's
@@ -57,6 +57,14 @@ tools open that file read-only and never reach upstream.
    authless exception, and even that is overridden by `behind_proxy=true`.
 5. **Unauthenticated internet ↔ authenticated principal.** Enforced at the
    remote transport independent of bind address.
+6. **Yostar/Arknights game servers ↔ CLI `account` commands.** Outbound
+   only, owner-confirmed, allowlisted host+path pairs; responses are
+   untrusted and allowlisted before storage; the session token never crosses
+   into an MCP process.
+7. **Sync machine ↔ account roster database ↔ serving host.** The roster
+   crosses from the owner's machine to PostgreSQL on the serving host over
+   an SSH forward; the serving host holds only the reader credential; the
+   Yostar session never leaves the sync machine.
 
 ## 4. Threats and mitigations
 
@@ -73,12 +81,14 @@ the enforcing invariant/PRD clause and the test that guards it.
 | S4 | Token from wrong issuer/audience, or expired, accepted | Validate `iss` (exact, incl. trailing slash) + `aud` (str or array) + `exp` + `iat`, require all, `leeway=60s` | §V10 | `test_oidc_validation`, `test_remote_security_privacy` |
 | S5 | Caller with a valid token but without the required scope reaches a tool | Required-scope AND check over `scope` ∪ `permissions`; absent/insufficient → typed `insufficient_scope` reject | §V10 | `test_scopes`, `test_oidc_validation`, `test_remote_security_privacy` |
 | S6 | Credential storage becomes an attack target | No username/password storage; OIDC only; secrets via env, never TOML | §V10, PRD §17.3 | `test_config` |
+| S7 | Stolen Yostar session token gives full game-account access | Token file mode 600 in the sync machine's XDG config dir, never on the serving host or in logs; `account logout` deletes it | §V15 | `test_account_sync` |
+| S8 | Account roster database reachable from the internet, or the MCP credential used to write the roster | PostgreSQL publishes `127.0.0.1:5433` only, reached through an SSH local forward; `serve` uses a SELECT-only role with `default_transaction_read_only` on; URLs env-only, never printed | §V2, §V12 | `test_account_sync` (unset/unreachable database ⇒ nothing sent); role privileges: deploy smoke only, not in the offline gate |
 
 ### 4.2 Tampering / injection
 
 | # | Threat | Mitigation | Cite | Test |
 |---|---|---|---|---|
-| T1 | Arbitrary SQL / shell / filesystem via a tool | Read-only SQLite handle in every MCP process; parameterized SQL only; no such tool exposed | §V2, PRD §17.1 | `test_sqlite_guard`, `test_db_connection` |
+| T1 | Arbitrary SQL / shell / filesystem via a tool | Read-only SQLite handle in every MCP process; parameterized SQL only; no such tool exposed; the account roster database is read through a SELECT-only, read-only-by-default role (ADR 0020) | §V2, PRD §17.1 | `test_sqlite_guard`, `test_db_connection` |
 | T2 | Prompt injection: imported prose steers the model / selects tools | Field allowlist; imported strings treated as data, never concatenated into instructions/tool descriptions; control chars stripped; length capped | §V18, §V31, PRD §17.6 | `test_field_policy`, `test_text`, `test_import_*` |
 | T3 | Nested/unallowlisted JSON leaves smuggle control/bidi chars past the cap | Allowlist + sanitize applied recursively to every nested string leaf; no raw dict/list stored; size capped before encode | §V31 (B8, B9) | `test_field_policy` |
 | T4 | Crafted `levelId` escapes the levels tree (path traversal to excel/other files) | `normalize_level_id` forces `gamedata/levels/` prefix; discovery confined to that tree, `.`/`..` and nested `gamedata`/`excel` segments rejected | §V36 (B17) | `test_normalization`, `test_import_stage_4_4` |
@@ -110,7 +120,8 @@ the enforcing invariant/PRD clause and the test that guards it.
 | # | Threat | Mitigation | Cite | Test |
 |---|---|---|---|---|
 | E1 | Admin op (sync/import/validate/purge/source mgmt) invoked as an MCP tool | Admin ops are CLI-only, never exposed in the tool registry | §V28, PRD §17.1 | `test_tool_registry`, `test_mcp_inspector_contract` |
-| E2 | Tool reaches upstream network at query time (SSRF-style pivot) | Runtime MCP tool makes no outbound source request; only CLI sync/import touch allowlisted sources | §V1, PRD §17.1 | `test_sqlite_guard`, `test_serve_transport` |
+| E2 | Tool reaches upstream network at query time (SSRF-style pivot) | Runtime MCP tool makes no outbound source request; only CLI sync/import and account login/sync touch allowlisted endpoints | §V1, PRD §17.1 | `test_sqlite_guard`, `test_serve_transport` |
+| E3 | Account sync used to download game data or reach arbitrary hosts | Host+path allowlist in `sources/yostar.py`, no redirects | §V1 | `test_account_sync` |
 
 ### 4.6 Supply chain / data integrity
 
@@ -120,7 +131,7 @@ the enforcing invariant/PRD clause and the test that guards it.
 | P2 | Release artifact ships raw data / prebuilt DB / game content | Release audit allowlists code + metadata only; no snapshot, DB, art, audio, prose | §V16 | `test_release_audit`, `test_policy_files` |
 | P3 | Taken-down source keeps surfacing after purge | `purge --rebuild` cascade-deletes attributable rows across all domains, rebuilds FTS from survivors, flips registry `enabled=false`, journals only after promote | §V32 (B10, B12, B19) | `test_takedown_drill`, `test_cli_source` |
 | P4 | Un-attributable / un-purgeable records (no provenance) | Every imported record carries `snapshot_id` + source key + `transform_version` + `record_hash`; level-derived rows stamped too | §V17 (B7) | `test_manifest`, `test_repositories_stages` |
-| P5 | Game credentials requested/stored/transmitted | Never request, store, or transmit Arknights credentials | §V15, PRD §17.5 | `test_policy_files` (PRIVACY.md), `test_config` |
+| P5 | Game credentials requested/stored/transmitted | CLI-only account session; token file mode 600 on the sync machine only, never on the serving host; never read by MCP; allowlisted endpoints only | §V15, PRD §17.5 | `test_policy_files` (PRIVACY.md), `test_config`, `test_account_sync` |
 
 ## 5. Residual risks
 
@@ -151,7 +162,7 @@ Per SPEC §C and PRD §17.7, the following are **not** addressed here and gate a
 separate public-readiness review, not a single flag:
 
 - Public multi-tenant hosting, tenant isolation beyond per-principal binding.
-- Game login, roster storage, squad optimizer, combat sim, gacha planning.
+- Squad optimizer, combat sim, gacha planning.
 - Community/wiki prose, art, audio, story, voice, full announcement bodies.
 - Abuse response, cost controls, and monitoring for a public service.
 

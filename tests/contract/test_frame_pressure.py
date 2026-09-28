@@ -79,10 +79,11 @@ _ROW_CORPUS: Mapping[str, str] = {
     "analyze_stage": "select server, game_id from stages order by server, game_id",
     "get_stage_drops": "select server, game_id from stages order by server, game_id",
     "get_item_drops": "select server, game_id from items order by server, game_id",
+    "get_my_operator": "select server, game_id from operators order by server, game_id",
 }
 
 #: Region-scoped list tools: swept page by page to the end of both regions.
-_PAGED_TOOLS = ("get_announcements", "get_banners")
+_PAGED_TOOLS = ("get_announcements", "get_banners", "get_my_roster", "get_my_inventory")
 
 #: Free-text tools. Their request space is unbounded, so the battery below stands in for it
 #: and the declaration says so -- what actually bounds them is 50 rows of capped locator

@@ -211,6 +211,8 @@ TOOL_ENUM_LEGEND_FIELDS: dict[str, tuple[str, ...]] = {
     "get_stage_drops": ("item_type",),
     "get_item_drops": ("item_type",),
     "get_banners": ("rule_type",),
+    "get_my_roster": ("profession",),
+    "get_my_operator": ("profession",),
 }
 
 

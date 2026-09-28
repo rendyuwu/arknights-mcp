@@ -25,10 +25,12 @@ injectable item and asserts its absence across the captured blob:
 * **raw source record** -- the raw upstream shape keys (``enemyData`` / ``m_value``)
   that only exist in the pre-normalization snapshot, never a query-time read.
 
-Roster/account is not a concept v0.1 handles -- §V15 forbids storing game
-credentials at all -- so the only identity that reaches the log is the OAuth
-principal id ``iss|sub``, logged by design; it is asserted *present* as a positive
-control, not scanned for absence.
+The three account tools (ADR 0020) read the owner's account roster
+database; their payloads are ordinary response bodies, and the body-blind
+access log never sees a response body -- §V15's own no-storage/no-logging
+rule covers the credential half. So the only identity that reaches the log
+is the OAuth principal id ``iss|sub``, logged by design; it is asserted
+*present* as a positive control, not scanned for absence.
 
 Capture is at the default operational **INFO** level, not DEBUG: §V12 governs
 *default* logs, so this scans the surface a production operator actually runs, not

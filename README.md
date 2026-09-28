@@ -35,7 +35,8 @@ readiness review — it cannot be enabled by a single configuration flag.
 
 - No query-time downloading or scraping — data comes from imported/synced
   snapshots only.
-- No game login, no credential handling, no player-roster storage.
+- Optional, CLI-only personal account sync (Yostar en; ADR 0020). No other
+  game login or credential handling.
 - No squad optimizer, combat simulator, or banner/gacha planning.
 - No bundled raw snapshots or prebuilt databases in releases.
 
@@ -79,6 +80,26 @@ config formats. For the private remote (Streamable HTTP) transport, see
 [`docs/clients/remote.md`](docs/clients/remote.md) — validating the authenticated
 endpoint against the MCP Inspector, Claude connector, OpenAI API, and ChatGPT
 web. See `docs/` for architecture, adding a source, and adding a rule.
+
+## Personal account sync
+
+Optional, CLI-only: pulls your own Yostar (`en`) account roster into a
+PostgreSQL database this server reads from (ADR 0020). Off unless you set it
+up.
+
+- On the server: `docker compose -f deploy/docker/docker-compose.yml
+  --profile account up -d account-db` (see `deploy/README.md`), reader URL in
+  `deploy/docker/arknights-mcp.env`.
+- On the machine that logs in (home PC): `cp .env.example .env`, fill in the
+  writer password, open `ssh -N -L 15432:127.0.0.1:5433 <user>@<server>` in
+  another terminal, then `uv run --env-file .env arknights-mcp account login`
+  once and `uv run --env-file .env arknights-mcp account sync` whenever the
+  roster should refresh; `account status`, `account logout`, `account purge`
+  the same way.
+- Fully close Arknights first, run `account sync`, then reopen the game; the
+  command waits for your confirmation and refuses to run unattended. Never
+  run `account login` or `account sync` on the server: the Yostar login must
+  come from the machine you normally play from.
 
 ## Development
 
