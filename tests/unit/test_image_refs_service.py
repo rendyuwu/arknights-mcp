@@ -1,21 +1,21 @@
-"""T119: image URL-reference derivation service + private-only config gate.
+"""Image URL-reference derivation service + private-only config gate.
 
-One test per invariant the task cites (§V63/§V1/§V24/§V37/§C):
+One test per invariant:
 
-* **§V63 derive shape** -- each pure function derives the exact mirror path from a
+* **derive shape** -- each pure function derives the exact mirror path from a
   ``game_id`` (portrait ``_1``/``_2``, avatar base/``_2``, skin ``_1b``/``_2b``, enemy
-  base). §T183/§V66: the derivation builds RELATIVE paths; the pinned raw-GitHub base
+  base). The derivation builds RELATIVE paths; the pinned raw-GitHub base
   (:data:`IMAGE_REFS_BASE_URL`) is hoisted once per response by the tool shapers, never
   repeated per ref.
-* **§V63 percent-encode** -- ``#``/``+`` are encoded to ``%23``/``%2B`` unconditionally.
-* **§V1 / §V24 no network** -- the module imports no network library and derives paths
+* **percent-encode** -- ``#``/``+`` are encoded to ``%23``/``%2B`` unconditionally.
+* **no network** -- the module imports no network library and derives paths
   with a socket-open guard tripped, proving it never fetches/HEADs/validates a link.
-* **§V37 single home** -- the base constant has one home and every derived path is
+* **single home** -- the base constant has one home and every derived path is
   relative (scheme-free), so the base can never fork per ref.
-* **§V63 access-controlled gate (ADR 0009 / §T124)** -- ``[image_refs].enabled`` is ON by
+* **access-controlled gate (ADR 0009)** -- ``[image_refs].enabled`` is ON by
   default and carries NO deployment-posture term: it emits on any *startable* posture (loopback dev
-  OR an authenticated non-loopback / behind-proxy remote), because §V9 already fails startup
-  closed on any anonymous non-loopback surface. "Private" means access-controlled, not
+  OR an authenticated non-loopback / behind-proxy remote), because startup already fails closed
+  on any anonymous non-loopback surface. "Private" means access-controlled, not
   loopback-only (D4 refined).
 """
 
@@ -59,12 +59,12 @@ OPERATOR_ID = "char_002_amiya"
 ENEMY_ID = "enemy_10001_trslim"
 
 
-# --- §V63: derive shape ------------------------------------------------------------
+# --- derive shape ------------------------------------------------------------------
 
 
 def test_source_id_matches_registry() -> None:
-    # The service's SOURCE_ID is the single home for the §V27 registry id the §T120
-    # wiring stamps + gates on (registered by T118).
+    # The service's SOURCE_ID is the single home for the registry id the
+    # wiring stamps + gates on.
     assert SOURCE_ID == "arknights_game_resource"
 
 
@@ -94,7 +94,7 @@ def test_enemy_image_path_derives_base() -> None:
 
 
 def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
-    # §V72 (§T135, B61): a banner featured-op ref carries portrait (E0/E2) + avatar
+    # A banner featured-op ref carries portrait (E0/E2) + avatar
     # (base/E2), each stamped with the source_id -- the avatar rides ALONGSIDE the
     # portrait so the mirror's lagging portrait tree never leaves a portrait-only
     # (possibly 100%-dead) ref while a working avatar exists one category over.
@@ -106,15 +106,15 @@ def test_operator_banner_refs_derive_portrait_and_avatar() -> None:
         ("avatar", f"avatar/{OPERATOR_ID}_2.png"),
     ]
     assert all(r.source_id == SOURCE_ID for r in refs)
-    # §V78/B80: portrait = E0/E2, avatar = base/E2.
+    # portrait = E0/E2, avatar = base/E2.
     assert [r.variant for r in refs] == ["e0", "e2", "base", "e2"]
 
 
-# --- §V78 (B80): each ref carries a variant label the client reads directly --------
+# --- each ref carries a variant label the client reads directly --------------------
 
 
 def test_v78_operator_refs_carry_variant_labels() -> None:
-    # §V78/B80/§T159: the E0/E2/skin/base meaning of the mirror's _1/_2/_1b/_2b filename
+    # The E0/E2/skin/base meaning of the mirror's _1/_2/_1b/_2b filename
     # suffix is stated on the wire per ref so the client never guesses from the filename.
     refs = operator_image_refs(OPERATOR_ID)
     assert [(r.category, r.variant) for r in refs] == [
@@ -128,16 +128,16 @@ def test_v78_operator_refs_carry_variant_labels() -> None:
 
 
 def test_v78_enemy_ref_variant_is_base() -> None:
-    # §V78: the enemy sprite carries no elite suffix -> variant base.
+    # The enemy sprite carries no elite suffix -> variant base.
     (ref,) = enemy_image_refs(ENEMY_ID)
     assert ref.variant == "base"
 
 
 def test_v78_wire_dict_carries_variant() -> None:
-    # §V21/§V78: the {category, path, variant} wire shape includes variant. §T219/§V66 (4):
-    # and NOTHING else -- source_id was byte-identical on every ref of every response, so
+    # The {category, path, variant} wire shape includes variant, and NOTHING else --
+    # source_id was byte-identical on every ref of every response, so
     # it left the row for a single response-level ``image_refs_source_id``. This equality is
-    # exact on purpose: a fourth key reappearing per ref is the regression B168 counted.
+    # exact on purpose: a fourth key reappearing per ref is the regression under test.
     (ref,) = enemy_image_refs(ENEMY_ID)
     assert image_ref_to_dict(ref) == {
         "category": "enemy",
@@ -146,23 +146,23 @@ def test_v78_wire_dict_carries_variant() -> None:
     }
 
 
-# --- §V66 (4) (i): the hoist fails closed on a ref it cannot speak for -------------
+# --- the hoist fails closed on a ref it cannot speak for ---------------------------
 
 
 def test_a_ref_from_a_second_source_raises() -> None:
-    # §V66 (4) (i), proven SYNTHETICALLY per §V113 (b): every derive function in the module
+    # Proven SYNTHETICALLY: every derive function in the module
     # takes ImageRef's SOURCE_ID default, so no live shape reaches this arm -- and an arm
     # that cannot be reached is not a guard. A second mirror is what would reach it, and
     # the harm is silent: with the attribution hoisted, one such ref is re-labelled as
     # arknights_game_resource by the response-level key, on every row, with nothing on the
-    # wire able to contradict it (§V27).
+    # wire able to contradict it.
     ref = ImageRef(category="portrait", path="portrait/x_1.png", variant="e0", source_id="mirror_2")
     with pytest.raises(ImageRefSourceError, match="hoists 'arknights_game_resource'"):
         image_ref_to_dict(ref)
 
 
 def test_the_hoist_premise_holds_by_construction() -> None:
-    # The other half of §V66 (4) (i): the invariance is COUNTED, not assumed. Counted here
+    # The other half: the invariance is COUNTED, not assumed. Counted here
     # over every ref the module can derive rather than over one call's output -- what makes
     # the hoist legal is that no derive path passes source_id at all, so the default is the
     # only value any of them can produce.
@@ -175,7 +175,7 @@ def test_the_hoist_premise_holds_by_construction() -> None:
     assert {ref.source_id for ref in derived} == {SOURCE_ID}
 
 
-# --- §V63: unconditional percent-encode -------------------------------------------
+# --- unconditional percent-encode -------------------------------------------------
 
 
 def test_percent_encode_hash_and_plus_unconditionally() -> None:
@@ -202,14 +202,14 @@ def test_clean_ids_are_left_intact() -> None:
 
 
 def test_percent_itself_is_escaped_first_so_encoding_is_injective() -> None:
-    # ``portrait_id`` is imported external data (§T182): a stem carrying a literal
+    # ``portrait_id`` is imported external data: a stem carrying a literal
     # ``%`` must not collide with an encoded ``#`` -- ``%`` is escaped FIRST.
     assert skin_image_path("char_x_50%off") == "skin/char_x_50%25offb.png"
     assert skin_image_path("char_x_%23") != skin_image_path("char_x_#")
     assert skin_image_path("char_x_%23") == "skin/char_x_%2523b.png"
 
 
-# --- §T182/§V88: named skin gallery derivation -------------------------------------
+# --- named skin gallery derivation -------------------------------------------------
 
 
 def test_skin_image_path_derives_from_portrait_id() -> None:
@@ -221,7 +221,7 @@ def test_skin_image_path_derives_from_portrait_id() -> None:
 
 
 def test_named_skin_ref_variant_maps_illust_groups() -> None:
-    # §V78: default ILLUST_0/1/2 art -> e0/e1/e2; a named outfit series stays "skin".
+    # Default ILLUST_0/1/2 art -> e0/e1/e2; a named outfit series stays "skin".
     for group, variant in (("ILLUST_0", "e0"), ("ILLUST_1", "e1"), ("ILLUST_2", "e2")):
         ref = named_skin_ref_to_dict(skin_id="s", portrait_id="p", skin_group_id=group)
         assert ref["variant"] == variant
@@ -232,12 +232,12 @@ def test_named_skin_ref_variant_maps_illust_groups() -> None:
 
 
 def test_named_skin_ref_omit_discipline() -> None:
-    # §V67: skin_name/skin_group only when imported; alt_form/paid only when TRUE --
+    # skin_name/skin_group only when imported; alt_form/paid only when TRUE --
     # an absent key is the default, never a null the client must decode.
     bare = named_skin_ref_to_dict(skin_id="char_002_amiya#1", portrait_id="char_002_amiya_1")
     assert bare["category"] == "skin"
     assert bare["skin_id"] == "char_002_amiya#1"
-    # §T219: the named-gallery ref routes its base keys through image_ref_to_dict (§V37),
+    # The named-gallery ref routes its base keys through image_ref_to_dict,
     # so the hoist reached this surface with no edit of its own -- and must have.
     assert "source_id" not in bare
     for absent in ("skin_name", "skin_group", "alt_form", "paid"):
@@ -260,7 +260,7 @@ def test_named_skin_ref_omit_discipline() -> None:
 
 
 def test_identity_refs_are_portrait_plus_avatar_only() -> None:
-    # §V37 shared home: identity refs = portrait E0/E2 + avatar base/E2 (no skin);
+    # Shared home: identity refs = portrait E0/E2 + avatar base/E2 (no skin);
     # operator_image_refs = identity + the derived base-skin FALLBACK pair;
     # operator_banner_refs = exactly the identity refs.
     identity = operator_identity_refs(OPERATOR_ID)
@@ -273,7 +273,7 @@ def test_identity_refs_are_portrait_plus_avatar_only() -> None:
     ]
 
 
-# --- §V37: the named-vs-fallback branch has ONE home (T189/B125) --------------------
+# --- the named-vs-fallback branch has ONE home --------------------------------------
 
 
 def _skin(
@@ -298,14 +298,14 @@ def _skin(
 
 
 def test_operator_ref_dicts_falls_back_without_skin_rows() -> None:
-    # §V88/§V21: a build with no imported skin domain keeps the derived _1b/_2b pair.
+    # A build with no imported skin domain keeps the derived _1b/_2b pair.
     refs = operator_ref_dicts(OPERATOR_ID, [])
     assert refs == [image_ref_to_dict(r) for r in operator_image_refs(OPERATOR_ID)]
     assert [r["category"] for r in refs][-2:] == ["skin", "skin"]
 
 
 def test_operator_ref_dicts_named_gallery_replaces_fallback() -> None:
-    # §T182/§V88: with imported rows the NAMED gallery replaces the derived pair --
+    # With imported rows the NAMED gallery replaces the derived pair --
     # identity refs (portrait+avatar) then one ref per skin row, never both galleries.
     skins = [
         _skin("char_002_amiya#1", "char_002_amiya_1", skin_group_id="ILLUST_0"),
@@ -329,7 +329,7 @@ def test_operator_ref_dicts_named_gallery_replaces_fallback() -> None:
 
 
 def test_operator_ref_dicts_paid_is_tri_state() -> None:
-    # §V67: only an explicit source True emits `paid`; None (not stated) stays absent
+    # Only an explicit source True emits `paid`; None (not stated) stays absent
     # exactly like False -- never a fabricated not-paid claim.
     unstated = operator_ref_dicts(OPERATOR_ID, [_skin("s", "p", is_buy_skin=None)])[-1]
     explicit_false = operator_ref_dicts(OPERATOR_ID, [_skin("s", "p", is_buy_skin=False)])[-1]
@@ -340,7 +340,7 @@ def test_operator_ref_dicts_paid_is_tri_state() -> None:
 
 
 def test_named_vs_fallback_branch_has_single_home() -> None:
-    # §V37/B125: the choice lives in the service; the tool layer decides only WHETHER
+    # The choice lives in the service; the tool layer decides only WHETHER
     # to attach refs (the config+registry gate), never WHICH gallery to build.
     tool_src = Path(operator_tool.__file__).read_text(encoding="utf-8")
     assert "operator_ref_dicts" in tool_src
@@ -349,12 +349,12 @@ def test_named_vs_fallback_branch_has_single_home() -> None:
     assert "if operator.skins" not in tool_src
 
 
-# --- §V1 / §V24: no network -------------------------------------------------------
+# --- no network --------------------------------------------------------------------
 
 
 def test_module_imports_no_network_library() -> None:
     # Static guard: the module must not import any network/socket/async library, so it
-    # cannot fetch/HEAD/validate a derived link (§V1/§V24). Parsing the AST is robust to
+    # cannot fetch/HEAD/validate a derived link. Parsing the AST is robust to
     # the docstring mentioning "fetch"/"network" in prose.
     source = Path(image_refs.__file__).read_text(encoding="utf-8")
     imported: set[str] = set()
@@ -380,28 +380,28 @@ def test_module_imports_no_network_library() -> None:
 
 def test_derivation_opens_no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     # Behavioral guard: with socket creation booby-trapped, deriving every category still
-    # succeeds -- proving the derivation is pure string-building, never a fetch (§V1/§V24).
+    # succeeds -- proving the derivation is pure string-building, never a fetch.
     def _boom(*args: object, **kwargs: object) -> None:
-        raise AssertionError("image_refs derivation must not open a socket (§V1/§V24)")
+        raise AssertionError("image_refs derivation must not open a socket")
 
     monkeypatch.setattr(socket, "socket", _boom)
     assert operator_portrait_paths(OPERATOR_ID)[0].startswith("portrait/")
     assert operator_avatar_paths(OPERATOR_ID)[0].startswith("avatar/")
     assert operator_skin_paths(OPERATOR_ID)[0].startswith("skin/")
     assert enemy_image_path(ENEMY_ID).startswith("enemy/")
-    # §T135: the banner-ref builder (portrait+avatar) is pure string derivation too --
-    # §V63 never-fetch is UNCHANGED, so it derives with the socket booby-trap tripped.
+    # The banner-ref builder (portrait+avatar) is pure string derivation too --
+    # the never-fetch rule is UNCHANGED, so it derives with the socket booby-trap tripped.
     assert operator_banner_refs(OPERATOR_ID)[0].path.startswith("portrait/")
 
 
-# --- §V37 / §T183: single base home, paths relative --------------------------------
+# --- single base home, paths relative ----------------------------------------------
 
 
 def test_base_constant_pinned_and_paths_are_relative() -> None:
-    # DRY (§V37): the base literal has ONE home -- the pinned public constant the tool
-    # shapers hoist onto the wire (§T183/§V66). Every derived path is RELATIVE
+    # DRY: the base literal has ONE home -- the pinned public constant the tool
+    # shapers hoist onto the wire. Every derived path is RELATIVE
     # (scheme-free, no leading slash), so a ref can never re-embed a divergent base, and
-    # joining base + "/" + path reconstructs the §V63-verified absolute URL.
+    # joining base + "/" + path reconstructs the verified absolute URL.
     assert IMAGE_REFS_BASE_URL == BASE
     paths = [
         *operator_portrait_paths(OPERATOR_ID),
@@ -418,10 +418,10 @@ def test_base_constant_pinned_and_paths_are_relative() -> None:
     )
 
 
-# --- §V63: access-controlled config gate (ADR 0009) -------------------------------
+# --- access-controlled config gate (ADR 0009) -------------------------------------
 
 #: A valid, non-placeholder OIDC block so an auth-requiring (``requires_auth``) remote is
-#: startup-safe (§V9): behind_proxy / non-loopback binds below pair it with an https
+#: startup-safe: behind_proxy / non-loopback binds below pair it with an https
 #: ``public_base_url`` so ``assert_remote_startup_safe`` does not raise.
 _AUTH_OIDC = {
     "mode": "oidc",
@@ -433,8 +433,8 @@ _AUTH_OIDC = {
 
 
 def test_image_refs_on_by_default() -> None:
-    # §T124 (founder 2026-07-22): the surface is ON by default -- both the default AppConfig
-    # and the shipped example config leave the config half of the gate enabled (§C/§V63).
+    # The surface is ON by default -- both the default AppConfig
+    # and the shipped example config leave the config half of the gate enabled.
     assert AppConfig().image_refs.enabled is True
     assert AppConfig().image_refs_enabled is True
     cfg = load_config(EXAMPLE_CONFIG)
@@ -462,7 +462,7 @@ def test_gate_active_on_loopback_dev_remote() -> None:
 
 
 def test_gate_emits_on_authenticated_nonloopback() -> None:
-    # §V63/ADR 0009: a non-loopback bind under valid OIDC is an AUTHENTICATED, startable
+    # ADR 0009: a non-loopback bind under valid OIDC is an AUTHENTICATED, startable
     # surface -- the gate no longer carries a posture term, so the flag takes effect.
     cfg = AppConfig.model_validate(
         {
@@ -478,13 +478,13 @@ def test_gate_emits_on_authenticated_nonloopback() -> None:
         }
     )
     assert cfg.mcp.remote.requires_auth is True
-    cfg.assert_remote_startup_safe()  # §V9: startable (HTTPS + valid OIDC), does not raise
+    cfg.assert_remote_startup_safe()  # startable (HTTPS + valid OIDC), does not raise
     assert cfg.image_refs_enabled is True
 
 
 def test_gate_emits_behind_proxy_authenticated() -> None:
-    # §V63/ADR 0009: the shipped Cloudflare-tunnel posture (loopback bind, behind_proxy,
-    # Auth0 OIDC) is authenticated ∴ access-controlled ∴ the flag emits when enabled.
+    # ADR 0009: the shipped Cloudflare-tunnel posture (loopback bind, behind_proxy,
+    # Auth0 OIDC) is authenticated, so access-controlled, so the flag emits when enabled.
     cfg = AppConfig.model_validate(
         {
             "image_refs": {"enabled": True},
@@ -500,12 +500,12 @@ def test_gate_emits_behind_proxy_authenticated() -> None:
         }
     )
     assert cfg.mcp.remote.requires_auth is True
-    cfg.assert_remote_startup_safe()  # §V9: startable, does not raise
+    cfg.assert_remote_startup_safe()  # startable, does not raise
     assert cfg.image_refs_enabled is True
 
 
 def test_gate_off_when_flag_false_even_authenticated() -> None:
-    # §V63: the flag alone is the config gate now -- enabled=false suppresses regardless of
+    # The flag alone is the config gate now -- enabled=false suppresses regardless of
     # an authenticated behind_proxy posture (accept: [image_refs].enabled=false → absent).
     cfg = AppConfig.model_validate(
         {
@@ -526,13 +526,13 @@ def test_gate_off_when_flag_false_even_authenticated() -> None:
 
 
 def test_active_config_authenticated_emits_by_default() -> None:
-    # The shipped active config is behind_proxy=true + Auth0 OIDC (authenticated). §T124
-    # (founder 2026-07-22) flipped image_refs ON by default and config.toml sets no
+    # The shipped active config is behind_proxy=true + Auth0 OIDC (authenticated). The
+    # surface is ON by default and config.toml sets no
     # [image_refs] override, so the shipped config emits references on this authenticated
     # deployment with no further opt-in -- the ADR 0009 accept case on the real config.
-    # Setting [image_refs].enabled=false is the §V20 kill switch.
+    # Setting [image_refs].enabled=false is the kill switch.
     cfg = load_config(ACTIVE_CONFIG)
     assert cfg.mcp.remote.requires_auth is True  # behind_proxy Cloudflare-tunnel posture
-    assert cfg.image_refs_enabled is True  # shipped ON by default (§T124)
+    assert cfg.image_refs_enabled is True  # shipped ON by default
     disabled = cfg.model_copy(update={"image_refs": ImageRefsConfig(enabled=False)})
-    assert disabled.image_refs_enabled is False  # §V20 kill switch: flag off suppresses
+    assert disabled.image_refs_enabled is False  # kill switch: flag off suppresses

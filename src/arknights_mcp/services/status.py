@@ -1,11 +1,11 @@
-"""Data-status service (§T27; PRD §13.9): the shared ``get_data_status`` domain
+"""Data-status service (PRD Section 13.9): the shared ``get_data_status`` domain
 entry point both transports (and the ``status``/``doctor`` CLI) call.
 
 Given a read-only connection to the active database, it reports the schema
 version, active snapshots (source + region + commit/version + import time + age),
 supported domains, the running analyzer version, the deployment mode, and
-warnings with a suggested admin action -- never a query-time download (§V1/§V24).
-Read-only + parameterized SQL only (§V2), through
+warnings with a suggested admin action -- never a query-time download.
+Read-only + parameterized SQL only, through
 :class:`~arknights_mcp.db.repositories.metadata.MetadataRepository`.
 """
 
@@ -21,10 +21,10 @@ from arknights_mcp.db.repositories.metadata import MetadataRepository, SnapshotR
 
 DataStatusCode = Literal["ok", "data_stale"]
 
-#: §V71 (a): the next step for an empty/unpromoted build is an admin CLI command the
-#: MCP client cannot run itself (§V28 admin ops are CLI-only), so it is phrased as an
+#: The next step for an empty/unpromoted build is an admin CLI command the
+#: MCP client cannot run itself (admin ops are CLI-only), so it is phrased as an
 #: "ask the server admin" instruction rather than a bare command the client would try
-#: to invoke. Client-facing text, so no internal cites (§V71 (b)) -- the cites live in
+#: to invoke. Client-facing text, so no internal cites -- the cites live in
 #: this comment, never the emitted string.
 _NO_SNAPSHOTS_ACTION = (
     "ask the server admin to run `arknights-mcp sync --server all` or `arknights-mcp import`"
@@ -45,10 +45,10 @@ class SnapshotStatus:
     status: str
 
     def to_dict(self) -> dict[str, object]:
-        # §V99: the emitted key is ``import_status``, never ``status``. This row's
+        # The emitted key is ``import_status``, never ``status``. This row's
         # ``"imported"`` is a SNAPSHOT LIFECYCLE state, while the envelope's ``status``
-        # is the tool's §V23 result status -- one name for two unrelated axes in one
-        # response is the same namespace collision B148 caught on ``schema_version``
+        # is the tool's result status -- one name for two unrelated axes in one
+        # response is the same namespace collision caught on ``schema_version``
         # a few keys away. The dataclass attribute keeps its short name; only the wire
         # (and the CLI ``--json`` that shares this projection) is disambiguated.
         return {
@@ -65,22 +65,22 @@ class SnapshotStatus:
     def to_provenance_extras(self, *, include_server: bool = False) -> dict[str, object]:
         """Snapshot fields for a ``data.snapshots`` row, keyed for the provenance join.
 
-        ``imported_at`` travels ONLY with the envelope ``provenance`` entry (§V5/B78 --
-        a row emitting it too would duplicate it per snapshot); ``snapshot_id`` is
-        kept ON the row as the inline join key §V87 sanctions: one region can hold
+        ``imported_at`` travels ONLY with the envelope ``provenance`` entry
+        (a row emitting it too would duplicate it per snapshot); ``snapshot_id`` is
+        kept ON the row as the inline join key: one region can hold
         several active snapshots (game data + penguin + announcements all share
         ``server``), so ``server`` alone cannot pick a row's provenance entry and
         without ``snapshot_id`` the join would fall back to the "row N ↔ provenance N"
-        order contract §V87 forbids. ``include_server`` additionally inlines the
-        ``server`` region key (§V87/B96) for the multi-region ``get_data_status``
+        order contract forbids. ``include_server`` additionally inlines the
+        ``server`` region key for the multi-region ``get_data_status``
         tool; the region-scoped ``arknights://status/{server}`` resource carries the
-        region once at the top level (§V77) and leaves it off.
+        region once at the top level and leaves it off.
         ``commit_sha``/``upstream_version``/``age_days`` are omitted when unknown
-        rather than emitted null (§V67 -- ``age_days`` is None when ``imported_at``
+        rather than emitted null (``age_days`` is None when ``imported_at``
         does not parse). ``to_dict`` keeps the full row for the CLI
         ``status``/``--json``, which has no envelope provenance.
 
-        §V99: the lifecycle state is keyed ``import_status`` here as well, matching
+        The lifecycle state is keyed ``import_status`` here as well, matching
         :meth:`to_dict` -- one vocabulary across the tool, the resource, and the CLI.
         """
         extras: dict[str, object] = {"source_id": self.source_id, "snapshot_id": self.snapshot_id}
@@ -114,13 +114,13 @@ class DataStatus:
     def to_dict(self) -> dict[str, object]:
         """The full status body, for a caller with no envelope (the CLI ``--json``).
 
-        §V99/B148: the DB migration id is keyed ``db_schema_version``, never
+        The DB migration id is keyed ``db_schema_version``, never
         ``schema_version``. That name belongs to the response-contract version stamped on
         every MCP envelope, and this field is an unrelated axis -- the active build's
         migration (``"0018_enemy_range_declared_none"``). Both used to ship as
         ``schema_version`` in ONE ``get_data_status`` response, undocumented, so a client
         could not tell which of the two governed. The CLI has no envelope and so no
-        collision, but it reads the same name for the same fact (§V37: one vocabulary).
+        collision, but it reads the same name for the same fact (one vocabulary).
         """
         return {
             "status": self.status,
@@ -136,14 +136,14 @@ class DataStatus:
         }
 
     def to_envelope_data(self) -> dict[str, object]:
-        """The status body for an MCP ``data`` payload (§V99/§V66; B148).
+        """The status body for an MCP ``data`` payload.
 
         :meth:`to_dict` minus the two fields the envelope already carries. A
         ``get_data_status`` response shipped ``status`` and ``analyzer_version`` at BOTH
-        levels -- pure duplication, and §V66 is explicit that the envelope is the sole
+        levels -- pure duplication, and the envelope is the sole
         carrier. Dropping them here rather than at each call site is what keeps the tool
-        and the ``arknights://status/{server}`` resource from re-forking the projection
-        (§V37/§V34): both build their payload from this one method and override only the
+        and the ``arknights://status/{server}`` resource from re-forking the projection:
+        both build their payload from this one method and override only the
         region-scoped keys they genuinely differ on.
         """
         data = self.to_dict()
@@ -182,7 +182,7 @@ def get_data_status(
     mode: str = "local",
     now: datetime | None = None,
 ) -> DataStatus:
-    """Report the status of the active database (read-only; §V2/§V14).
+    """Report the status of the active database (read-only).
 
     ``conn`` is a read-only connection to the promoted build. ``mode`` is the
     deployment mode (``"local"`` | ``"remote"``). ``now`` is injectable for

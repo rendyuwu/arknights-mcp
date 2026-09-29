@@ -1,4 +1,4 @@
-"""T21: the network source adapter/stager (§V1, §V18 allowlist + limits).
+"""The network source adapter/stager (allowlist + limits).
 
 Exercises the safety machinery of :class:`ArknightsAssetsAdapter` with an
 in-memory fetcher (no live network): HTTPS enforcement, the path allowlist, and
@@ -39,7 +39,7 @@ def _fetcher() -> DictFetcher:
 
 
 def _fixture_files() -> dict[str, bytes]:
-    """The fixture snapshot as a mutable ``{url: bytes}`` map (for B34 skip tests)."""
+    """The fixture snapshot as a mutable ``{url: bytes}`` map (for the skip tests)."""
     return {
         f"{BASE_URL}/{p.relative_to(FIXTURE_ROOT).as_posix()}": p.read_bytes()
         for p in FIXTURE_ROOT.rglob("*")
@@ -47,7 +47,7 @@ def _fixture_files() -> dict[str, bytes]:
     }
 
 
-# --- HTTPS enforcement (§V1) --------------------------------------------------
+# --- HTTPS enforcement --------------------------------------------------------
 
 
 def test_base_url_must_be_https() -> None:
@@ -60,7 +60,7 @@ def test_default_fetcher_refuses_non_https_url() -> None:
         HttpsFetcher().fetch("http://example.test/x.json", max_bytes=1024)
 
 
-# --- path allowlist / traversal (§V18) ----------------------------------------
+# --- path allowlist / traversal -----------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -95,7 +95,7 @@ def test_stage_downloads_allowlisted_into_local_adapter(tmp_path: Path) -> None:
 
 
 def test_stage_skips_pruned_level_files(tmp_path: Path) -> None:
-    """B34/§V30: real ``stage_table`` keeps ``levelId`` refs for retired events whose
+    """Real ``stage_table`` keeps ``levelId`` refs for retired events whose
     level files are pruned from the snapshot; a 404 on a discovered level file is
     skipped, not fatal, so the whole sync still completes."""
     files = _fixture_files()
@@ -118,7 +118,7 @@ def test_stage_skips_pruned_level_files(tmp_path: Path) -> None:
 
 
 def test_stage_core_file_404_still_fatal(tmp_path: Path) -> None:
-    """B34: a missing *core* file is never tolerated — a bad ``base_url`` (or a
+    """A missing *core* file is never tolerated — a bad ``base_url`` (or a
     truly broken snapshot) must fail closed, not silently produce an empty build."""
     files = _fixture_files()
     del files[f"{BASE_URL}/gamedata/excel/zone_table.json"]  # core file absent
@@ -127,15 +127,15 @@ def test_stage_core_file_404_still_fatal(tmp_path: Path) -> None:
         adapter.stage(tmp_path / "staging")
 
 
-# --- operator/module tables are fetched by sync (B36; §V41) --------------------
+# --- operator/module tables are fetched by sync --------------------------------
 
 
 def test_core_files_cover_every_importer_table() -> None:
-    """§V41: the sync staged-file set (CORE_FILES ∪ SUPPLEMENTARY_FILES) must be a
+    """The sync staged-file set (CORE_FILES ∪ SUPPLEMENTARY_FILES) must be a
     superset of every ``gamedata/*.json`` source path any pipeline importer reads by
     default, or a real ``sync`` silently omits an in-scope domain. Operator/module
     tables import optional-zero at the pipeline, so their omission from the fetch set
-    is NOT caught by the combat-scoped §V30 guard (B36). Introspecting the importer
+    is NOT caught by the combat-scoped level guard. Introspecting the importer
     signatures keeps this honest: adding a domain without wiring its file fails here.
     """
     import inspect
@@ -171,7 +171,7 @@ def test_core_files_cover_every_importer_table() -> None:
 
 
 def test_stage_downloads_operator_and_module_tables(tmp_path: Path) -> None:
-    """B36/§V41: a snapshot carrying the operator+module excel tables must have them
+    """A snapshot carrying the operator+module excel tables must have them
     staged, so ``get_operator`` / ``compare_operator_modules`` are non-empty on a
     synced DB (they were never fetched before, only via the local ``import`` path)."""
     fetcher = dict_fetcher_from_snapshot(BASE_URL, OPERATOR_FIXTURE_ROOT)
@@ -183,7 +183,7 @@ def test_stage_downloads_operator_and_module_tables(tmp_path: Path) -> None:
 
 
 def test_stage_tolerates_missing_operator_tables(tmp_path: Path) -> None:
-    """B36: a combat-only snapshot legitimately lacks the operator/module tables; a
+    """A combat-only snapshot legitimately lacks the operator/module tables; a
     404 on them is skipped, not fatal, so such a snapshot still syncs (the pipeline
     imports those domains empty)."""
     # The stage_4_4 fixture has no operator/module tables at all.
@@ -196,15 +196,15 @@ def test_stage_tolerates_missing_operator_tables(tmp_path: Path) -> None:
 
 
 def test_level_discovery_normalizes_real_levelid() -> None:
-    """§V29/§V36: a real Title-case levelId is rewritten to its snapshot path and
-    enqueued (the old raw-prefix gate collected 0 real level files, B6b)."""
+    """A real Title-case levelId is rewritten to its snapshot path and
+    enqueued (the old raw-prefix gate collected 0 real level files)."""
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
     real = {"stages": {"x": {"stageId": "x", "levelId": "Obt/Main/level_main_04-04"}}}
     assert adapter._discover_level_paths(real) == ["gamedata/levels/obt/main/level_main_04-04.json"]
 
 
 def test_level_discovery_rejects_excel_paths() -> None:
-    """L8/§V36: a crafted levelId aimed at an excel table is never enqueued; after
+    """L8: a crafted levelId aimed at an excel table is never enqueued; after
     normalization it folds under the levels prefix but the nested ``excel`` segment
     is refused, so the excel table is never fetched."""
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
@@ -213,7 +213,7 @@ def test_level_discovery_rejects_excel_paths() -> None:
 
 
 def test_level_discovery_rejects_traversal_levelid() -> None:
-    """§V36: a levelId carrying a traversal fragment is dropped at discovery, so it
+    """A levelId carrying a traversal fragment is dropped at discovery, so it
     can never escape the levels tree."""
     adapter = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher())
     poisoned = {"stages": {"x": {"stageId": "x", "levelId": "../../secret"}}}
@@ -233,7 +233,7 @@ def test_percent_encoded_traversal_rejected(encoded: str) -> None:
         _validate_relative_path(encoded)
 
 
-# --- resource caps (PRD §11.2) ------------------------------------------------
+# --- resource caps (PRD Section 11.2) -----------------------------------------
 
 
 def test_per_file_size_cap(tmp_path: Path) -> None:
@@ -288,7 +288,7 @@ def test_deeply_nested_json_capped_gracefully(tmp_path: Path) -> None:
         adapter.stage(tmp_path / "staging")
 
 
-# --- run-level total-download budget (PRD §11.2; shared across servers) --------
+# --- run-level total-download budget (PRD Section 11.2; shared across servers) --
 
 
 def test_download_budget_accumulates_run_level() -> None:
@@ -299,7 +299,7 @@ def test_download_budget_accumulates_run_level() -> None:
 
 
 def test_download_budget_check_is_a_no_charge_prefetch_gate() -> None:
-    """§V42: ``check`` fails fast once the cap is blown (so no new parallel fetch
+    """``check`` fails fast once the cap is blown (so no new parallel fetch
     starts) but never charges — a run at or under the cap passes untouched."""
     budget = DownloadBudget(100)
     budget.check()  # nothing charged yet: no-op
@@ -312,14 +312,14 @@ def test_download_budget_check_is_a_no_charge_prefetch_gate() -> None:
 
 
 def test_https_fetcher_close_is_safe_with_no_open_connections() -> None:
-    """§T79 cleanup: ``close`` releases the (possibly empty) connection registry
+    """``close`` releases the (possibly empty) connection registry
     without error, so the CLI can always call it in a ``finally``."""
     fetcher = HttpsFetcher()
     fetcher.close()  # nothing opened yet
     fetcher.close()  # idempotent
 
 
-# --- redirect same-domain policy (PRD §17.4) ----------------------------------
+# --- redirect same-domain policy (PRD Section 17.4) ---------------------------
 
 
 def test_redirect_refuses_cross_domain() -> None:
@@ -349,7 +349,7 @@ def test_redirect_same_domain_allowed() -> None:
     )
 
 
-# --- §V42: bounded parallel sync preserves every per-file gate + exact caps ----
+# --- bounded parallel sync preserves every per-file gate + exact caps ---------
 
 
 def _snapshot_relpaths(root: Path) -> set[str]:
@@ -357,7 +357,7 @@ def _snapshot_relpaths(root: Path) -> set[str]:
 
 
 def test_parallel_and_serial_stage_identical_output(tmp_path: Path) -> None:
-    """§V42/§T79: ``max_parallel=1`` (serial fallback) and a parallel run stage the
+    """``max_parallel=1`` (serial fallback) and a parallel run stage the
     exact same file set — the staged output is deterministic, independent of worker
     completion order."""
     serial = ArknightsAssetsAdapter(BASE_URL, "en", fetcher=_fetcher(), max_parallel=1)
@@ -374,7 +374,7 @@ def test_parallel_and_serial_stage_identical_output(tmp_path: Path) -> None:
 
 
 def test_total_cap_trips_under_parallel_workers(tmp_path: Path) -> None:
-    """§V42: the run-level total-download cap still trips under N workers (a lost
+    """The run-level total-download cap still trips under N workers (a lost
     update must not let the run overshoot the cap)."""
     limits = DownloadLimits(max_file_bytes=10_000, max_total_bytes=64)
     adapter = ArknightsAssetsAdapter(
@@ -385,7 +385,7 @@ def test_total_cap_trips_under_parallel_workers(tmp_path: Path) -> None:
 
 
 def test_all_gates_apply_per_file_under_parallel(tmp_path: Path) -> None:
-    """§V42: the per-file byte cap (a §V1 gate) is enforced per file regardless of
+    """The per-file byte cap is enforced per file regardless of
     the worker — a parallel run rejects an oversized file just like the serial one."""
     limits = DownloadLimits(max_file_bytes=8)
     adapter = ArknightsAssetsAdapter(
@@ -396,7 +396,7 @@ def test_all_gates_apply_per_file_under_parallel(tmp_path: Path) -> None:
 
 
 def test_download_budget_charge_is_thread_safe() -> None:
-    """§V42: ``DownloadBudget.charge`` accumulates under a lock ∴ the total is exact
+    """``DownloadBudget.charge`` accumulates under a lock so the total is exact
     under concurrent charges — a naive ``+=`` loses updates under threads."""
     import threading
 
@@ -417,7 +417,7 @@ def test_max_parallel_below_one_rejected() -> None:
 
 
 def test_pruned_level_skip_count_exact_under_parallel(tmp_path: Path) -> None:
-    """§V42/B34: the 404-skip missing-count aggregation is preserved under parallelism
+    """The 404-skip missing-count aggregation is preserved under parallelism
     — the sync still completes and stages only the present level file."""
     files = _fixture_files()
     stage_table_url = f"{BASE_URL}/gamedata/excel/stage_table.json"

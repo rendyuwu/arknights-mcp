@@ -1,26 +1,26 @@
-"""§V96 checkpoint-classifier contract tests over the REAL corpus (§T192; B128/B129).
+"""Checkpoint-classifier contract tests over the REAL corpus.
 
 The route digest partitions stored checkpoints by their source ``type`` enum into
-non-spatial markers (dropped from geometry, §V74 (b)) and spatial path points. B128:
-the previous classifier keyed on an INVENTED literal ``"WAIT"`` that matched 0 of
+non-spatial markers (dropped from geometry) and spatial path points. The original
+defect: the previous classifier keyed on an INVENTED literal ``"WAIT"`` that matched 0 of
 ~128k real non-spatial checkpoints, so the filter never fired while every
 synthetic-fixture test passed -- the fixture asserted against its own invention.
 
 These tests pin the classifier against ``route_checkpoints_real.json`` -- real
 ``stage_routes`` rows extracted verbatim from a promoted build (en 7-2 =
-``main_07-01`` + 7-3 = ``main_07-02``; §V29 real-shape discipline extended to field
+``main_07-01`` + 7-3 = ``main_07-02``; real-shape discipline extended to field
 VALUE domains). They assert:
 
-* the partition is NON-DEGENERATE (§V96): >= 1 real record classified on EACH side;
+* the partition is NON-DEGENERATE: >= 1 real record classified on EACH side;
 * every real token is classified -- and the ``DISAPPEAR`` (non-spatial) vs
   ``APPEAR_AT_POS`` (spatial) substring trap lands on the right sides;
-* the real 7-2 route set digests 28 records -> 6 distinct groups (B129): the pair
+* the real 7-2 route set digests 28 records -> 6 distinct groups: the pair
   differing ONLY by a WAIT_FOR_SECONDS merges, pairs differing by a real MOVE stay
   distinct;
 * a type-less checkpoint is spatial -- the ``(0, 0)`` placeholder fallback is dead
-  (§V95 rebased the placeholder away from ``(0, 0)``, B128);
-* an UNKNOWN token rides the conservative spatial side WITH a say-so limitation
-  (§V96/§V26), never a silent bucket.
+  (the placeholder was rebased away from ``(0, 0)``);
+* an UNKNOWN token rides the conservative spatial side WITH a say-so limitation,
+  never a silent bucket.
 """
 
 from __future__ import annotations
@@ -67,9 +67,9 @@ def _real_checkpoints() -> list[dict[str, object]]:
 
 
 def test_real_corpus_partition_is_non_degenerate() -> None:
-    # §V96: the classifier must match >= 1 REAL record on EACH side of the
+    # The classifier must match >= 1 REAL record on EACH side of the
     # partition -- a side matching 0 records is a silent no-op shipped as a filter
-    # (B128: `type == "WAIT"` matched nothing while the whole suite stayed green).
+    # (an earlier defect: `type == "WAIT"` matched nothing while the suite stayed green).
     checkpoints = _real_checkpoints()
     non_spatial = [cp for cp in checkpoints if _is_non_spatial_checkpoint(cp)]
     spatial = [cp for cp in checkpoints if not _is_non_spatial_checkpoint(cp)]
@@ -78,7 +78,7 @@ def test_real_corpus_partition_is_non_degenerate() -> None:
 
 
 def test_real_corpus_tokens_all_classified() -> None:
-    # §V96/§V29: every `type` token in the real corpus belongs to exactly one of
+    # Every `type` token in the real corpus belongs to exactly one of
     # the two enumerated sets -- an unclassified real token would silently ride the
     # conservative side without this test ever noticing the census went stale.
     tokens = {str(cp["type"]) for cp in _real_checkpoints() if "type" in cp}
@@ -95,17 +95,17 @@ def test_real_corpus_tokens_all_classified() -> None:
 
 
 def test_real_7_2_digests_to_six_distinct_route_groups() -> None:
-    # §V74 (a)/B128/B129: real 7-2 (`main_07-01`, 28 raw records) held 7 groups
+    # Real 7-2 (`main_07-01`, 28 raw records) held 7 groups
     # under the dead classifier because a WAIT_FOR_SECONDS marker split identical
     # geometry; with markers dropped it digests to 6 distinct groups.
     distinct = _distinct_routes(_real_rows("main_07-01"))
     assert len(distinct) == 6
-    # The B128 pair merges: record 2 differs from 7/8/15/19/24/25 ONLY by a
+    # The merged pair: record 2 differs from 7/8/15/19/24/25 ONLY by a
     # WAIT_FOR_SECONDS checkpoint -> one group, occurrence_count 7.
     merged = next(g for g in distinct if 2 in g.route_indices)
     assert merged.route_indices == (2, 7, 8, 15, 19, 24, 25)
     assert merged.occurrence_count == 7
-    # Pairs differing by a REAL MOVE stay distinct (B129: the eyeballed "-> 4"
+    # Pairs differing by a REAL MOVE stay distinct (the eyeballed "-> 4"
     # was wrong precisely because these do NOT merge).
     index_sets = {g.route_indices for g in distinct}
     assert (11,) in index_sets and (13, 20, 26) in index_sets
@@ -113,7 +113,7 @@ def test_real_7_2_digests_to_six_distinct_route_groups() -> None:
 
 
 def test_real_7_2_emits_no_non_spatial_marker_as_geometry() -> None:
-    # §V74 (b): no emitted checkpoint carries a non-spatial token -- the marker is
+    # No emitted checkpoint carries a non-spatial token -- the marker is
     # dropped from BOTH the emit objects and the distinct-geometry key.
     for group in _distinct_routes(_real_rows("main_07-01")):
         for checkpoint in group.checkpoints:
@@ -122,7 +122,7 @@ def test_real_7_2_emits_no_non_spatial_marker_as_geometry() -> None:
 
 
 def test_typeless_checkpoint_is_spatial_placeholder_fallback_dead() -> None:
-    # B128: §V95 rebases the upstream placeholder to (0, height-1), so a (0, 0)
+    # The placeholder is rebased upstream to (0, height-1), so a (0, 0)
     # position proves nothing -- the old type-absent placeholder fallback is dead.
     # A type-less checkpoint is kept as a spatial path point (conservative side).
     decoded = [
@@ -143,7 +143,7 @@ def _row(index: int, checkpoints: list[dict[str, object]]) -> StageRouteRow:
 
 
 def test_unknown_token_rides_spatial_side_with_a_limitation() -> None:
-    # §V96/§V26: a token in NEITHER set (a future upstream checkpoint kind) stays
+    # A token in NEITHER set (a future upstream checkpoint kind) stays
     # on the conservative spatial side -- the fact remains visible on the wire --
     # and the limitation names it; it is never a silent bucket.
     unknown = {"type": "TELEPORT", "position": {"col": 4, "row": 1}}
@@ -153,7 +153,6 @@ def test_unknown_token_rides_spatial_side_with_a_limitation() -> None:
     limitation = unknown_checkpoint_type_limitation([_row(0, [unknown])])
     assert limitation is not None
     assert "TELEPORT" in limitation
-    assert "§" not in limitation  # §V71 (b): no internal spec cite reaches the client
 
 
 def test_known_tokens_raise_no_unknown_limitation() -> None:

@@ -4,9 +4,9 @@ Wire the read-only Arknights Intelligence MCP into [Claude
 Code](https://code.claude.com/docs/en/mcp) as a local `stdio` server. The
 config formats below are the current official ones (verified 2026-07).
 
-> This server is **read-only**. It never fetches upstream data at query time
-> (SPEC §V1); it serves whatever build you have already promoted locally.
-> Building and refreshing data is a **separate admin-CLI step** (§V28) — see
+> This server is **read-only**. It never fetches upstream data at query time;
+> it serves whatever build you have already promoted locally.
+> Building and refreshing data is a **separate admin-CLI step** — see
 > [Prerequisite](#prerequisite) first.
 
 ## Prerequisite: build a database
@@ -22,7 +22,7 @@ uv run arknights-mcp status        # shows the active snapshot + schema version
 ```
 
 `import`, `sync`, `validate`, `status`, and `source` are admin-only CLI
-commands. They are **not** exposed as MCP tools (§V28), so you run them yourself
+commands. They are **not** exposed as MCP tools, so you run them yourself
 before starting the server. To refresh, run them and then **restart** the
 server: it opens the promoted build once at startup and holds it for the process
 lifetime, so a build promoted under a running server is not picked up live.
@@ -117,7 +117,7 @@ Four things about that command line are load-bearing:
 - **`-i` is required.** Without it the container gets no stdin, so the server
   reads EOF immediately and exits before the client's `initialize` arrives.
 - **Never pass `-t`.** A TTY merges stderr into stdout and rewrites newlines,
-  which corrupts the JSON-RPC framing stdout carries (§V13). `-i` alone is right.
+  which corrupts the JSON-RPC framing stdout carries. `-i` alone is right.
 - **`--user` with your own uid, not root.** The image runs as its non-root
   `arknights` user (uid 999) and reads the build through host file permissions —
   but `import` writes `data/current.json` and the `.sqlite` builds mode `600`
@@ -125,11 +125,11 @@ Four things about that command line are load-bearing:
   answers `internal_error`. Pass `--user "$(id -u):$(id -g)"`. In a `.mcp.json` /
   `claude mcp add` entry there is no shell to expand that, so write the numbers
   (`--user 1000:1000`); check yours with `id -u`. The mounts stay `:ro`, so this
-  grants read access, never a write path (§V2).
+  grants read access, never a write path.
 - **No `--config` flag.** The image's `ENTRYPOINT` already pins
   `--config /app/config.toml`; the mount above is what decides its contents.
 
-The image is **code-only** (§V16): it contains no database. The promoted build
+The image is **code-only**: it contains no database. The promoted build
 arrives through the read-only `data` mount, so you still build it on the host
 first (see [Prerequisite](#prerequisite)) and a rebuilt image never carries game
 data. No OIDC or env file is involved — a stdio pipe has no bind and no bearer.
@@ -160,7 +160,7 @@ Ask something a promoted build can answer, e.g. *"analyze stage 4-4"* or
 
 - **Server connects but every query is `not_found` / `data_stale`.** No build
   is promoted for that region, or it is stale. Run `uv run arknights-mcp
-  status`; build/refresh with `import` or `sync` (§V24 — the server never
+  status`; build/refresh with `import` or `sync` (the server never
   downloads on demand to fill the gap), **then restart the server** — it holds
   the build it opened at startup for the process lifetime, so a fresh promote
   under a running server is not picked up until you restart it.
@@ -170,7 +170,7 @@ Ask something a promoted build can answer, e.g. *"analyze stage 4-4"* or
   project scope (runs at repo root) or `uv run --directory <clone>` in user
   scope.
 - **Stray text in the transport.** The server writes the MCP JSON-RPC stream to
-  **stdout** and all operational notices to **stderr** (§V13); don't wrap the
+  **stdout** and all operational notices to **stderr**; don't wrap the
   command in anything that prints to stdout.
 - **(Docker) every tool answers `internal_error`, or `arknights-mcp status` in
   the container raises `PermissionError: [Errno 13] Permission denied:
@@ -187,5 +187,4 @@ Ask something a promoted build can answer, e.g. *"analyze stage 4-4"* or
 
 - [`codex.md`](codex.md) — the same server from OpenAI Codex.
 - [`../../README.md`](../../README.md) — project overview and data policy.
-- SPEC §V1/§V2/§V13/§V28 — the read-only, CLI-only, stdout/stderr guardrails
-  this setup relies on.
+- Read-only, CLI-only, stdout/stderr guardrails this setup relies on.

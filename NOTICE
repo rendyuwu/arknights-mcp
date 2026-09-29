@@ -30,7 +30,7 @@ is not affiliated with, endorsed by, or sponsored by Hypergryph, Yostar, the
 maintainers of any upstream data source, Anthropic, or OpenAI.
 
 ------------------------------------------------------------------------------
-No bundled game data (V16; PRD Section 10.9)
+No bundled game data (PRD Section 10.9)
 ------------------------------------------------------------------------------
 
 Source releases of this project distribute code, schema, migrations, tests,
@@ -41,7 +41,7 @@ approved snapshots via the `arknights-mcp import` / `arknights-mcp sync`
 commands.
 
 ------------------------------------------------------------------------------
-Third-party data source attributions (V27, V53, V63; DATA_SOURCES.md)
+Third-party data source attributions (DATA_SOURCES.md)
 ------------------------------------------------------------------------------
 
 Data imported at CLI time from third-party sources remains governed by those
@@ -60,8 +60,8 @@ registry (config/data_sources.toml) and DATA_SOURCES.md. In particular:
     Optional, off-by-default image URL REFERENCES are DERIVED at query time
     from a game_id already stored from the primary snapshot. No image bytes are
     ever imported, stored, or redistributed, and the server never fetches the
-    linked resource -- references are reference-link only, never bytes (V16,
-    V63). The mirror's AGPL-3.0 license covers its CODE only, which this project
+    linked resource -- references are reference-link only, never bytes. The
+    mirror's AGPL-3.0 license covers its CODE only, which this project
     does not copy (no copyleft reaches the Apache-2.0 tree); the referenced
     Arknights art assets are © Hypergryph / Yostar, used for learning and
     exchange only and removed on request. References are emitted only by a

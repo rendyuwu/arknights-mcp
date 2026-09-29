@@ -1,4 +1,4 @@
-"""T125: sync fetch resilience — transient retry + gzip decompressed-cap (§V64/B55).
+"""Sync fetch resilience — transient retry + gzip decompressed-cap.
 
 Exercises the safety + robustness machinery added to :class:`HttpsFetcher`:
 
@@ -6,7 +6,7 @@ Exercises the safety + robustness machinery added to :class:`HttpsFetcher`:
   :func:`_gunzip_capped` (inflate with a decompressed-size cap, zip-bomb guarded);
 * the :data:`_TRANSIENT_ERRORS` classification (what earns a retry vs. a hard fail);
 * the retry loop itself, driven through a stub ``_connection`` so a fresh-connection
-  timeout is exercised without live network -- the exact B55 path where one stalled
+  timeout is exercised without live network -- the exact path where one stalled
   fetch used to abort the whole ``sync``.
 """
 
@@ -60,7 +60,7 @@ def test_gunzip_capped_roundtrips_a_normal_body() -> None:
 
 def test_gunzip_capped_rejects_a_zip_bomb() -> None:
     # ~500 KB of a single byte compresses to a few hundred bytes; the decompressed cap
-    # must refuse it rather than inflate past the per-file cap (§V64).
+    # must refuse it rather than inflate past the per-file cap.
     bomb = gzip.compress(b"A" * 500_000)
     assert len(bomb) < 1000
     with pytest.raises(SourceAdapterError, match="exceeds per-file cap"):
@@ -138,7 +138,7 @@ def _ok(body: bytes = b"{}", encoding: str | None = None) -> _Conn:
     return _Conn(resp=_Resp(status=200, body=body, headers=headers))
 
 
-# --- retry loop (the B55 fix) -------------------------------------------------
+# --- retry loop ---------------------------------------------------------------
 
 
 def test_transient_timeout_on_fresh_conn_is_retried_then_succeeds(no_sleep: list[float]) -> None:

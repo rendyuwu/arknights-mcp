@@ -1,26 +1,26 @@
-"""T68: CI-only real-shape validation vs LIVE upstream (§V16, §V29, §V30, §C).
+"""CI-only real-shape validation vs LIVE upstream.
 
-T67 is fixture-only: it proves the raw→normalized schema bridge (T66) is
+The fixture-only test proves the raw→normalized schema bridge is
 *internally consistent*, not that the mappings it infers actually match real
 upstream. This test closes that gap. Against a **pinned**
 ``arknights_assets_gamedata`` commit it fetches the real EN snapshot over HTTPS,
 drives the real ``import`` CLI path, and asserts that stage 4-4's combat data is
 fully populated: every enemy spawned in 4-4 carries non-null
 ``hp``/``res``/``attackInterval``/``weight``/``lifePointReduction`` + ``motion``,
-and the stage yields non-empty tiles/spawns/``stage_enemies`` (§V29, §V30). A
+and the stage yields non-empty tiles/spawns/``stage_enemies``. A
 green run is what promotes the inferred mappings (``massLevel``→``weight``,
 ``lifePointReduce``→``lifePointReduction``, ``preDelay``→``spawnTime``,
 ``maxTimeWaitingForNextWave``→``maxTimeWaiting``, positional route/wave index) from
-"inferred" to "verified vs live upstream" in §V29.
+"inferred" to "verified vs live upstream".
 
-Nothing fetched is ever persisted in the repo (§V16, code-only distribution): the
+Nothing fetched is ever persisted in the repo (code-only distribution): the
 snapshot and the built database live only under pytest's ``tmp_path`` (outside the
 repo tree) and are discarded when the test ends — fetch → use → discard.
 
 CI-only: this needs network and is gated behind ``ARKMCP_LIVE_UPSTREAM`` (set by
 the dedicated CI job), so the default offline ``pytest -q`` skips the whole module.
 
-The CN cross-validator (``kengxxiao_gamedata``) is deferred to §T69: its CN
+The CN cross-validator (``kengxxiao_gamedata``) is deferred: its CN
 ``enemy_database`` uses a different ``{"enemies": [{Key, Value}]}`` schema that
 needs its own normalization bridge before it can be driven through the pipeline.
 """
@@ -47,7 +47,7 @@ pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_S
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: Pinned upstream tree (the commit + per-file cap live in ``tests.support``, §V37).
+#: Pinned upstream tree (the commit + per-file cap live in ``tests.support``).
 BASE_URL = arknights_assets_base_url("en")
 
 #: The minimum real files needed to import + validate stage 4-4. The full ``sync``
@@ -69,7 +69,7 @@ def _stage_live_snapshot(dest: Path) -> None:
 
     Uses the same :class:`~arknights_mcp.sources.http_fetch.HttpsFetcher` the CLI
     ``sync`` path uses (HTTPS-only, redirect-capped), so this exercises the real
-    network adapter. ``dest`` is a tmp directory; nothing lands in the repo (§V16).
+    network adapter. ``dest`` is a tmp directory; nothing lands in the repo.
     """
     for relative_path in LIVE_FILES:
         data = fetch_upstream_bytes(f"{BASE_URL}/{relative_path}")
@@ -136,12 +136,12 @@ _MOTION_NULLS_4_4 = (
 
 
 def _assert_4_4_combat(conn: sqlite3.Connection) -> None:
-    # §V30: real 4-4 must produce a non-empty combat picture, never silent-empty.
+    # Real 4-4 must produce a non-empty combat picture, never silent-empty.
     assert _count(conn, _TILES_4_4) > 0, "4-4 produced no tiles"
     assert _count(conn, _SPAWNS_4_4) > 0, "4-4 produced no spawns"
     assert _count(conn, _STAGE_ENEMIES_4_4) > 0, "4-4 produced no stage_enemies"
 
-    # §V29: the inferred stat mappings must pull real values for every 4-4 enemy.
+    # The inferred stat mappings must pull real values for every 4-4 enemy.
     total, null_hp, null_res, null_ai, null_weight, null_lpr = conn.execute(
         _STAT_NULLS_4_4
     ).fetchone()
@@ -152,12 +152,12 @@ def _assert_4_4_combat(conn: sqlite3.Connection) -> None:
         f"weight={null_weight} lifePointReduction={null_lpr} of {total} rows)"
     )
 
-    # §V29 (d): motion is sourced from the enemy database, not the handbook.
+    # Motion is sourced from the enemy database, not the handbook.
     assert _count(conn, _MOTION_NULLS_4_4) == 0, "an enemy spawned in 4-4 has null motion"
 
 
 def test_live_upstream_en_4_4_combat(tmp_path: Path) -> None:
-    """Real pinned EN snapshot → 4-4 fully-populated combat data (§V29, §V30)."""
+    """Real pinned EN snapshot → 4-4 fully-populated combat data."""
     snapshot = tmp_path / "snapshot"
     _stage_live_snapshot(snapshot)
 
@@ -167,7 +167,7 @@ def test_live_upstream_en_4_4_combat(tmp_path: Path) -> None:
 
     active = resolve_active_database(data_dir, data_dir / "current.json")
     assert active is not None
-    # §V16: the fetched raw snapshot and the built DB both live outside the repo
+    # The fetched raw snapshot and the built DB both live outside the repo
     # tree (pytest tmp), so live game data is never committed — fetch → discard.
     assert REPO_ROOT not in snapshot.resolve().parents
     assert REPO_ROOT not in active.resolve().parents

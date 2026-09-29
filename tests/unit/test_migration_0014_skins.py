@@ -1,13 +1,13 @@
-"""T182: migration 0014 skin-gallery domain schema (§V17/§V88; ADR 0015).
+"""Migration 0014 skin-gallery domain schema (ADR 0015).
 
 ``operator_skins`` backs the named skin gallery, metadata from the primary
 ``arknights_assets_gamedata`` snapshot's ``skin_table.json`` (NOT a new source).
 These tests assert the migration applies cleanly, that the table carries the right
-provenance/FK wiring (§V17), that the column set is METADATA-ONLY -- there is no
-place to store displaySkin prose/credit (§V18/§V16 ceiling) and no URL column
-(§V63 derive-not-store) -- that ``region`` is NOT NULL (§V5), that ``operator_pk``
-soft-resolves (nullable, B36 class), that identity collides as the importer needs
-for its §V33 typed-error mapping, and that the domain stays OUT of the §V4
+provenance/FK wiring, that the column set is METADATA-ONLY -- there is no
+place to store displaySkin prose/credit and no URL column (derive-not-store) --
+that ``region`` is NOT NULL, that ``operator_pk``
+soft-resolves (nullable), that identity collides as the importer needs
+for its typed-error mapping, and that the domain stays OUT of the
 CRITICAL_TABLES (optional, fail-open like banners). Schema only: the importer and
 tool wiring are tested separately.
 """
@@ -27,7 +27,7 @@ _TRANSFORM_VERSION = "test"
 
 #: The complete, metadata-only column set for ``operator_skins`` (ADR 0015). skin_pk +
 #: provenance_id are bookkeeping; the rest are exactly the allowed identity/label
-#: fields. A future prose/url/bytes column would break this equality (§V16/§V18/§V63).
+#: fields. A future prose/url/bytes column would break this equality.
 _SKIN_COLUMNS = {
     "skin_pk",
     "server",
@@ -44,7 +44,7 @@ _SKIN_COLUMNS = {
     "provenance_id",
 }
 
-#: Columns that would smuggle in forbidden outfit prose/credit/art (§V18/§V16/§V63).
+#: Columns that would smuggle in forbidden outfit prose/credit/art.
 _FORBIDDEN_SUBSTRINGS = ("content", "dialog", "usage", "desc", "drawer", "html", "url", "image")
 
 
@@ -107,7 +107,7 @@ def test_table_and_indexes_present(tmp_path: Path) -> None:
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
         }
         assert "idx_operator_skins_operator" in indexes
-        # §V94/B122: no char_id index -- nothing reads skins by raw source char id
+        # No char_id index -- nothing reads skins by raw source char id
         # (the importer resolves through operators, purge selects by provenance_id,
         # the cross-region gate joins operator_pk). An index no query serves is pure
         # write amplification, so its absence is pinned like its presence would be.
@@ -117,7 +117,7 @@ def test_table_and_indexes_present(tmp_path: Path) -> None:
 
 
 def test_column_set_is_metadata_only(tmp_path: Path) -> None:
-    # §V18/§V16/§V63 ceiling: the exact column set -- no prose, no url, no bytes home.
+    # The exact column set -- no prose, no url, no bytes home.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         cols = _columns(conn, "operator_skins")
@@ -130,14 +130,14 @@ def test_column_set_is_metadata_only(tmp_path: Path) -> None:
 
 
 def test_operator_skins_not_in_critical_tables() -> None:
-    # §V4: the skin domain is optional + fail-open (like banners); an empty gallery is
+    # The skin domain is optional + fail-open (like banners); an empty gallery is
     # a legitimate build, so validation must not require rows here.
     assert "operator_skins" not in CRITICAL_TABLES
 
 
 def test_soft_resolve_operator_pk_nullable(tmp_path: Path) -> None:
-    # B36 class: a combat-only snapshot has no operators; the skin row still inserts
-    # with operator_pk NULL -- which IS the resolution state (§V94/B123: no second
+    # A combat-only snapshot has no operators; the skin row still inserts
+    # with operator_pk NULL -- which IS the resolution state (no second
     # `resolved` column re-encoding it).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
@@ -150,7 +150,7 @@ def test_soft_resolve_operator_pk_nullable(tmp_path: Path) -> None:
 
 
 def test_duplicate_skin_id_collides(tmp_path: Path) -> None:
-    # §V33 substrate: UNIQUE(server, skin_id) collides so the importer can map the
+    # UNIQUE(server, skin_id) collides so the importer can map the
     # anomaly to a typed ImporterError.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
@@ -163,7 +163,7 @@ def test_duplicate_skin_id_collides(tmp_path: Path) -> None:
 
 
 def test_same_skin_id_across_servers_allowed(tmp_path: Path) -> None:
-    # Identity is (server, skin_id): the same skin id may exist for en AND cn (§V5).
+    # Identity is (server, skin_id): the same skin id may exist for en AND cn.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)
@@ -176,7 +176,7 @@ def test_same_skin_id_across_servers_allowed(tmp_path: Path) -> None:
 
 
 def test_region_and_portrait_id_not_null(tmp_path: Path) -> None:
-    # §V5: region NOT NULL; §V63: portrait_id is the sole URL input, NOT NULL.
+    # Region NOT NULL; portrait_id is the sole URL input, NOT NULL.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)
@@ -197,7 +197,7 @@ def test_region_and_portrait_id_not_null(tmp_path: Path) -> None:
 
 
 def test_provenance_fk_enforced(tmp_path: Path) -> None:
-    # §V17: every skin row must trace to a record_provenance row.
+    # Every skin row must trace to a record_provenance row.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         with pytest.raises(sqlite3.IntegrityError):

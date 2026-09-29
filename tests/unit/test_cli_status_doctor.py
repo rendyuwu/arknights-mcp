@@ -1,8 +1,8 @@
-"""T25: the ``status`` + ``doctor`` CLI commands (I.cmd; §V12 no-secret output).
+"""The ``status`` + ``doctor`` CLI commands (no-secret output).
 
 ``status`` reports the active snapshot + schema version (reusing the shared
 ``get_data_status`` service); ``doctor`` reports environment/config/database
-health. Neither prints secrets or secret descriptor values (§V12).
+health. Neither prints secrets or secret descriptor values.
 """
 
 from __future__ import annotations
@@ -120,5 +120,5 @@ def test_doctor_never_prints_secret_descriptors(
     config = _write_config(tmp_path)
     assert main(["--config", str(config), "doctor"]) == 0
     out = capsys.readouterr().out
-    # §V12: the OIDC issuer descriptor is never echoed into diagnostics.
+    # The OIDC issuer descriptor is never echoed into diagnostics.
     assert ISSUER not in out

@@ -1,24 +1,24 @@
-"""``compare_operator_modules`` MCP tool (§T45; §V5/§V7/§V23; §I.tool).
+"""``compare_operator_modules`` MCP tool.
 
 Bridges the bounded
-:class:`~arknights_mcp.models.operators.CompareOperatorModulesInput` (§T30) to the
+:class:`~arknights_mcp.models.operators.CompareOperatorModulesInput` to the
 shared :func:`~arknights_mcp.services.module_compare.compare_operator_modules`
-service (§V14) and wraps the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29). The tool owns no
+service and wraps the outcome in the typed
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`. The tool owns no
 query logic -- only the model -> service -> envelope mapping -- so both transports
-dispatch identical read-only (§V2) behaviour from the single registry.
+dispatch identical read-only behaviour from the single registry.
 
-Two invariants are load-bearing here:
+Two rules are load-bearing here:
 
-* **§V5** -- ``server`` is required, so every ``ok`` result is region-attributed +
+* ``server`` is required, so every ``ok`` result is region-attributed +
   carries provenance on the envelope; an ``en`` operator is never surfaced under a
   ``cn`` query (the service resolves by the unique ``(server, game_id)`` key).
-* **§V7** -- ``with_observations`` mode surfaces the module analyzer's evidence-
-  backed observations (§V6) -- capability facts about what each module changes,
+* ``with_observations`` mode surfaces the module analyzer's evidence-
+  backed observations -- capability facts about what each module changes,
   never a "mandatory"/"best-in-slot" recommendation. ``facts_only`` returns the
   typed comparison alone.
 
-Every result is a typed-status envelope (§V23); a database failure or any
+Every result is a typed-status envelope; a database failure or any
 unexpected error fails closed to a fixed, path/trace-free envelope via the shared
 :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
 """
@@ -79,15 +79,15 @@ _NOT_FOUND_ACTION = (
 def _level_to_dict(
     level: ModuleLevelComparison, *, trait_hoisted: bool, talent_hoisted: bool
 ) -> dict[str, object]:
-    """One module level's change bundle (decoded structural JSON; §V16/§V18)."""
+    """One module level's change bundle (decoded structural JSON)."""
     out: dict[str, object] = {
         "level": level.level,
         "present": level.present,
         "stat_bonus": level.stat_bonus,
         "cost": level.cost,
     }
-    # §V66.3/§V83: when a change bundle is byte-identical at every level it is hoisted to the
-    # module (below) and omitted here; otherwise it stays per level (§V67 omit-key).
+    # When a change bundle is byte-identical at every level it is hoisted to the module
+    # (below) and omitted here; otherwise it stays per level (omit-key).
     if not trait_hoisted:
         out["trait_changes"] = level.trait_changes
     if not talent_hoisted:
@@ -95,9 +95,9 @@ def _level_to_dict(
     return out
 
 
-#: §V104 (b)/§V115: this tool's one enum domain -- the applies_to label the emitted change
-#: bundles carry. Its entry in the shared TOOL_ENUM_LEGEND_FIELDS table is asserted by the
-#: §V104 guard, so the two cannot drift.
+#: This tool's one enum domain -- the applies_to label the emitted change bundles carry.
+#: Its entry in the shared TOOL_ENUM_LEGEND_FIELDS table is asserted by the enum-legend
+#: guard, so the two cannot drift.
 _MODULE_ENUM_FIELDS = ("applies_to",)
 
 
@@ -115,13 +115,13 @@ def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
             for lv in module.levels
         ],
     }
-    # §V66.3: the trait effect TEMPLATE is emitted once here when it is identical at every
+    # The trait effect TEMPLATE is emitted once here when it is identical at every
     # level (dropped from each level's trait_changes); omitted when it varies (each level
-    # keeps its own) or absent. §V67: absent key, never a null.
+    # keeps its own) or absent. Absent key, never a null.
     if module.trait_change_description is not None:
         out["trait_change_description"] = module.trait_change_description
-    # §V66.3/§V83: a whole trait/talent change bundle identical at every level rides the
-    # module once here (dropped from each level); absent when it varies (§V67, never null).
+    # A whole trait/talent change bundle identical at every level rides the
+    # module once here (dropped from each level); absent when it varies (never null).
     if trait_hoisted:
         out["trait_changes"] = module.trait_changes
     if talent_hoisted:
@@ -130,7 +130,7 @@ def _module_to_dict(module: ModuleComparison) -> dict[str, object]:
 
 
 def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
-    """Map the domain result to a typed §V23 envelope (§V5 region + provenance)."""
+    """Map the domain result to a typed envelope (region + provenance)."""
     if result.status == "not_found" or result.provenance is None:
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
@@ -145,34 +145,34 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
         "modules": [_module_to_dict(m) for m in result.modules],
     }
     if result.mode == "with_observations":
-        # §V6 observations + §V26 warnings ride only in the analysis mode; the
+        # Observations + warnings ride only in the analysis mode; the
         # analyzer version is stamped on the envelope (facts_only leaves it None).
         data["observations"] = [observation_to_dict(o) for o in result.observations]
         data["warnings"] = list(result.warnings)
 
-    # §V65: the per-level stat/trait/talent changes now carry the in-game effect
+    # The per-level stat/trait/talent changes carry the in-game effect
     # description template alongside the blackboard (path (a)/ADR 0010), but a template
     # may be absent for some changes, so the standing grounding limitation (path (b))
     # still rides every comparison that emits a module (blackboard keys stay raw). An
     # operator with no modules emits no blackboard, so it carries no such caveat.
     limitations: tuple[str, ...] = (BLACKBOARD_LIMITATION,) if result.modules else ()
-    # §V69/§V26 (§T132): a module upgrade-cost item whose display name is absent from the
+    # A module upgrade-cost item whose display name is absent from the
     # build is emitted as a bare id, so add the standing cost-name limitation instead of
     # leaving a bare id (never fabricate a name). Additive to the blackboard caveat. An
     # absent level carries cost=None, which has_unnamed_cost_item already skips (non-list),
     # so no present-filter is needed here -- one shape with the get_operator call site.
     if has_unnamed_cost_item(lv.cost for m in result.modules for lv in m.levels):
         limitations = (*limitations, COST_ITEM_NAME_LIMITATION)
-    # §V83/§V66 (B88): the dedup/labelling note rides the response that carries the deduped
-    # bundles -- it names what those bundles OMIT, which is read post-call (§V111 a). Same
-    # gate as the blackboard caveat: no modules, no deduped payload, no note.
+    # The dedup/labelling note rides the response that carries the deduped bundles --
+    # it names what those bundles OMIT, which is read post-call. Same gate as the
+    # blackboard caveat: no modules, no deduped payload, no note.
     if result.modules:
         limitations = (*limitations, MODULE_CHANGE_DEDUP_NOTE, MODULE_TYPE_NOTE)
-        # §V104 (b)/§V115: the applies_to label decodes post-call, so its whole vocabulary
-        # rides the response that carries the labelled bundles -- same gate as the notes.
+        # The applies_to label decodes post-call, so its whole vocabulary rides the
+        # response that carries the labelled bundles -- same gate as the notes.
         limitations = attach_enum_legend(data, _MODULE_ENUM_FIELDS, limitations)
-    # §V104/§V6: the confidence scale rides the mode that emits a confidence, once per
-    # envelope (§V66); facts_only carries no observation, so it carries no scale.
+    # The confidence scale rides the mode that emits a confidence, once per
+    # envelope; facts_only carries no observation, so it carries no scale.
     if result.mode == "with_observations" and result.observations:
         limitations = (*limitations, CONFIDENCE_SCALE_NOTE)
     prov = result.provenance
@@ -191,17 +191,17 @@ def _shape(result: ModuleCompareResult) -> ResponseEnvelope:
 
 
 def build_compare_operator_modules_spec(get_conn: ConnectionProvider) -> ToolSpec:
-    """Build the ``compare_operator_modules`` :class:`ToolSpec` (§T45; §V14).
+    """Build the ``compare_operator_modules`` :class:`ToolSpec`.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build. The returned spec is read-only (§V2) for the single shared registry both
-    transports dispatch from (§V14); its ``input_schema`` is the bounded model's
-    JSON Schema, so the §V5 required ``server``, the §V18 ``game_id`` cap, the
+    build. The returned spec is read-only for the single shared registry both
+    transports dispatch from; its ``input_schema`` is the bounded model's
+    JSON Schema, so the required ``server``, the ``game_id`` cap, the
     levels subset guard, and the ``mode`` enum land on the wire exactly as validated.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V5/§V18 gate: the bounded model requires a region, caps the game_id, and
+        # The bounded model requires a region, caps the game_id, and
         # rejects an empty/out-of-range levels set or an unknown parameter *before*
         # any query runs -- a ValidationError propagates as a protocol-level rejection.
         parsed = CompareOperatorModulesInput.model_validate(params)

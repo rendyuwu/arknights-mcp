@@ -1,13 +1,13 @@
-"""Source purge + rebuild (§T26; §V20; PRD §10.8, §11.7).
+"""Source purge + rebuild (PRD Sections 10.8, 11.7).
 
 ``purge --rebuild`` removes only the rows attributable to one source and rebuilds
 a validated candidate, leaving the current database active until the rebuild
-validates and is promoted atomically (§V20). Because releases ship no raw
-snapshots (§V16), the rebuild is a *filtered copy* of the active build: copy it,
+validates and is promoted atomically. Because releases ship no raw
+snapshots, the rebuild is a *filtered copy* of the active build: copy it,
 delete every row that traces to the purged source's snapshots (via
 ``record_provenance`` -> ``source_snapshots.source_id``), re-materialize the
 policy-event journal, validate, and promote. Nothing is ever deleted from the
-active build in place (§V4).
+active build in place.
 
 Deletion runs children-before-parents with foreign keys enforced, so a shared
 entity still referenced by a *non-purged* source raises rather than corrupting
@@ -58,7 +58,7 @@ def _delete_in(conn: sqlite3.Connection, table: str, column: str, ids: Sequence[
     if not ids:
         return 0
     placeholders = ",".join("?" * len(ids))
-    # table/column are fixed identifiers from this module; ids are bound (§V2).
+    # table/column are fixed identifiers from this module; ids are bound.
     sql = f"DELETE FROM {table} WHERE {column} IN ({placeholders})"  # noqa: S608
     return conn.execute(sql, tuple(ids)).rowcount
 
@@ -69,7 +69,7 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     Deletes only rows that trace to the source's own snapshots. A shared entity
     still referenced by a *non-purged* source is deleted here only via its own
     (purged-source) parent; if a non-purged row still references it, the parent
-    delete raises ``IntegrityError`` and the caller aborts (fail-closed, §V20) --
+    delete raises ``IntegrityError`` and the caller aborts (fail-closed) --
     it never strips occurrences from a non-purged stage.
     """
     snapshot_ids = [
@@ -105,9 +105,9 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     talent_pks = _select_ids(
         conn, "SELECT talent_pk FROM talents WHERE operator_pk IN (%s)", operator_pks
     )
-    # Guarded on table existence (§V21 backward compatibility, same degrade as
+    # Guarded on table existence (backward compatibility, same degrade as
     # OperatorRepository.skins): the purge candidate is a plain copy of the ACTIVE
-    # build, which may predate migration 0014 -- purging (a takedown path, §V20)
+    # build, which may predate migration 0014 -- purging (a takedown path)
     # must not crash with ``no such table: operator_skins`` on such a copy.
     has_skins_table = table_exists(conn, "operator_skins")
     skin_pks = (
@@ -122,13 +122,13 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     # only within the purged source's own waves/stages (by wave_pk / stage_pk),
     # never by enemy_pk -- deleting by enemy_pk would silently strip a purged
     # enemy's occurrences from a *non-purged* stage (L6). If a non-purged stage
-    # still references a purged enemy, deleting that enemy below raises (§V20).
+    # still references a purged enemy, deleting that enemy below raises.
     _delete_in(conn, "stage_spawns", "wave_pk", wave_pks)
     _delete_in(conn, "stage_enemies", "stage_pk", stage_pks)
-    # stage_enemy_variants (§T80) is referenced by stage_spawns/stage_enemies, both
+    # stage_enemy_variants is referenced by stage_spawns/stage_enemies, both
     # deleted above; drop it by stage_pk before stages. A variant in a non-purged
     # stage whose prefab base is a purged enemy makes the enemy delete below raise
-    # (fail-closed, §V20/§V32) -- the same guard as a shared enemy.
+    # (fail-closed) -- the same guard as a shared enemy.
     _delete_in(conn, "stage_enemy_variants", "stage_pk", stage_pks)
     _delete_in(conn, "stage_tiles", "stage_pk", stage_pks)
     _delete_in(conn, "stage_maps", "stage_pk", stage_pks)
@@ -136,25 +136,25 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     _delete_in(conn, "stage_waves", "stage_pk", stage_pks)
     _delete_in(conn, "stages", "stage_pk", stage_pks)
 
-    # banner domain (§V32/§V62): featured-op children -> banners, before the operator
+    # banner domain: featured-op children -> banners, before the operator
     # domain below. banner_featured_ops.operator_pk is a nullable FK into operators, so a
     # non-purged banner whose featured op resolves to a purged operator makes the operator
-    # delete below raise (fail-closed, §V20) -- the same shared-entity guard as a stage
+    # delete below raise (fail-closed) -- the same shared-entity guard as a stage
     # variant's prefab base. banners are deleted by their own provenance (banner_pks), so
     # a non-purged source's banners are untouched.
     _delete_in(conn, "banner_featured_ops", "banner_pk", banner_pks)
     _delete_in(conn, "banners", "banner_pk", banner_pks)
 
-    # skin domain (§V32/§V88, ADR 0015): before the operator domain below.
+    # skin domain (ADR 0015): before the operator domain below.
     # operator_skins.operator_pk is a nullable FK into operators, so a non-purged
     # skin still referencing a purged operator makes the operator delete below raise
-    # (fail-closed, §V20) -- the same shared-entity guard as a banner featured op.
+    # (fail-closed) -- the same shared-entity guard as a banner featured op.
     # Skins are deleted by their own provenance (skin_pks), so a non-purged source's
     # skins are untouched.
     _delete_in(conn, "operator_skins", "skin_pk", skin_pks)
 
     # operator domain: children -> parents (each core row carries its own
-    # provenance; sub-tables link through the parent, §12.3).
+    # provenance; sub-tables link through the parent, section 12.3).
     _delete_in(conn, "module_levels", "module_pk", module_pks)
     _delete_in(conn, "modules", "module_pk", module_pks)
     _delete_in(conn, "talent_levels", "talent_pk", talent_pks)
@@ -199,9 +199,9 @@ def purge_and_rebuild(
 ) -> PurgeResult:
     """Rebuild a candidate with ``source_id``'s rows removed and promote iff valid.
 
-    The active database is only copied (never mutated in place, §V4). If the
+    The active database is only copied (never mutated in place). If the
     rebuilt candidate fails validation the current build stays active and no
-    promotion happens (§V20).
+    promotion happens.
     """
     active = Path(active_db)
     if not active.is_file():
@@ -215,7 +215,7 @@ def purge_and_rebuild(
         try:
             # A shared entity still referenced by a non-purged source raises
             # IntegrityError: fail closed rather than corrupt the graph. The
-            # current build stays active because promotion never runs (§V33/§V20).
+            # current build stays active because promotion never runs.
             with integrity_guard(
                 lambda exc: (
                     f"cannot purge {source_id!r}: a row it owns is still referenced by "
@@ -228,7 +228,7 @@ def purge_and_rebuild(
                 # entity_fts is a standalone FTS5 index with no triggers (0007), so
                 # deleting base rows above leaves the purged source's search
                 # documents behind. Rebuild the index from the surviving rows so a
-                # taken-down entity no longer surfaces in search (§V16/§V20/§V32).
+                # taken-down entity no longer surfaces in search.
                 rebuild_search_index(conn)
                 materialize_policy_events(conn, policy_events)
                 conn.commit()

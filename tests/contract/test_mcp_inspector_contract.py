@@ -1,13 +1,13 @@
-"""§T38 local MCP Inspector contract tests (§V14/§V23).
+"""Local MCP Inspector contract tests.
 
 The MCP Inspector drives a server over a transport with two calls: ``tools/list``
 (enumerate tools + their input schemas) then ``tools/call`` (invoke a tool and read
 the result). These tests stand in for that flow against the *shared* registry both
-transports dispatch from (:func:`build_tool_registry`, §V14) -- there is no live
-transport yet (stdio wiring / Streamable HTTP land in later §T tasks), so we drive
+transports dispatch from (:func:`build_tool_registry`) -- there is no live
+transport yet (stdio wiring / Streamable HTTP land later), so we drive
 the exact same registry -> spec.handler path a transport would.
 
-Four request archetypes an Inspector operator exercises, mapped to the typed §V23
+Four request archetypes an Inspector operator exercises, mapped to the typed
 contract:
 
 * **valid**     -- a well-formed call returns an ``ok`` envelope.
@@ -15,16 +15,16 @@ contract:
   ``not_found`` status (a domain outcome, not a protocol error) with a safe message.
 * **ambiguous** -- an under/over-specified stage selector (both / neither of
   ``stage_code`` | ``game_id``) is rejected by the model's exactly-one guard; the
-  §V23 vocabulary itself carries an ``ambiguous`` status for a future multi-match
+  vocabulary itself carries an ``ambiguous`` status for a future multi-match
   resolver to emit through the same envelope.
 * **invalid**   -- a malformed call (unknown parameter, out-of-range bound, bad
   region, missing required field) is *rejected* at the model gate
   (``ValidationError`` -> protocol-level error), never silently coerced.
 
 Across every archetype two invariants hold: dispatching through the assembled
-registry yields the identical domain result as the tool's own spec (§V14 -- one
+registry yields the identical domain result as the tool's own spec (one
 registry, no divergent logic), and every delivered envelope carries a typed status
-from the §V23 vocabulary with no leaked stack trace or local path.
+from the vocabulary with no leaked stack trace or local path.
 
 Local + offline: built from the pinned 4-4 fixture, so it runs under the default
 ``pytest -q`` (unlike the network-gated ``tests/contract`` upstream checks).
@@ -63,8 +63,8 @@ FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 OPERATOR_ROOT = REPO_ROOT / "tests" / "fixtures" / "operator" / "en"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The full §I.tool set the assembled registry exposes, in registration order
-#: (§V14). The two data-metadata tools (§T77) register last.
+#: The full tool set the assembled registry exposes, in registration order.
+#: The two data-metadata tools register last.
 _EXPECTED_TOOLS = (
     "search_entities",
     "search_stages",
@@ -106,10 +106,10 @@ _VALID_CALLS: dict[str, dict[str, object]] = {
 }
 
 #: One call per tool whose target does not exist -> the typed ``not_found`` status.
-#: §V106 (a): this is the LOOKUP archetype -- a named entity that is absent. The data
+#: This is the LOOKUP archetype -- a named entity that is absent. The data
 #: metadata tools have no such archetype (they report the active build's own posture, so a
 #: well-formed call always yields a delivered status), and neither do the SEARCH tools,
-#: whose empty answer is a §V106 (b) set-query result asserted in
+#: whose empty answer is a set-query result asserted in
 #: :data:`_EMPTY_SET_CALLS` instead. Both are absent from this map.
 _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "get_stage": {"server": "en", "stage_code": "99-99"},
@@ -122,8 +122,8 @@ _NOT_FOUND_CALLS: dict[str, dict[str, object]] = {
     "get_my_operator": {"server": "en", "game_id": "char_999_ghost"},
 }
 
-#: §V106 (b): one well-formed call per SET-query tool whose answer is legitimately empty.
-#: B147's defect was that these answered ``not_found`` while ``get_announcements`` answered
+#: One well-formed call per SET-query tool whose answer is legitimately empty.
+#: The defect was that these answered ``not_found`` while ``get_announcements`` answered
 #: ``ok`` + ``[]`` for the same shape of question, so a client branching on ``status`` read
 #: one as failure and the other as success. Both archetypes are pinned side by side here
 #: so a future tool cannot quietly rejoin the wrong one.
@@ -158,7 +158,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 @pytest.fixture
 def registry(conn: sqlite3.Connection) -> ToolRegistry:
-    """The shared registry both transports dispatch from (§V14)."""
+    """The shared registry both transports dispatch from."""
     return build_tool_registry(
         lambda: conn,
         registry=load_source_registry(REGISTRY),
@@ -176,7 +176,7 @@ def _call(registry: ToolRegistry, name: str, **params: object) -> ResponseEnvelo
 
 
 def test_list_tools_exposes_full_m2_set(registry: ToolRegistry) -> None:
-    # tools/list: the shared registry (§V14) enumerates exactly the M2 tool set,
+    # tools/list: the shared registry enumerates exactly the M2 tool set,
     # in a deterministic order, so both transports show the same list.
     assert registry.names() == _EXPECTED_TOOLS
 
@@ -186,11 +186,11 @@ def test_listed_tools_are_read_only_with_bounded_schema(registry: ToolRegistry) 
     assert {t.name for t in tools} == set(_EXPECTED_TOOLS)
     for tool in tools:
         assert isinstance(tool, Tool)
-        # §V2/§V28: every exposed tool is read-only + non-destructive.
+        # Every exposed tool is read-only + non-destructive.
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
-        # §V18: the bounded model's schema forbids unknown parameters on the wire.
+        # The bounded model's schema forbids unknown parameters on the wire.
         assert tool.inputSchema["type"] == "object"
         assert tool.inputSchema["additionalProperties"] is False
 
@@ -207,7 +207,7 @@ def test_valid_call_returns_ok_envelope(registry: ToolRegistry, name: str) -> No
 
 
 def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> None:
-    # §V5: a factual tool result is region-attributed via provenance; en/cn are
+    # A factual tool result is region-attributed via provenance; en/cn are
     # never silently mixed. (Search returns region-tagged locators, not facts.)
     for name in (
         "get_stage",
@@ -221,7 +221,7 @@ def test_valid_factual_calls_carry_region_provenance(registry: ToolRegistry) -> 
 
 
 def test_data_status_carries_per_snapshot_provenance(registry: ToolRegistry) -> None:
-    # §V5 (finding #4): get_data_status is region-attributed too -- it emits one
+    # Finding #4: get_data_status is region-attributed too -- it emits one
     # provenance entry per active snapshot (server + snapshot_id + imported_at), so
     # a regression dropping provenance from the status envelope cannot pass green.
     env = _call(registry, "get_data_status", **_VALID_CALLS["get_data_status"])
@@ -237,13 +237,13 @@ def test_data_status_carries_per_snapshot_provenance(registry: ToolRegistry) -> 
 
 
 def test_data_status_provenance_single_carrier(registry: ToolRegistry) -> None:
-    # §V66 (B78/T157): the envelope provenance is the SOLE carrier of
+    # The envelope provenance is the SOLE carrier of
     # ``imported_at`` -- the data.snapshots rows must not re-emit it, but keep the
-    # source/commit/version/age extras. §V87 (B96/T177): each row inlines its
+    # source/commit/version/age extras. Each row inlines its
     # ``server`` AND ``snapshot_id`` join keys -- one region can hold several active
     # snapshots (game data + penguin + announcements share a server), so only
     # snapshot_id ties a row to its provenance entry without the "row N ↔
-    # provenance N" order contract §V87 forbids. §V67 (B96/T177): the local-import
+    # provenance N" order contract forbids. The local-import
     # fixture has no commit/version, so those keys are omitted, never emitted null.
     env = _call(registry, "get_data_status", **_VALID_CALLS["get_data_status"])
     body = env.to_dict()
@@ -253,15 +253,15 @@ def test_data_status_provenance_single_carrier(registry: ToolRegistry) -> None:
     for snap in snapshots:
         # imported_at lives only in the envelope provenance, never in the row.
         assert "imported_at" not in snap
-        # The join keys are inline per row (§V87): the row's snapshot_id resolves
+        # The join keys are inline per row: the row's snapshot_id resolves
         # its provenance entry by id, not by position.
         assert snap["server"] == "en"
         entry = prov_by_id[snap["snapshot_id"]]
         assert entry["server"] == snap["server"]
         assert entry["imported_at"]
-        # Extras stay on the row; null commit/version keys are scrubbed (§V67).
+        # Extras stay on the row; null commit/version keys are scrubbed.
         assert snap["source_id"]
-        # §V99 (T198): the row's lifecycle state is ``import_status`` -- bare ``status``
+        # The row's lifecycle state is ``import_status`` -- bare ``status``
         # is the envelope's result status, a different axis in the same payload.
         assert "age_days" in snap and "import_status" in snap
         assert "status" not in snap
@@ -279,7 +279,7 @@ def test_not_found_call_returns_typed_status(registry: ToolRegistry, name: str) 
     assert isinstance(data, dict)
     message = data["message"]
     assert isinstance(message, str) and message
-    # §V24: a not_found points at an admin action, never a query-time download/scrape.
+    # A not_found points at an admin action, never a query-time download/scrape.
     action = str(data.get("suggested_action", ""))
     assert "download" not in action.lower() and "scrape" not in action.lower()
 
@@ -288,7 +288,7 @@ def test_not_found_call_returns_typed_status(registry: ToolRegistry, name: str) 
 def test_empty_set_call_returns_ok_with_an_empty_collection(
     registry: ToolRegistry, name: str
 ) -> None:
-    # §V106 (b)/B147: an empty answer to a well-formed set query is a DELIVERED result --
+    # An empty answer to a well-formed set query is a DELIVERED result --
     # ``ok``, an empty collection, and a limitation carrying the why. No ``message`` key,
     # because this is not an error envelope.
     env = _call(registry, name, **_EMPTY_SET_CALLS[name])
@@ -298,11 +298,11 @@ def test_empty_set_call_returns_ok_with_an_empty_collection(
     assert data["results"] == []
     assert "message" not in data
     assert env.limitations, "an empty set must say why it is empty"
-    # §V24: the guidance never hints a query-time download/scrape either.
+    # The guidance never hints a query-time download/scrape either.
     assert all("download" not in lim.lower() for lim in env.limitations)
 
 
-# --- ambiguous -> exactly-one-selector guard + §V23 vocabulary -----------------
+# --- ambiguous -> exactly-one-selector guard + vocabulary ---------------------
 
 
 def test_ambiguous_stage_selector_rejected(registry: ToolRegistry) -> None:
@@ -319,7 +319,7 @@ def test_underspecified_stage_selector_rejected(registry: ToolRegistry) -> None:
 
 
 def test_v23_vocabulary_carries_ambiguous_status() -> None:
-    # §V23: the typed vocabulary includes ``ambiguous`` and the envelope layer can
+    # The typed vocabulary includes ``ambiguous`` and the envelope layer can
     # carry it (a future multi-match resolver emits it through the same contract),
     # with no leaked detail.
     assert "ambiguous" in STATUS_VALUES
@@ -334,13 +334,13 @@ def test_v23_vocabulary_carries_ambiguous_status() -> None:
 @pytest.mark.parametrize(
     ("name", "params"),
     [
-        # unknown parameter (extra="forbid") -- no smuggled field (§V18).
+        # unknown parameter (extra="forbid") -- no smuggled field.
         ("search_entities", {"query": "drone", "bogus": 1}),
-        # out-of-range limit -- rejected, never silently widened into a dump (§V19).
+        # out-of-range limit -- rejected, never silently widened into a dump.
         ("search_entities", {"query": "drone", "limit": 0}),
         ("search_entities", {"query": "drone", "limit": 51}),
         ("search_stages", {"query": "4-4", "limit": 100}),
-        # bad region (§V5 Literal).
+        # bad region (Literal).
         ("search_entities", {"query": "drone", "server": "jp"}),
         ("get_enemy", {"server": "jp", "game_id": "enemy_1007_slime"}),
         # empty required string (min_length).
@@ -348,7 +348,7 @@ def test_v23_vocabulary_carries_ambiguous_status() -> None:
         ("get_enemy", {"server": "en", "game_id": ""}),
         # missing required field.
         ("get_enemy", {"game_id": "enemy_1007_slime"}),
-        # out-of-range nested page bound (§V19).
+        # out-of-range nested page bound.
         ("get_stage", {"server": "en", "stage_code": "4-4", "spawns_page": {"page_size": 101}}),
         # unknown parameter on a factual tool.
         ("get_stage", {"server": "en", "stage_code": "4-4", "bogus": 1}),
@@ -361,12 +361,12 @@ def test_invalid_input_is_rejected(
         _call(registry, name, **params)
 
 
-# --- §V71 (c)/B60: the shared dispatch home wraps a malformed call as invalid_input ---
+# --- the shared dispatch home wraps a malformed call as invalid_input ---
 
 
 def test_dispatch_wraps_malformed_call_as_invalid_input(registry: ToolRegistry) -> None:
-    # A transport dispatches through the single shared home (§V14/§V37); a
-    # ValidationError there is delivered as a typed ``invalid_input`` envelope (§V23),
+    # A transport dispatches through the single shared home; a
+    # ValidationError there is delivered as a typed ``invalid_input`` envelope,
     # never a leaked pydantic error, so the client reads a status from the vocabulary.
     env = dispatch_tool_call(
         registry, "get_stage", {"server": "en", "stage_code": "4-4", "bogus": 1}
@@ -377,25 +377,24 @@ def test_dispatch_wraps_malformed_call_as_invalid_input(registry: ToolRegistry) 
     # The offending parameter is named + a client-actionable next step is suggested.
     assert "bogus" in str(body["message"])
     assert body["suggested_action"]
-    # §V71 (b/c): no raw pydantic framing / URL / internal cite reaches the client.
+    # No raw pydantic framing / URL / internal cite reaches the client.
     serialized = str(env.to_dict())
     assert "errors.pydantic.dev" not in serialized
     assert "validation error" not in serialized.lower()
-    assert "§V" not in serialized
 
 
 def test_dispatch_unknown_tool_is_typed_not_found(registry: ToolRegistry) -> None:
-    # §V23: an unknown tool name is a typed ``not_found`` result at the shared dispatch
+    # An unknown tool name is a typed ``not_found`` result at the shared dispatch
     # home, not a bare protocol KeyError.
     env = dispatch_tool_call(registry, "no_such_tool", {})
     assert env.status == "not_found"
 
 
-# --- §V14: the assembled registry adds no divergent logic ---------------------
+# --- the assembled registry adds no divergent logic ---------------------
 
 
 def test_registry_dispatch_matches_direct_spec(conn: sqlite3.Connection) -> None:
-    # §V14: dispatching through the shared registry yields the identical domain
+    # Dispatching through the shared registry yields the identical domain
     # result as the tool's own spec on the same DB + input -- there is no
     # per-registry logic for a transport to diverge on.
     registry = build_tool_registry(
@@ -411,7 +410,7 @@ def test_registry_dispatch_matches_direct_spec(conn: sqlite3.Connection) -> None
         assert via_registry == direct
 
 
-# --- §V23: every delivered envelope is typed + leak-free ----------------------
+# --- every delivered envelope is typed + leak-free ----------------------
 
 
 def test_every_delivered_status_is_in_vocabulary(registry: ToolRegistry) -> None:
@@ -426,7 +425,7 @@ def test_every_delivered_status_is_in_vocabulary(registry: ToolRegistry) -> None
 
 
 def test_database_unavailable_fails_closed_through_registry() -> None:
-    # §V23: a DB failure on the shared dispatch path fails closed to a fixed,
+    # A DB failure on the shared dispatch path fails closed to a fixed,
     # path/trace-free envelope -- no leaked file name reaches the client. Every tool
     # whose payload IS the build fails closed this way; get_data_sources is the one
     # exception (finding #1) -- its payload is the in-memory registry, so it degrades
@@ -446,10 +445,10 @@ def test_database_unavailable_fails_closed_through_registry() -> None:
 
 
 def test_get_data_sources_degrades_to_registry_when_db_unavailable() -> None:
-    # Finding #1 / §V27: get_data_sources' payload is the in-memory source registry;
+    # Finding #1: get_data_sources' payload is the in-memory source registry;
     # the active build only enriches with the active snapshot per source. A missing/
     # unpromoted build must not withhold the source + license/attribution posture
-    # (PRD §10.7/§13.10), so it degrades to the registry-only projection (ok, empty
+    # (PRD Section 10.7/Section 13.10), so it degrades to the registry-only projection (ok, empty
     # active_snapshots) rather than failing closed. No path leaks in that body.
     def boom() -> sqlite3.Connection:
         raise DatabaseUnavailable("database not found: /home/ubuntu/cand.sqlite")
@@ -468,7 +467,7 @@ def test_get_data_sources_degrades_to_registry_when_db_unavailable() -> None:
 
 
 def test_data_status_data_stale_keeps_full_posture_body(tmp_path: Path) -> None:
-    # Finding #6 / §V23: get_data_status is a posture tool -- a non-ok result
+    # Finding #6: get_data_status is a posture tool -- a non-ok result
     # (``data_stale`` on an empty/unpromoted build) is a reported state, not a failed
     # request, so it keeps the full status body (warnings + suggested_action name the
     # admin action) instead of the ``{message}`` error-body shape. A client reads the
@@ -489,7 +488,7 @@ def test_data_status_data_stale_keeps_full_posture_body(tmp_path: Path) -> None:
     assert isinstance(data, dict)
     # Full posture body, not the error {message} shape.
     assert "message" not in data
-    # §V99/§V66 (B148, T198): the verdict is read from the ENVELOPE. The ``data`` echoes of
+    # The verdict is read from the ENVELOPE. The ``data`` echoes of
     # ``status``/``analyzer_version`` are gone, and the DB migration id is keyed
     # ``db_schema_version`` so it no longer collides with the envelope's ``schema_version``.
     assert "status" not in data and "analyzer_version" not in data

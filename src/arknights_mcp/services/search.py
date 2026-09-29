@@ -1,14 +1,14 @@
-"""Entity search service (§T31): the single domain entry point both transports
+"""Entity search service: the single domain entry point both transports
 call to search operators / enemies / stages / items by name, alias, code, id, or
-tag (§V14). The item domain (T142/§V73) gives ``get_item_drops`` a name->id path.
+tag. The item domain gives ``get_item_drops`` a name->id path.
 
 Given a read-only SQLite connection and a free-text query, it tokenizes the
-query into a safe FTS5 ``MATCH`` expression (§V2/§V18 -- no operator or SQL
-injection), runs it through :class:`~arknights_mcp.db.repositories.search.SearchRepository`
-(the sole parameterized SQL surface), and returns ranked, region-tagged hits
-(§V5). Result size is bounded to the §V19 window (default 10, max 50). It never
+query into a safe FTS5 ``MATCH`` expression that can carry no operator or SQL
+injection, then runs it through :class:`~arknights_mcp.db.repositories.search.SearchRepository`
+(the sole parameterized SQL surface), and returns ranked, region-tagged hits.
+Result size is bounded to a fixed window (default 10, max 50). It never
 opens the connection or mutates the database; both transports share this exact
-function (§V14).
+function.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from arknights_mcp.db.repositories.search import SearchHitRow, SearchRepository
 from arknights_mcp.models.common import SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, Region
 from arknights_mcp.services.stage_variant import stage_variant
 
-#: §V19 search-result bounds. Single home is ``models.common`` (§V37); re-exported
+#: Search-result bounds. Single home is ``models.common``; re-exported
 #: under the service-local names the rest of this module already uses.
 DEFAULT_LIMIT = SEARCH_DEFAULT_LIMIT
 MAX_LIMIT = SEARCH_MAX_LIMIT
@@ -33,19 +33,19 @@ _MAX_TOKENS = 16
 #: rebuilt MATCH expression can carry no operator, quote, or ``*`` from user input.
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
-#: Typed outcome (a subset of the §V23 status vocabulary wired into the tool
-#: envelope in §T32). ``unsupported_server`` / ``data_stale`` are the §V50
+#: Typed outcome (a subset of the status vocabulary wired into the tool
+#: envelope). ``unsupported_server`` / ``data_stale`` are the
 #: region-availability verdicts returned *before* absence is asserted at all.
 #:
-#: There is no ``not_found`` here (§V106/B147): a search is a SET QUERY, and a
+#: There is no ``not_found`` here: a search is a SET QUERY, and a
 #: well-formed query that matched nothing is an ``ok`` result with an empty ``hits``
 #: plus a limitation carrying the why -- an empty answer to a well-formed question is
 #: not an error, and a client branching on ``status`` must not read "no name matched
 #: 'Amyia'" as a failure while reading "no announcements in this window" as a success.
-#: The §V50 gates above are REAL errors and still fire first.
+#: The gates above are REAL errors and still fire first.
 #:
 #: The extra-locale (ja/ko) axis and its ``locale_unavailable`` /
-#: ``locale_not_applicable`` verdicts are RETIRED (§V57, T156 -- founder 2026-07-23,
+#: ``locale_not_applicable`` verdicts are RETIRED (founder 2026-07-23,
 #: EN+CN only).
 SearchStatus = Literal[
     "ok",
@@ -53,38 +53,38 @@ SearchStatus = Literal[
     "data_stale",
 ]
 
-#: Why an ``ok`` search came back with no hits (§V106 b). ``None`` on a non-empty
+#: Why an ``ok`` search came back with no hits. ``None`` on a non-empty
 #: result. The tool turns this into the client-facing limitation, so the DOMAIN records
-#: the reason and the wire wording stays in one place at the tool layer (§V37/§V71 b).
+#: the reason and the wire wording stays in one place at the tool layer.
 #: ``no_match`` == the query tokenized fine and the FTS index simply had nothing;
 #: ``no_searchable_tokens`` == tokenization stripped the query to nothing (a query of
 #: punctuation alone), which is a different why and must not be reported as the first.
 EmptyReason = Literal["no_match", "no_searchable_tokens"]
 
-#: §V5 supported regions as a runtime set, derived from the single ``Region``
-#: literal home (§V37) so the search gate and the input model never diverge.
+#: Supported regions as a runtime set, derived from the single ``Region``
+#: literal home so the search gate and the input model never diverge.
 _REGIONS: frozenset[str] = frozenset(get_args(Region))
 
 
 @dataclass(frozen=True)
 class SearchHit:
-    """One ranked search hit, carrying its region (§V5).
+    """One ranked search hit, carrying its region.
 
     Full facts + provenance are fetched by the entity tools (``get_enemy`` /
     ``get_stage`` / ``get_operator``); a hit is a region-scoped locator.
 
-    ``difficulty`` is the §V70/§V80 stage variant tag: a stage hit carries the same
+    ``difficulty`` is the stage variant tag: a stage hit carries the same
     truthful variant ``get_stage`` returns, so two stages sharing a
     ``display_name`` + ``stage_code`` stay distinguishable in one result set without
-    the game-data ``game_id`` suffix/prefix (B59/B84). It is derived through the one
-    §V37 home (:func:`~arknights_mcp.services.stage_variant.stage_variant`): the
+    the game-data ``game_id`` suffix/prefix. It is derived through the one
+    home (:func:`~arknights_mcp.services.stage_variant.stage_variant`): the
     source ``FOUR_STAR`` challenge variant (``#f#``) plus the prefix-derived
     ``TOUGH`` / ``EASY`` (``tough_*`` / ``easy_*``, never left ``NORMAL``). ``None``
     for a non-stage hit or a plain stage with no variant.
 
-    ``zone_display_name`` is the stage's zone name (T186/B113) and ``event_name`` the
-    title of the event that zone belongs to (§V110/B155). A stage can match a query
-    through either (T179 -- an event name finds that event's stages), and without them
+    ``zone_display_name`` is the stage's zone name and ``event_name`` the
+    title of the event that zone belongs to. A stage can match a query
+    through either (an event name finds that event's stages), and without them
     on the wire such a hit is unattributable: the client sees a stage whose own name and
     code have nothing to do with the query and cannot partition mixed hits by event.
     They are two different facts from two different source files -- the zone name is the
@@ -111,8 +111,8 @@ class SearchResult:
     status: SearchStatus
     query: str
     hits: tuple[SearchHit, ...]
-    #: §V106 (b): why an ``ok`` result carries no hits, so the tool can say which of the
-    #: two empty cases it is. Always ``None`` when ``hits`` is non-empty, and on a §V50
+    #: Why an ``ok`` result carries no hits, so the tool can say which of the
+    #: two empty cases it is. Always ``None`` when ``hits`` is non-empty, and on a
     #: gate verdict (those carry their own typed status + copy).
     empty_reason: EmptyReason | None = None
 
@@ -122,7 +122,7 @@ def _match_expression(query: str) -> str | None:
 
     Each word token becomes a quoted prefix term (``"tok"*``); quoting escapes the
     FTS syntax so no ``MATCH`` operator (``AND``/``OR``/``NEAR``/``*``/``"``/``:``)
-    survives from the untrusted query (§V2/§V18). Returns ``None`` when the query
+    survives from the untrusted query. Returns ``None`` when the query
     holds no word characters (nothing to search).
     """
     tokens = _TOKEN_RE.findall(query)
@@ -132,36 +132,36 @@ def _match_expression(query: str) -> str | None:
 
 
 def _validate_limit(limit: int) -> int:
-    """Reject a ``limit`` outside the §V19 window -- never silently widen it.
+    """Reject a ``limit`` outside the window -- never silently widen it.
 
     Mirrors :class:`~arknights_mcp.models.search.SearchEntitiesInput`
     (``ge=1, le=SEARCH_MAX_LIMIT``): the model is the MCP gate, but a caller
     reaching this service directly (or a future transport that skips model
-    validation) must get the *same* rejection, not a silent clamp -- one §V19
+    validation) must get the *same* rejection, not a silent clamp -- one
     contract, enforced identically in both places.
     """
     value = int(limit)
     if value < 1 or value > MAX_LIMIT:
-        raise ValueError(f"limit {value} outside the §V19 window [1, {MAX_LIMIT}]")
+        raise ValueError(f"limit {value} outside the window [1, {MAX_LIMIT}]")
     return value
 
 
 def _region_gate(conn: sqlite3.Connection, server: str | None) -> SearchStatus | None:
-    """Honor region availability (§V24/§V50) before a search asserts absence.
+    """Honor region availability before a search asserts absence.
 
     Returns the gating :data:`SearchStatus` to short-circuit with, or ``None`` when
     the region index is present and the search may proceed:
 
-    * a ``server`` outside {en, cn} -> ``unsupported_server`` (§V5);
+    * a ``server`` outside {en, cn} -> ``unsupported_server``;
     * a supported ``server`` with no active snapshot -> ``data_stale`` + a suggested
       admin action at the tool layer;
     * an unscoped search (``server`` is ``None``) against a build with *no* active
       snapshot at all -> ``data_stale`` (the whole index is empty).
 
-    This is the fix for B42: a bare ``not_found`` claims the entity is absent, which
+    A bare ``not_found`` claims the entity is absent, which
     is not inferable when the region index is empty. Both ``search_entities`` and
-    ``search_stages`` route through this single home (§V37); it mirrors the
-    snapshot-presence verdict the status service (B24) makes over the same table.
+    ``search_stages`` route through this single home; it mirrors the
+    snapshot-presence verdict the status service makes over the same table.
     """
     if server is not None and server not in _REGIONS:
         return "unsupported_server"
@@ -175,12 +175,12 @@ def _region_gate(conn: sqlite3.Connection, server: str | None) -> SearchStatus |
 
 
 def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
-    """Map repository rows to region-tagged hits + a typed status (§V5/§V23).
+    """Map repository rows to region-tagged hits + a typed status.
 
-    Single home (§V37) for the row -> :class:`SearchHit` shaping shared by
+    Single home for the row -> :class:`SearchHit` shaping shared by
     :func:`search_entities` and :func:`search_stages`. A well-formed query that matched
-    nothing is ``ok`` with empty ``hits`` and ``empty_reason="no_match"`` (§V106 b) --
-    the set query succeeded and returned an empty set, which is not an error (B147).
+    nothing is ``ok`` with empty ``hits`` and ``empty_reason="no_match"`` --
+    the set query succeeded and returned an empty set, which is not an error.
     """
     hits = tuple(
         SearchHit(
@@ -189,10 +189,10 @@ def _result_from_rows(query: str, rows: list[SearchHitRow]) -> SearchResult:
             game_id=row.game_id,
             display_name=row.name,
             stage_code=row.stage_code,
-            # §V80/B84: the same truthful variant tag get_stage emits, through the
-            # one §V37 home -- a ``tough_*`` / ``easy_*`` locator is never NORMAL.
+            # The same truthful variant tag get_stage emits, through the
+            # one home -- a ``tough_*`` / ``easy_*`` locator is never NORMAL.
             difficulty=stage_variant(row.game_id, row.difficulty),
-            # T186/B113 + §V110/B155: the zone name and the event title a stage may
+            # The zone name and the event title a stage may
             # have matched through, so an alias-driven hit is attributable on the wire.
             zone_display_name=row.zone_display_name,
             event_name=row.event_name,
@@ -215,21 +215,21 @@ def search_entities(
     entity_type: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> SearchResult:
-    """Search indexed entities for ``query``. Read-only; parameterized SQL only (§V2).
+    """Search indexed entities for ``query``. Read-only; parameterized SQL only.
 
-    ``server`` scopes the result to one region (§V5, never silently mixed);
+    ``server`` scopes the result to one region (never silently mixed);
     ``entity_type`` narrows to ``operator`` | ``enemy`` | ``stage`` | ``item``.
-    An ``item`` locator's ``game_id`` feeds ``get_item_drops`` (§V73). ``limit`` is
-    validated against the §V19 window -- an out-of-range value is *rejected*
+    An ``item`` locator's ``game_id`` feeds ``get_item_drops``. ``limit`` is
+    validated against the window -- an out-of-range value is *rejected*
     (``ValueError``), never silently widened. Region availability is honored
-    *before* asserting absence (§V24/§V50): an unsupported region or a region with
+    *before* asserting absence: an unsupported region or a region with
     no active snapshot returns ``unsupported_server`` / ``data_stale``, never a bare
-    ``not_found`` (see :func:`_region_gate`). Both transports call this (§V14).
+    ``not_found`` (see :func:`_region_gate`). Both transports call this.
 
-    The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156 -- founder
+    The extra-locale (ja/ko) NAME-alias filter is RETIRED (founder
     2026-07-23, EN+CN only): there is no ``locale`` parameter, and the alias tables
     are no longer consulted at query time (operator self-aliases still feed the FTS
-    ``name`` document at build time, §T98).
+    ``name`` document at build time).
     """
     bounded = _validate_limit(limit)
     gate = _region_gate(conn, server)
@@ -237,7 +237,7 @@ def search_entities(
         return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
-        # §V106 (b): the query survived the model gate but tokenized to nothing (all
+        # The query survived the model gate but tokenized to nothing (all
         # punctuation), so there is no MATCH expression to run. Still a set query with an
         # empty answer -- ``ok`` with its OWN reason, never conflated with a real miss.
         return SearchResult(status="ok", query=query, hits=(), empty_reason="no_searchable_tokens")
@@ -254,16 +254,16 @@ def search_stages(
     server: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> SearchResult:
-    """Search indexed stages for ``query`` -- exact ``stage_code`` first (§T33).
+    """Search indexed stages for ``query`` -- exact ``stage_code`` first.
 
-    Same safe, tokenized FTS path as :func:`search_entities` (§V2/§V18), scoped to
+    Same safe, tokenized FTS path as :func:`search_entities`, scoped to
     the ``stage`` domain, but a stage whose ``stage_code`` equals the query (e.g.
     ``4-4``, case-insensitive) is ranked ahead of a fuzzier name/game-id hit.
-    ``server`` scopes to one region (§V5, never silently mixed); ``limit`` is
-    validated against the §V19 window -- an out-of-range value is *rejected*
+    ``server`` scopes to one region (never silently mixed); ``limit`` is
+    validated against the window -- an out-of-range value is *rejected*
     (``ValueError``), never silently widened. Region availability is honored before
-    asserting absence (§V24/§V50, see :func:`_region_gate`). Both transports call
-    this (§V14).
+    asserting absence (see :func:`_region_gate`). Both transports call
+    this.
     """
     bounded = _validate_limit(limit)
     gate = _region_gate(conn, server)
@@ -271,7 +271,7 @@ def search_stages(
         return SearchResult(status=gate, query=query, hits=())
     match = _match_expression(query)
     if match is None:
-        # §V106 (b): the query survived the model gate but tokenized to nothing (all
+        # The query survived the model gate but tokenized to nothing (all
         # punctuation), so there is no MATCH expression to run. Still a set query with an
         # empty answer -- ``ok`` with its OWN reason, never conflated with a real miss.
         return SearchResult(status="ok", query=query, hits=(), empty_reason="no_searchable_tokens")

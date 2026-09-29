@@ -1,14 +1,14 @@
-"""T112: migration 0013 banner-archive domain schema (§V17/§V62).
+"""Migration 0013 banner-archive domain schema.
 
 ``banners`` + ``banner_featured_ops`` back the v0.2 M11 banner ARCHIVE, a historical
-gacha-schedule FACT from the primary ``arknights_assets_gamedata`` snapshot (§V62 --
-NOT a new source). These tests assert the migration applies cleanly, that both tables
-carry the right provenance/FK wiring (§V17), that the ``banners`` column set is
+gacha-schedule FACT from the primary ``arknights_assets_gamedata`` snapshot --
+NOT a new source. These tests assert the migration applies cleanly, that both tables
+carry the right provenance/FK wiring, that the ``banners`` column set is
 METADATA-ONLY -- there is no place to store gacha prose/summary/detail/html/image
-(§V62/§V16 ceiling) -- that ``region`` is NOT NULL (§V5), that the typed featured-op
-child soft-resolves (``operator_pk`` nullable, §V62), and that identity/uniqueness
-collide as the importer (T113) needs for its §V33 typed-error mapping. Schema only:
-the importer (T113) and tool (T114) land separately.
+-- that ``region`` is NOT NULL, that the typed featured-op
+child soft-resolves (``operator_pk`` nullable), and that identity/uniqueness
+collide as the importer needs for its typed-error mapping. Schema only:
+the importer and tool land separately.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from arknights_mcp.db.migrations import build_database
 _FIELD_POLICY_VERSION = "test"
 _TRANSFORM_VERSION = "test"
 
-#: The complete, metadata-only column set for ``banners`` (§V62). banner_pk +
+#: The complete, metadata-only column set for ``banners``. banner_pk +
 #: provenance_id are bookkeeping; the rest are exactly the allowed schedule/identity
 #: fields. A future summary/detail/html/image/prose column would break this equality
-#: (§V16/§V56 ceiling extends to the banner domain).
+#: (the metadata-only ceiling extends to the banner domain).
 _BANNER_COLUMNS = {
     "banner_pk",
     "server",
@@ -39,7 +39,7 @@ _BANNER_COLUMNS = {
     "provenance_id",
 }
 
-#: Columns that would smuggle in forbidden gacha prose/summary/detail/image (§V62/§V16).
+#: Columns that would smuggle in forbidden gacha prose/summary/detail/image.
 _FORBIDDEN_SUBSTRINGS = ("summary", "detail", "html", "image", "prose", "body", "content", "desc")
 
 
@@ -51,7 +51,7 @@ def _seed_provenance(conn: sqlite3.Connection) -> int:
     """Insert the minimal source/snapshot/provenance chain; return provenance_id.
 
     Reuses the primary ``arknights_assets_gamedata`` source -- the banner archive is
-    the SAME snapshot as enemy/stage/operator (§V62), not a new registry entry.
+    the SAME snapshot as enemy/stage/operator, not a new registry entry.
     """
     conn.execute(
         "INSERT INTO data_sources (source_id, display_name, owner_name, canonical_url, "
@@ -113,7 +113,7 @@ def test_integrity_and_foreign_key_checks_pass(tmp_path: Path) -> None:
 
 
 def test_banners_metadata_only_column_set(tmp_path: Path) -> None:
-    # §V62/§V16: banners holds ONLY schedule/identity metadata -- no summary/detail/
+    # Banners holds ONLY schedule/identity metadata -- no summary/detail/
     # html/image/prose column exists to store the forbidden gacha promotional copy.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
@@ -126,7 +126,7 @@ def test_banners_metadata_only_column_set(tmp_path: Path) -> None:
 
 
 def test_region_is_not_null(tmp_path: Path) -> None:
-    # §V5: every banner is region-attributed; region cannot be NULL.
+    # Every banner is region-attributed; region cannot be NULL.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         region_col = next(
@@ -138,7 +138,7 @@ def test_region_is_not_null(tmp_path: Path) -> None:
 
 
 def test_banner_provenance_fk_present_and_enforced(tmp_path: Path) -> None:
-    # §V17: a banner carries provenance; a dangling provenance_id is rejected.
+    # A banner carries provenance; a dangling provenance_id is rejected.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         assert "provenance_id" in _columns(conn, "banners")
@@ -155,7 +155,7 @@ def test_banner_provenance_fk_present_and_enforced(tmp_path: Path) -> None:
 
 
 def test_server_open_index_exists(tmp_path: Path) -> None:
-    # The (server, open_time) index serves the get_banners per-region schedule read (T114).
+    # The (server, open_time) index serves the get_banners per-region schedule read.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         indexes = {row[1] for row in conn.execute("PRAGMA index_list(banners)")}
@@ -196,8 +196,8 @@ def test_banner_metadata_roundtrips(tmp_path: Path) -> None:
 
 def test_unique_server_game_id(tmp_path: Path) -> None:
     # UNIQUE(server, game_id): a duplicate (server, gachaPoolId) collides so the
-    # importer (T113) can map the anomaly to a typed ImporterError (§V33 pattern);
-    # the same game_id in a DIFFERENT server is allowed (§V5 region separation).
+    # importer can map the anomaly to a typed ImporterError;
+    # the same game_id in a DIFFERENT server is allowed (region separation).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)
@@ -212,8 +212,8 @@ def test_unique_server_game_id(tmp_path: Path) -> None:
 
 
 def test_featured_op_resolved_and_unresolved_roundtrip(tmp_path: Path) -> None:
-    # §V62: featured-op SOFT-resolves. A present operator -> operator_pk set, resolved=1;
-    # an absent operator (combat-only snapshot, B36) -> operator_pk NULL, resolved=0.
+    # Featured-op SOFT-resolves. A present operator -> operator_pk set, resolved=1;
+    # an absent operator (combat-only snapshot) -> operator_pk NULL, resolved=0.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)
@@ -243,7 +243,7 @@ def test_featured_op_resolved_and_unresolved_roundtrip(tmp_path: Path) -> None:
 
 
 def test_featured_op_fks_present_and_enforced(tmp_path: Path) -> None:
-    # banner_pk -> banners, operator_pk -> operators (nullable soft-resolve, §V62).
+    # banner_pk -> banners, operator_pk -> operators (nullable soft-resolve).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         fks = {row[2] for row in conn.execute("PRAGMA foreign_key_list(banner_featured_ops)")}
@@ -268,7 +268,7 @@ def test_featured_op_fks_present_and_enforced(tmp_path: Path) -> None:
 
 def test_unique_banner_char_id(tmp_path: Path) -> None:
     # UNIQUE(banner_pk, char_id): a banner lists each featured op once; a duplicate
-    # char_id on the same banner collides so the importer maps it to ImporterError (§V33).
+    # char_id on the same banner collides so the importer maps it to ImporterError.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)

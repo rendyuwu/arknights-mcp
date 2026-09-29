@@ -1,10 +1,10 @@
-"""T89: the Penguin Statistics drop importer (items + stage_drops).
+"""The Penguin Statistics drop importer (items + stage_drops).
 
-Covers the §T89 contract with an in-memory fake fetcher (no live network, §V52):
-the penguin server -> region map (US->en, CN->cn; jp/kr dropped, §V54), the field
-allowlist + recursive sanitize (§V18), per-record provenance + a penguin snapshot
-row (§V17), the §V53 fetched_at/expires_at/snapshot/region stamps, the fail-closed
-skip of an unresolved stage/item, and the §V30 non-empty-or-fail guard.
+Covers the importer with an in-memory fake fetcher (no live network):
+the penguin server -> region map (US->en, CN->cn; jp/kr dropped), the field
+allowlist + recursive sanitize, per-record provenance + a penguin snapshot
+row, the fetched_at/expires_at/snapshot/region stamps, the fail-closed
+skip of an unresolved stage/item, and the non-empty-or-fail guard.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def _db(tmp_path: Path) -> sqlite3.Connection:
     return conn
 
 
-# --- server -> region map (§V54) ----------------------------------------------
+# --- server -> region map -----------------------------------------------------
 
 
 def test_region_map_us_cn_and_dropped_jp_kr() -> None:
@@ -96,7 +96,7 @@ def test_region_map_us_cn_and_dropped_jp_kr() -> None:
 
 
 def test_dropped_server_imports_nothing_and_never_fetches(tmp_path: Path) -> None:
-    # §V54: a jp/kr penguin server is dropped -- no fetch, no snapshot, empty result.
+    # A jp/kr penguin server is dropped -- no fetch, no snapshot, empty result.
     conn = _db(tmp_path)
     try:
         fetcher = _FakeFetcher({})
@@ -144,7 +144,7 @@ def test_happy_path_inserts_item_and_drop(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- provenance + snapshot (§V17) ---------------------------------------------
+# --- provenance + snapshot ----------------------------------------------------
 
 
 def test_items_and_drops_carry_provenance_and_penguin_snapshot(tmp_path: Path) -> None:
@@ -161,14 +161,14 @@ def test_items_and_drops_carry_provenance_and_penguin_snapshot(tmp_path: Path) -
         )
         result = import_penguin_drops(conn, fetcher, penguin_server="US", fetched_at=_FETCHED)
 
-        # A penguin snapshot row exists for the region, distinct provenance chain (§V54).
+        # A penguin snapshot row exists for the region, distinct provenance chain.
         snap = conn.execute(
             "SELECT snapshot_id, source_id, server, fetched_at FROM source_snapshots "
             "WHERE source_id = 'penguin_statistics'"
         ).fetchone()
         assert snap == (result.snapshot_id, "penguin_statistics", "en", _FETCHED.isoformat())
 
-        # §V17: item + drop both carry a provenance row pointing at the penguin snapshot.
+        # Item + drop both carry a provenance row pointing at the penguin snapshot.
         item_prov = conn.execute(
             "SELECT p.snapshot_id, p.source_path FROM items i "
             "JOIN record_provenance p ON p.provenance_id = i.provenance_id"
@@ -183,7 +183,7 @@ def test_items_and_drops_carry_provenance_and_penguin_snapshot(tmp_path: Path) -
         conn.close()
 
 
-# --- §V53 stale/attribution stamps --------------------------------------------
+# --- stale/attribution stamps -------------------------------------------------
 
 
 def test_stage_drop_stamps_fetched_expiry_and_region(tmp_path: Path) -> None:
@@ -210,7 +210,7 @@ def test_stage_drop_stamps_fetched_expiry_and_region(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- field allowlist + recursive sanitize (§V18) ------------------------------
+# --- field allowlist + recursive sanitize -------------------------------------
 
 
 def test_parse_items_drops_unallowlisted_fields() -> None:
@@ -231,7 +231,7 @@ def test_parse_items_drops_unallowlisted_fields() -> None:
     assert set(parsed[0].provenance_record) == {"itemId", "name", "rarity", "itemType"}
 
 
-# --- B46/§V59: item display_name = region-locale name, not canonical Chinese ---
+# --- item display_name = region-locale name, not canonical Chinese ------------
 
 
 def _i18n_item() -> dict[str, Any]:
@@ -308,7 +308,7 @@ def test_item_name_control_chars_sanitized(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- region never mixed (§V54/§V5) --------------------------------------------
+# --- region never mixed ----------------------------------------------------------
 
 
 def test_us_import_labels_every_row_en(tmp_path: Path) -> None:
@@ -363,7 +363,7 @@ def test_unresolved_stage_or_item_skipped_not_fabricated(tmp_path: Path) -> None
         conn.close()
 
 
-# --- §V30 non-empty-or-fail ---------------------------------------------------
+# --- non-empty-or-fail -----------------------------------------------------------
 
 
 def test_nonempty_matrix_zero_resolved_fails_closed(tmp_path: Path) -> None:
@@ -384,7 +384,7 @@ def test_nonempty_matrix_zero_resolved_fails_closed(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- §V33 duplicate (stage, item) ---------------------------------------------
+# --- duplicate (stage, item) -----------------------------------------------------
 
 
 def test_duplicate_stage_item_maps_to_importer_error(tmp_path: Path) -> None:

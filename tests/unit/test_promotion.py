@@ -1,8 +1,8 @@
-"""T24: versioned immutable builds + atomic ``current.json`` promotion.
+"""Versioned immutable builds + atomic ``current.json`` promotion.
 
-Covers §V4 (promote only after validation; atomic swap via ``current.json``;
+Covers promotion only after validation (atomic swap via ``current.json``;
 never mutate the active DB in place), the "unchanged -> no-op" rule, retain-N
-pruning, and §V3 fail-closed behaviour (an unvalidated or malformed candidate
+pruning, and fail-closed behaviour (an unvalidated or malformed candidate
 never replaces the current DB).
 """
 
@@ -80,7 +80,7 @@ def _ts(hour: int) -> datetime:
     return datetime(2026, 7, 17, hour, 0, 0, tzinfo=UTC)
 
 
-# --- §V4: atomic, validated promotion -------------------------------------
+# --- atomic, validated promotion -------------------------------------------
 
 
 def test_promote_writes_versioned_build_and_manifest(tmp_path: Path) -> None:
@@ -94,7 +94,7 @@ def test_promote_writes_versioned_build_and_manifest(tmp_path: Path) -> None:
     assert result.status == "promoted"
     build = data_dir / BUILDS_DIRNAME / result.manifest.database_filename
     assert build.is_file()
-    # Versioned filename embeds the timestamp + servers (PRD §11.5).
+    # Versioned filename embeds the timestamp + servers (PRD section 11.5).
     assert result.manifest.database_filename == "2026-07-17T100000Z-en-cn.sqlite"
     # current.json is present and selects the immutable build.
     manifest_path = data_dir / CURRENT_MANIFEST_NAME
@@ -144,7 +144,7 @@ def test_identical_content_is_noop(tmp_path: Path) -> None:
 
     assert r2.status == "noop"
     assert r2.manifest == r1.manifest
-    # No new build file, manifest untouched (§V4: no needless churn).
+    # No new build file, manifest untouched (no needless churn).
     builds = list((data_dir / BUILDS_DIRNAME).glob("*.sqlite"))
     assert len(builds) == 1
     assert (data_dir / CURRENT_MANIFEST_NAME).read_text(encoding="utf-8") == manifest_before
@@ -154,7 +154,7 @@ def test_identical_content_is_noop(tmp_path: Path) -> None:
 def test_pipeline_version_bump_defeats_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version_name: str
 ) -> None:
-    """§V92 (B112): a field-policy/transform bump over an identical snapshot must
+    """A field-policy/transform bump over an identical snapshot must
     promote -- the bumped pipeline imports different content from the same bytes,
     so the unchanged-snapshot no-op would otherwise strand the new output forever."""
     import arknights_mcp.db.promotion as promotion_module
@@ -238,7 +238,7 @@ def test_retain_one_keeps_only_current(tmp_path: Path) -> None:
     assert builds[0].name == last.manifest.database_filename
 
 
-# --- §V3: fail closed, never replace the current DB -----------------------
+# --- fail closed, never replace the current DB -----------------------------
 
 
 def test_unvalidated_candidate_refused(tmp_path: Path) -> None:
@@ -256,7 +256,7 @@ def test_failed_candidate_leaves_current_db_active(tmp_path: Path) -> None:
     promoted = promote_candidate(good, data_dir=data_dir, validation_passed=True, timestamp=_ts(10))
     manifest_before = (data_dir / CURRENT_MANIFEST_NAME).read_text(encoding="utf-8")
 
-    # A later sync fails validation -> must not touch current.json (§V3).
+    # A later sync fails validation -> must not touch current.json.
     later = _make_candidate(
         tmp_path / "later.sqlite",
         snapshots=[("arknights_assets_gamedata", "en", "hash-new")],
@@ -269,7 +269,7 @@ def test_failed_candidate_leaves_current_db_active(tmp_path: Path) -> None:
 
 
 def test_candidate_without_schema_refused(tmp_path: Path) -> None:
-    # An empty SQLite file (no migrations applied) is schema-incompatible (§V3).
+    # An empty SQLite file (no migrations applied) is schema-incompatible.
     empty = tmp_path / "empty.sqlite"
     sqlite3.connect(str(empty)).close()
     with pytest.raises(PromotionError, match="schema"):
@@ -301,7 +301,7 @@ def test_read_current_manifest_round_trip(tmp_path: Path) -> None:
 
 
 def test_active_build_bytes_not_mutated_by_noop(tmp_path: Path) -> None:
-    # §V4: the active DB is never mutated in place, including across a no-op.
+    # The active DB is never mutated in place, including across a no-op.
     data_dir = tmp_path / "data"
     first = _make_candidate(tmp_path / "first.sqlite")
     r1 = promote_candidate(first, data_dir=data_dir, validation_passed=True, timestamp=_ts(10))

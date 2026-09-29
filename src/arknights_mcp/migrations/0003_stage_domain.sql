@@ -1,4 +1,4 @@
--- 0003 stage domain (SPEC §T14; PRD §12.5).
+-- 0003 stage domain (PRD Section 12.5).
 -- zones, stages, stage_maps, stage_tiles, stage_routes, stage_waves,
 -- stage_spawns, and the derived stage_enemies summary. Depends on 0002
 -- (stage_spawns.enemy_pk -> enemies.enemy_pk).

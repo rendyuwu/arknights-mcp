@@ -1,17 +1,18 @@
-"""T199: §V62's featured-op carriers, RECOUNTED against real data (B138).
+"""The featured-op carriers, RECOUNTED against real data.
 
-§V62 declared six ``gachaRuleType`` values as carriers of
+Six declared ``gachaRuleType`` values were carriers of
 ``dynMeta.attainRare6CharList`` and put a number beside them ("array, 83 EN"). Both halves
 were wrong, and no test could see it: every banner fixture in the suite hand-writes the
 array onto the pool it wants featured, so the parser looked right on exactly the rule types
 the real data leaves empty. The wire then said ``featured_ops: []`` for a FESCLASSIC
-celebration banner -- a §V67 CONFIRMED-none asserting a real rate-up banner has no rate-up
-operator (§V96's uncounted-claim class, inside §V62's own verified-2026-07-21 numbers).
+celebration banner -- a CONFIRMED-none asserting a real rate-up banner has no rate-up
+operator (the uncounted-claim class, inside the declared list's own verified-2026-07-21
+numbers).
 
 So this guard counts, on both sides of the pipeline:
 
 * over the PROMOTED build (the rows the tools actually answer from): the per-rule-type
-  cross-tab, pinned; the §V96 non-degeneracy of the partition the emit side now draws (a
+  cross-tab, pinned; the non-degeneracy of the partition the emit side now draws (a
   real pool on EVERY side, else the classifier ships as a filter that never fires); and a
   round trip through the real ``get_banners`` service asserting a carrier pool with no
   array omits the key and names its rule type in a limitation;
@@ -22,7 +23,7 @@ So this guard counts, on both sides of the pipeline:
   same thing and this fails, which is the point. The build cannot answer it: it stores
   featured-op ROWS, so absent and empty arrive there identically.
 
-Nothing fetched is persisted (§V16, code-only distribution).
+Nothing fetched is persisted (code-only distribution).
 """
 
 from __future__ import annotations
@@ -54,9 +55,9 @@ GACHA_TABLE_PATH = "gamedata/excel/gacha_table.json"
 
 #: The RECOUNT: ``(region, rule_type) -> (pools, pools carrying >=1 featured op, rows)``,
 #: measured over the promoted build and matching the pinned upstream pool-for-pool. This
-#: table IS the §V62 correction -- four of the six declared carriers
+#: table IS the correction -- four of the six declared carriers
 #: (CLASSIC/CLASSIC_DOUBLE/FESCLASSIC/SPECIAL) carry nothing at all, and ``BACKFLOW`` is a
-#: twelfth cn rule type §V62's list never named.
+#: twelfth cn rule type the declared list never named.
 _CROSS_TAB: dict[tuple[str, str], tuple[int, int, int]] = {
     ("en", "ATTAIN"): (5, 5, 162),
     ("en", "CLASSIC_ATTAIN"): (3, 3, 100),
@@ -127,16 +128,16 @@ def _cross_tab(conn: sqlite3.Connection) -> dict[tuple[str, str], tuple[int, int
     }
 
 
-# --- the recount over the promoted build (§V96) --------------------------------
+# --- the recount over the promoted build --------------------------------------
 
 
 @needs_build
 def test_featured_op_cross_tab_matches_the_recount(conn: sqlite3.Connection) -> None:
-    """The pinned per-rule-type cross-tab (§V62 corrected, B138).
+    """The pinned per-rule-type cross-tab (corrected against the recount).
 
-    A drift here is either a real upstream change (re-pin the table and re-read §V62) or an
-    importer regression -- both need a human, which is why the numbers are pinned rather
-    than merely compared against themselves.
+    A drift here is either a real upstream change (re-pin the table and re-read the declared
+    list) or an importer regression -- both need a human, which is why the numbers are
+    pinned rather than merely compared against themselves.
     """
     assert _cross_tab(conn) == _CROSS_TAB
 
@@ -145,7 +146,7 @@ def test_featured_op_cross_tab_matches_the_recount(conn: sqlite3.Connection) -> 
 def test_no_expected_carrier_rule_type_is_missing_from_the_recount(
     conn: sqlite3.Connection,
 ) -> None:
-    # Guard the guard: every rule type §V62 declares a carrier must actually appear in the
+    # Guard the guard: every declared carrier rule type must actually appear in the
     # corpus. A declared carrier with no pools at all would let the cross-tab above pass
     # while saying nothing about it.
     present = {rule_type for _, rule_type in _cross_tab(conn)}
@@ -155,9 +156,9 @@ def test_no_expected_carrier_rule_type_is_missing_from_the_recount(
 
 @needs_build
 def test_the_emitted_partition_is_non_degenerate(conn: sqlite3.Connection) -> None:
-    """§V96: a real pool on EVERY side of the split the emit side draws.
+    """A real pool on EVERY side of the split the emit side draws.
 
-    Three sides, and the middle one is the whole reason T199 exists: it held 75 EN pools
+    Three sides, and the middle one is the whole reason this guard exists: it held 75 EN pools
     while the wire described them as standard banners.
     """
     tab = _cross_tab(conn)
@@ -177,7 +178,7 @@ def test_the_emitted_partition_is_non_degenerate(conn: sqlite3.Connection) -> No
 def test_the_service_classifier_mirrors_what_the_importer_reads(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V37: the emit side calls a pool an expected CARRIER on exactly the rule types the
+    # The emit side calls a pool an expected CARRIER on exactly the rule types the
     # importer extracts featured ops from. If the two drift, a pool the importer never reads
     # would be reported as a source gap (or worse, the reverse).
     assert _CLASSIC_FAMILY_RULE_TYPES | {_LIMITED_RULE_TYPE} == EXPECTED_FEATURED_OP_RULE_TYPES
@@ -189,7 +190,7 @@ def test_the_service_classifier_mirrors_what_the_importer_reads(
 def test_every_build_rule_type_is_classified_or_conservatively_named(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V96 (unknown token -> conservative side + limitation): a rule type in neither §V62 set
+    # An unknown token takes the conservative side + limitation: a rule type in neither set
     # -- ``BACKFLOW`` today -- must not be silently read as a prose-only standard banner. It
     # falls to the named absent-array arm, so it can never inherit a claim nobody checked.
     unclassified = {
@@ -205,14 +206,14 @@ def test_every_build_rule_type_is_classified_or_conservatively_named(
 def test_a_carrier_pool_without_its_array_omits_the_key_and_names_its_rule_type(
     conn: sqlite3.Connection,
 ) -> None:
-    """The B138 round trip over the real corpus, not a fixture.
+    """The round trip over the real corpus, not a fixture.
 
     Reads a real FESCLASSIC pool through the same service the MCP tool calls, and asserts
     the two halves of the fix together: the pool has no featured op (so the wire omits the
-    key rather than sending §V67's CONFIRMED-none ``[]``), and the limitation NAMES its rule
+    key rather than sending a CONFIRMED-none ``[]``), and the limitation NAMES its rule
     type so the reason resolves per pool through that row's own ``rule_type``.
     """
-    # Walk pages until a FESCLASSIC pool shows up; the archive is paged (§V19/§V22).
+    # Walk pages until a FESCLASSIC pool shows up; the archive is paged.
     fesclassic = None
     page = 1
     while True:
@@ -256,7 +257,7 @@ def test_an_empty_featured_op_array_occurs_on_zero_pools(server: str) -> None:
 
     This is the load-bearing measurement behind emitting an ABSENT key for a pool with zero
     featured ops. If upstream ever ships ``attainRare6CharList: []``, that pool would be a
-    genuine §V67 CONFIRMED-none and would need to keep ``featured_ops: []``, which the
+    genuine CONFIRMED-none and would need to keep ``featured_ops: []``, which the
     build alone can never distinguish (it stores rows, not the array's presence). Counted
     at the pin: every non-carrier pool has the KEY absent, or no ``dynMeta`` at all.
     """
@@ -279,7 +280,7 @@ def test_an_empty_featured_op_array_occurs_on_zero_pools(server: str) -> None:
             empty_arrays.append(pool.get("gachaPoolId"))
     assert empty_arrays == [], (
         "upstream now ships an EMPTY attainRare6CharList: those pools are a CONFIRMED none "
-        f"and must keep featured_ops: [] (§V67), unlike an absent array: {empty_arrays}"
+        f"and must keep featured_ops: [], unlike an absent array: {empty_arrays}"
     )
     assert non_list_arrays == [], non_list_arrays
     # Guard the guard: the key must still exist somewhere, or the loop above never ran.
@@ -289,7 +290,7 @@ def test_an_empty_featured_op_array_occurs_on_zero_pools(server: str) -> None:
 @needs_upstream
 @pytest.mark.parametrize("server", ["en", "cn"])
 def test_four_declared_carriers_carry_the_array_on_zero_pools(server: str) -> None:
-    """§V62's declared-carrier list vs the pin: four of six carry nothing (B138).
+    """The declared-carrier list vs the pin: four of six carry nothing.
 
     Asserted upstream as well as over the build, because the two failures differ. Here the
     array is absent from the SOURCE; over the build it could also mean the importer stopped

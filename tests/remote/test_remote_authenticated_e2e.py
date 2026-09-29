@@ -1,12 +1,12 @@
-"""§T56 authenticated remote validation over a real loopback socket (§V14).
+"""Authenticated remote validation over a real loopback socket.
 
 The stand-in for the manual "MCP Inspector / Claude connector / OpenAI API"
 validation (:doc:`../../docs/clients/remote`): those need a public HTTPS endpoint +
 a live OIDC provider + accounts, so they cannot run in CI. This is the runnable
 half -- it drives the *full auth-requiring remote stack* over a real HTTP socket,
-exactly as a remote MCP host would, and proves the one machine-checkable claim T56
+exactly as a remote MCP host would, and proves the one machine-checkable claim it
 rests on: an authenticated request over the Streamable HTTP wire is served by the
-*same shared core* ``stdio`` serves (§V14), and an unauthenticated one is refused.
+*same shared core* ``stdio`` serves, and an unauthenticated one is refused.
 
 What this covers that the in-process middleware/isolation unit tests cannot:
 
@@ -14,21 +14,21 @@ What this covers that the in-process middleware/isolation unit tests cannot:
   rate/concurrency → request limits → session manager) end to end, over uvicorn,
   through the SDK client -- not a stub inner app;
 * the bearer is validated by the *real* :class:`OidcTokenVerifier` decode path
-  (RS256 signature + iss/aud/exp/scope, §V10) -- only the JWKS key fetch is local
+  (RS256 signature + iss/aud/exp/scope) -- only the JWKS key fetch is local
   (:class:`~tests.support.oidc_issuer.LocalOidcIssuer`), so the honest-token path is
   genuinely exercised, not stubbed;
 * over that authenticated wire the server returns the shared serverInfo + shared
   instructions + the identical 7-tool set + a typed ``ok`` envelope with ``en``
-  provenance -- matching what ``stdio`` serves (§V14/§V5/§V23).
+  provenance -- matching what ``stdio`` serves.
 
 The adversarial auth matrix (expired / wrong-issuer / wrong-aud / insufficient
-scope / cross-principal isolation / log scan) is §T57's; this asserts only the
+scope / cross-principal isolation / log scan) is a separate suite; this asserts only the
 happy path *and* that a missing bearer is refused, so the validation is meaningful
-without duplicating T57.
+without duplicating that suite.
 
 Offline + deterministic: the active build is promoted from the pinned 4-4 fixture
-via the real ``import`` path (no network, §V1); the OIDC keypair + JWKS are local
-(no provider reached). TLS is the reverse proxy's job (§I.api); the process speaks
+via the real ``import`` path (no network); the OIDC keypair + JWKS are local
+(no provider reached). TLS is the reverse proxy's job; the process speaks
 plain HTTP on loopback, with ``behind_proxy`` semantics enforced in the app layer.
 """
 
@@ -51,18 +51,18 @@ from arknights_mcp.instructions import SERVER_INSTRUCTIONS
 
 @pytest.fixture
 def remote_server(tmp_path: Path) -> Iterator[tuple[str, LocalOidcIssuer]]:
-    """Serve the fixture build behind the full auth-requiring remote stack (§V37).
+    """Serve the fixture build behind the full auth-requiring remote stack.
 
     Thin wrapper over the shared :func:`tests.support.remote_harness.remote_server`
     context manager -- the uvicorn thread + fixture-import scaffolding has one home
-    now, shared with §T57's security matrix.
+    now, shared with the security matrix.
     """
     with _remote_server(tmp_path) as served:
         yield served
 
 
 async def _drive_authenticated(url: str, token: str) -> None:
-    """Run the MCP handshake over the authenticated wire; assert §V14 identity.
+    """Run the MCP handshake over the authenticated wire; assert shared-core identity.
 
     The bearer is carried on a caller-built ``httpx.AsyncClient`` (the SDK's
     ``streamable_http_client`` reads auth/headers off a provided client and leaves
@@ -80,14 +80,14 @@ async def _drive_authenticated(url: str, token: str) -> None:
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 init = await session.initialize()
-                # §V14; PRD §13.1: shared serverInfo + instructions, same as stdio.
+                # PRD Section 13.1: shared serverInfo + instructions, same as stdio.
                 assert init.serverInfo.name == "arknights-mcp"
                 assert init.instructions == SERVER_INSTRUCTIONS
 
                 listed = await session.list_tools()
                 assert {t.name for t in listed.tools} == EXPECTED_TOOLS
                 for tool in listed.tools:
-                    # §V2/§V28: every exposed tool is read-only over the wire.
+                    # Every exposed tool is read-only over the wire.
                     assert tool.annotations is not None
                     assert tool.annotations.readOnlyHint is True
 
@@ -100,7 +100,7 @@ async def _drive_authenticated(url: str, token: str) -> None:
                 assert envelope is not None
                 assert envelope["status"] == "ok"
                 assert envelope["schema_version"] == "0.4"
-                # §V5: a factual result carries region provenance; en is not mixed.
+                # A factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"
 
@@ -108,7 +108,7 @@ async def _drive_authenticated(url: str, token: str) -> None:
 def test_authenticated_remote_wire_serves_shared_core(
     remote_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V14: a validly-authenticated Streamable HTTP client is served the identical
+    # A validly-authenticated Streamable HTTP client is served the identical
     # shared core stdio serves -- same serverInfo/instructions/tool set, and a typed
     # ok envelope with en provenance -- proving the remote transport reuses the one
     # registry + services rather than a divergent remote path.
@@ -119,7 +119,7 @@ def test_authenticated_remote_wire_serves_shared_core(
 def test_remote_wire_refuses_missing_bearer(
     remote_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V10/§V40: auth is genuinely enforced on the wire -- a request without a bearer
+    # Auth is genuinely enforced on the wire -- a request without a bearer
     # is refused with a typed 401 challenge before it ever reaches the session
     # manager, and the response leaks no token (there is none) or internal detail.
     url, _issuer = remote_server

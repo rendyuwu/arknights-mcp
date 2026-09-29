@@ -1,21 +1,20 @@
-"""T69: CI-only ``kengxxiao_gamedata`` CN cross-validator (§V29, §V30, §C).
+"""CI-only ``kengxxiao_gamedata`` CN cross-validator.
 
-T68 verified the inferred field mappings against *one* live upstream
+The inferred field mappings were verified against *one* live upstream
 (``arknights_assets_gamedata`` EN). This closes the remaining gap: it checks the
 same mapped stats against a **second, independent** CN dump
 (``kengxxiao_gamedata``), so a value we read is confirmed by two projects, not one
 source's serialization quirk. For every enemy present in both pinned CN snapshots
-it asserts the mapped ``maxHp``/``baseAttackTime``/``massLevel``/``motion`` agree
-(§V29).
+it asserts the mapped ``maxHp``/``baseAttackTime``/``massLevel``/``motion`` agree.
 
 Kengxxiao's CN ``enemy_database.json`` is a ``{"enemies": [{"Key", "Value"}]}`` KV
 list, not the id-keyed dict ``arknights_assets`` uses, so it goes through its own
-bridge (``normalize_kengxxiao_enemy_database``, §V30) before comparison.
+bridge (``normalize_kengxxiao_enemy_database``) before comparison.
 
-§C posture: kengxxiao is CI-only, never a runtime dependency, never overrides the
+kengxxiao is CI-only, never a runtime dependency, never overrides the
 primary source (this test only *reads* and compares), and nothing fetched is
 committed — both snapshots live under pytest's ``tmp_path`` (outside the repo
-tree) and are discarded when the test ends (§V16, fetch → compare → discard).
+tree) and are discarded when the test ends (fetch → compare → discard).
 
 CI-only: gated behind ``ARKMCP_KENGXXIAO_XVAL`` (set by the dedicated CI job), so
 the default offline ``pytest -q`` skips the whole module.
@@ -41,15 +40,15 @@ pytestmark = pytest.mark.skipif(
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: Primary CN source, pinned to the same commit T68/B6 verified the real shape
-#: against (its ``cn/`` region counterpart of the EN file T68 imports).
+#: Primary CN source, pinned to the same commit the real shape was verified
+#: against (its ``cn/`` region counterpart of the imported EN file).
 ARKNIGHTS_ASSETS_COMMIT = "413a81a3ff3e968089b1d6d302473f7b38c36dda"
 PRIMARY_CN_URL = (
     "https://raw.githubusercontent.com/ArknightsAssets/ArknightsGamedata/"
     f"{ARKNIGHTS_ASSETS_COMMIT}/cn/gamedata/levels/enemydata/enemy_database.json"
 )
 
-#: kengxxiao CN validator, pinned per §T69. If raw.githubusercontent rejects the
+#: kengxxiao CN validator, pinned. If raw.githubusercontent rejects the
 #: abbreviated SHA, expand it to the full 40-char commit; the pin is what keeps the
 #: assertion deterministic.
 KENGXXIAO_CN_COMMIT = "6b6ac60f"
@@ -73,19 +72,19 @@ MIN_AGREEMENT = 0.80
 def _fetch_json(url: str, dest: Path) -> Any:
     """Fetch ``url`` into ``dest`` (a tmp file) via the production HTTPS fetcher, load it.
 
-    Writing under the tmp dir (never the repo) makes the §V16 fetch → discard
+    Writing under the tmp dir (never the repo) makes the fetch → discard
     posture explicit and asserts the raw snapshot cannot leak into the tree.
     """
     fetcher = HttpsFetcher()
     data = fetcher.fetch(url, max_bytes=MAX_FILE_BYTES)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
-    assert REPO_ROOT not in dest.resolve().parents  # §V16: outside the repo tree
+    assert REPO_ROOT not in dest.resolve().parents  # outside the repo tree
     return json.loads(data)
 
 
 def test_cn_sources_agree_on_shared_enemy_stats(tmp_path: Path) -> None:
-    """Primary CN vs kengxxiao CN → shared enemy stats agree (§V29, §V30)."""
+    """Primary CN vs kengxxiao CN → shared enemy stats agree."""
     primary_raw = _fetch_json(PRIMARY_CN_URL, tmp_path / "primary" / "enemy_database.json")
     kengxxiao_raw = _fetch_json(KENGXXIAO_CN_URL, tmp_path / "kengxxiao" / "enemy_database.json")
 

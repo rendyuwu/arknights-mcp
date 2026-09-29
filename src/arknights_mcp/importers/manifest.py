@@ -1,4 +1,4 @@
-"""Snapshot manifest, checksums, and provenance construction (SPEC §V17).
+"""Snapshot manifest, checksums, and provenance construction.
 
 Builds a deterministic manifest of a snapshot's files (path -> content hash),
 derives a ``snapshot_id`` and ``manifest_hash``, and constructs the provenance
@@ -18,44 +18,44 @@ from arknights_mcp.importers.field_policy import FIELD_POLICY_VERSION
 from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.hashing import record_hash, sha256_hex
 
-#: Transform/normalization version stamped on provenance (§V17).
+#: Transform/normalization version stamped on provenance.
 #:
-#: ``2`` (B127/§V95): route positions are rebased from the upstream bottom-origin
+#: ``2``: route positions are rebased from the upstream bottom-origin
 #: ``row`` into the tiles' top-origin grid frame at import, so an identical snapshot
 #: now imports different bytes. The bump is what makes a rebuild promote over an
-#: unchanged snapshot instead of no-opping as "content unchanged" (§V92).
+#: unchanged snapshot instead of no-opping as "content unchanged".
 #:
-#: ``3`` (B130/§V97): the untrusted-string sanitize now replaces a removed control char
+#: ``3``: the untrusted-string sanitize now replaces a removed control char
 #: with a space instead of deleting it in place, so every imported effect TEMPLATE and
 #: announcement title that carried an upstream ``\n`` imports different bytes. Same
 #: reason for the bump: without it the repaired sanitize never reaches an active build.
 #:
-#: ``4`` (B154/§V109): the §V65 (a) effect template is now tag-stripped before it is
+#: ``4``: the effect template is now tag-stripped before it is
 #: length-capped, and capped at ``MAX_TEMPLATE_LENGTH`` rather than the name-class 512,
 #: so the 349 EN skill/talent templates (and 1 module template) the old order cut
 #: mid-sentence import whole. Same reason for the bump.
 #:
-#: ``5`` (B159/§V112): a skill's ``name``/``skillType``/``durationType``/``spType`` are
+#: ``5``: a skill's ``name``/``skillType``/``durationType``/``spType`` are
 #: scoped PER LEVEL upstream and were stored as level 1's value for the whole skill; each
 #: level now keeps its own and the skill scalar holds only what every level shares. Four
 #: EN/CN skills import different bytes (``sktok_mjcsdw`` no longer stores the unnamed
 #: ``sp_type`` code its level 2 names). No allowlist change -- all four keys were already
 #: allowlisted -- so ``FIELD_POLICY_VERSION`` stands and this bump alone is what makes the
-#: re-import promote over an unchanged snapshot (§V92).
-#: ``6`` (B160/§V113): the §V30 enemy bridge now emits ``attackRange`` (with upstream's
-#: ``-1.0`` no-radius sentinel kept OUT of the distance column, §V103), ``targeting``, and
+#: re-import promote over an unchanged snapshot.
+#: ``6``: the enemy bridge now emits ``attackRange`` (with upstream's
+#: ``-1.0`` no-radius sentinel kept OUT of the distance column), ``targeting``, and
 #: the nine typed ``<x>Immune`` flags folded into one ``immunities`` list -- three keys the
 #: allowlist admitted while nothing mapped them, so the columns were 100% NULL on every
 #: build ever promoted. ``damageType`` is imported beside them (a policy change too, hence
 #: both versions move). Every enemy level row imports different bytes.
 #:
-#: ``7`` (B161/§V114): the §V103 sentinel strip now records that upstream ANSWERED before
+#: ``7``: the sentinel strip now records that upstream ANSWERED before
 #: it removes the value, so a level whose ``rangeRadius`` is the ``-1.0`` no-radius mask
 #: imports ``attack_range_declared_none = 1`` instead of an ``attack_range`` NULL
 #: indistinguishable from "never defined". The strip itself is unchanged (no negative is
 #: stored as a distance, then or now); what changed is that the answer survives it.
 #:
-#: ``8`` (B162/§V115, §T202): the module change bundles now carry the part's own
+#: ``8``: the module change bundles now carry the part's own
 #: ``isToken`` down onto each candidate, so whose effect a change describes is stored as
 #: the source's statement instead of being inferred downstream from the ``talentIndex``
 #: ``-1`` sentinel -- two facts that disagree on 454 of 513 en rows. Every module level
@@ -91,7 +91,7 @@ def build_manifest(adapter: SourceAdapter, paths: Iterable[str] | None = None) -
 
 
 def make_snapshot_id(server: str, version_token: str) -> str:
-    """Snapshot id ``<server>:<token>`` (§16.1, e.g. ``en:<commit-sha>``).
+    """Snapshot id ``<server>:<token>`` (section 16.1, e.g. ``en:<commit-sha>``).
 
     For local snapshots without a commit, the manifest hash prefix is the token.
     """
@@ -100,7 +100,7 @@ def make_snapshot_id(server: str, version_token: str) -> str:
 
 @dataclass(frozen=True)
 class SourceSnapshotRecord:
-    """A row for ``source_snapshots`` (§12.2)."""
+    """A row for ``source_snapshots`` (section 12.2)."""
 
     snapshot_id: str
     source_id: str
@@ -140,7 +140,7 @@ def make_snapshot_record(
 
 @dataclass(frozen=True)
 class RecordProvenance:
-    """A row for ``record_provenance`` (§12.2). ``provenance_id`` is DB-assigned."""
+    """A row for ``record_provenance`` (section 12.2). ``provenance_id`` is DB-assigned."""
 
     snapshot_id: str
     source_path: str
@@ -180,10 +180,10 @@ def insert_record_provenance(
     transform_version: str = TRANSFORM_VERSION,
     field_policy_version: str = FIELD_POLICY_VERSION,
 ) -> int:
-    """Insert one ``record_provenance`` row (§V17) and return its ``provenance_id``.
+    """Insert one ``record_provenance`` row and return its ``provenance_id``.
 
-    The single home for the provenance INSERT (§V37): both the enemy and stage
-    importers route through it, so the V17 column set lives in exactly one place.
+    The single home for the provenance INSERT: both the enemy and stage
+    importers route through it, so the column set lives in exactly one place.
     """
     prov = make_record_provenance(
         snapshot_id=snapshot_id,

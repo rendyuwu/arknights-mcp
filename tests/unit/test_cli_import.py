@@ -1,8 +1,8 @@
-"""T22: the ``import`` CLI command (§V1, §V3, §V4, §V5, I.cmd).
+"""The ``import`` CLI command.
 
 ``arknights-mcp import`` builds a candidate from a user-supplied local snapshot
-(no network at all, §V1), validates it, and promotes atomically. A missing or
-malformed snapshot fails closed, leaving the active database untouched (§V3/§V4).
+(no network at all), validates it, and promotes atomically. A missing or
+malformed snapshot fails closed, leaving the active database untouched.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def test_import_builds_validates_and_promotes(tmp_path: Path) -> None:
     )
     assert rc == 0
     assert (data_dir / "current.json").is_file()
-    # region isolation: en imported, cn empty (§V5, en & cn never silently mixed)
+    # region isolation: en imported, cn empty (en & cn never silently mixed)
     assert "4-4" in _stage_codes(data_dir, "en")
     assert _stage_codes(data_dir, "cn") == set()
 

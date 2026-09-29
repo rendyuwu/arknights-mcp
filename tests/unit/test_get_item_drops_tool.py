@@ -1,24 +1,24 @@
-"""§T104/§T105 ``get_item_drops`` tool tests (§V60/§V5/§V53/§V54/§V55/§V23; §I.tool).
+"""``get_item_drops`` tool tests.
 
 The reverse of ``get_stage_drops``: the tool is the model -> service -> envelope
 bridge for one item's drop-across-stages comparison. These drive it end to end
-against the same production read-only path (§V2) using the pinned 4-4 fixture plus
+against the same production read-only path using the pinned 4-4 fixture plus
 several directly-seeded stages that all drop one item (each with its own sanity cost
 / drop rate / expiry) so the ranking + a per-stage fresh/stale split are
 deterministic (no wall-clock coupling). They assert:
 
-* §V60: ``include_efficiency`` ranks the stages ascending by sanity per item over ≥2
+* ``include_efficiency`` ranks the stages ascending by sanity per item over ≥2
   stages, never a best-farm/mandatory verdict, and carries the mandatory
   availability / first-clear / byproduct comparison caveats;
-* §V5: the item is resolved per region + provenance rides every delivered result;
+* The item is resolved per region + provenance rides every delivered result;
   an en item's comparison never surfaces a cn stage (en/cn never mixed);
-* §V53/§V54: each stage carries its OWN penguin provenance chain, and an expired
+* Each stage carries its OWN penguin provenance chain, and an expired
   stage flips the status to ``data_stale`` + adds a staleness limitation while
-  staying in the ranking (downgraded below the §V8 threshold, not dropped);
-* §V23: the typed envelope shape, incl. fail-closed ``not_found`` /
+  staying in the ranking (downgraded below the recommendation threshold, not dropped);
+* The typed envelope shape, incl. fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak;
-* §V18 input gate + the §I.tool wire contract: a read-only spec with a bounded input
-  schema, present in the single shared registry both transports dispatch (§V14).
+* The input gate + the wire contract: a read-only spec with a bounded input
+  schema, present in the single shared registry both transports dispatch.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_item_drops_spec(lambda: conn).handler
 
 
-# --- drop facts + §V5 region + §V54 penguin provenance ------------------------
+# --- drop facts + region + penguin provenance ---------------------------------
 
 
 def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> None:
@@ -83,11 +83,11 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V19 + §V66.2: the stages section + its bounded page + the hoisted shared
+    # The stages section + its bounded page + the hoisted shared
     # drop_provenance block; no efficiency block without the flag.
     assert set(data) == {"item", "drop_provenance", "stages", "stages_page", "enum_legend"}
     assert data["item"]["game_id"] == "sugar"  # type: ignore[index]
-    # §V54/§V66.2: the penguin provenance shared by both stages is hoisted once.
+    # The penguin provenance shared by both stages is hoisted once.
     prov = data["drop_provenance"]
     assert prov == {  # type: ignore[comparison-overlap]
         "snapshot_id": "pg:en",
@@ -95,16 +95,16 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
         "expires_at": FUTURE_EXPIRY,
         "imported_at": "2026-07-19T00:00:00+00:00",
     }
-    # §V77/§V66 (B79): region stated ONCE on the parent item, never per stage row.
+    # Region stated ONCE on the parent item, never per stage row.
     assert data["item"]["server"] == "en"  # type: ignore[index]
     stages = data["stages"]
     assert isinstance(stages, list) and len(stages) == 2
-    # §V22/§V19: a two-stage item fits page 1 with no further page.
+    # A two-stage item fits page 1 with no further page.
     assert data["stages_page"] == {"page": 1, "page_size": 50, "total": 2, "has_more": False}  # type: ignore[index]
     for stage in stages:
         assert "region" not in stage
         assert stage["sanity_cost"] is not None
-        # §V66.2: the shared provenance is NOT repeated per stage; §V67: a fresh stage
+        # The shared provenance is NOT repeated per stage; a fresh stage
         # omits ``expired``.
         for hoisted in ("snapshot_id", "fetched_at", "expires_at", "imported_at"):
             assert hoisted not in stage
@@ -112,7 +112,7 @@ def test_ok_returns_per_stage_facts_with_penguin_provenance(tmp_path: Path) -> N
 
 
 def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
-    # §V76: the per-stage penguin drop_rate (here 1/3) is emitted rounded to 4dp on the
+    # The per-stage penguin drop_rate (here 1/3) is emitted rounded to 4dp on the
     # reverse item->stage rows as well, never the raw 17-digit ``repr`` float.
     path = _candidate(tmp_path)
     seed_item_across_stages(path, [StageDropSeed("4-4", drop_rate=1 / 3, times=3000)])
@@ -123,7 +123,7 @@ def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
 
 
 def test_ok_carries_region_and_provenance(tmp_path: Path) -> None:
-    # §V5: every delivered fact carries region + (penguin) provenance.
+    # Every delivered fact carries region + (penguin) provenance.
     path = _candidate(tmp_path)
     seed_item_across_stages(path, [StageDropSeed("4-4"), StageDropSeed("a-1")])
     prov = _handler(open_read_only(path))(server="en", game_id="sugar").to_dict()["provenance"]
@@ -133,13 +133,13 @@ def test_ok_carries_region_and_provenance(tmp_path: Path) -> None:
 
 
 def test_wrong_region_is_not_found(tmp_path: Path) -> None:
-    # §V5: en item drops are not surfaced under a cn query -- en/cn never mixed.
+    # En item drops are not surfaced under a cn query -- en/cn never mixed.
     path = _candidate(tmp_path)
     seed_item_across_stages(path, [StageDropSeed("4-4"), StageDropSeed("a-1")])
     assert _handler(open_read_only(path))(server="cn", game_id="sugar").status == "not_found"
 
 
-# --- §V60: ranked ascending over ≥2 stages ------------------------------------
+# --- ranked ascending over ≥2 stages ------------------------------------------
 
 
 def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -> None:
@@ -156,39 +156,39 @@ def test_include_efficiency_ranks_ascending_by_sanity_per_item(tmp_path: Path) -
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert "efficiency" in data
-    # §V66.1: ONE ranked observation over the stages, not a list of per-stage observations.
+    # ONE ranked observation over the stages, not a list of per-stage observations.
     ob = data["efficiency"]["observation"]  # type: ignore[index]
     assert isinstance(ob, dict)
     assert set(ob) >= {"rule_id", "ranking", "confidence", "limitations", "analyzer_version"}
     assert ob["rule_id"] == "farming.sanity_per_item"
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 3
-    # §V60: ranked ascending by sanity per item -> stage a-1 (12) first, b-2 (120) last.
-    # §V68/B57 + §V100/B134: the row id is the unambiguous stage_game_id and the code
+    # Ranked ascending by sanity per item -> stage a-1 (12) first, b-2 (120) last.
+    # The row id is the unambiguous stage_game_id and the code
     # rides in ``stage_code``. It used to ride in a generic ``name`` -- but "a-1" is a
     # CODE, not a display name, and the sibling get_stage_drops put an item display name
     # under that same key, so one shape carried two referents.
     assert [row["stage_code"] for row in ranking] == ["a-1", "4-4", "b-2"]
     assert [row["sanity_per_item"] for row in ranking] == [12.0, 72.0, 120.0]
-    # §T161/B82: the ranking SUBSUMES the stage rows -- no separate stages list is
-    # emitted, and each ranking row folds the raw drop facts (§V55 evidence:
+    # The ranking SUBSUMES the stage rows -- no separate stages list is
+    # emitted, and each ranking row folds the raw drop facts (evidence:
     # sanity_cost / drop_rate / times / quantity) alongside its derived sanity_per_item.
     assert "stages" not in data and "stages_page" not in data
     for row in ranking:
         assert {"sanity_cost", "drop_rate", "times", "quantity"} <= set(row)
-    # §V68: the row id is the unambiguous stage_game_id, distinct from the shared code.
-    # §V100: neither generic key survives -- a client cannot be handed ``id``/``name``
+    # The row id is the unambiguous stage_game_id, distinct from the shared code.
+    # Neither generic key survives -- a client cannot be handed ``id``/``name``
     # whose referent depends on which of the two sibling tools it called.
     assert all(row["stage_game_id"] != row["stage_code"] for row in ranking)
     assert all("id" not in row and "name" not in row for row in ranking)
     # Ascending -> the cheapest stage (a-1, sanity_cost 6) is first, with its facts.
     assert ranking[0]["sanity_cost"] == 6 and ranking[0]["drop_rate"] == 0.5
-    # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
+    # The mandatory comparison caveats ride the observation-level limitations.
     blob = " ".join(ob["limitations"]).lower()
     assert "availability" in blob and "byproduct" in blob
-    # §V6: the analyzer version rides the envelope too.
+    # The analyzer version rides the envelope too.
     assert env.analyzer_version is not None
-    # §V7/§V55: an ordering + evidence, never a prescriptive verdict.
+    # An ordering + evidence, never a prescriptive verdict.
     text = str(data["efficiency"]).lower()
     assert not any(word in text for word in _PROSCRIBED)
 
@@ -202,7 +202,7 @@ def test_efficiency_omitted_without_the_flag(tmp_path: Path) -> None:
 
 
 def test_include_efficiency_omits_stages_ranking_subsumes(tmp_path: Path) -> None:
-    # §T161/B82/§V66: with include_efficiency the ranked observation is the SINGLE
+    # With include_efficiency the ranked observation is the SINGLE
     # per-stage list -- each row folds the raw drop facts + its sanity_per_item, so no
     # separate stages[]/stages_page is emitted and the same stages are never listed twice.
     path = _candidate(tmp_path)
@@ -221,26 +221,26 @@ def test_include_efficiency_omits_stages_ranking_subsumes(tmp_path: Path) -> Non
     assert set(data) == {"item", "drop_provenance", "efficiency", "enum_legend"}
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
     assert len(ranking) == 2
-    # §V55 evidence rides each ranking row (facts folded in) + the derived figure.
+    # Evidence rides each ranking row (facts folded in) + the derived figure.
     cheapest = ranking[0]
     assert cheapest["stage_code"] == "a-1"
     assert cheapest["sanity_cost"] == 6
     assert cheapest["times"] == 5000
     assert cheapest["drop_rate"] == 0.5
     assert cheapest["sanity_per_item"] == 12.0
-    # §V66.2: the shared penguin provenance is still hoisted once; a fresh row omits it.
+    # The shared penguin provenance is still hoisted once; a fresh row omits it.
     assert data["drop_provenance"]["snapshot_id"] == "pg:en"  # type: ignore[index]
     for hoisted in ("snapshot_id", "fetched_at", "expires_at", "imported_at"):
         assert hoisted not in cheapest
-    # §V67: a fresh row omits expired.
+    # A fresh row omits expired.
     assert "expired" not in cheapest
 
 
-# --- §V68/B57: normal + tough share a stage_code -> DISTINCT joinable refs -----
+# --- normal + tough share a stage_code -> DISTINCT joinable refs ---------------
 
 
 def test_v68_normal_and_tough_same_code_get_distinct_joinable_refs(tmp_path: Path) -> None:
-    # §V68/B57: two stages sharing stage_code "14-18" (a normal + tough pair) get
+    # Two stages sharing stage_code "14-18" (a normal + tough pair) get
     # DISTINCT evidence refs -- each the unambiguous stage_game_id -- with the shared
     # code shown alongside as ``name``, so the refs join 1:1 to the sibling stages facts
     # list (which keys on stage_game_id) instead of colliding on one undecidable "14-18".
@@ -260,17 +260,17 @@ def test_v68_normal_and_tough_same_code_get_distinct_joinable_refs(tmp_path: Pat
     # main_10-09 = 18/0.25 = 72, tough_10-09 = 36/0.25 = 144 -> ascending main then tough.
     assert refs == ["main_10-09", "tough_10-09"]
     assert len(set(refs)) == 2  # two DISTINCT refs, not one ambiguous "14-18"
-    # §V68/§V100: the shared stage_code rides alongside in its own ``*_code`` key, never
+    # The shared stage_code rides alongside in its own ``*_code`` key, never
     # as the ref and never mislabelled as a name.
     assert all(row["stage_code"] == "14-18" for row in ranking)
     assert "14-18" not in refs
-    # §T161/B82: the ranking subsumes the stage rows -- the distinct refs live on the
+    # The ranking subsumes the stage rows -- the distinct refs live on the
     # single ranking list (no separate stages list to join to).
     assert "stages" not in data
     assert set(refs) == {"main_10-09", "tough_10-09"}
 
 
-# --- §V5: region-scoped -- an en item never surfaces a cn stage ----------------
+# --- region-scoped -- an en item never surfaces a cn stage ---------------------
 
 
 def test_comparison_is_region_scoped(tmp_path: Path) -> None:
@@ -286,19 +286,19 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert data["item"]["server"] == "en"  # type: ignore[index]
-    # §T161/B82: efficiency mode -> the ranking subsumes the stages (no separate list).
+    # Efficiency mode -> the ranking subsumes the stages (no separate list).
     assert "stages" not in data
     ranking = data["efficiency"]["observation"]["ranking"]  # type: ignore[index]
-    # §V77/§V5 (B79): region stated ONCE on the parent item, never per ranking row; only
+    # Region stated ONCE on the parent item, never per ranking row; only
     # the en stage is ranked -- the cn stage never leaks in.
     assert [row["stage_code"] for row in ranking] == ["4-4"]
     assert all("region" not in row for row in ranking)
-    # §V5: provenance is en-only.
+    # Provenance is en-only.
     prov = env.to_dict()["provenance"]
     assert {p["server"] for p in prov} == {"en"}  # type: ignore[index]
 
 
-# --- §V53/§V60: expired stage -> data_stale, downgraded but still ranked -------
+# --- expired stage -> data_stale, downgraded but still ranked ------------------
 
 
 def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
@@ -313,18 +313,18 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     env = _handler(open_read_only(path))(server="en", game_id="sugar", include_efficiency=True)
     assert env.status == "data_stale"
     data = env.to_dict()["data"]
-    # §T161/B82: the ranking subsumes the stages -- no separate stages list.
+    # The ranking subsumes the stages -- no separate stages list.
     assert "stages" not in data
     obs = data["efficiency"]["observation"]  # type: ignore[index]
     ranking = obs["ranking"]
     names = [row["stage_code"] for row in ranking]
     assert "a-1" in names
-    # §V53: the expired stage is flagged on its ranking row, not withheld -- still ranked.
+    # The expired stage is flagged on its ranking row, not withheld -- still ranked.
     expired_row = next(row for row in ranking if row["stage_code"] == "a-1")
     assert expired_row["expired"] is True
-    # §V53/§V55: the expired row is downgraded below the §V8 recommendation threshold.
+    # The expired row is downgraded below the recommendation threshold.
     assert expired_row["confidence"] < 0.5
-    # §V85/B93: the expiry sentence is hoisted ONCE onto the observation-level
+    # The expiry sentence is hoisted ONCE onto the observation-level
     # limitations; the row carries only the typed marker + its confidence.
     assert "limitations" not in expired_row
     assert any("expired" in lim.lower() for lim in obs["limitations"])
@@ -332,14 +332,14 @@ def test_expired_stage_is_data_stale_but_still_ranked(tmp_path: Path) -> None:
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
 
 
-# --- §V85/B93: the thin-sample sentence is hoisted once; rows carry a flag -----
+# --- the thin-sample sentence is hoisted once; rows carry a flag --------------
 
 
 def test_v85_thin_sample_sentence_hoisted_once_not_per_row(tmp_path: Path) -> None:
-    # §V85/B93: every stage here has a thin sample (< 100 runs). The identical
+    # Every stage here has a thin sample (< 100 runs). The identical
     # "below the floor" sentence must appear EXACTLY ONCE at the observation level
     # (in the live eval it repeated verbatim on ~20 ranked rows); each row keeps only
-    # the typed flag + its own reduced confidence (T174).
+    # the typed flag + its own reduced confidence.
     path = _candidate(tmp_path)
     seed_item_across_stages(
         path,
@@ -356,15 +356,15 @@ def test_v85_thin_sample_sentence_hoisted_once_not_per_row(tmp_path: Path) -> No
     assert len(thin_sentences) == 1
     for row in ob["ranking"]:
         assert row["flags"] == ["thin_sample"]
-        assert row["confidence"] < 0.5  # per-row confidence stays (T174)
+        assert row["confidence"] < 0.5  # per-row confidence stays
         assert "limitations" not in row  # no per-row sentence repeats
 
 
-# --- §V66.2: provenance hoist -- shared block + only the deviant row carries its own -
+# --- provenance hoist -- shared block + only the deviant row carries its own ---
 
 
 def test_provenance_hoist_surfaces_only_the_deviant_stage(tmp_path: Path) -> None:
-    # §V66.2: the penguin provenance shared by the stages is hoisted to one block; a
+    # The penguin provenance shared by the stages is hoisted to one block; a
     # stage repeats a field ONLY where it deviates (here a different expiry), and a
     # fresh stage omits ``expired`` -- so the stale/deviant stage stays visible.
     path = _candidate(tmp_path)
@@ -391,12 +391,12 @@ def test_provenance_hoist_surfaces_only_the_deviant_stage(tmp_path: Path) -> Non
     assert stale["expired"] is True
 
 
-# --- §V22/§V19: both growable lists are paged (B21) ---------------------------
+# --- both growable lists are paged --------------------------------------------
 
 
 def test_stages_are_paged(tmp_path: Path) -> None:
-    # §V22/§V19: the per-stage facts page through their own bounded cursor so a common
-    # item (dropping across many stages) never overflows the response cap (B21).
+    # The per-stage facts page through their own bounded cursor so a common
+    # item (dropping across many stages) never overflows the response cap.
     path = _candidate(tmp_path)
     seed_item_across_stages(
         path, [StageDropSeed("a-1"), StageDropSeed("b-2"), StageDropSeed("c-3")]
@@ -414,7 +414,7 @@ def test_stages_are_paged(tmp_path: Path) -> None:
 
 
 def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -> None:
-    # §V60 + B21: the ranking is computed over the FULL set, THEN sliced -- page 1 is
+    # The ranking is computed over the FULL set, THEN sliced -- page 1 is
     # the most-efficient N in GLOBAL order, never a per-page re-rank.
     path = _candidate(tmp_path)
     seed_item_across_stages(
@@ -434,11 +434,11 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
         include_efficiency=True,
         efficiency_page={"page": 1, "page_size": 2},
     ).to_dict()["data"]["efficiency"]  # type: ignore[index]
-    # §V66.1: ONE observation; its ``ranking`` rows are this page of the global ranking.
+    # ONE observation; its ``ranking`` rows are this page of the global ranking.
     # Global ascending: e1(12), e4(20), e2(72), e3(120), e5(160) -> page 1 = the two lowest.
-    # §V68: the row id is the stage_game_id; assert order by the stage_code display name.
+    # The row id is the stage_game_id; assert order by the stage_code display name.
     assert [row["stage_code"] for row in eff1["observation"]["ranking"]] == ["e1", "e4"]
-    # §T161/B82: each ranking row folds the raw drop facts (§V55 evidence).
+    # Each ranking row folds the raw drop facts (evidence).
     assert all(
         {"sanity_cost", "drop_rate", "times"} <= set(r) for r in eff1["observation"]["ranking"]
     )
@@ -452,12 +452,12 @@ def test_efficiency_observations_are_paged_over_global_ranking(tmp_path: Path) -
     # Page 2 continues the SAME global ranking (not the two lowest of a fresh re-rank).
     assert [row["stage_code"] for row in eff2["observation"]["ranking"]] == ["e2", "e3"]
     assert eff2["page"]["has_more"] is True
-    # §V60/§V66.1: the mandatory comparison caveats ride the observation on every page.
+    # The mandatory comparison caveats ride the observation on every page.
     assert "availability" in " ".join(eff2["observation"]["limitations"]).lower()
 
 
 def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
-    # §V53 + B21: the stale verdict is computed over the FULL set, so data_stale holds
+    # The stale verdict is computed over the FULL set, so data_stale holds
     # even when the only expired stage falls on a later page -- page 1 is never
     # presented as fresh just because its rows happen to be unexpired.
     path = _candidate(tmp_path)
@@ -475,7 +475,7 @@ def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     # The returned page holds only the fresh stage; the expired one is off-page...
     assert [s["stage_code"] for s in data["stages"]] == ["a-1"]  # type: ignore[index]
-    # §V67: the fresh page-1 stage omits ``expired`` (absence = not expired).
+    # The fresh page-1 stage omits ``expired`` (absence = not expired).
     assert "expired" not in data["stages"][0]  # type: ignore[operator]
     assert data["stages_page"]["has_more"] is True  # type: ignore[index]
     # ...yet the staleness posture holds (never presented as fresh).
@@ -483,7 +483,7 @@ def test_stale_holds_when_expired_stage_off_page(tmp_path: Path) -> None:
 
 
 def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) -> None:
-    # §V85/B93 x B21: the hoisted deviation sentences are computed over the FULL
+    # The hoisted deviation sentences are computed over the FULL
     # ranking and ride the observation onto EVERY page -- a page whose rows carry no
     # ``expired`` marker still states the posture (the marked row lives on a later
     # page), and the marked row's own page carries both the marker and the sentence.
@@ -506,7 +506,7 @@ def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) 
     ob1 = page1.to_dict()["data"]["efficiency"]["observation"]  # type: ignore[index]
     rows1 = ob1["ranking"]
     assert [r["stage_code"] for r in rows1] == ["a-1"]
-    # The fresh page-1 row carries no marker (item view keys expiry per row, §V60)...
+    # The fresh page-1 row carries no marker (item view keys expiry per row)...
     assert "expired" not in rows1[0] and "confidence" not in rows1[0]
     # ...but the full-set hoisted sentence still rides this page's observation.
     assert any("expired" in lim for lim in ob1["limitations"])
@@ -524,7 +524,7 @@ def test_hoisted_deviation_sentence_rides_every_efficiency_page(tmp_path: Path) 
 
 
 def test_out_of_range_page_size_rejected(tmp_path: Path) -> None:
-    # §V19: an out-of-range page_size is rejected at the model gate, never silently
+    # An out-of-range page_size is rejected at the model gate, never silently
     # widened -- one contract, both places (mirrors get_stage).
     with pytest.raises(ValidationError):
         _handler(open_read_only(_candidate(tmp_path)))(
@@ -532,7 +532,7 @@ def test_out_of_range_page_size_rejected(tmp_path: Path) -> None:
         )
 
 
-# --- §V24: absent item / no drop cache -> not_found, no fetch fallback ---------
+# --- absent item / no drop cache -> not_found, no fetch fallback --------------
 
 
 def test_absent_item_is_not_found(tmp_path: Path) -> None:
@@ -541,22 +541,22 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     action = data["suggested_action"]
-    # §V24: never a query-time download/scrape fallback.
+    # Never a query-time download/scrape fallback.
     assert "download" not in str(action).lower() and "scrape" not in str(action).lower()
-    # §V73/B67: the pointer is honest -- search_entities now resolves item name -> id,
+    # The pointer is honest -- search_entities now resolves item name -> id,
     # so the not_found action names it (no longer a dead-end pointer).
     assert "search_entities" in str(action)
 
 
 def test_resolved_item_with_no_drops_is_a_distinct_empty_ok(tmp_path: Path) -> None:
-    # §V60/B91: an item that RESOLVES but has zero stage-drop cache is a craft/synthesis-only
+    # An item that RESOLVES but has zero stage-drop cache is a craft/synthesis-only
     # material -- it will NEVER have a penguin drop row, so its empty answer must NOT read
     # like an unknown-item miss (which points at an admin re-sync). It gets a distinct
     # sentence + a freshness self-check pointer (get_data_status), never the re-sync that
     # would add nothing.
     #
-    # §V106 (b)/B147 moved only the STATUS: the item resolved, so the lookup succeeded and
-    # the empty comparison is an ``ok``. B91's two-way split is what this test guards, and
+    # Only the STATUS moved: the item resolved, so the lookup succeeded and
+    # the empty comparison is an ``ok``. The two-way split is what this test guards, and
     # it must survive that move intact -- which is why both arms are asserted here.
     path = _candidate(tmp_path)
     seed_item_without_drops(path, item_game_id="30155", item_display_name="Nucleic Crystal Sinter")
@@ -564,20 +564,20 @@ def test_resolved_item_with_no_drops_is_a_distinct_empty_ok(tmp_path: Path) -> N
     assert env.status == "ok"
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V106 (b): the empty collection is emitted, and the item it is about is named.
+    # The empty collection is emitted, and the item it is about is named.
     assert data["stages"] == []
     assert data["item"]["game_id"] == "30155"  # type: ignore[index]
     caveat = next(lim for lim in env.limitations if "no stage that drops it" in lim)
     # The sentence says the item EXISTS (not an unknown-id miss).
     assert "exists" in caveat.lower()
-    # §V60/B91: it points a freshness self-check, NOT the admin re-sync -- a synthesis-only
+    # It points a freshness self-check, NOT the admin re-sync -- a synthesis-only
     # material has no drop to fetch, so the sync action would mislead as "cache unsynced".
     assert "get_data_status" in caveat
     assert "arknights-mcp" not in caveat  # no admin re-sync command
     assert "synthesis" in caveat.lower() or "workshop" in caveat.lower()
-    # §V24: still never a query-time download/scrape fallback.
+    # Still never a query-time download/scrape fallback.
     assert "download" not in caveat.lower() and "scrape" not in caveat.lower()
-    # Distinct from the UNKNOWN-item arm, which stays a §V106 (a) lookup miss pointing at
+    # Distinct from the UNKNOWN-item arm, which stays a lookup miss pointing at
     # search_entities. The two must not converge on one status OR one wording.
     unknown = _handler(open_read_only(path))(server="en", game_id="nosuchitem")
     assert unknown.status == "not_found"
@@ -586,7 +586,7 @@ def test_resolved_item_with_no_drops_is_a_distinct_empty_ok(tmp_path: Path) -> N
     assert "search_entities" not in caveat
 
 
-# --- §V23 typed failures ------------------------------------------------------
+# --- typed failures -----------------------------------------------------------
 
 
 def test_database_unavailable_envelope() -> None:
@@ -597,7 +597,7 @@ def test_database_unavailable_envelope() -> None:
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
     assert data["message"] == "the active database is unavailable"  # type: ignore[index]
-    assert "cand.sqlite" not in str(data)  # §V23: no local path / file name leak
+    assert "cand.sqlite" not in str(data)  # no local path / file name leak
 
 
 def test_unexpected_error_fails_closed_to_internal_error() -> None:
@@ -610,7 +610,7 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18 input gate ----------------------------------------------------------
+# --- input gate ----------------------------------------------------------------
 
 
 def test_unknown_parameter_rejected(tmp_path: Path) -> None:
@@ -635,7 +635,7 @@ def test_over_length_game_id_rejected(tmp_path: Path) -> None:
         _handler(open_read_only(_candidate(tmp_path)))(server="en", game_id="x" * (MAX_ID_LEN + 1))
 
 
-# --- §V2 read-only / §I.tool wire contract / §V14 shared registry -------------
+# --- read-only / wire contract / shared registry ------------------------------
 
 
 def test_service_is_read_only(tmp_path: Path) -> None:
@@ -658,7 +658,7 @@ def test_spec_registers_read_only_with_bounded_schema(tmp_path: Path) -> None:
     assert tool.inputSchema["additionalProperties"] is False
     assert "server" in tool.inputSchema["required"]
     props = tool.inputSchema["properties"]
-    # §V5: the item selector is on the wire; the §V18 id cap rides it (required ->
+    # The item selector is on the wire; the id cap rides it (required ->
     # a direct string schema with a maxLength).
     assert "game_id" in props
     assert "include_efficiency" in props
@@ -666,18 +666,18 @@ def test_spec_registers_read_only_with_bounded_schema(tmp_path: Path) -> None:
 
 
 def test_tool_registered_in_shared_registry(tmp_path: Path) -> None:
-    # §V14: both transports dispatch this one registry; the tool must be in it.
+    # Both transports dispatch this one registry; the tool must be in it.
     conn = open_read_only(_candidate(tmp_path))
     reg = build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY), mode="stdio")
     assert "get_item_drops" in reg.names()
 
 
 def test_item_type_domain_and_openness_ride_the_response(tmp_path: Path) -> None:
-    # §V104 (b)/(c) (§T207): the item block carries item_type, so its STATIC 9-token
+    # The item block carries item_type, so its STATIC 9-token
     # domain rides ``enum_legend`` and the source-defined "may grow" caveat rides a
-    # limitation -- the two homes §V104 names, neither of them the description. B142 was
-    # this exact field going undocumented on both drop tools; the fix stayed, the home
-    # moved off the §V71 (f) budget it shared with every other mandated fact.
+    # limitation -- the two homes, neither of them the description. The field once went
+    # undocumented on both drop tools; the fix stayed, the home
+    # moved off the description budget it shared with every other mandated fact.
     path = _candidate(tmp_path)
     seed_item_across_stages(path, [StageDropSeed("4-4")])
     env = _handler(open_read_only(path))(server="en", game_id="sugar")
@@ -688,7 +688,7 @@ def test_item_type_domain_and_openness_ride_the_response(tmp_path: Path) -> None
 
 
 def test_confidence_scale_rides_only_the_efficiency_response(tmp_path: Path) -> None:
-    # §V104/§V6: stated ONCE per response that carries a confidence (§V66); a caller who
+    # Stated ONCE per response that carries a confidence; a caller who
     # never asks for a ranking no longer pays for the scale in the description either.
     path = _candidate(tmp_path)
     seed_item_across_stages(path, [StageDropSeed("4-4"), StageDropSeed("a-1")])

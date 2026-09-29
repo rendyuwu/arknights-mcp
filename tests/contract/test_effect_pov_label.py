@@ -1,4 +1,4 @@
-"""T202: the ``applies_to`` label reads the source field that STATES it (§V115/§V83; B162).
+"""The ``applies_to`` label reads the source field that STATES it.
 
 A module change describes either the operator or the operator's summon/token, and the
 source SAYS which: ``battle_equip_table`` ``phases[].parts[].isToken``, a typed bool on
@@ -16,7 +16,7 @@ was verifiable the whole time: Kal'tsit's own module (the canonical token case) 
 ``talentIndex: 1`` on both POVs, and Sophia's ``uniequip_002_sophia`` carries ``-1`` on a
 part flagged ``isToken: false`` for a talent whose text buffs Melee ALLIES.
 
-§V115 (b) is what this module enforces, and it is the clause that would have caught it:
+This module enforces a cross-tab, and it is the check that would have caught it:
 a label must be CROSS-TABBED against the source's own flag and pinned non-degenerate on
 BOTH axes. A guard that only checked "some row is labelled token" passed for four
 milestones -- the sentinel and the flag agree on 59 en rows, which is plenty to keep such
@@ -25,12 +25,12 @@ an assertion green while 454 others are wrong. Three groups here:
 * upstream -- the cross-tab itself, both axes non-degenerate, at the pinned commit;
 * bridge -- the flag survives parsing onto every change bundle, on the real modules;
 * wire -- Sophia reads ``operator`` and Kal'tsit's token rows read ``token``, and the two
-  POVs of one change stay two rows (§V83's identity, which B162 also corrected).
+  POVs of one change stay two rows (the identity, which the fix also corrected).
 
 The upstream group is CI-only (network, ``ARKMCP_LIVE_UPSTREAM``) and this module is
 named in ``.github/workflows/ci.yml``; ``tests/unit/test_ci_matrix.py`` fails if it is
-not, since an unlisted live-upstream module runs nowhere (§T208's gap). Nothing fetched
-is persisted (§V16).
+not, since an unlisted live-upstream module runs nowhere. Nothing fetched
+is persisted.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ requires_build = pytest.mark.skipif(
     reason="needs a promoted build (data/current.json); run `arknights-mcp sync` first",
 )
 
-#: §V96 non-degenerate floors for each cell of the cross-tab, set well under the pinned
+#: Non-degenerate floors for each cell of the cross-tab, set well under the pinned
 #: counts. The two that matter are the DISAGREEMENT cells: a corpus where the sentinel and
 #: the flag always agreed would make the old inference harmless, and every assertion below
 #: would pass while proving nothing.
@@ -85,7 +85,7 @@ SOPHIA = "char_265_sophia"
 
 @lru_cache(maxsize=len(SERVERS))
 def _battle_equip(server: str) -> dict[str, Any]:
-    """The pinned ``battle_equip_table`` for ``server``; fetched once, never written (§V16)."""
+    """The pinned ``battle_equip_table`` for ``server``; fetched once, never written."""
     url = f"{arknights_assets_base_url(server)}/gamedata/excel/battle_equip_table.json"
     table = json.loads(fetch_upstream_bytes(url).decode("utf-8"))
     assert isinstance(table, dict) and table, f"{server} battle_equip_table is not a populated dict"
@@ -94,7 +94,7 @@ def _battle_equip(server: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=len(SERVERS))
 def _uniequip(server: str) -> dict[str, Any]:
-    """The pinned ``uniequip_table`` for ``server`` (needed to parse modules; §V16)."""
+    """The pinned ``uniequip_table`` for ``server`` (needed to parse modules)."""
     url = f"{arknights_assets_base_url(server)}/gamedata/excel/uniequip_table.json"
     table = json.loads(fetch_upstream_bytes(url).decode("utf-8"))
     assert isinstance(table, dict) and table, f"{server} uniequip_table is not a populated dict"
@@ -116,13 +116,13 @@ def _talent_candidates(server: str) -> list[tuple[bool, bool]]:
     return out
 
 
-# --- upstream: the cross-tab, both axes non-degenerate (§V115 b) ----------------
+# --- upstream: the cross-tab, both axes non-degenerate ----------------
 
 
 @requires_upstream
 @pytest.mark.parametrize("server", SERVERS)
 def test_sentinel_and_flag_are_different_facts(server: str) -> None:
-    """The four cells, counted. This is the assertion B162 existed for want of."""
+    """The four cells, counted. This is the assertion whose absence shipped the defect."""
     cells = Counter(_talent_candidates(server))
     assert sum(cells.values()) > 1000, f"{server}: too few candidates to conclude anything"
     # The disagreement cells: each one is a row the old inference got wrong, in one
@@ -179,7 +179,7 @@ def test_parser_carries_the_flag_onto_every_change(server: str) -> None:
 
 @requires_upstream
 def test_kaltsit_token_rows_carry_a_real_talent_index() -> None:
-    """The case that proves the sentinel could not have found them (B151's own example)."""
+    """The case that proves the sentinel could not have found them (the canonical example)."""
     parsed = {m.game_id: m for m in parse_modules(_uniequip("en"), _battle_equip("en"))}
     token_changes = [
         change
@@ -208,7 +208,7 @@ def test_sophia_minus_one_sits_on_an_operator_part() -> None:
     assert all(change.get("isToken") is False for change in minus_one)
 
 
-# --- wire: what a client actually reads (§V83/§V115) ---------------------------
+# --- wire: what a client actually reads ---------------------------
 
 
 @pytest.fixture(scope="module")
@@ -240,13 +240,13 @@ def _module_changes(conn: sqlite3.Connection, game_id: str) -> list[dict[str, An
 
 @requires_build
 def test_wire_label_follows_the_source_flag(build_conn: sqlite3.Connection) -> None:
-    """B162 head-on, at both ids, on the promoted build."""
+    """The defect head-on, at both ids, on the promoted build."""
     sophia = _module_changes(build_conn, SOPHIA)
     assert sophia, "Sophia's modules emitted no change rows"
     sentinel_rows = [row for row in sophia if row.get("talent_index") == -1]
     assert sentinel_rows, "the -1 rows are gone from the wire"
     assert all(row.get("applies_to") == "operator" for row in sentinel_rows), (
-        "a -1 change is labelled token again -- B162 verbatim"
+        "a -1 change is labelled token again -- the original defect verbatim"
     )
 
     kaltsit = _module_changes(build_conn, KALTSIT)
@@ -258,7 +258,7 @@ def test_wire_label_follows_the_source_flag(build_conn: sqlite3.Connection) -> N
 
 @requires_build
 def test_raw_source_key_never_reaches_the_wire(build_conn: sqlite3.Connection) -> None:
-    """§V71 (d): the label ships, the camelCase flag it was renamed from does not."""
+    """The label ships, the camelCase flag it was renamed from does not."""
     for game_id in (SOPHIA, KALTSIT):
         for row in _module_changes(build_conn, game_id):
             assert "isToken" not in row, f"{game_id}: raw source key leaked to the wire"
@@ -266,7 +266,7 @@ def test_raw_source_key_never_reaches_the_wire(build_conn: sqlite3.Connection) -
 
 @requires_build
 def test_both_povs_of_one_change_survive_as_two_rows(build_conn: sqlite3.Connection) -> None:
-    """§V83's amended identity: the POV is part of it, so neither copy is merged away."""
+    """The amended identity: the POV is part of it, so neither copy is merged away."""
     rows = _module_changes(build_conn, KALTSIT)
     by_identity: Counter[tuple[Any, Any]] = Counter()
     for row in rows:
@@ -287,7 +287,7 @@ def test_both_povs_of_one_change_survive_as_two_rows(build_conn: sqlite3.Connect
 
 @requires_build
 def test_label_is_explained_where_it_is_read(build_conn: sqlite3.Connection) -> None:
-    """§V104 (b): the value vocabulary rides the response that carries the labels."""
+    """The value vocabulary rides the response that carries the labels."""
     envelope = (
         registry_for(build_conn)
         .get("compare_operator_modules")

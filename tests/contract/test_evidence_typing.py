@@ -1,6 +1,6 @@
-"""T197: §V101's guard -- every evidence row is a typed tuple that RESOLVES.
+"""Every evidence row is a typed tuple that RESOLVES.
 
-§V6 says an observation must carry evidence; §V101 says what one row IS (B137). Three
+An observation must carry evidence; the row itself is a typed tuple. Three
 of those four rules are only checkable against a real response, because they are claims
 ABOUT the response:
 
@@ -8,18 +8,18 @@ ABOUT the response:
   names cannot check that -- it just moves the guess. So this walks the SERIALIZED
   envelope and resolves each path against the record its ``ref`` names: the path is real
   iff the key is actually there. That is what caught ``talent_changes.token_effect``, a
-  path the module analyzer had emitted since §T148 and no response has ever carried.
+  path the module analyzer had emitted and no response has ever carried.
 * ``value`` must be that field's scalar -- never a packed ``"def=200,res=50"`` string.
 * ``note`` is prose. A number a client may USE is a fact with a path of its own, so it
-  gets its own row. The one carve-out is the §V85 level list a deduped module row
+  gets its own row. The one carve-out is the level list a deduped module row
   carries (``"module level 2; module level 3"``): ``count`` is dedup multiplicity and
-  the §V101 tuple has no level slot, so prose is the only home the spec leaves it.
+  the tuple has no level slot, so prose is the only home left to it.
 
-And §V68/B136: a stage-level row refs the stage's ``game_id``. ``stage_code`` is shared
+And a stage-level row refs the stage's ``game_id``. ``stage_code`` is shared
 by the normal/tough/challenge variants of one stage, so a row reffing ``"14-18"`` is
-undecidable and un-joinable to the stage block, which is keyed on ``game_id``. B57 fixed
-this on ``get_item_drops`` in §T131; the stage-analysis surface kept it, on BOTH of its
-stage-level rules -- B136 named only ``lane_route``, and ``tiles_deploy`` had it too.
+undecidable and un-joinable to the stage block, which is keyed on ``game_id``. The fix
+landed on ``get_item_drops`` first; the stage-analysis surface kept it, on BOTH of its
+stage-level rules -- the filed case named only ``lane_route``, and ``tiles_deploy`` had it too.
 
 Two arms, because neither alone is enough:
 
@@ -60,11 +60,11 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 REGISTRY_PATH = REPO_ROOT / "config" / "data_sources.toml"
 MANIFEST = REPO_ROOT / "data" / "current.json"
 
-#: The §V85 level list a deduped module row carries -- the ONLY note allowed to hold a
+#: The level list a deduped module row carries -- the ONLY note allowed to hold a
 #: number, and only in this exact shape, so a new packed note cannot hide behind it.
 _LEVEL_NOTE = re.compile(r"^module level \d+( to \d+)?(; module level \d+( to \d+)?)*$")
 
-#: A ``key=value`` pair anywhere in a note is the B137 shape itself (``total_count=43``).
+#: A ``key=value`` pair anywhere in a note is the packed shape itself (``total_count=43``).
 _PACKED_NOTE = re.compile(r"\w+\s*=\s*\S")
 
 
@@ -147,7 +147,7 @@ def _resolve(record: Any, path: str) -> bool:
     Walks dotted segments. A list is satisfied when ANY entry carries the next segment
     (``talent_changes.talentIndex`` resolves against the list of talent-change objects),
     and a ``{key, value}`` pair list -- how ``stat_bonus`` is emitted -- is satisfied when
-    some entry's ``key`` equals the segment, which is what makes §V101's own blessed
+    some entry's ``key`` equals the segment, which is what makes the blessed
     ``stat_bonus.atk`` spelling resolvable. A trailing ``count`` resolves against a list,
     naming how many entries it holds.
     """
@@ -186,7 +186,7 @@ def _stage_records(data: dict[str, Any]) -> dict[str, Any]:
 def _module_records(data: dict[str, Any]) -> dict[str, Any]:
     """``ref`` -> the emitted module record, with its levels folded in so a per-level
     path (``trait_changes``, ``talent_changes``) resolves against the module the row
-    refs -- the §V66.3 hoist moves those bundles between the two, and the evidence row
+    refs -- the hoist moves those bundles between the two, and the evidence row
     is about the module either way.
 
     A list-valued key is CONCATENATED across levels, never taken from the first level:
@@ -208,23 +208,23 @@ def _module_records(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _assert_rows_typed(observations: list[dict[str, Any]], records: dict[str, Any]) -> int:
-    """Assert every evidence row satisfies §V101; return how many rows were checked."""
+    """Assert every evidence row is typed; return how many rows were checked."""
     checked = 0
     for obs in observations:
         for row in obs["evidence"]:
             where = f"{obs['rule_id']} {row['ref']}.{row['field']}"
-            # §V68: the ref names a real emitted record -- for a stage row that is the
+            # The ref names a real emitted record -- for a stage row that is the
             # stage's game_id, so a stage_code ref fails here rather than silently.
             assert row["ref"] in records, f"{where}: ref names no emitted record"
-            # §V101: a real emitted field path, never a packed pseudo-field.
+            # A real emitted field path, never a packed pseudo-field.
             assert "/" not in row["field"], f"{where}: packed pseudo-path"
             assert _resolve(records[row["ref"]], row["field"]), f"{where}: path resolves to nothing"
-            # §V101: that field's scalar, never a packed string.
+            # That field's scalar, never a packed string.
             value = row["value"]
             assert not isinstance(value, list | dict), f"{where}: value is not a scalar"
             if isinstance(value, str):
                 assert "=" not in value and "," not in value, f"{where}: packed value {value!r}"
-            # §V101: prose only -- no key=value, and no digits outside the §V85 level list.
+            # Prose only -- no key=value, and no digits outside the level list.
             note = row.get("note")
             if note is not None:
                 assert not _PACKED_NOTE.search(note), f"{where}: packed note {note!r}"
@@ -248,7 +248,7 @@ def _compare(conn: sqlite3.Connection, **kwargs: Any) -> dict[str, Any]:
 
 
 def test_fixture_stage_evidence_rows_are_typed(fixture_conn: sqlite3.Connection) -> None:
-    """Every fixture stage's evidence resolves against its own response (§V101/§V68)."""
+    """Every fixture stage's evidence resolves against its own response."""
     codes = [
         row[0] for row in fixture_conn.execute("SELECT stage_code FROM stages WHERE server = 'en'")
     ]
@@ -263,7 +263,7 @@ def test_fixture_stage_evidence_rows_are_typed(fixture_conn: sqlite3.Connection)
 
 
 def test_fixture_module_evidence_rows_are_typed(operator_conn: sqlite3.Connection) -> None:
-    """The module analyzer's rows resolve against the comparison response (§V101)."""
+    """The module analyzer's rows resolve against the comparison response."""
     operators = [
         row[0] for row in operator_conn.execute("SELECT game_id FROM operators WHERE server = 'en'")
     ]
@@ -299,10 +299,10 @@ def test_real_build_stage_evidence_rows_are_typed(build_conn: sqlite3.Connection
             continue
         rules.update(obs["rule_id"] for obs in observations)
         checked += _assert_rows_typed(observations, _stage_records(data))
-    # §V96 non-degenerate: a guard that checked zero rows of the rules it names is not a
-    # guard. These SIX are the whole registry as of §T210: ranged_arts joined them when the
-    # §V30 bridge started filling the columns it decides from (B160), and the three that
-    # could never fire were retired rather than left registered (§T210 c).
+    # Non-degenerate: a guard that checked zero rows of the rules it names is not a
+    # guard. These SIX are the whole registry: ranged_arts joined them when the
+    # bridge started filling the columns it decides from, and the three that
+    # could never fire were retired rather than left registered.
     assert rules == {
         "threat.aerial",
         "threat.def_res_skew",
@@ -331,14 +331,14 @@ def test_real_build_module_evidence_rows_are_typed(build_conn: sqlite3.Connectio
         checked += _assert_rows_typed(data["observations"], records)
     assert checked > 100, f"only {checked} rows checked"
     # The applies_to row this test used to pin is gone with the rule that emitted it
-    # (§T202/ADR 0018): the label is a FACT on the emitted change bundles, never an
+    # (ADR 0018): the label is a FACT on the emitted change bundles, never an
     # observation's evidence, and tests/contract/test_effect_pov_label.py pins it there.
 
 
 def test_stage_level_rows_ref_game_id_not_stage_code(build_conn: sqlite3.Connection) -> None:
-    """§V68/B136 head-on, on a code the real build SHARES between two stages.
+    """The stage-ref rule head-on, on a code the real build SHARES between two stages.
 
-    ``4-4`` en names both ``main_04-04`` and ``main_04-04#f#`` (B139). A stage-level
+    ``4-4`` en names both ``main_04-04`` and ``main_04-04#f#``. A stage-level
     evidence row reffing the code cannot say which of the two it measured; reffing the
     game_id it can, and the ref joins to the stage block that carries the same key.
     """
@@ -353,6 +353,6 @@ def test_stage_level_rows_ref_game_id_not_stage_code(build_conn: sqlite3.Connect
     ]
     assert stage_rows, "4-4 fires no stage-level rule; pick a stage that does"
     assert {row["ref"] for row in stage_rows} == {game_id}
-    # The paths those rows name are carried by this very response (§V101).
+    # The paths those rows name are carried by this very response.
     for row in stage_rows:
         assert _resolve(data["stage"], row["field"])

@@ -1,6 +1,6 @@
-"""§T62/§V12: end-to-end privacy scan of the whole logging surface.
+"""End-to-end privacy scan of the whole logging surface.
 
-Where the §T57 log-scan (:mod:`tests.remote.test_remote_security_privacy`
+Where the log-scan (:mod:`tests.remote.test_remote_security_privacy`
 ``test_access_log_scrubbed_under_real_traffic``) asserts the *single*
 ``arknights_mcp.access`` logger stays scrubbed, this M7 scan is broader: it drives
 the full auth-requiring remote stack over a real loopback socket with
@@ -8,9 +8,9 @@ representative traffic -- a valid bearer, a large tool-argument blob, a request
 whose response carries real fact-body content, and a rejected request presenting a
 sentinel token -- while capturing **every** record from **every** logger in the
 process (root + force-``propagate`` named loggers at the default operational INFO
-level), then asserts none of the §V12 forbidden items surface anywhere.
+level), then asserts none of the forbidden items surface anywhere.
 
-§V12 forbids default logs from carrying: the full prompt, the full tool arguments,
+Default logs never carry: the full prompt, the full tool arguments,
 a response body, the ``Authorization`` header, a bearer token, a raw source record,
 or roster/account data. This scan attaches a deterministic sentinel to each
 injectable item and asserts its absence across the captured blob:
@@ -19,7 +19,7 @@ injectable item and asserts its absence across the captured blob:
   the literal ``Bearer`` scheme + ``Authorization`` header name, and a distinct
   sentinel token on a *rejected* request (the pre-auth path);
 * **full prompt / full tool args** -- a 114-char sentinel ``game_id`` (within the
-  §V18 cap) that travels in the JSON-RPC request body of a ``get_enemy`` call;
+  cap) that travels in the JSON-RPC request body of a ``get_enemy`` call;
 * **response body** -- a real fact value (``Originium Slug``) + the resolved
   ``game_id`` returned by an ``ok`` ``get_enemy`` call;
 * **raw source record** -- the raw upstream shape keys (``enemyData`` / ``m_value``)
@@ -27,17 +27,17 @@ injectable item and asserts its absence across the captured blob:
 
 The three account tools (ADR 0020) read the owner's account roster
 database; their payloads are ordinary response bodies, and the body-blind
-access log never sees a response body -- §V15's own no-storage/no-logging
+access log never sees a response body -- the no-storage/no-logging
 rule covers the credential half. So the only identity that reaches the log
 is the OAuth principal id ``iss|sub``, logged by design; it is asserted
 *present* as a positive control, not scanned for absence.
 
-Capture is at the default operational **INFO** level, not DEBUG: §V12 governs
-*default* logs, so this scans the surface a production operator actually runs, not
+Capture is at the default operational **INFO** level, not DEBUG: default logs are
+governed, so this scans the surface a production operator actually runs, not
 opt-in developer message tracing. Offline + deterministic: build promoted from the
-pinned 4-4 fixture (no network, §V1); OIDC keypair + JWKS local. The uvicorn +
+pinned 4-4 fixture (no network); OIDC keypair + JWKS local. The uvicorn +
 fixture-import scaffolding is reused from :mod:`tests.support.remote_harness`
-(§V37) -- this file adds only the whole-surface capture + sentinel assertions.
+-- this file adds only the whole-surface capture + sentinel assertions.
 """
 
 from __future__ import annotations
@@ -62,12 +62,12 @@ _ACCESS_LOGGER = "arknights_mcp.access"
 _PROBE_BODY = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
 
 #: A real fact value the pinned 4-4 fixture surfaces via ``get_enemy`` -- present in
-#: the ``ok`` response body, and thus a §V12 response-body sentinel to scan for.
+#: the ``ok`` response body, and thus a response-body sentinel to scan for.
 _FACT_BODY_VALUE = "Originium Slug"
 #: A real enemy game_id in the fixture (both the ``ok`` request arg and its body).
 _REAL_GAME_ID = "enemy_1007_slime"
 
-#: A large-but-valid (§V18 ``MAX_ID_LEN`` = 128) sentinel game_id: it flows in the
+#: A large-but-valid (``MAX_ID_LEN`` = 128) sentinel game_id: it flows in the
 #: JSON-RPC request body of a ``get_enemy`` call (the "full prompt" / "full tool
 #: args" surface) yet matches nothing, so the call is a clean ``not_found``.
 _LARGE_ARG_SENTINEL = "PRIVACYSCANARGSENTINEL" + "A" * 92
@@ -81,14 +81,14 @@ _REJECTED_TOKEN_SENTINEL = "SENTINELBADTOKENdeadbeef"  # noqa: S105 (test sentin
 def secured_server(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[tuple[str, LocalOidcIssuer]]:
-    """One authenticated remote server for the scan (default limits; §V37 harness)."""
+    """One authenticated remote server for the scan (default limits)."""
     tmp = tmp_path_factory.mktemp("t62-privacy-scan")
     with remote_server(tmp) as served:
         yield served
 
 
 class _CapturingHandler(logging.Handler):
-    """Accumulates every :class:`logging.LogRecord` routed to it (§V12 scan sink)."""
+    """Accumulates every :class:`logging.LogRecord` routed to it (the scan sink)."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.INFO)
@@ -100,12 +100,12 @@ class _CapturingHandler(logging.Handler):
 
 @contextmanager
 def _capture_every_logger() -> Iterator[_CapturingHandler]:
-    """Capture every record from every logger in the process (§V12 whole-surface).
+    """Capture every record from every logger in the process (whole-surface).
 
     Adds an INFO handler to the root logger and forces every *existing* named logger
     to INFO + ``propagate=True`` so a record from any layer (the app, the MCP SDK,
     uvicorn, the auth backend) reaches the capture regardless of its own handler /
-    propagation config. INFO (not DEBUG) is deliberate: §V12 governs *default* logs,
+    propagation config. INFO (not DEBUG) is deliberate: default logs are governed,
     the operational surface a production run emits -- not opt-in developer tracing.
     Original levels/propagation are restored on exit.
     """
@@ -192,7 +192,7 @@ def _drive_authenticated_flow(url: str, token: str) -> None:
 def test_no_forbidden_item_in_any_log(
     secured_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V12: drive the full remote stack with a valid bearer, a large tool-arg blob,
+    # Drive the full remote stack with a valid bearer, a large tool-arg blob,
     # a body-bearing response, and a rejected sentinel-token request; capture EVERY
     # logger's output and assert no forbidden item surfaces anywhere.
     url, issuer = secured_server
@@ -219,7 +219,7 @@ def test_no_forbidden_item_in_any_log(
     assert "auth0|remote-tester" in blob  # principal id (iss|sub), logged by design
     assert "principal=anonymous" in blob  # the rejected pre-auth request
 
-    # §V12 forbidden items -- each a deterministic sentinel that must NOT appear.
+    # Forbidden items -- each a deterministic sentinel that must NOT appear.
     forbidden = {
         "bearer token": token,
         "bearer JWT prefix": "eyJ",
@@ -233,4 +233,4 @@ def test_no_forbidden_item_in_any_log(
         "raw source record (m_value)": "m_value",
     }
     leaked = {label: needle for label, needle in forbidden.items() if needle in blob}
-    assert not leaked, f"§V12 leak in captured logs: {sorted(leaked)}"
+    assert not leaked, f"leak in captured logs: {sorted(leaked)}"

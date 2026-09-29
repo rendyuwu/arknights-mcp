@@ -1,6 +1,6 @@
-"""T205: §V110's real-corpus guard -- an event title finds its stages (B155).
+"""Real-corpus guard -- an event title finds its stages.
 
-The bug this replaces was invisible to every test that ran. B107 saw
+The bug this replaces was invisible to every test that ran. An earlier sweep saw
 ``search_stages("Lone Trail") -> not_found``, read it as a key-name error, moved the
 zone-name read from ``zoneName`` to ``zoneNameSecond``, and proved the fix with a
 fixture that invented a zone literally named "Lone Trail". Both halves were wrong: the
@@ -13,8 +13,8 @@ live) and cannot use a fixture at all. It is a round trip over the REAL tables: 
 read from upstream, imported through the production importer, indexed by the production
 index builder, and queried through the same service the MCP tool calls.
 
-CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like the §V97 weld and
-§V109 truncation guards. Nothing fetched is persisted (§V16, code-only distribution).
+CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like the other live-upstream
+guards. Nothing fetched is persisted (code-only distribution).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_S
 BASE_URL = arknights_assets_base_url("en")
 
 #: Event titles TRANSCRIBED from the real ``activity_table`` -- the literal strings a
-#: client would type. Never invent one: an invented title is exactly how B107's test
+#: client would type. Never invent one: an invented title is exactly how the earlier test
 #: passed against a corpus that did not contain it. Each is asserted to still exist
 #: upstream before it is used as a query, so a renamed event fails loudly rather than
 #: silently weakening the guard.
@@ -64,7 +64,7 @@ MIN_TITLED_STAGES = 2000
 #: Zone families that legitimately have no activity row of their own (163 EN zones at
 #: the pinned commit): mainline + its retro/permanent re-hosts, weekly supply, guide,
 #: annihilation, Stationary Security Service, Integrated Strategies. A zone appearing
-#: outside these has lost its title to a source change, not to source design (§V26).
+#: outside these has lost its title to a source change, not to source design.
 TITLE_LESS_ZONE_PREFIXES = (
     "main_",
     "permanent_",
@@ -77,7 +77,7 @@ TITLE_LESS_ZONE_PREFIXES = (
 
 
 def _fetch_table(relative_path: str) -> Any:
-    """Fetch + parse one pinned upstream table; never written to disk (§V16)."""
+    """Fetch + parse one pinned upstream table; never written to disk."""
     return json.loads(fetch_upstream_bytes(f"{BASE_URL}/{relative_path}").decode("utf-8"))
 
 
@@ -170,7 +170,7 @@ def test_searched_titles_are_real(activity_table: Any) -> None:
 
 
 def test_the_searched_title_is_absent_from_zone_table(zone_table: Any) -> None:
-    """The assertion B107 needed: the title is not in the file it fixed.
+    """The assertion the guard needed: the title is not in the file it fixed.
 
     Had this been asserted then, "rename the zone-name key" would have been visibly
     insufficient -- no key of ``zone_table`` carries the string at all. If upstream ever
@@ -195,7 +195,7 @@ def test_activity_table_covers_the_real_corpus(activity_table: Any) -> None:
 
 
 def test_title_less_zones_are_the_known_modes(zone_table: Any, activity_table: Any) -> None:
-    """§V26: the zones with no title are a source-design set, not a coverage failure."""
+    """The zones with no title are a source-design set, not a coverage failure."""
     titles = parse_activity_titles(activity_table)
     orphans = [zone_id for zone_id in zone_table["zones"] if zone_id not in titles]
     unexpected = [
@@ -205,7 +205,7 @@ def test_title_less_zones_are_the_known_modes(zone_table: Any, activity_table: A
 
 
 def test_real_titles_round_trip_through_the_search_service(conn: sqlite3.Connection) -> None:
-    """B155 itself: the query returns that event's stages, through the real service."""
+    """The query returns that event's stages, through the real service."""
     for title in SEARCHED_TITLES:
         result = search_stages(conn, query=title, server="en", limit=50)
         assert result.status == "ok", f"{title!r} matched nothing"

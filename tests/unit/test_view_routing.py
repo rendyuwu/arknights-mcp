@@ -1,22 +1,22 @@
-"""§V108/§V79 view-routing pins (§T203, B153).
+"""View-routing pins.
 
 A threat rule works from a SUMMARY of the stage -- a route-record count, tile tallies,
 aggregated spawn bounds -- while the per-record detail sits on ``get_stage`` behind an
-``include_`` flag. B153 is what happens when a rule states only the summary's limit: a
+``include_`` flag. The bug happens when a rule states only the summary's limit: a
 live client read "geometry not clustered" as a claim about the SERVER, concluded the
 route data did not exist, and offered a community wiki -- the one source class this
-project refuses. §V108 is the rule that stops it: a bounded view says what it omits AND
+project refuses. The rule that stops it: a bounded view says what it omits AND
 names the tool + flag holding the fuller one.
 
 These tests pin four things the fix has to keep true:
 
 * every deliberately coarse observation carries a routing limitation (not just the one
-  B153 named);
+  first reported);
 * the flag it names is a REAL ``get_stage`` input -- a pointer to a flag that does not
   exist is a worse answer than no pointer, and prose alone cannot catch that;
-* §V79's cross-ref is BIDIRECTIONAL, and names the flags rather than just the sibling;
-* the §V71 (f) budget was paid by MOVING the level_variant note, not deleting it
-  (§V111 b) -- so the note must be GONE from the description and PRESENT on the depth
+* the cross-ref is BIDIRECTIONAL, and names the flags rather than just the sibling;
+* the budget was paid by MOVING the level_variant note, not deleting it -- so the note
+  must be GONE from the description and PRESENT on the depth
   that emits the key it decodes.
 """
 
@@ -80,7 +80,7 @@ def _ctx(**kw: object) -> StageThreatContext:
 
 
 def test_real_flags_are_discovered() -> None:
-    # §V96: if the model stopped publishing include_ flags, every routing assertion
+    # If the model stopped publishing include_ flags, every routing assertion
     # below would pass vacuously against an empty set.
     assert {"include_map", "include_routes", "include_spawns"} <= _REAL_FLAGS
 
@@ -119,11 +119,11 @@ def _spike_result() -> tuple[str, ...]:
 def test_coarse_observation_routes_to_the_fuller_view(
     limitations_of: object, flag: str, subject: str
 ) -> None:
-    # §V108: the coarse view names the tool AND the flag that returns the fine one.
+    # The coarse view names the tool AND the flag that returns the fine one.
     limitations = limitations_of()  # type: ignore[operator]
     routing = [lim for lim in limitations if "get_stage" in lim]
     assert routing, f"no limitation routes to get_stage: {limitations}"
-    assert len(routing) == 1, f"§V66: one route per observation, got {routing}"
+    assert len(routing) == 1, f"one route per observation, got {routing}"
     assert flag in routing[0]
     assert subject in routing[0].lower()
 
@@ -132,8 +132,8 @@ def test_coarse_observation_routes_to_the_fuller_view(
     "limitations_of", [_lane_result, _tiles_result, _spike_result], ids=["lane", "tiles", "spike"]
 )
 def test_routing_limitation_names_a_real_flag(limitations_of: object) -> None:
-    # §V101 class: a routing pointer to a flag get_stage does not accept sends the
-    # client to a rejected call -- worse than the silence B153 reported.
+    # A routing pointer to a flag get_stage does not accept sends the
+    # client to a rejected call -- worse than the silence the earlier report described.
     limitations = limitations_of()  # type: ignore[operator]
     routing = next(lim for lim in limitations if "get_stage" in lim)
     named = {flag for flag in _REAL_FLAGS if flag in routing}
@@ -141,7 +141,7 @@ def test_routing_limitation_names_a_real_flag(limitations_of: object) -> None:
 
 
 def test_lane_route_no_longer_claims_a_server_wide_absence() -> None:
-    # B153 verbatim: the shipped text was "geometry not clustered", full stop -- true of
+    # The shipped text was "geometry not clustered", full stop -- true of
     # the analysis, read as true of the server.
     routing = next(lim for lim in _lane_result() if "get_stage" in lim)
     assert routing != "raw route count != distinct lanes; geometry not clustered"
@@ -149,7 +149,7 @@ def test_lane_route_no_longer_claims_a_server_wide_absence() -> None:
 
 
 def test_spawn_route_rides_once_not_per_enemy() -> None:
-    # §V66: the route is the same sentence for every enemy in the stage, so N burst
+    # The route is the same sentence for every enemy in the stage, so N burst
     # enemies must not produce N copies of one pointer.
     occs = tuple(
         _occ(f"enemy_100{i}_x", total_count=13, first_spawn_time=1.0, last_spawn_time=6.0)
@@ -171,24 +171,24 @@ def test_count_only_spike_does_not_route_to_the_timeline() -> None:
 
 
 def test_routing_note_is_client_facing_text() -> None:
-    # §V71 (b): no internal cite or jargon reaches the client.
+    # No internal cite or jargon reaches the client.
     note = fuller_view_note(this_view="A is coarse.", flag="include_map", fuller="the fine view")
-    for banned in ("§V", "§T", "§B", "B153", "degenerate"):
+    for banned in ("degenerate",):
         assert banned not in note
 
 
-# --- §V79 bidirectional cross-ref ---------------------------------------------
+# --- bidirectional cross-ref --------------------------------------------------
 
 
 def test_get_stage_description_points_at_analyze_stage() -> None:
-    # §V79: the sibling is named, and what it is FOR is stated (when to prefer it).
+    # The sibling is named, and what it is FOR is stated (when to prefer it).
     assert ANALYZE_SIBLING_NOTE in _TOOL_DESCRIPTION
     assert "analyze_stage" in _TOOL_DESCRIPTION
 
 
 def test_analyze_stage_description_points_back_and_names_the_flags() -> None:
-    # §V79/§V108: naming only the sibling would leave the caller guessing WHICH flag
-    # carries routes -- the exact gap that let B153's client conclude the data was gone.
+    # Naming only the sibling would leave the caller guessing WHICH flag
+    # carries routes -- the exact gap that let the client conclude the data was gone.
     assert STAGE_FACTS_SIBLING_NOTE in _ANALYZE_TOOL_DESCRIPTION
     assert "get_stage" in _ANALYZE_TOOL_DESCRIPTION
     for flag in ("include_map", "include_routes", "include_spawns"):
@@ -199,15 +199,15 @@ def test_analyze_stage_description_points_back_and_names_the_flags() -> None:
     "description", [_TOOL_DESCRIPTION, _ANALYZE_TOOL_DESCRIPTION], ids=["get_stage", "analyze"]
 )
 def test_stage_descriptions_stay_within_budget(description: str) -> None:
-    # §V71 (f)/§V111 (d): the cross-ref had to be PAID for, not appended.
+    # The cross-ref had to be PAID for, not appended.
     assert len(description) <= MAX_TOOL_DESCRIPTION_CHARS
 
 
-# --- §V111 (b): the budget was paid by MOVING, not deleting --------------------
+# --- the budget was paid by MOVING, not deleting -------------------------------
 
 
 def test_level_variant_note_left_the_analyze_description() -> None:
-    # §V111 (b): the note was moved off a description with 10 chars of headroom. If it
+    # The note was moved off a description with 10 chars of headroom. If it
     # is still here, the cross-ref was paid for some other way.
     assert LEVEL_VARIANT_NOTE not in _ANALYZE_TOOL_DESCRIPTION
 
@@ -226,7 +226,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 def test_moved_level_variant_note_arrives_at_detailed_depth(conn: sqlite3.Connection) -> None:
-    # §V111 (b): a move that drops the text is a deletion with extra steps. The note has
+    # A move that drops the text is a deletion with extra steps. The note has
     # to REACH the client at its new home -- the one depth that emits level_variant.
     handler = build_analyze_stage_spec(lambda: conn).handler
     detailed = handler(server="en", stage_code="4-4", depth="detailed").to_dict()
@@ -240,7 +240,7 @@ def test_moved_level_variant_note_arrives_at_detailed_depth(conn: sqlite3.Connec
 
 @pytest.mark.parametrize("depth", ["summary", "standard"])
 def test_shallower_depths_do_not_pay_for_the_note(conn: sqlite3.Connection, depth: str) -> None:
-    # §V66 economy: neither depth emits level_variant, so neither owes a gloss decoding
+    # Neither depth emits level_variant, so neither owes a gloss decoding
     # it -- which is exactly why the description was the wrong home for it.
     envelope = build_analyze_stage_spec(lambda: conn).handler(
         server="en", stage_code="4-4", depth=depth

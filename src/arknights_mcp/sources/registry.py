@@ -1,4 +1,4 @@
-"""Machine-readable source-registry loader (SPEC §V27; PRD Section 10.1).
+"""Machine-readable source-registry loader (PRD Section 10.1).
 
 Loads ``config/data_sources.toml`` into typed entries and enforces registry
 completeness for every enabled source. Exposes a public-safe projection for the
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from arknights_mcp.util.atomic import atomic_write_text
 
-# Mandatory fields every enabled source must populate (§V27 / PRD 10.1). The
+# Mandatory fields every enabled source must populate (PRD 10.1). The
 # active snapshot commit/version is tracked at runtime (source_snapshots), not
 # in this static registry.
 _MANDATORY_FOR_ENABLED = (
@@ -30,13 +30,13 @@ _MANDATORY_FOR_ENABLED = (
     "last_reviewed_at",
 )
 
-# The public-safe field allowlist (§V27/§V34). :meth:`SourceRegistryEntry.public_view`
+# The public-safe field allowlist. :meth:`SourceRegistryEntry.public_view`
 # emits *exactly* these fields -- an allowlist, not a denylist, so a field added to
 # the model is withheld from every client until it is explicitly classified here
 # (fail-closed: a future sensitive field cannot leak by default). Both the CLI
 # ``source list --json`` view and the ``get_data_sources`` service route through the
-# one projection, so they cannot diverge (B18). ``private_hosting_status``/
-# ``redistribution_status`` are intended-public posture fields (PRD §13.10).
+# one projection, so they cannot diverge. ``private_hosting_status``/
+# ``redistribution_status`` are intended-public posture fields (PRD Section 13.10).
 _PUBLIC_FIELDS = frozenset(
     {
         "source_id",
@@ -62,7 +62,7 @@ _PUBLIC_FIELDS = frozenset(
     }
 )
 
-# Fields deliberately withheld from every public-safe projection (§V27).
+# Fields deliberately withheld from every public-safe projection.
 # ``policy_notes`` may carry takedown correspondence, so it is internal. Kept as an
 # explicit set so the field partition (public ∪ internal == every model field, the
 # two disjoint) is checkable in one test: adding a model field forces it into
@@ -96,8 +96,8 @@ class SourceRegistryEntry(BaseModel):
     redistribution_status: str = ""
     attribution_text: str = ""
     contact_url: str = ""
-    #: §V71 (b) (B131): the ONE place an internal reference (a founder decision id, a
-    #: milestone, an ADR number, a spec cite) may ride the public projection. The registry
+    #: The ONE place an internal reference (a founder decision id, a
+    #: milestone, an ADR number) may ride the public projection. The registry
     #: ships VERBATIM to an MCP client through :meth:`public_view`, so a cite parked inside
     #: ``purpose`` prose IS a wire cite the client must read past; here it is an explicitly
     #: ignorable field a client can skip whole. Every OTHER public field stays cite-free.
@@ -118,7 +118,7 @@ class SourceRegistryEntry(BaseModel):
         return missing
 
     def public_view(self) -> dict[str, Any]:
-        """Public-safe projection for get_data_sources (§V27).
+        """Public-safe projection for get_data_sources.
 
         Selects *only* the :data:`_PUBLIC_FIELDS` allowlist -- a field added to the
         model is withheld until explicitly classified public, so a future sensitive
@@ -147,7 +147,7 @@ class SourceRegistry(BaseModel):
         return [self.entries[sid].public_view() for sid in sorted(self.entries)]
 
     def assert_complete(self) -> None:
-        """Enforce §V27: every enabled source has all mandatory fields."""
+        """Every enabled source has all mandatory fields."""
         problems: list[str] = []
         for source_id, entry in sorted(self.entries.items()):
             if entry.enabled:
@@ -155,7 +155,7 @@ class SourceRegistry(BaseModel):
                 if missing:
                     problems.append(f"{source_id}: missing {', '.join(missing)}")
         if problems:
-            raise RegistryError("incomplete source registry (§V27): " + "; ".join(problems))
+            raise RegistryError("incomplete source registry: " + "; ".join(problems))
 
 
 def load_source_registry(path: str | Path, *, validate: bool = True) -> SourceRegistry:
@@ -182,8 +182,8 @@ def load_source_registry(path: str | Path, *, validate: bool = True) -> SourceRe
 def set_source_enabled(path: str | Path, source_id: str, enabled: bool) -> bool:
     """Flip a source's ``enabled`` flag in the machine registry TOML in place.
 
-    The registry is the mutable kill switch for ``source enable``/``disable``
-    (§V20): a targeted line edit preserves comments and formatting rather than
+    The registry is the mutable kill switch for ``source enable``/``disable``:
+    a targeted line edit preserves comments and formatting rather than
     re-serializing the whole file (stdlib has no TOML writer). Returns ``True`` if
     the flag was changed. Raises :class:`RegistryError` if the source or its
     ``enabled`` line is absent.

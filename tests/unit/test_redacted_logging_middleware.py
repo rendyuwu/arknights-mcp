@@ -1,10 +1,10 @@
-"""§T54/§V12: the remote access log carries no secret.
+"""The remote access log carries no secret.
 
 Drives :class:`~arknights_mcp.middleware.logging.RedactedLoggingMiddleware` with a
 raw ASGI ``(scope, receive, send)`` and captures the emitted log records, asserting
 the access line records method / path / status / principal id -- and never the
-bearer token, the ``Authorization`` header, the request body, or the response body
-(§V12). The guarantee is by construction: the middleware never reads any of those.
+the bearer token, the ``Authorization`` header, the request body, or the response body.
+The guarantee is by construction: the middleware never reads any of those.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def test_access_line_records_method_path_status_principal(
 def test_access_line_never_leaks_token_header_or_bodies(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # §V12: the emitted record must contain neither the bearer token, the raw
+    # The emitted record must contain neither the bearer token, the raw
     # Authorization header value, the request body, nor the response body.
     app = RedactedLoggingMiddleware(_InnerApp())
     with caplog.at_level(logging.INFO, logger="arknights_mcp.access"):

@@ -1,4 +1,4 @@
-"""Parameterized read-only repositories (§V2).
+"""Parameterized read-only repositories.
 
 The sanctioned SQL surface for the domain services: parameterized ``SELECT``
 only, values bound via ``?`` placeholders, never string interpolation.

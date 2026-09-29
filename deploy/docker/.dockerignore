@@ -1,8 +1,8 @@
-# Keep the code-only image code-only (§V16): nothing here reaches a build layer.
+# Keep the code-only image code-only: nothing here reaches a build layer.
 # The build context is the repo root (docker build -f deploy/docker/Dockerfile .),
 # so these excludes bar data + game content + secrets from ever being copied in.
 
-# --- Data & build artifacts: never bake a snapshot or a prebuilt DB (§V16) ---
+# --- Data & build artifacts: never bake a snapshot or a prebuilt DB ---
 data/
 **/*.sqlite
 **/*.sqlite3
@@ -10,7 +10,7 @@ data/
 snapshot/
 snapshots/
 
-# --- Secrets / local env: env-only, never in an image layer (§V12/§I.env) ---
+# --- Secrets / local env: env-only, never in an image layer ---
 .env
 .env.*
 **/*.env

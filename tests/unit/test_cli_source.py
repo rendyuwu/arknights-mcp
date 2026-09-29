@@ -1,11 +1,11 @@
-"""T26: the ``source`` CLI command group (§V20, §V28, §I.cmd).
+"""The ``source`` CLI command group.
 
 ``arknights-mcp source list|enable|disable|purge`` are admin-only, CLI-only ops
-(§V28 -- never MCP tools). ``enable``/``disable`` flip the registry kill switch and
+(never MCP tools). ``enable``/``disable`` flip the registry kill switch and
 journal the action but never rebuild or mutate the active database, so current
-data keeps being served (§V20). ``purge --rebuild`` removes only the rows
+data keeps being served. ``purge --rebuild`` removes only the rows
 attributable to one source and promotes the rebuilt candidate only after it
-validates; the current build stays active until then and on failure (§V20).
+validates; the current build stays active until then and on failure.
 """
 
 from __future__ import annotations
@@ -88,9 +88,9 @@ def test_source_list_json_is_public_safe(
     payload = json.loads(capsys.readouterr().out)
     assert isinstance(payload, list) and payload
     for entry in payload:
-        # §V27: public view omits internal-only fields (policy_notes only).
+        # Public view omits internal-only fields (policy_notes only).
         assert "policy_notes" not in entry
-        # PRD §13.10 posture is intended-public (aligned with get_data_sources, M4).
+        # PRD Section 13.10 posture is intended-public (aligned with get_data_sources, M4).
         assert "private_hosting_status" in entry
         assert entry["source_id"]
 
@@ -106,14 +106,14 @@ def test_source_disable_keeps_data_and_journals(tmp_path: Path) -> None:
     rc = main(["--config", str(config), "source", "disable", _PRIMARY, "--reason", "takedown"])
     assert rc == 0
 
-    # Registry kill switch flipped off (§V20).
+    # Registry kill switch flipped off.
     entry = load_source_registry(registry, validate=False).get(_PRIMARY)
     assert entry is not None and entry.enabled is False
     # Journaled as a disable event.
     events = read_events(data_dir)
     assert [(e.event_type, e.source_id) for e in events] == [("disable", _PRIMARY)]
     assert events[0].reason == "takedown"
-    # §V20: no rebuild, active database untouched.
+    # No rebuild, active database untouched.
     assert (data_dir / "current.json").read_bytes() == before
 
 
@@ -155,7 +155,7 @@ def test_source_purge_rebuild_removes_source_rows(tmp_path: Path) -> None:
     rc = main(["--config", str(config), "source", "purge", _LOCAL, "--rebuild"])
     assert rc == 0
 
-    # Rebuilt build has no rows attributable to the purged source (§V20).
+    # Rebuilt build has no rows attributable to the purged source.
     assert _active_conn_query(data_dir, "SELECT COUNT(*) FROM stages")[0][0] == 0
     assert _active_conn_query(data_dir, "SELECT COUNT(*) FROM source_snapshots")[0][0] == 0
     # The purge event is materialized into the immutable build.
@@ -286,5 +286,5 @@ def test_source_purge_failed_validation_keeps_current(
 
     rc = main(["--config", str(config), "source", "purge", _LOCAL, "--rebuild"])
     assert rc == 1
-    # §V20: current database stays active when the rebuild fails validation.
+    # Current database stays active when the rebuild fails validation.
     assert (data_dir / "current.json").read_bytes() == before

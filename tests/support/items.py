@@ -1,14 +1,14 @@
 """Shared test helper: seed ``items`` rows into a candidate build.
 
-The §T132 cost-item name pairing (§V69) resolves a module/skill upgrade cost's item
+The cost-item name pairing resolves a module/skill upgrade cost's item
 ids (``{id, count, type}``) to their display names via the ``items`` table. The
 operator fixtures ship no items (item names come from the drop-rate source, imported
 separately), so a test that wants a *resolved* cost name must seed the matching
-``items`` rows itself. That seed logic lives here once (§V37) rather than being
+``items`` rows itself. That seed logic lives here once rather than being
 copy-pasted into each operator/module tool test.
 
-:func:`seed_items` writes the shape the T89 importer produces for one region: a penguin
-``source_snapshots`` row (its own provenance chain, §V54) + one ``items`` row per
+:func:`seed_items` writes the shape the penguin importer produces for one region: a penguin
+``source_snapshots`` row (its own provenance chain) + one ``items`` row per
 ``game_id -> display_name`` entry. Opens a read-write handle because the candidate is
 written before it is promoted + reopened read-only; ``penguin_statistics`` is already in
 ``data_sources`` from ``build_candidate`` (the full registry) so the snapshot FK holds.
@@ -25,9 +25,9 @@ def seed_items(path: Path, names: Mapping[str, str | None], *, region: str = "en
     """Seed ``items`` rows (``game_id -> display_name``) into the candidate at ``path``.
 
     Each entry becomes one ``items`` row for ``region``; a ``None`` display name seeds an
-    item present-but-unnamed (so the §T132 pairing still leaves a bare id + limitation).
+    item present-but-unnamed (so the name pairing still leaves a bare id + limitation).
     Inserts one penguin ``source_snapshots`` + ``record_provenance`` row to satisfy the
-    ``items.provenance_id`` FK (§V17).
+    ``items.provenance_id`` FK.
     """
     conn = sqlite3.connect(str(path))
     try:

@@ -1,11 +1,11 @@
-"""Bounded input model for ``get_announcements`` (§T30; §T96; §V5/§V19/§V22/§V56).
+"""Bounded input model for ``get_announcements``.
 
-An announcement listing is region-attributed (§V5) and metadata-only (§V56). The
+An announcement listing is region-attributed and metadata-only. The
 optional ``since``/``until`` bounds narrow the list by ISO date; both are length
-capped so a crafted value cannot carry an oversized blob (§V18).
+capped so a crafted value cannot carry an oversized blob.
 
 The list is unbounded in principle (a live feed accretes over time), so it pages
-through the bounded :class:`~arknights_mcp.models.common.PageParams` (§V22/§V19); the
+through the bounded :class:`~arknights_mcp.models.common.PageParams`; the
 page bounds surface in the tool ``inputSchema`` exactly as validated.
 """
 
@@ -24,20 +24,20 @@ from arknights_mcp.models.common import (
 
 
 class GetAnnouncementsInput(StrictModel):
-    """Parameters for ``get_announcements`` (§I; §V5/§V19/§V22/§V56).
+    """Parameters for ``get_announcements``.
 
     ``server`` is mandatory so the listing is region-attributed and en/cn are never
-    silently mixed (§V5). ``since``/``until`` optionally window the announcements by
-    their stored ISO date (inclusive); both are length capped (§V18) AND ISO-date-shape
-    validated (§V19) so a non-date bound is rejected rather than lexicographically
+    silently mixed. ``since``/``until`` optionally window the announcements by
+    their stored ISO date (inclusive); both are length capped AND ISO-date-shape
+    validated so a non-date bound is rejected rather than lexicographically
     emptying the result. An accepted bound is also NORMALIZED to the canonical ISO
-    notation (§V116/B163), because the window compares TEXT: a basic-format
+    notation, because the window compares TEXT: a basic-format
     ``since="20260101"`` parses fine yet sorts above every stored ``2026-…`` date, which
-    used to empty a wide-open window. The bound RELATION is checked too (§V105/B143): a pair whose
+    used to empty a wide-open window. The bound RELATION is checked too: a pair whose
     window can match nothing (``since`` after ``until``) is rejected rather than answered
     with an empty list a client cannot tell from a genuinely empty window. ``page`` pages
-    the list through the bounded §V19 window so a single request never pulls an unbounded
-    slice (§V22).
+    the list through the bounded window so a single request never pulls an unbounded
+    slice.
     """
 
     server: Region

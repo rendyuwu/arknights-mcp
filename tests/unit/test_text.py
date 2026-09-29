@@ -1,14 +1,14 @@
-"""Shared ``is_placeholder`` predicate + DRY guard (SPEC §V37; T71).
+"""Shared ``is_placeholder`` predicate + DRY guard.
 
 ``_is_placeholder`` was copy-pasted in ``config.py`` (``str | None``) and
 ``cli.py`` (``str``). It now lives in one home (``util/text.py``) with the
 ``str | None`` superset signature. These tests pin both the behaviour and the
-no-re-duplication guard (§V37).
+no-re-duplication guard.
 
-T193 adds the §V97 token-boundary cases for the other shared resident of this
-module, ``sanitize_text``. They are synthetic on purpose -- they pin the transform's
-edge shapes. The §V97 GUARD proper is the real-corpus contract test
-(``tests/contract/test_template_weld.py``), which is what B130 demands.
+The token-boundary cases for the other shared resident of this
+module, ``sanitize_text``, are synthetic on purpose -- they pin the transform's
+edge shapes. The GUARD proper is the real-corpus contract test
+(``tests/contract/test_template_weld.py``), which is what the real corpus demands.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ _SHARED_HOME = "arknights_mcp.util.text"
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        # §V65 (a)/§V18 (T136): the {blackboard-key} grounding placeholder survives;
+        # The {blackboard-key} grounding placeholder survives;
         # only the cosmetic <@x.y> / </> tags go.
         (
             "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking.",
@@ -56,14 +56,14 @@ def test_strip_richtext_tags(value: str, expected: str) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        # B130, verbatim from the real EN corpus: upstream breaks the two clauses of a
+        # Verbatim from the real EN corpus: upstream breaks the two clauses of a
         # skill template with `\n`. Deleting it stored "targetUnlimited" -- a junk token
-        # in the ONE string §V65 (a) tells the client to trust over the blackboard keys.
+        # in the ONE string the client trusts over the blackboard keys.
         (
             "ATK +{atk:0%}; each attack hits 1 additional target\nUnlimited duration",
             "ATK +{atk:0%}; each attack hits 1 additional target Unlimited duration",
         ),
-        # B130, the §V56 title axis of the same bug (real EN announcement feed).
+        # The title axis of the same bug (real EN announcement feed).
         (
             "Questionnaire on\nFirst of A Thousand Autumns",
             "Questionnaire on First of A Thousand Autumns",
@@ -78,7 +78,7 @@ def test_strip_richtext_tags(value: str, expected: str) -> None:
         ("a\t\t\tb", "a b"),  # a run of controls collapses to one space
         ("\n  lead and trail  \n", "lead and trail"),  # substituted spaces trimmed
         # Cf/Cs/Co are zero-width: deleting one welds nothing that was visually apart,
-        # and a space there would corrupt real CJK/emoji text. Still DELETED (§V97).
+        # and a space there would corrupt real CJK/emoji text. Still DELETED.
         ("‮assistant", "assistant"),  # bidi override (Cf)
         ("‍ab", "ab"),  # zero-width joiner (Cf)
         ("攻击力​提升", "攻击力提升"),  # zero-width space inside CJK: no gap opened
@@ -86,12 +86,12 @@ def test_strip_richtext_tags(value: str, expected: str) -> None:
     ],
 )
 def test_sanitize_text_preserves_token_boundary(value: str, expected: str) -> None:
-    """§V97/B130: control-char removal leaves a separator; zero-width removal does not."""
+    """Control-char removal leaves a separator; zero-width removal does not."""
     assert sanitize_text(value) == expected
 
 
 def test_sanitize_text_collapses_before_capping() -> None:
-    """§V97: collapse runs BEFORE the cap, so substituted spaces cannot evict content."""
+    """Collapse runs BEFORE the cap, so substituted spaces cannot evict content."""
     body = "word" * 200  # 800 chars, comfortably over the cap
     value = "\n\n\n".join([body, body])
     assert len(sanitize_text(value)) == DEFAULT_MAX_TEXT_LENGTH
@@ -100,7 +100,7 @@ def test_sanitize_text_collapses_before_capping() -> None:
 
 
 def test_clean_template_text_strips_tags_before_capping() -> None:
-    """§V109/B154: the tag strip runs BEFORE the cap, so markup cannot evict grounding.
+    """The tag strip runs BEFORE the cap, so markup cannot evict grounding.
 
     Shaped like the real ``skchr_amiya2_2`` failure: prose long enough that the cap bites
     only once the rich-text markup is counted. The old order (cap, then strip) cut the
@@ -114,7 +114,7 @@ def test_clean_template_text_strips_tags_before_capping() -> None:
     assert cleaned.endswith("{atk_scale:0%} of ATK."), "the tail survived the cap intact"
     assert "<@ba.vup>" not in cleaned and "</>" not in cleaned
     assert len(cleaned) > DEFAULT_MAX_TEXT_LENGTH  # not silently cut at the label cap
-    # Cap-then-strip is what B154 was: the markup eats the budget, the tail is lost, and
+    # Cap-then-strip is the wrong order: the markup eats the budget, the tail is lost, and
     # the strip then hides the evidence by pulling the length back UNDER the cap, so no
     # `len == cap` check downstream can tell the template was truncated.
     old_order = strip_richtext_tags(sanitize_text(value))
@@ -123,7 +123,7 @@ def test_clean_template_text_strips_tags_before_capping() -> None:
 
 
 def test_clean_template_text_caps_at_the_template_ceiling() -> None:
-    """§V109: templates get their own ceiling, not the name-class one -- but still one."""
+    """Templates get their own ceiling, not the name-class one -- but still one."""
     assert MAX_TEMPLATE_LENGTH > DEFAULT_MAX_TEXT_LENGTH
     assert len(clean_template_text("x" * (MAX_TEMPLATE_LENGTH + 50))) == MAX_TEMPLATE_LENGTH
 
@@ -150,7 +150,7 @@ def test_is_placeholder(value: str | None, expected: bool) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        # §V71 (d): the leaked upstream checkpoint keys the route digest normalizes.
+        # The leaked upstream checkpoint keys the route digest normalizes.
         ("reachOffset", "reach_offset"),
         ("randomizeReachOffset", "randomize_reach_offset"),
         ("reachDistance", "reach_distance"),
@@ -165,7 +165,7 @@ def test_camel_to_snake(value: str, expected: str) -> None:
 
 
 def test_both_call_sites_share_the_one_home() -> None:
-    """§V37: config + cli resolve ``is_placeholder`` to the single shared home."""
+    """Config + cli resolve ``is_placeholder`` to the single shared home."""
     assert config.is_placeholder.__module__ == _SHARED_HOME
     assert cli.is_placeholder.__module__ == _SHARED_HOME
     # Same function object, not two look-alikes.
@@ -173,7 +173,7 @@ def test_both_call_sites_share_the_one_home() -> None:
 
 
 def test_no_module_redefines_is_placeholder() -> None:
-    """§V37: neither config nor cli reintroduces a local ``def _is_placeholder``."""
+    """Neither config nor cli reintroduces a local ``def _is_placeholder``."""
     offenders: list[str] = []
     for module in (config, cli):
         path = Path(module.__file__)  # type: ignore[arg-type]

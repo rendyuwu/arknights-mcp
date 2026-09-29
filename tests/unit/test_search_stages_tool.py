@@ -1,10 +1,10 @@
-"""§T33 ``search_stages`` tool tests (§V19/§V23; §I.tool).
+"""``search_stages`` tool tests.
 
 The tool is the model -> service -> envelope bridge for the stage-scoped search;
 these drive it end to end against the same production read-only path the service
-tests use (§V2). They assert the typed §V23 envelope shape, the §V5 region
-locator, the §V19 bound (rejected at the model gate + honored through the tool),
-and the §T33 headline: an exact ``stage_code`` match is ranked first -- ahead of a
+tests use. They assert the typed envelope shape, the region
+locator, the bound (rejected at the model gate + honored through the tool),
+and the headline: an exact ``stage_code`` match is ranked first -- ahead of a
 stage whose *name* merely contains the query.
 """
 
@@ -54,7 +54,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_search_stages_spec(lambda: conn).handler
 
 
-# --- §V23 typed envelope: ok result -------------------------------------------
+# --- typed envelope: ok result ------------------------------------------------
 
 
 def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
@@ -72,10 +72,10 @@ def test_ok_envelope_shape(conn: sqlite3.Connection) -> None:
 
 
 def test_results_are_region_tagged_stage_locators(conn: sqlite3.Connection) -> None:
-    # §V5 region travels per row; every hit is typed as a stage locator, and each
-    # carries the §V70 difficulty variant tag (may be null when source omits it).
-    # T186: the fixture stage's zone IS named ("Chapter 4"), so the attribution key
-    # rides too -- it is omitted, never null, when a zone has no name (§V67).
+    # Region travels per row; every hit is typed as a stage locator, and each
+    # carries the difficulty variant tag (may be null when source omits it).
+    # The fixture stage's zone IS named ("Chapter 4"), so the attribution key
+    # rides too -- it is omitted, never null, when a zone has no name.
     for row in _handler(conn)(query="Combustion").to_dict()["data"]["results"]:  # type: ignore[index]
         assert row["server"] == "en"
         assert row["entity_type"] == "stage"
@@ -98,14 +98,14 @@ def test_matches_by_name_and_game_id(conn: sqlite3.Connection) -> None:
 
 
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
-    # §V5: the en 4-4 is not surfaced under a cn-scoped search.
+    # The en 4-4 is not surfaced under a cn-scoped search.
     assert _handler(conn)(query="4-4", server="en").status == "ok"
-    # §V50/§V24 (B42): cn has no active snapshot in this en-only build, so a
+    # No active snapshot for cn in this en-only build, so a
     # cn-scoped stage search is ``data_stale`` -- never a bare ``not_found``.
     assert _handler(conn)(query="4-4", server="cn").status == "data_stale"
 
 
-# --- §T33 headline: exact stage_code ranked first -----------------------------
+# --- headline: exact stage_code ranked first -----------------------------------
 
 
 def _seed_provenance(conn: sqlite3.Connection) -> int:
@@ -146,7 +146,7 @@ def _insert_stage(
 
 
 def test_exact_stage_code_ranked_first(tmp_path: Path) -> None:
-    # §T33: a stage whose code is exactly "4-4" outranks stages that only share
+    # A stage whose code is exactly "4-4" outranks stages that only share
     # the "4"/"-4" tokens -- even one whose *name* literally contains "4-4".
     path = tmp_path / "stages.sqlite"
     writer = build_database(path)
@@ -180,11 +180,11 @@ def test_exact_code_match_is_case_insensitive(tmp_path: Path) -> None:
     assert rows[0]["stage_code"] == "GT-1"  # type: ignore[index]
 
 
-# --- §V70/B59: variant stages distinguishable by the difficulty locator tag ----
+# --- variant stages distinguishable by the difficulty locator tag -------------
 
 
 def test_v70_variant_stages_distinguishable_by_difficulty(tmp_path: Path) -> None:
-    # §V70/B59: a normal stage and its challenge variant share display_name +
+    # A normal stage and its challenge variant share display_name +
     # stage_code and differ only by the game-data "#f#" game_id suffix. The
     # locator carries a `difficulty` variant tag (the same value get_stage
     # returns), so a client can tell the two apart in one result set without
@@ -201,7 +201,7 @@ def test_v70_variant_stages_distinguishable_by_difficulty(tmp_path: Path) -> Non
         rows = _handler(conn)(query="4-4").to_dict()["data"]["results"]  # type: ignore[index]
 
     by_game_id = {row["game_id"]: row for row in rows}
-    # both variants surface, and they collide on display_name + stage_code (B59) ...
+    # both variants surface, and they collide on display_name + stage_code ...
     assert set(by_game_id) == {"main_04-04", "main_04-04#f#"}
     assert {r["display_name"] for r in rows} == {"Combustion"}
     assert {r["stage_code"] for r in rows} == {"4-4"}
@@ -209,17 +209,17 @@ def test_v70_variant_stages_distinguishable_by_difficulty(tmp_path: Path) -> Non
     # raw stage difficulty (the get_stage.difficulty domain).
     assert by_game_id["main_04-04"]["difficulty"] == "NORMAL"
     assert by_game_id["main_04-04#f#"]["difficulty"] == "FOUR_STAR"
-    # §V70: no two locators in one result set are indistinguishable -- some field
+    # No two locators in one result set are indistinguishable -- some field
     # beyond the raw game_id separates the pair.
     assert by_game_id["main_04-04"]["difficulty"] != by_game_id["main_04-04#f#"]["difficulty"]
 
 
 def test_stage_without_difficulty_omits_the_tag(tmp_path: Path) -> None:
-    # §V67 (B135/T196): a stage with no difficulty in source OMITS the key. This test
-    # used to pin the opposite ("keeps the key present with a null value", read as §V21
-    # additive) -- that is exactly the null §V67 forbids, since a client cannot tell
+    # A stage with no difficulty in source OMITS the key. This test
+    # used to pin the opposite ("keeps the key present with a null value", read as
+    # additive) -- that is exactly the null this rule forbids, since a client cannot tell
     # "this stage has no difficulty tier" from "the tier is unknown" out of a null. The
-    # row still arrives (the outer join never drops it), which is what §V21 protects; the
+    # row still arrives (the outer join never drops it), which is what additivity protects; the
     # variant tag is simply absent, and the locator stays distinguishable by game_id.
     path = tmp_path / "nodiff.sqlite"
     writer = build_database(path)
@@ -236,7 +236,7 @@ def test_stage_without_difficulty_omits_the_tag(tmp_path: Path) -> None:
 
 
 def test_v80_tough_and_easy_prefix_locators_truthful(tmp_path: Path) -> None:
-    # §V80/B84: the tough/easy variants of a stage carry source difficulty "NORMAL"
+    # The tough/easy variants of a stage carry source difficulty "NORMAL"
     # and share a display_name + stage_code with the normal stage -- only the
     # game_id prefix separates them. The locator's difficulty tag is derived from the
     # prefix, so the tough locator reports TOUGH (never NORMAL) and the easy locator
@@ -259,39 +259,39 @@ def test_v80_tough_and_easy_prefix_locators_truthful(tmp_path: Path) -> None:
         "tough_14-06": "TOUGH",
         "easy_14-06": "EASY",
     }
-    # §V80: a tough_*/easy_* locator is NEVER left NORMAL.
+    # A tough_*/easy_* locator is NEVER left NORMAL.
     assert by_game_id["tough_14-06"] != "NORMAL"
     assert by_game_id["easy_14-06"] != "NORMAL"
 
 
-# --- §V23 typed envelope: not_found -------------------------------------------
+# --- typed envelope: not_found ------------------------------------------------
 
 
 def test_empty_result_is_ok_with_an_empty_list_and_a_reason(conn: sqlite3.Connection) -> None:
-    # §V106 (b)/B147: the sibling rule, stated identically here -- both search tools must
-    # answer an empty set the same way, which is exactly what B147 found they did not do.
+    # The sibling rule, stated identically here -- both search tools must
+    # answer an empty set the same way.
     env = _handler(conn)(query="zzzznotastage")
     assert env.status == "ok"
     assert env.to_dict()["data"] == {"query": "zzzznotastage", "count": 0, "results": []}
     assert any("No indexed stage matched" in lim for lim in env.limitations)
-    # §V24: an empty answer never suggests a query-time download/scrape.
+    # An empty answer never suggests a query-time download/scrape.
     assert all("download" not in lim.lower() for lim in env.limitations)
 
 
 def test_metacharacter_only_query_reports_its_own_empty_reason(conn: sqlite3.Connection) -> None:
     # A query of only FTS metacharacters holds no word token -> nothing to search, which
-    # is a different empty case from a search that ran and matched nothing (§V106 b).
+    # is a different empty case from a search that ran and matched nothing.
     env = _handler(conn)(query="*:^()")
     assert env.status == "ok"
     assert any("no letters or digits" in lim for lim in env.limitations)
     assert all("No indexed stage matched" not in lim for lim in env.limitations)
 
 
-# --- §V19: bounded window -----------------------------------------------------
+# --- bounded window -----------------------------------------------------------
 
 
 def test_out_of_range_limit_rejected_at_gate(conn: sqlite3.Connection) -> None:
-    # §V19: the model gate *rejects* an out-of-range limit; the tool never runs a
+    # The model gate *rejects* an out-of-range limit; the tool never runs a
     # silently widened/narrowed search. Mirrors the service-level rejection.
     handler = _handler(conn)
     for bad in (0, -1, MAX_LIMIT + 1, 100):
@@ -300,13 +300,13 @@ def test_out_of_range_limit_rejected_at_gate(conn: sqlite3.Connection) -> None:
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(query="4-4", entity_type="stage")
 
 
 def test_limit_bound_honored_through_tool(tmp_path: Path) -> None:
-    # §V19: even asking for the max, the tool returns at most MAX_LIMIT rows, and
+    # Even asking for the max, the tool returns at most MAX_LIMIT rows, and
     # the default caps at 10 -- no bulk dump escapes the bound end to end.
     path = tmp_path / "many.sqlite"
     writer = build_database(path)
@@ -322,7 +322,7 @@ def test_limit_bound_honored_through_tool(tmp_path: Path) -> None:
         assert handler(query="Sarkaz").to_dict()["data"]["count"] == 10
 
 
-# --- §V23 fail-closed failures ------------------------------------------------
+# --- fail-closed failures -----------------------------------------------------
 
 
 def test_database_unavailable_envelope() -> None:
@@ -333,7 +333,7 @@ def test_database_unavailable_envelope() -> None:
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V23: no local path / file name leaks into the client-facing message.
+    # No local path / file name leaks into the client-facing message.
     assert data["message"] == "the active database is unavailable"
     assert "cand.sqlite" not in str(data)
 
@@ -344,12 +344,12 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_search_stages_spec(boom).handler(query="4-4")
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # The fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §I.tool / §V14 wire contract ---------------------------------------------
+# --- wire contract ------------------------------------------------------------
 
 
 def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) -> None:
@@ -359,29 +359,29 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert spec.read_only is True
     tool = spec.to_mcp_tool()
     assert tool.annotations is not None and tool.annotations.readOnlyHint is True
-    # The bounded model's §V19 limit + §V18 caps ride the wire in inputSchema.
+    # The bounded model's limit + caps ride the wire in inputSchema.
     assert tool.inputSchema["properties"]["limit"]["maximum"] == MAX_LIMIT
     assert tool.inputSchema["additionalProperties"] is False
 
 
-# --- §V71/§V75 search coverage docs (B97) --------------------------------------
+# --- search coverage docs -----------------------------------------------------
 
 
 def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) -> None:
-    # B97: same coverage + region-order statements as the search_entities sibling
-    # (§V75 -- both descriptions, no silent divergence; §V71 client-facing text).
+    # Same coverage + region-order statements as the search_entities sibling
+    # -- both descriptions, no silent divergence; client-facing text.
     desc = build_search_stages_spec(lambda: conn).description
     assert "English and Chinese only" in desc
     assert "Japanese or Korean" in desc
     assert "fuzzy" in desc
-    # T179: zone names now ride stage documents as aliases -- the description states
+    # Zone names now ride stage documents as aliases -- the description states
     # the coverage instead of the retired "not indexed" caveat.
     assert "A zone name (for example Gavial's Footprints)" in desc
     assert "matches the stages in that zone" in desc
-    # T186/B113 + §T207/§V84: §V75 still requires this sibling to carry the alias
+    # This sibling still carries the alias
     # ranking rule and the zone_display_name attribution -- it now carries the POINTER
     # to their single home, because stated inline in both siblings they formed the
-    # >=500-char identical block §V84 forbids.
+    # >=500-char identical block that must not be duplicated.
     guide = dict(SEARCH_COVERAGE_ENTRIES)
     assert (
         "listed after every entity that matched on its own name" in guide["zone_and_event_ranking"]
@@ -396,8 +396,8 @@ def test_description_states_coverage_and_region_order(conn: sqlite3.Connection) 
 
 
 def test_empty_limitation_states_encn_only(conn: sqlite3.Connection) -> None:
-    # B97: the empty-result escape hatch carries the en/cn-names-only coverage note. It
-    # rides the ``ok`` limitation since T198 (§V106 b), not a not_found suggested_action.
+    # The empty-result escape hatch carries the en/cn-names-only coverage note. It
+    # rides the ``ok`` limitation, not a not_found suggested_action.
     env = _handler(conn)(query="zzzznotastage")
     assert env.status == "ok"
     assert any("English and Chinese only" in lim for lim in env.limitations)

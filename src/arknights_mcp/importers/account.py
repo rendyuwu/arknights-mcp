@@ -5,7 +5,7 @@ an allowlisted :class:`AccountRoster`: owned operators (elite, level, potential,
 skill level, per-skill mastery, unlocked modules, equipped module, current skin),
 owned skins, inventory, and the LMD balance. Everything else in ``user`` --
 nickname, player uid, friends, squads, stage progress, gacha state -- is never
-read (§V15/§V18).
+read.
 
 The allowlists live here, not in ``field_policy.py``: this is personal data, not
 a dataset, and ``FIELD_POLICY_VERSION`` feeds the game-data snapshot hash.
@@ -101,7 +101,7 @@ def _count(value: Any) -> int | None:
 
 
 def _shape_error(path: str) -> SourceAdapterError:
-    # The path only, never a value (§V12).
+    # The path only, never a value.
     return SourceAdapterError(f"unexpected syncData shape: {path}")
 
 

@@ -1,12 +1,12 @@
-"""T98: migration 0011 alias `locale` tag (§V17/§V57).
+"""Migration 0011 alias `locale` tag.
 
 Adds a ``locale`` column (+ index) to the two near-identical alias tables so each
 stored alias carries the language-locale of its string, unblocking the v0.2
-extra-locale alias work (T99/T100). These tests assert the migration applies cleanly
+extra-locale alias work. These tests assert the migration applies cleanly
 on both ``operator_aliases`` and ``enemy_aliases``, that the index exists, that
 ``integrity_check`` + ``foreign_key_check`` still pass, and that the SQL backfill tags
 a pre-0011 alias with its region's locale (en->``en``, cn->``zh``) via the same
-cn->zh coupling the importer uses (``REGION_TO_NAME_LOCALE``, §V37).
+cn->zh coupling the importer uses (``REGION_TO_NAME_LOCALE``).
 
 The fresh-build locale stamp is done by the importer (tested in
 ``test_import_operators``); this migration's UPDATE only matters for a populated /
@@ -87,7 +87,7 @@ def test_integrity_and_foreign_key_checks_pass(tmp_path: Path) -> None:
 
 
 def test_backfill_tags_existing_operator_aliases_by_region(tmp_path: Path) -> None:
-    # §V57: a pre-0011 alias with a NULL locale is tagged from its operator's region
+    # A pre-0011 alias with a NULL locale is tagged from its operator's region
     # (en->en, cn->zh). The migration's own UPDATE is exercised so a code/SQL drift
     # is caught. On a real fresh build this matches nothing (importer stamps instead).
     conn = build_database(tmp_path / "cand.sqlite")
@@ -122,9 +122,9 @@ def test_backfill_tags_existing_operator_aliases_by_region(tmp_path: Path) -> No
 
 
 def test_backfill_tags_existing_enemy_aliases_by_region(tmp_path: Path) -> None:
-    # §V57 symmetric path: enemy_aliases (kept symmetric with operator_aliases per
-    # §V37) is tagged the same way, even though the enemy importer does not currently
-    # populate aliases -- the column + backfill must still be correct for T99/T100.
+    # Symmetric path: enemy_aliases is tagged the same way (kept symmetric with
+    # operator_aliases), even though the enemy importer does not currently
+    # populate aliases -- the column + backfill must still be correct.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)

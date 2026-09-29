@@ -1,19 +1,19 @@
-"""Announcement metadata read repository (§V2; §T96).
+"""Announcement metadata read repository.
 
 Encapsulates the parameterized ``SELECT`` that backs :func:`get_announcements`:
 every ``announcements`` row for a region, joined to its ``record_provenance`` ->
-``source_snapshots`` chain so each announcement carries its OWN provenance (§V5/§V17),
+``source_snapshots`` chain so each announcement carries its OWN provenance,
 distinct from the game-data / drop facts. An optional ``since``/``until`` date window
-narrows the set at the SQL layer (parameterized, §V2).
+narrows the set at the SQL layer (parameterized).
 
-The scope is METADATA-ONLY (§V56, extends §V16): the row shape is exactly the five
+The scope is METADATA-ONLY: the row shape is exactly the five
 metadata columns the 0010 schema can hold (``announce_id``/``title``/``date``/``url``/
 ``category``) -- there is no body/html/prose column to select, so a prose leak is
 impossible at this layer. ``region`` is carried explicitly so an announcement stands
-alone (§V5); en and cn are never mixed (the WHERE gates on the requested region).
+alone; en and cn are never mixed (the WHERE gates on the requested region).
 
 Rows are returned as flat, typed dataclasses mirroring the selected columns 1:1;
-the page slicing + provenance dedup stay in the service. Every value is bound (§V2).
+the page slicing + provenance dedup stay in the service. Every value is bound.
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from arknights_mcp.db.repositories.base import Repository
 
 @dataclass(frozen=True)
 class AnnouncementRow:
-    """One ``announcements`` row plus its provenance stamps (metadata-only, §V56).
+    """One ``announcements`` row plus its provenance stamps (metadata-only).
 
     ``title``/``date``/``url``/``category`` are nullable metadata (a real feed row
-    may omit any, §T95). ``snapshot_id`` + ``imported_at`` are the announcement's own
-    provenance chain (§V5/§V17). A ``None`` field means the datum was absent upstream,
-    never a fabricated value (§V26). There is deliberately no body/html/prose field --
-    the schema itself cannot hold one (§V16/§V56).
+    may omit any). ``snapshot_id`` + ``imported_at`` are the announcement's own
+    provenance chain. A ``None`` field means the datum was absent upstream,
+    never a fabricated value. There is deliberately no body/html/prose field --
+    the schema itself cannot hold one.
     """
 
     announce_id: str
@@ -45,21 +45,21 @@ class AnnouncementRow:
     imported_at: str
 
 
-# Every announcement for a region, joined to its own provenance chain (§V5/§V17). The
+# Every announcement for a region, joined to its own provenance chain. The
 # since/until window is applied at the SQL layer via the "(? IS NULL OR a.date >= ?)"
 # idiom: a NULL bound leaves that side open; a set bound narrows by the stored ISO date
 # string (lexicographic compare is date-order-correct for ISO-8601). No upper-bound
 # sentinel is needed here (unlike the banner archive's "until || '~'"): the column is a
 # day-granular "YYYY-MM-DD" and the service renders both bounds to that same form before
-# calling (§V116/B163), so "a.date <= :until" already includes the until DAY. A bound
+# calling, so "a.date <= :until" already includes the until DAY. A bound
 # arriving in another ISO notation is what emptied this window silently (a basic-format
 # "20260101" sorts above every stored "2026-.." date) -- the render, not this SQL, is the
 # fix, because the same bound must collate identically here and in the window guard. A row
 # with a NULL
 # date is excluded once EITHER bound is set (it cannot be placed in the window), but
 # kept when the window is fully open. Ordered by date DESC then announce_id so the
-# newest announcements page first and the payload is deterministic + reproducible
-# (§V26); NULL dates sort last under DESC.
+# newest announcements page first and the payload is deterministic + reproducible.
+# NULL dates sort last under DESC.
 _ANNOUNCEMENTS_SQL = (
     "SELECT a.announce_id, a.title, a.date, a.url, a.category, a.region, "
     "p.snapshot_id, ss.imported_at "
@@ -97,14 +97,14 @@ def _to_announcement_row(row: Any) -> AnnouncementRow:
 
 
 class AnnouncementRepository(Repository):
-    """Read-only access to the announcement metadata cache (§V2)."""
+    """Read-only access to the announcement metadata cache."""
 
     def announcements_for_region(
         self, region: str, *, since: str | None = None, until: str | None = None
     ) -> list[AnnouncementRow]:
         """Every announcement for ``region`` within the optional ``since``/``until``
-        date window, newest first (§V26). Region-scoped so en/cn are never mixed
-        (§V5); both bounds parameterized (§V2)."""
+        date window, newest first. Region-scoped so en/cn are never mixed;
+        both bounds parameterized."""
         return [
             _to_announcement_row(r)
             for r in self._all(_ANNOUNCEMENTS_SQL, (region, since, since, until, until))

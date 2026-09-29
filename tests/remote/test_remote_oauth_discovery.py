@@ -1,12 +1,12 @@
-"""§T81/§V45: RFC 9728 OAuth discovery over the real loopback wire.
+"""RFC 9728 OAuth discovery over the real loopback wire.
 
 The unit suite (`tests/unit/test_protected_resource_metadata.py`) proves the discovery
 layer in isolation with a raw ASGI drive. This closes the on-the-wire gap the memo
 called out: through the *full* auth-requiring remote stack served by uvicorn -- exactly
 as `claude mcp login` would hit it -- the protected-resource metadata is reachable
 **without a bearer**, while ``/mcp`` still refuses an unauthenticated request ``401``
-and points the client at that metadata (RFC 9728 §5.1). Offline: build + JWKS local
-(no network, §V1/§V10), shared scaffolding in :mod:`tests.support.remote_harness`.
+and points the client at that metadata (RFC 9728 section 5.1). Offline: build + JWKS local
+(no network), shared scaffolding in :mod:`tests.support.remote_harness`.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def _origin(mcp_url: str) -> str:
 def test_protected_resource_metadata_served_without_bearer(
     secured_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V45: the RFC 9728 metadata is reachable with NO Authorization header, at both
+    # The RFC 9728 metadata is reachable with NO Authorization header, at both
     # the bare well-known root and the resource-path-suffixed form.
     url, issuer = secured_server
     origin = _origin(url)
@@ -50,9 +50,9 @@ def test_protected_resource_metadata_served_without_bearer(
         assert resp.status_code == 200, path
         assert resp.headers["content-type"].startswith("application/json")
         doc = resp.json()
-        # Advertises the issuer ONLY -- the client fetches AS metadata from it (§V1).
+        # Advertises the issuer ONLY -- the client fetches AS metadata from it.
         assert doc["authorization_servers"] == [issuer.settings.issuer]
-        # §V45 scope split (B126): the ADVERTISE list on the wire -- a superset of the
+        # The scope split: the ADVERTISE list on the wire -- a superset of the
         # required scopes, carrying the flow-only `offline_access` so an interactive
         # client asks for a refresh token instead of a bearer dead in ~24h.
         assert doc["scopes_supported"] == list(issuer.settings.advertised_scopes)
@@ -60,7 +60,7 @@ def test_protected_resource_metadata_served_without_bearer(
         assert "offline_access" in doc["scopes_supported"]
         assert doc["bearer_methods_supported"] == ["header"]
         assert doc["resource"].endswith("/mcp")
-        # §V12: the discovery document leaks no secret and never proxies AS metadata.
+        # The discovery document leaks no secret and never proxies AS metadata.
         assert "oauth-authorization-server" not in resp.text
         assert issuer.settings.jwks_url not in resp.text
 
@@ -68,8 +68,8 @@ def test_protected_resource_metadata_served_without_bearer(
 def test_mcp_still_requires_bearer_and_points_at_metadata(
     secured_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V10 preserved: opening discovery did NOT open /mcp -- an unauthenticated POST is
-    # still 401, and the challenge carries the RFC 9728 §5.1 resource_metadata hint so
+    # Opening discovery did NOT open /mcp -- an unauthenticated POST is
+    # still 401, and the challenge carries the RFC 9728 section 5.1 resource_metadata hint so
     # a client can bootstrap from the 401 alone.
     url, _issuer = secured_server
     resp = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}, timeout=30)
@@ -83,7 +83,7 @@ def test_mcp_still_requires_bearer_and_points_at_metadata(
 def test_token_without_advertised_flow_scope_is_accepted(
     secured_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V45/§V10 (B126): `offline_access` is ADVERTISED, never REQUIRED -- the AS turns
+    # `offline_access` is ADVERTISED, never REQUIRED -- the AS turns
     # it into a refresh token and never mints it into the access token. So a bearer
     # granting only `arknights:read` must still be accepted over the wire; had the fix
     # instead appended the scope to `required_scopes`, this exact token -- the only

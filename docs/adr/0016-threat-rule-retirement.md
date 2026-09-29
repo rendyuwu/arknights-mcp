@@ -1,13 +1,13 @@
 # ADR 0016 — Retire three threat rules that no source can feed; revive the rest from the bridge
 
-Status: Accepted (2026-07-29, §T210 / §B160 / §V113)
+Status: Accepted (2026-07-29)
 
 Supersedes nothing. Extends the analyzer scope set by D5 (stage/enemy intelligence)
 and D8 (conservative, evidence-backed advice).
 
 ## Context
 
-The M3 rule engine (§T39) registered nine deterministic threat rules. Counted over the
+The M3 rule engine registered nine deterministic threat rules. Counted over the
 promoted build `2026-07-28T170428Z-en-cn` and the pinned snapshot `413a81a3`, **four of
 them had never emitted a single observation** over 3264 EN + 1200 CN stages, and a fifth
 (`threat.aerial`) only ever fired one of its two arms:
@@ -27,11 +27,11 @@ them had never emitted a single observation** over 3264 EN + 1200 CN stages, and
 The cause was one layer below the rules: six allowlisted enemy columns were 100% NULL
 (`enemy_levels.{attack_range,block_behavior,targeting,immunities_json,abilities_json}`
 0/4343 and `enemies.attack_type` 0/3879). Nothing could see it. A rule reading an
-always-NULL field takes its own §V26 "field missing → reduce confidence or record a
+always-NULL field takes its own "field missing → reduce confidence or record a
 limitation" arm and returns **clean**, and every synthetic-fixture unit test passed
-because the fixtures handed the parser already-normalized keys the §V30 bridge never
-emitted. §V113 now names that class (*fetched ≠ normalized ≠ STORED*) and §B160 carries
-the counts.
+because the fixtures handed the parser already-normalized keys the bridge never
+emitted. That class is now named (*fetched ≠ normalized ≠ STORED*), with the counts
+recorded.
 
 The emptiness had three different causes, so it needed three different answers:
 
@@ -47,7 +47,8 @@ The emptiness had three different causes, so it needed three different answers:
 3. **No home at all.** `blockBehavior` and `abilities` exist in no real source.
    `attributes.blockCnt` is `m_defined:false` on 2031/2036 entries, and every
    unblockable / crowd-control / support statement upstream is either PROSE
-   (`abilityList[].text`, "Cannot be blocked." ×37 — which §V26 forbids reading) or the
+   (`abilityList[].text`, "Cannot be blocked." ×37 — which the missing-field rule
+  forbids reading) or the
    free-form `skills[].prefabKey`, 626 distinct values over 1378 rows with no pinned
    vocabulary.
 
@@ -55,8 +56,8 @@ The emptiness had three different causes, so it needed three different answers:
 
 **(1) and (2) are revived from their counted upstream homes.** The bridge maps
 `rangeRadius`→`attack_range` (keeping upstream's `-1.0` no-radius sentinel out of a
-distance column, §V103), `applyWay`→`targeting`, and the nine immunity flags into one
-`immunities` list (§V67). `damageType` is imported into a new list column
+distance column), `applyWay`→`targeting`, and the nine immunity flags into one
+`immunities` list. `damageType` is imported into a new list column
 (migration 0017) and `enemies.attack_type` stays, declared `retired` with its counted
 evidence, so a future reader can tell "upstream went empty" from "this server forgot to
 read it". `threat.ranged_arts` decides from all three, reading `targeting` **before** any
@@ -71,9 +72,9 @@ The rejected alternative was re-grounding the three on a classifier over
 `skills[].prefabKey`. Substring matches there are non-degenerate (crowd-control-shaped
 hits on 34/2036 level entries, aura 61, bypass 50), so it would have produced
 observations — but the *meaning* of tokens like `Blink`, `StartRun` and `charge` is
-unverified, and §V29/§V96 forbid deciding a source token's semantics by inspection.
+unverified, and deciding a source token's semantics by inspection is forbidden.
 Rules built on it would state facts nobody had checked, which is worse than stating
-nothing: §V8 already gates a low-confidence finding out of a recommendation, and D8 makes
+nothing: a low-confidence finding is already gated out of a recommendation, and D8 makes
 "conservative and evidence-backed" the posture. A rule with no evidence available to it
 is not a conservative rule, it is an absent one.
 
@@ -82,11 +83,11 @@ is not a conservative rule, it is an absent one.
 * The registry is six rules, and every one owns a deciding field the real build
   populates, counted and pinned — `tests/contract/test_column_liveness.py` now has **no
   exemption list**, so a future rule added against an empty column fails on the rule
-  rather than four milestones later on a zero-observation count (§V113 (b)).
+  rather than four milestones later on a zero-observation count.
 * No client-visible capability is lost. The three rules emitted zero observations on
   every build ever promoted, so no response has ever contained one. `get_enemy` and
-  `analyze_stage` gain `damage_types` / `targeting` / `immunities` additively (§V21), and
-  a standing limitation states — with its true, corpus-wide scope (§V108) — that
+  `analyze_stage` gain `damage_types` / `targeting` / `immunities` additively, and
+  a standing limitation states — with its true, corpus-wide scope — that
   `block_behavior` and `abilities` exist for no enemy and that an analysis therefore
   never reports those three threats.
 * The PRD's illustrative observation `block_bypass_risk`, whose example evidence is
@@ -98,4 +99,4 @@ is not a conservative rule, it is an absent one.
   direction too — if a source starts filling `blockBehavior` or `abilities`, the
   declaration flips to `live` and the test demands the rule come back.
 * `FIELD_POLICY_VERSION` 11→12 and `TRANSFORM_VERSION` 5→6, so the re-import promotes
-  over an unchanged snapshot (§V92).
+  over an unchanged snapshot.

@@ -1,4 +1,4 @@
-"""§T90/§T129 farming-efficiency analyzer tests (§V6, §V8, §V26, §V55, §V7, §V66.1).
+"""Farming-efficiency analyzer tests.
 
 Drive :func:`~arknights_mcp.analyzers.farming.analyze_farming` /
 :func:`~arknights_mcp.analyzers.farming.analyze_item_farming` directly over typed,
@@ -6,27 +6,27 @@ DB-free contexts (the ``get_stage_drops`` / ``get_item_drops`` services build th
 from the penguin drop cache + the stage's sanity cost). The analyzer is pure, so
 these assert the deterministic contract without a database.
 
-Emission shape (§V66.1/§T129): each entry point emits a SINGLE ranked observation.
-The five §V6 fields are stated once at the observation level; per-entity data lives
+Emission shape: each entry point emits a SINGLE ranked observation.
+The five fields are stated once at the observation level; per-entity data lives
 in ``ranking`` rows ``{id, name, sanity_per_item}`` ranked ascending; a row carries
 its own ``confidence`` + a typed ``expired``/``flags`` marker ONLY where it deviates
 (thin sample / expired), and the sentence explaining each condition is hoisted ONCE
-onto the observation-level limitations (§V85/B93). These tests assert:
+onto the observation-level limitations. These tests assert:
 
 * one observation with rule_id + confidence + analyzer_version once, and ranking
-  rows whose ``id`` REFERENCES the sibling facts (no re-copied numbers, §V66.1/§V6);
+  rows whose ``id`` REFERENCES the sibling facts (no re-copied numbers);
 * a fresh, well-sampled row is non-deviating (omits its own confidence + markers)
-  and the observation baseline confidence is at/above the §V8 threshold;
+  and the observation baseline confidence is at/above the threshold;
 * a drop sample below the floor / an unreported sample -> that row deviates below the
-  §V8 threshold with a typed flag, the sentence hoisted once (§V8/§V55/§V85);
-* an expired cache -> every row is downgraded below the §V8 threshold and marked
-  expired (§V53/§V55), both caveats fire together when a row is also thin;
-* N deviating rows -> each hoisted sentence appears exactly once, never per row (§V85);
-* a missing sanity cost or absent/zero drop rate -> a §V26 warning + no observation,
+  threshold with a typed flag, the sentence hoisted once;
+* an expired cache -> every row is downgraded below the threshold and marked
+  expired, both caveats fire together when a row is also thin;
+* N deviating rows -> each hoisted sentence appears exactly once, never per row;
+* a missing sanity cost or absent/zero drop rate -> a warning + no observation,
   never a fabricated or divide-by-zero conclusion;
-* the ranking is ascending by sanity per item, tie-broken deterministically (§V60);
-* summaries state the computed cost, never a "best farm"/"mandatory" verdict (§V7);
-* §V37: the stage view and the item comparison share one figure + confidence core.
+* the ranking is ascending by sanity per item, tie-broken deterministically;
+* summaries state the computed cost, never a "best farm"/"mandatory" verdict;
+* the stage view and the item comparison share one figure + confidence core.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _ctx(
 
 
 def _obs(analysis) -> RankedObservation:  # type: ignore[no-untyped-def]
-    """The single ranked observation the analysis must carry (§V66.1)."""
+    """The single ranked observation the analysis must carry."""
     assert analysis.observation is not None
     return analysis.observation
 
@@ -88,29 +88,29 @@ def _rows(analysis) -> dict[str, object]:  # type: ignore[no-untyped-def]
     return {row.id: row for row in _obs(analysis).ranking}
 
 
-# --- §V66.1/§V6: ONE ranked observation, fields once, rows reference the facts ---
+# --- ONE ranked observation, fields once, rows reference the facts ---------------
 
 
 def test_single_ranked_observation_carries_the_five_fields_once() -> None:
     obs = _obs(analyze_farming(_ctx(_drop())))
-    # §V6 identity stated once at the observation level.
+    # Identity stated once at the observation level.
     assert obs.rule_id == RULE_ID
     assert obs.category == "farming"
     assert obs.tag == "sanity_per_item"
     assert 0.0 <= obs.confidence <= 1.0
     assert isinstance(obs.limitations, tuple)
     assert obs.analyzer_version == ANALYZER_VERSION
-    # §V66.1: the per-entity data lives in ranking rows, not N observations.
+    # The per-entity data lives in ranking rows, not N observations.
     assert len(obs.ranking) == 1
     row = obs.ranking[0]
-    # §V66.1: the row's id REFERENCES the sibling drops facts (never a re-copied number).
+    # The row's id REFERENCES the sibling drops facts (never a re-copied number).
     assert row.id == "sugar"
     assert row.name == "Sugar"
     assert row.sanity_per_item == 72.0  # 18 / 0.25
 
 
 def test_ranking_row_omits_reinstated_numbers() -> None:
-    # §V66.1: a row carries only {id, name, sanity_per_item} (+ deviation fields); the
+    # A row carries only {id, name, sanity_per_item} (+ deviation fields); the
     # sanity_cost / drop_rate / sample_size are NOT re-copied -- they live in the
     # sibling drops list the client joins on via ``id``.
     row = _obs(analyze_farming(_ctx(_drop()))).ranking[0]
@@ -124,36 +124,36 @@ def test_sanity_per_item_computed_from_typed_fields() -> None:
     assert row.sanity_per_item == 72.0
 
 
-# --- §V8/§V55: a non-deviating row omits its own confidence/limitation ----------
+# --- a non-deviating row omits its own confidence/limitation ---------------------
 
 
 def test_sufficient_sample_row_is_non_deviating() -> None:
     obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR))))
-    # §V8: fresh + well-sampled -> the observation baseline is a recommendation-grade
+    # Fresh + well-sampled -> the observation baseline is a recommendation-grade
     # confidence and the row inherits it (its own confidence/markers are omitted).
     assert obs.confidence >= 0.5
     row = obs.ranking[0]
     assert row.confidence is None
     assert row.flags == () and row.expired is False
-    # §V85: no deviating row -> no hoisted sentence at the observation level either.
+    # No deviating row -> no hoisted sentence at the observation level either.
     assert obs.limitations == ()
 
 
-# --- §V8/§V55: a thin / unreported sample -> that row deviates below the floor ---
+# --- a thin / unreported sample -> that row deviates below the floor --------------
 
 
 def test_thin_sample_row_deviates_with_flag_and_hoisted_sentence() -> None:
     obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1))))
     row = obs.ranking[0]
-    # §V8: below the floor the figure is not a recommendation -- row confidence < 0.5.
+    # Below the floor the figure is not a recommendation -- row confidence < 0.5.
     assert row.confidence is not None and row.confidence < 0.5
-    # §V85: the row carries the typed flag; the sentence lives once on the observation.
+    # The row carries the typed flag; the sentence lives once on the observation.
     assert FLAG_THIN_SAMPLE in row.flags
     assert any("below the" in lim and "floor" in lim for lim in obs.limitations)
 
 
 def test_missing_sample_size_row_is_unverified_not_zero() -> None:
-    # §V26: an absent sample size is not treated as a stable rate -- the row deviates
+    # An absent sample size is not treated as a stable rate -- the row deviates
     # with reduced confidence + a flag, never silently accepted as well-sampled.
     obs = _obs(analyze_farming(_ctx(_drop(sample_size=None))))
     row = obs.ranking[0]
@@ -162,22 +162,22 @@ def test_missing_sample_size_row_is_unverified_not_zero() -> None:
     assert any("sample size" in lim and "unverified" in lim for lim in obs.limitations)
 
 
-# --- §V53/§V55: expired cache -> the row is downgraded, not fresh ---------------
+# --- expired cache -> the row is downgraded, not fresh ---------------------------
 
 
 def test_expired_cache_row_downgraded_to_limitation() -> None:
     obs = _obs(analyze_farming(_ctx(_drop(), expired=True)))
     row = obs.ranking[0]
-    # §V55: an expired figure is never a fresh recommendation.
+    # An expired figure is never a fresh recommendation.
     assert row.confidence is not None and row.confidence < 0.5
     assert row.expired is True
     assert any("expired" in lim for lim in obs.limitations)
 
 
 def test_expired_and_thin_sample_row_carries_both_caveats() -> None:
-    # §V6/§V55: when a drop is BOTH expired and below the sample floor, neither cause
+    # When a drop is BOTH expired and below the sample floor, neither cause
     # masks the other -- the row records both markers (stale AND noisy), not just one,
-    # and both hoisted sentences ride the observation (§V85).
+    # and both hoisted sentences ride the observation.
     obs = _obs(analyze_farming(_ctx(_drop(sample_size=SAMPLE_SIZE_FLOOR - 1), expired=True)))
     row = obs.ranking[0]
     assert row.confidence is not None and row.confidence < 0.5
@@ -186,11 +186,11 @@ def test_expired_and_thin_sample_row_carries_both_caveats() -> None:
     assert any("below the" in lim and "floor" in lim for lim in obs.limitations)
 
 
-# --- §V85/B93: the deviation sentence is hoisted ONCE, never repeated per row ----
+# --- the deviation sentence is hoisted ONCE, never repeated per row ---------------
 
 
 def test_v85_thin_sample_sentence_hoisted_once_across_many_rows() -> None:
-    # §V85/B93: N thin rows -> ONE observation-level sentence + a per-row flag, never
+    # N thin rows -> ONE observation-level sentence + a per-row flag, never
     # the identical sentence verbatim on every row (~20 repeats in the live eval).
     obs = _obs(
         analyze_farming(
@@ -200,7 +200,7 @@ def test_v85_thin_sample_sentence_hoisted_once_across_many_rows() -> None:
     thin_sentences = [lim for lim in obs.limitations if "floor" in lim]
     assert len(thin_sentences) == 1
     for row in obs.ranking:
-        # per-row: the typed flag + the reduced confidence stay (T174); no sentence.
+        # per-row: the typed flag + the reduced confidence stay; no sentence.
         assert row.flags == (FLAG_THIN_SAMPLE,)
         assert row.confidence is not None and row.confidence < 0.5
         assert not hasattr(row, "limitations")
@@ -227,7 +227,7 @@ def test_v85_hoisted_sentences_only_for_conditions_present() -> None:
     assert not any("floor" in lim for lim in lims)
 
 
-# --- §V26: missing inputs -> warning + no observation, never a fabrication -------
+# --- missing inputs -> warning + no observation, never a fabrication --------------
 
 
 def test_missing_sanity_cost_warns_and_makes_no_observation() -> None:
@@ -243,7 +243,7 @@ def test_absent_or_zero_drop_rate_warns_per_item_no_divide_by_zero() -> None:
     assert any("b: drop rate" in w for w in analysis.warnings)
 
 
-# --- §V7: conservative, no prescriptive language -------------------------------
+# --- conservative, no prescriptive language --------------------------------------
 
 
 def test_no_prescriptive_language() -> None:
@@ -252,7 +252,7 @@ def test_no_prescriptive_language() -> None:
     assert not any(word in blob for word in _PRESCRIPTIVE)
 
 
-# --- §V60/§V66.1: the ranking is ascending by sanity per item -------------------
+# --- the ranking is ascending by sanity per item -------------------------------
 
 
 def test_stage_ranking_ascending_by_sanity_per_item() -> None:
@@ -275,12 +275,12 @@ def test_stage_ranking_ascending_by_sanity_per_item() -> None:
 
 
 def test_stage_ranking_ties_broken_by_item_id() -> None:
-    # Equal sanity per item -> tie-broken by item_game_id, deterministically (§V26).
+    # Equal sanity per item -> tie-broken by item_game_id, deterministically.
     obs = _obs(analyze_farming(_ctx(_drop("zzz"), _drop("aaa"), _drop("mmm"))))
     assert [row.id for row in obs.ranking] == ["aaa", "mmm", "zzz"]
 
 
-# --- §T103/§V60: item -> stage comparison (reverse of the stage view) ----------
+# --- item -> stage comparison (reverse of the stage view) ----------------------
 
 
 def _stage_drop(
@@ -312,7 +312,7 @@ def _item_obs(analysis) -> RankedObservation:  # type: ignore[no-untyped-def]
 
 
 def test_item_comparison_ranked_ascending_by_sanity_per_item() -> None:
-    # §V60: lowest sanity-per-item first. 4-4 costs 18/0.25=72; a-1 costs 6/0.5=12;
+    # Lowest sanity-per-item first. 4-4 costs 18/0.25=72; a-1 costs 6/0.5=12;
     # b-2 costs 30/0.25=120. Seeded out of order -> ranking must reorder to 12, 72, 120.
     obs = _item_obs(
         analyze_item_farming(
@@ -325,7 +325,7 @@ def test_item_comparison_ranked_ascending_by_sanity_per_item() -> None:
     )
     ids = [row.id for row in obs.ranking]
     figures = [row.sanity_per_item for row in obs.ranking]
-    # §V68/B57: the row id is the unambiguous stage_game_id; the stage_code rides as name.
+    # The row id is the unambiguous stage_game_id; the stage_code rides as name.
     assert ids == ["level_a-1", "level_4-4", "level_b-2"]
     assert [row.name for row in obs.ranking] == ["a-1", "4-4", "b-2"]
     assert figures == [12.0, 72.0, 120.0]
@@ -333,7 +333,7 @@ def test_item_comparison_ranked_ascending_by_sanity_per_item() -> None:
 
 
 def test_item_comparison_carries_mandatory_limitations_on_observation() -> None:
-    # §V60/§V66.1: the mandatory availability / first-clear / byproduct caveats ride the
+    # The mandatory availability / first-clear / byproduct caveats ride the
     # single observation's observation-level limitations (stated once, not per row).
     obs = _item_obs(analyze_item_farming(_item_ctx(_stage_drop("4-4"), _stage_drop("a-1"))))
     blob = " ".join(obs.limitations).lower()
@@ -347,12 +347,12 @@ def test_item_comparison_no_ranking_no_observation() -> None:
     # mandatory caveats do not appear (the service reports not_found upstream).
     analysis = analyze_item_farming(_item_ctx(_stage_drop("4-4", drop_rate=None)))
     assert analysis.observation is None
-    # §V68: the warning names the unambiguous stage_game_id with the stage_code alongside.
+    # The warning names the unambiguous stage_game_id with the stage_code alongside.
     assert any("level_4-4 (4-4): drop rate" in w for w in analysis.warnings)
 
 
 def test_item_comparison_expired_stage_kept_not_dropped() -> None:
-    # §V60/§V53: an expired stage's figure is downgraded (its row deviates) but stays IN
+    # An expired stage's figure is downgraded (its row deviates) but stays IN
     # the ranking -- never dropped from the comparison.
     obs = _item_obs(
         analyze_item_farming(
@@ -367,7 +367,7 @@ def test_item_comparison_expired_stage_kept_not_dropped() -> None:
     expired_row = rows["level_a-1"]
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
     assert expired_row.expired is True
-    # §V85: the expiry sentence is hoisted once onto the observation, not on the row.
+    # The expiry sentence is hoisted once onto the observation, not on the row.
     assert any("expired" in lim for lim in obs.limitations)
     # the fresh stage is non-deviating (inherits the baseline)
     fresh = rows["level_4-4"]
@@ -375,7 +375,7 @@ def test_item_comparison_expired_stage_kept_not_dropped() -> None:
 
 
 def test_item_comparison_excludes_missing_inputs_with_warning() -> None:
-    # §V26: a stage with a missing sanity_cost or absent drop rate is excluded with a
+    # A stage with a missing sanity_cost or absent drop rate is excluded with a
     # warning, never a fabricated figure or a divide-by-zero.
     analysis = analyze_item_farming(
         _item_ctx(
@@ -391,7 +391,7 @@ def test_item_comparison_excludes_missing_inputs_with_warning() -> None:
 
 
 def test_item_comparison_observation_carries_five_fields() -> None:
-    # §V6: the ranked observation is fully attributed; the row id = the STAGE game_id.
+    # The ranked observation is fully attributed; the row id = the STAGE game_id.
     analysis = analyze_item_farming(_item_ctx(_stage_drop("4-4")))
     obs = _item_obs(analysis)
     assert obs.rule_id == RULE_ID
@@ -403,14 +403,14 @@ def test_item_comparison_observation_carries_five_fields() -> None:
 
 
 def test_item_comparison_no_prescriptive_language() -> None:
-    # §V7/§V55: an ordering + evidence, never a "best farm"/mandatory verdict.
+    # An ordering + evidence, never a "best farm"/mandatory verdict.
     obs = _item_obs(analyze_item_farming(_item_ctx(_stage_drop("4-4"), _stage_drop("a-1"))))
     blob = f"{obs.title} {obs.summary} {' '.join(obs.limitations)}".lower()
     assert not any(word in blob for word in _PRESCRIPTIVE)
 
 
 def test_item_comparison_ties_broken_deterministically() -> None:
-    # §V26/§V60: equal-cost stages rank by stage_code then game_id, deterministically.
+    # Equal-cost stages rank by stage_code then game_id, deterministically.
     obs = _item_obs(
         analyze_item_farming(
             _item_ctx(
@@ -423,11 +423,11 @@ def test_item_comparison_ties_broken_deterministically() -> None:
     assert [row.id for row in obs.ranking] == ["level_a-1", "level_m-5", "level_z-9"]
 
 
-# --- §V68/B57: evidence ref is the unambiguous stage_game_id, code shown alongside ---
+# --- evidence ref is the unambiguous stage_game_id, code shown alongside ---------
 
 
 def test_v68_item_ref_is_stage_game_id_not_shared_code() -> None:
-    # §V68/B57: two stages sharing stage_code "14-18" (a normal + tough pair) must get
+    # Two stages sharing stage_code "14-18" (a normal + tough pair) must get
     # DISTINCT refs -- the unambiguous stage_game_id -- with the shared code shown
     # alongside as ``name``, so the refs join 1:1 to the sibling stages facts list
     # (which keys on stage_game_id) instead of colliding on one undecidable "14-18".
@@ -443,17 +443,17 @@ def test_v68_item_ref_is_stage_game_id_not_shared_code() -> None:
     # main_10-09 = 18/0.25 = 72, tough_10-09 = 36/0.25 = 144 -> ascending main then tough.
     assert refs == ["main_10-09", "tough_10-09"]
     assert len(set(refs)) == 2  # two DISTINCT refs, not one ambiguous "14-18"
-    # §V68: the shared stage_code rides alongside as the display name, never as the ref.
+    # The shared stage_code rides alongside as the display name, never as the ref.
     assert all(row.name == "14-18" for row in obs.ranking)
     assert "14-18" not in refs
 
 
-# --- §V37: the stage view and the item comparison share ONE math + confidence core -
+# --- the stage view and the item comparison share ONE math + confidence core -------
 
 
 def test_v37_stage_and_item_views_agree_on_figure_and_confidence() -> None:
-    # §V37: analyze_farming (stage view) and analyze_item_farming (item view) compute
-    # the sanity-per-item figure and the §V8/§V55 confidence ladder in exactly one
+    # analyze_farming (stage view) and analyze_item_farming (item view) compute
+    # the sanity-per-item figure and the confidence ladder in exactly one
     # place, so for the same typed inputs the two views' ranking rows MUST agree on the
     # figure, the (deviating-or-not) confidence, and the limitations -- no second home.
     for sanity, rate, sample, expired in [

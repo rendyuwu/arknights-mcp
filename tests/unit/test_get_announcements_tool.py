@@ -1,26 +1,26 @@
-"""§T96 ``get_announcements`` tool tests (§V5/§V19/§V22/§V23/§V56; §I.tool).
+"""``get_announcements`` tool tests.
 
 The tool is the model -> service -> envelope bridge for the announcement metadata
-cache; these drive it end to end against the same production read-only path (§V2).
-The announcements are seeded through the REAL T95 importer with an in-memory fake
-fetcher (no live network, §V1), so the whole metadata-only pipeline (importer field
+cache; these drive it end to end against the same production read-only path.
+The announcements are seeded through the REAL importer with an in-memory fake
+fetcher (no live network), so the whole metadata-only pipeline (importer field
 allowlist -> repo -> service -> tool) is exercised. They assert:
 
-* the §V5 region + provenance ride every delivered result, and en announcements are
+* the region + provenance ride every delivered result, and en announcements are
   never surfaced under a cn query (en/cn never mixed);
-* the §V56/§V16 metadata-only contract: only announce_id/title/date/url/category/region
+* the metadata-only contract: only announce_id/title/date/url/category/region
   reach the wire -- a seeded body/html never survives to the client;
 * the optional since/until ISO date window narrows the list, newest-first;
-* the §V19/§V22 bounded pagination: out-of-range page rejected at BOTH the model and
+* the bounded pagination: out-of-range page rejected at BOTH the model and
   the service (never a silent clamp), and the page descriptor reports total + has_more;
-* a region with no announcements is a legitimate empty ``ok`` list (§V106 (b)), never a
-  ``not_found`` -- and never a BARE one: §V50 availability is decided before absence is
+* a region with no announcements is a legitimate empty ``ok`` list, never a
+  ``not_found`` -- and never a BARE one: availability is decided before absence is
   asserted, so a never-imported feed and a live feed with nothing in the window carry
-  DIFFERENT limitations (B146);
-* the typed §V23 envelope shape, including fail-closed ``database_unavailable`` /
+  DIFFERENT limitations;
+* the typed envelope shape, including fail-closed ``database_unavailable`` /
   ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema, present in
-  the single shared registry both transports dispatch (§V14).
+* the wire contract: a read-only spec with a bounded input schema, present in
+  the single shared registry both transports dispatch.
 """
 
 from __future__ import annotations
@@ -47,12 +47,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The five §V56 metadata keys a wire row may carry. §V77/§V66 (B79): no per-row
+#: The five metadata keys a wire row may carry: no per-row
 #: ``region`` -- it rides the parent ``server`` field once, never on every row.
 _ALLOWED_KEYS = {"announce_id", "title", "date", "url", "category"}
 
 #: Three en announcements with distinct ISO dates so ordering + windowing are
-#: deterministic; each carries forbidden body/html that must never survive (§V16).
+#: deterministic; each carries forbidden body/html that must never survive.
 _EN_FEED: list[dict[str, Any]] = [
     {
         "announceId": "ann-en-1",
@@ -81,7 +81,7 @@ _EN_FEED: list[dict[str, Any]] = [
     },
 ]
 
-#: One cn announcement so a cn query returns cn-only data (en/cn never mixed, §V5).
+#: One cn announcement so a cn query returns cn-only data (en/cn never mixed).
 _CN_FEED: list[dict[str, Any]] = [
     {
         "announceId": "ann-cn-1",
@@ -95,7 +95,7 @@ _CN_FEED: list[dict[str, Any]] = [
 
 
 class _FakeFetcher:
-    """Returns a preset announcement feed payload (no network, §V1)."""
+    """Returns a preset announcement feed payload (no network)."""
 
     def __init__(self, payload: Any) -> None:
         self._payload = payload
@@ -107,14 +107,14 @@ class _FakeFetcher:
 def _candidate(
     tmp_path: Path, *, seed_en: bool = True, seed_cn: bool = False, name: str = "cand.sqlite"
 ) -> Path:
-    """Build the 4-4 fixture candidate, then import announcements via the real T95 path.
+    """Build the 4-4 fixture candidate, then import announcements via the real path.
 
     Opens a read-write handle onto the freshly built candidate (before promotion +
     read-only reopen, mirroring the importer's own shape) and runs
     ``import_announcements`` with a fake fetcher; ``build_candidate`` already seeded the
     announcement sources into ``data_sources`` (the full registry), so the snapshot FK
     holds. ``name`` keeps two differently-seeded builds apart in one ``tmp_path``, so a
-    test may compare an imported feed against a never-imported one (T206/B146).
+    test may compare an imported feed against a never-imported one.
     """
     path = tmp_path / name
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
@@ -149,7 +149,7 @@ def bare_conn(tmp_path: Path) -> sqlite3.Connection:
 
 @pytest.fixture
 def en_only_conn(tmp_path: Path) -> sqlite3.Connection:
-    """4-4 build with the en feed imported and the cn feed never run (§V50 per region)."""
+    """4-4 build with the en feed imported and the cn feed never run (per region)."""
     return open_read_only(_candidate(tmp_path, seed_en=True, seed_cn=False, name="en_only.sqlite"))
 
 
@@ -157,7 +157,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_announcements_spec(lambda: conn).handler
 
 
-# --- metadata facts + §V5 region + provenance ---------------------------------
+# --- metadata facts + region + provenance -------------------------------------
 
 
 def test_ok_returns_announcement_metadata(conn: sqlite3.Connection) -> None:
@@ -167,18 +167,18 @@ def test_ok_returns_announcement_metadata(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert set(data) == {"server", "announcements", "page"}
-    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    # Region stated ONCE on the parent server, never per row.
     assert data["server"] == "en"
     anns = data["announcements"]
     assert isinstance(anns, list) and len(anns) == 3
-    # §V26: newest first.
+    # Newest first.
     assert [a["announce_id"] for a in anns] == ["ann-en-3", "ann-en-2", "ann-en-1"]
     for a in anns:
         assert "region" not in a
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
-    # §V5: every delivered fact carries region + provenance.
+    # Every delivered fact carries region + provenance.
     prov = _handler(conn)(server="en").to_dict()["provenance"]
     assert isinstance(prov, list) and len(prov) == 1
     assert prov[0]["server"] == "en"
@@ -186,7 +186,7 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
 
 
 def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
-    # §V5/§V56: a cn query returns cn-only data; en announcements are not surfaced.
+    # A cn query returns cn-only data; en announcements are not surfaced.
     env = _handler(conn)(server="cn")
     assert env.status == "ok"
     data = env.to_dict()["data"]
@@ -196,7 +196,7 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     assert all("region" not in a for a in anns)
 
 
-# --- metadata-only: no body/html/prose survives (§V56/§V16) -------------------
+# --- metadata-only: no body/html/prose survives -------------------------------
 
 
 def test_no_prose_fields_surface(conn: sqlite3.Connection) -> None:
@@ -231,7 +231,7 @@ def test_since_and_until_window(conn: sqlite3.Connection) -> None:
     assert [a["announce_id"] for a in anns] == ["ann-en-2"]
 
 
-# --- §V19/§V22 bounded pagination ---------------------------------------------
+# --- bounded pagination -------------------------------------------------------
 
 
 def test_pagination_slices_and_reports_total(conn: sqlite3.Connection) -> None:
@@ -249,7 +249,7 @@ def test_pagination_slices_and_reports_total(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_page_rejected_at_model(conn: sqlite3.Connection) -> None:
-    # §V19: rejected at the model gate, never silently widened into a dump.
+    # Rejected at the model gate, never silently widened into a dump.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", page={"page": 1, "page_size": 101})
     with pytest.raises(ValidationError):
@@ -257,19 +257,19 @@ def test_out_of_range_page_rejected_at_model(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_page_rejected_at_service(conn: sqlite3.Connection) -> None:
-    # §V19: a caller reaching the service directly (bypassing the model) gets the SAME
+    # A caller reaching the service directly (bypassing the model) gets the SAME
     # rejection, not a silent clamp -- one contract, both places.
-    with pytest.raises(ValueError, match="§V19"):
+    with pytest.raises(ValueError, match="outside the"):
         get_announcements(conn, server="en", page_size=101)
-    with pytest.raises(ValueError, match="§V19"):
+    with pytest.raises(ValueError, match="must be >= 1"):
         get_announcements(conn, server="en", page=0)
 
 
-# --- empty domain: ok empty list, never not_found (§V106 (b)/§V23) ------------
+# --- empty domain: ok empty list, never not_found -----------------------------
 
 
 def test_empty_region_is_ok_empty_list(bare_conn: sqlite3.Connection) -> None:
-    # §V106 (b): an empty answer to a well-formed set query is ``ok`` + an empty
+    # An empty answer to a well-formed set query is ``ok`` + an empty
     # collection, never a ``not_found`` (that would be an entity-lookup verdict).
     env = _handler(bare_conn)(server="en")
     assert env.status == "ok"
@@ -279,15 +279,15 @@ def test_empty_region_is_ok_empty_list(bare_conn: sqlite3.Connection) -> None:
     assert env.to_dict()["provenance"] == []
 
 
-# --- §V50 availability BEFORE absence (T206/B146) -----------------------------
+# --- availability BEFORE absence ----------------------------------------------
 
 
 def test_unimported_feed_names_the_source_and_the_admin_action(
     bare_conn: sqlite3.Connection,
 ) -> None:
-    # §V50: with no announcement snapshot for the region, "no announcement" is not
+    # With no announcement snapshot for the region, "no announcement" is not
     # inferable -- the empty list must say the feed never ran, name the source, and
-    # give the §V28 admin step (importing is CLI-only, never a query-time fetch, §V1).
+    # give the admin step (importing is CLI-only, never a query-time fetch).
     env = _handler(bare_conn)(server="en")
     assert env.status == "ok"
     limitations = env.to_dict()["limitations"]
@@ -299,8 +299,8 @@ def test_unimported_feed_names_the_source_and_the_admin_action(
 
 
 def test_availability_verdict_is_per_region(en_only_conn: sqlite3.Connection) -> None:
-    # §V5/§V50: the probe is the REGION's own feed. en imported + cn not is a normal
-    # build state, and a sibling region's success must not vouch for cn (§V30 class).
+    # The probe is the REGION's own feed. en imported + cn not is a normal
+    # build state, and a sibling region's success must not vouch for cn.
     assert _handler(en_only_conn)(server="en").limitations == ()
     cn = _handler(en_only_conn)(server="cn").to_dict()["limitations"]
     assert isinstance(cn, list) and len(cn) == 1
@@ -311,12 +311,12 @@ def test_availability_verdict_is_per_region(en_only_conn: sqlite3.Connection) ->
 def test_empty_window_on_an_imported_feed_says_so_differently(
     conn: sqlite3.Connection, bare_conn: sqlite3.Connection
 ) -> None:
-    # THE B146 defect: an unimported feed and a live feed with nothing in the window
+    # The original defect: an unimported feed and a live feed with nothing in the window
     # shipped identical bytes, so the response could not be read either way. Both are
     # still ``ok`` + ``[]``, but the limitation now decides it -- and the imported one
     # never suggests a sync, which would read as "the cache is missing".
     # A DAY bound: the feed's own column is day-granular, so a sub-day bound would also
-    # carry the §V116 widening disclosure, which is a different fact tested in
+    # carry the widening disclosure, which is a different fact tested in
     # ``test_window_bound_form.py`` -- this case is about the two EMPTY reasons.
     windowed = _handler(conn)(server="en", since="2027-01-01")
     unimported = _handler(bare_conn)(server="en")
@@ -341,14 +341,14 @@ def test_service_direct_unsupported_region_states_it_has_no_feed(
 ) -> None:
     # Unreachable through the tool (the model admits only en/cn) but reachable through
     # the service: an empty list for a region that HAS no feed must not read as "this
-    # region published nothing" (§V26/§V50/§V56).
+    # region published nothing".
     result = get_announcements(conn, server="jp")
     assert result.status == "ok" and result.announcements == ()
     (text,) = result.limitations
     assert "no official announcement feed for region jp" in text
 
 
-# --- §V23 fail-closed ---------------------------------------------------------
+# --- fail-closed --------------------------------------------------------------
 
 
 def test_database_unavailable_fails_closed() -> None:
@@ -387,7 +387,7 @@ def test_bad_region_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -- a crafted request cannot smuggle a field.
+    # extra="forbid" -- a crafted request cannot smuggle a field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", bogus=1)
 
@@ -397,7 +397,7 @@ def test_oversized_since_rejected(conn: sqlite3.Connection) -> None:
         _handler(conn)(server="en", since="x" * (MAX_ID_LEN + 1))
 
 
-# --- §V14 shared registry + §I.tool wire contract -----------------------------
+# --- shared registry + wire contract ------------------------------------------
 
 
 def test_registered_in_shared_registry(conn: sqlite3.Connection) -> None:

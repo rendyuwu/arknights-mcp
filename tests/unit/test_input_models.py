@@ -1,8 +1,8 @@
-"""§T30 bounded input-model tests.
+"""Bounded input-model tests.
 
-Primary invariant §V22 (heavy sections opt-in, pagination bounded); touches §V19
-(search limit / page_size bounds land on the wire), §V18 (untrusted-string caps +
-``extra="forbid"``) and §V5 (region ``en``|``cn`` only).
+Primary invariant: heavy sections opt-in, pagination bounded; touches search
+limit / page_size bounds (on the wire), untrusted-string caps +
+``extra="forbid"``, and region ``en``|``cn`` only.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from arknights_mcp.models import (
 from arknights_mcp.models.common import StrictModel
 from arknights_mcp.models.operators import ModuleLevel
 
-# --- §V19/§V22: search limit bounded (default 10, max 50, rejected out of range) ---
+# --- search limit bounded (default 10, max 50, rejected out of range) ---
 
 
 def test_search_limit_defaults_to_ten() -> None:
@@ -54,7 +54,7 @@ def test_search_stages_shares_the_same_window() -> None:
         SearchStagesInput(query="4-4", limit=SEARCH_MAX_LIMIT + 1)
 
 
-# --- §V22: get_stage heavy sections are opt-in (default off) ---
+# --- get_stage heavy sections are opt-in (default off) ---
 
 
 def test_get_stage_include_flags_default_off() -> None:
@@ -62,7 +62,7 @@ def test_get_stage_include_flags_default_off() -> None:
     assert (got.include_map, got.include_routes, got.include_spawns) == (False, False, False)
 
 
-# --- §V19/§V22: pagination bounded (page >= 1, page_size <= PAGE_SIZE_MAX) ---
+# --- pagination bounded (page >= 1, page_size <= PAGE_SIZE_MAX) ---
 
 
 def test_page_size_max_accepted() -> None:
@@ -79,7 +79,7 @@ def test_page_below_one_rejected() -> None:
         PageParams(page=0)
 
 
-# --- §V18: untrusted strings length-capped; unknown params rejected ---
+# --- untrusted strings length-capped; unknown params rejected ---
 
 
 def test_query_over_length_cap_rejected() -> None:
@@ -97,7 +97,7 @@ def test_unknown_parameter_rejected() -> None:
         SearchEntitiesInput(query="dusk", limitt=5)  # type: ignore[call-arg]
 
 
-# --- §V5: region is en|cn only; a fact tool requires one ---
+# --- region is en|cn only; a fact tool requires one ---
 
 
 def test_bad_region_rejected() -> None:
@@ -114,12 +114,12 @@ def test_search_region_optional() -> None:
     assert SearchEntitiesInput(query="dusk").server is None
 
 
-# --- §V57/T156: the extra-locale (ja/ko) NAME-alias filter is RETIRED ---
+# --- the extra-locale (ja/ko) NAME-alias filter is RETIRED ---
 
 
 def test_search_entities_rejects_locale_param() -> None:
-    # §V57/§V21 (T156, founder 2026-07-23, EN+CN only): the `locale` filter is gone.
-    # The model is `extra="forbid"` (§V18), so a client still sending `locale` is
+    # The `locale` filter is gone (founder 2026-07-23, EN+CN only).
+    # The model is `extra="forbid"`, so a client still sending `locale` is
     # rejected at the gate -- never silently accepted or ignored.
     for value in ("ja", "ko", "en", "zh"):
         with pytest.raises(ValidationError):
@@ -168,12 +168,12 @@ def test_compare_empty_levels_rejected() -> None:
 
 
 def test_compare_levels_domain_is_in_the_published_schema() -> None:
-    """§V107/B149: the {1,2,3} domain reaches the CLIENT, not just the validator.
+    """The {1,2,3} domain reaches the CLIENT, not just the validator.
 
     It lived in prose plus a runtime check, so the only way to learn it was to spend a
     call and read the error -- avoidable, since ``page_size``'s ``maximum: 100`` proves
     the same schema can carry a bound. The enum is generated from ``ModuleLevel`` itself,
-    so the published domain and the check that reports it cannot drift (§V37).
+    so the published domain and the check that reports it cannot drift.
     """
     schema = tool_input_schema(CompareOperatorModulesInput)
     assert schema["properties"]["levels"]["items"]["enum"] == [1, 2, 3]
@@ -181,7 +181,7 @@ def test_compare_levels_domain_is_in_the_published_schema() -> None:
 
 
 def test_compare_out_of_domain_level_reports_the_whole_domain() -> None:
-    """The disclosure does not cost the message B149 called model-grade (§V71 c).
+    """The disclosure does not cost the model-grade message.
 
     The Literal alone would reject per ITEM ("Input should be 1, 2 or 3"), naming neither
     the field's whole domain nor which values offended; the domain check runs first and
@@ -192,14 +192,14 @@ def test_compare_out_of_domain_level_reports_the_whole_domain() -> None:
     assert "levels must be a subset of {1, 2, 3}; got [0, 5]" in str(excinfo.value)
 
 
-# --- §V18/§V19/§V22: bounds surface on the wire (generated inputSchema) ---
+# --- bounds surface on the wire (generated inputSchema) ---
 
 
 def test_input_schema_declares_search_limit_bound() -> None:
     schema = tool_input_schema(SearchEntitiesInput)
     assert schema["properties"]["limit"]["maximum"] == SEARCH_MAX_LIMIT
     assert schema["properties"]["limit"]["minimum"] == 1
-    # extra="forbid" -> closed object; a client cannot add fields (§V18).
+    # extra="forbid" -> closed object; a client cannot add fields.
     assert schema["additionalProperties"] is False
 
 
@@ -214,14 +214,14 @@ def test_input_schema_declares_query_length_cap() -> None:
 
 
 def test_input_schema_strips_description_keyword_but_keeps_a_field_named_description() -> None:
-    # §V71 (b): the strip drops the auto-published schema *description* keyword (a class
+    # The strip drops the auto-published schema *description* keyword (a class
     # docstring / Field description carries internal cites), but it must key off schema
     # *position*, not the literal string -- a model field literally named "description" is
     # a property NAME, not a keyword, so it has to survive on the wire. Otherwise the
     # published inputSchema would omit a parameter the model still enforces
-    # (extra="forbid"), breaking the wire<->model parity §V18/§V19 promise.
+    # (extra="forbid"), breaking the wire<->model parity.
     class _Model(StrictModel):
-        """Docstring with an internal §V71 cite that must never reach the wire."""
+        """Docstring with an internal cite that must never reach the wire."""
 
         description: str = Field(max_length=10, description="internal cite; must be stripped")
 

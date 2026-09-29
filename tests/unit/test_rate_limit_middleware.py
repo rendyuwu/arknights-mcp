@@ -1,8 +1,8 @@
-"""§T54/§V11: per-principal rate + concurrency limits.
+"""Per-principal rate + concurrency limits.
 
 Drives :class:`~arknights_mcp.middleware.rate_limit.RateLimitMiddleware` with a raw
 ASGI ``(scope, receive, send)`` and an injected clock -- no socket, no real time --
-asserting the two per-principal §V11 controls: a trailing-60s rate window and an
+asserting the two per-principal controls: a trailing-60s rate window and an
 in-flight concurrency cap, each keyed on the principal id (``iss|sub``) and each
 independent across principals.
 """

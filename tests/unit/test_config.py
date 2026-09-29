@@ -1,4 +1,4 @@
-"""T8: config loading + the §V9 startup safety rule.
+"""Config loading + the startup safety rule.
 
 Verifies the example config loads with the PRD Section 19 defaults, per-source
 sync subtables fold correctly, and a non-loopback remote deployment without
@@ -47,7 +47,7 @@ def test_base_url_for_substitutes_server_token() -> None:
     src = SyncSourceConfig(base_url="https://repo.test/{server}/data")
     assert src.base_url_for("en") == "https://repo.test/en/data"
     assert src.base_url_for("cn") == "https://repo.test/cn/data"
-    # Distinct per region → the §V5 same-URL guard never trips.
+    # Distinct per region → the same-URL guard never trips.
     assert src.base_url_for("en") != src.base_url_for("cn")
 
 
@@ -75,7 +75,7 @@ def test_example_config_is_startup_safe() -> None:
 
 def test_loopback_remote_allowed_without_https_or_oauth() -> None:
     cfg = AppConfig.model_validate({"mcp": {"remote": {"enabled": True, "bind_host": "127.0.0.1"}}})
-    # Loopback dev is the explicit §V9 exception.
+    # Loopback dev is the explicit exception.
     cfg.assert_remote_startup_safe()
 
 
@@ -98,7 +98,7 @@ def test_nonloopback_remote_without_https_refuses() -> None:
             },
         }
     )
-    with pytest.raises(ConfigError, match="V9"):
+    with pytest.raises(ConfigError, match="refusing to start remote mode"):
         cfg.assert_remote_startup_safe()
 
 
@@ -148,8 +148,8 @@ def test_nonloopback_remote_with_https_and_oauth_ok() -> None:
 
 
 def test_loopback_behind_proxy_forces_gate_without_oauth_refuses() -> None:
-    # §V40 (B31): a loopback bind declared behind_proxy serves the public internet
-    # via a proxy/tunnel → the §V9 HTTPS+OIDC gate must fire even on 127.0.0.1.
+    # A loopback bind declared behind_proxy serves the public internet
+    # via a proxy/tunnel → the HTTPS+OIDC gate must fire even on 127.0.0.1.
     cfg = AppConfig.model_validate(
         {
             "mcp": {
@@ -165,7 +165,7 @@ def test_loopback_behind_proxy_forces_gate_without_oauth_refuses() -> None:
         }
     )
     assert cfg.mcp.remote.requires_auth is True
-    with pytest.raises(ConfigError, match="V40"):
+    with pytest.raises(ConfigError, match="refusing to start remote mode"):
         cfg.assert_remote_startup_safe()
 
 
@@ -193,8 +193,8 @@ def test_loopback_behind_proxy_with_https_and_oauth_ok() -> None:
 
 
 def test_loopback_without_proxy_does_not_require_auth() -> None:
-    # §V40: a genuine loopback dev bind (not behind a proxy) stays the authless
-    # §V9 exception.
+    # A genuine loopback dev bind (not behind a proxy) stays the authless
+    # exception.
     cfg = AppConfig.model_validate({"mcp": {"remote": {"enabled": True, "bind_host": "127.0.0.1"}}})
     assert cfg.mcp.remote.requires_auth is False
     cfg.assert_remote_startup_safe()

@@ -1,4 +1,4 @@
-# Machine-readable source registry (SPEC §V27; PRD Section 10.1).
+# Machine-readable source registry (PRD Section 10.1).
 #
 # One [<source_id>] table per source. This is the authoritative registry loaded
 # at runtime; DATA_SOURCES.md is the human-readable mirror and must be kept in
@@ -7,10 +7,10 @@
 # tracked at runtime in the `source_snapshots` table, not here.
 #
 # Every public field here ships VERBATIM to an MCP client via `get_data_sources`
-# (SPEC §V71 b): keep `purpose` and the `*_status` tokens readable by that
+# keep `purpose` and the `*_status` tokens readable by that
 # audience. An internal reference -- a founder decision id, a milestone, an ADR
-# number, a spec cite -- belongs in `internal_ref`, the one explicitly ignorable
-# field, never inline in prose a client reads (B131).
+# number -- belongs in `internal_ref`, the one explicitly ignorable
+# field, never inline in prose a client reads.
 
 [arknights_assets_gamedata]
 display_name = "ArknightsAssets / ArknightsGamedata"
@@ -19,14 +19,14 @@ canonical_url = "https://github.com/ArknightsAssets/ArknightsGamedata"
 source_type = "structured_game_data_snapshot"
 regions = ["en", "cn"]
 purpose = "Primary EN/CN structured gameplay snapshot (stages, enemies, operators, modules)."
-# SPEC §V98 (B132): this list is a CLAIM about the code and ships verbatim to a
+# This list is a CLAIM about the code and ships verbatim to a
 # client, so it must equal the set of snapshot files a real sync stages and an
 # importer actually reads -- not a wish list. It is enforced against
 # CORE_FILES + SUPPLEMENTARY_FILES by tests/unit/test_source_registry_truth.py.
 # `range_table.json` sat here for six milestones while nothing fetched or read it
-# (B132), and `uniequip_data.json` was listed as a file that has never existed --
+# and `uniequip_data.json` was listed as a file that has never existed --
 # the module metadata is the `equipDict` key INSIDE `uniequip_table.json`, already
-# listed. Both are corrected in T200; the list is entries at FILE granularity, so
+# listed. Both are corrected; the list is entries at FILE granularity, so
 # a sub-key is never named as a file again.
 fields_consumed = [
     "character_table.json",
@@ -120,8 +120,8 @@ private_hosting_status = "permitted_private_noncommercial_with_attribution"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Drop-rate statistics (c) Penguin Statistics, licensed CC BY-NC 4.0."
 contact_url = "https://penguin-stats.io"
-internal_ref = "v0.2 M8 drop-rate source (SPEC §V52-§V55)."
-policy_notes = "v0.2 M8 drop-rate source; adapter is CLI-only network fetch (never query-time). Enabled 2026-07-21 (drop importer + get_stage_drops tool landed, T89/T91/T102); cached observations record server, sample size, fetched_at, expires_at, penguin snapshot_id, region, and attribution."
+internal_ref = "v0.2 M8 drop-rate source."
+policy_notes = "v0.2 M8 drop-rate source; adapter is CLI-only network fetch (never query-time). Enabled 2026-07-21 (drop importer + get_stage_drops tool landed); cached observations record server, sample size, fetched_at, expires_at, penguin snapshot_id, region, and attribution."
 enabled = true
 last_reviewed_at = "2026-07-21"
 
@@ -149,8 +149,8 @@ private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph / Yostar."
 contact_url = "https://www.arknights.global/"
-internal_ref = "M9 source policy review (PRD Section 18 D14; SPEC §V56/§V61)."
-policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (§V56 flip: metadata-only importer + get_announcements landed, T95/T96/T97; sync ride-along wired T106). Verified feed endpoint 2026-07-21 (§T107/§V61): https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json (client network_config key 'an', canonical Android platform); feed carries day/month/webUrl/group, field-mapped to date/url/category. Metadata-only remains the PERMANENT ceiling regardless of enabled state."
+internal_ref = "M9 source policy review (PRD Section 18 D14)."
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (flip: metadata-only importer + get_announcements landed; sync ride-along wired). Verified feed endpoint 2026-07-21: https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json (client network_config key 'an', canonical Android platform); feed carries day/month/webUrl/group, field-mapped to date/url/category. Metadata-only remains the PERMANENT ceiling regardless of enabled state."
 enabled = true
 last_reviewed_at = "2026-07-21"
 
@@ -178,8 +178,8 @@ private_hosting_status = "deferred"
 redistribution_status = "prohibited_code_only"
 attribution_text = "Announcement dates from official Arknights channels (c) Hypergryph."
 contact_url = "https://ak.hypergryph.com/"
-internal_ref = "M9 source policy review (PRD Section 18 D14; SPEC §V56/§V61)."
-policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (§V56 flip: metadata-only importer + get_announcements landed, T95/T96/T97; sync ride-along wired T106). Verified feed endpoint 2026-07-21 (§T107/§V61): https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json; feed carries day/month/webUrl/group, field-mapped to date/url/category. Metadata-only remains the PERMANENT ceiling regardless of enabled state."
+internal_ref = "M9 source policy review (PRD Section 18 D14)."
+policy_notes = "M9 source policy reviewed 2026-07-21 (D14): metadata-only is the maximum scope, same posture as the Global news source. Store only announce_id, title, date, url, category, region; never article body, html, prose, image, or image-url. Enabled 2026-07-21 (flip: metadata-only importer + get_announcements landed; sync ride-along wired). Verified feed endpoint 2026-07-21: https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json; feed carries day/month/webUrl/group, field-mapped to date/url/category. Metadata-only remains the PERMANENT ceiling regardless of enabled state."
 enabled = true
 last_reviewed_at = "2026-07-21"
 
@@ -202,7 +202,7 @@ private_hosting_status = "private_noncommercial_only_never_public"
 redistribution_status = "reference_link_only_never_bytes"
 attribution_text = "Image URL references courtesy of the yuanyan3060/ArknightsGameResource mirror (repository code AGPL-3.0). Referenced Arknights art assets (c) Hypergryph / Yostar, for learning and exchange only, removed on request."
 contact_url = "https://github.com/yuanyan3060/ArknightsGameResource/issues"
-internal_ref = "v0.3 M12 image URL reference source (ADR 0008 + ADR 0009; SPEC §V63; PRD Section 18 D5/D13)."
-policy_notes = "v0.3 M12 image URL REFERENCE source (ADR 0008 / §V63): the server DERIVES raw.githubusercontent.com URLs at response-build time from a game_id already stored from the primary snapshot -- it stores NO bytes and NO url (§V16 airtight) and performs NO fetch/HEAD/GET/validation at import or query time (§V1/§V24). Nothing is imported so there is NO snapshot commit for this entry. AGPL-3.0 covers the mirror's CODE only; the referenced art assets are self-declared Yostar/Hypergryph copyright, learning-only, removed on request (D13: no permission assumed). Redistribution is reference-link only, never bytes. ON by default (§T124, founder 2026-07-22); private + noncommercial only, never OPEN/anonymous public (D4/§C/ADR 0009) -- §V9 fails startup closed on any anonymous non-loopback surface, so no single flag can expose it to an anonymous public. Takedown = flip enabled=false or disable this source; there is nothing to purge (§V28/§V20)."
+internal_ref = "v0.3 M12 image URL reference source (ADR 0008 + ADR 0009; PRD Section 18 D5/D13)."
+policy_notes = "v0.3 M12 image URL REFERENCE source (ADR 0008): the server DERIVES raw.githubusercontent.com URLs at response-build time from a game_id already stored from the primary snapshot -- it stores NO bytes and NO url (airtight) and performs NO fetch/HEAD/GET/validation at import or query time. Nothing is imported so there is NO snapshot commit for this entry. AGPL-3.0 covers the mirror's CODE only; the referenced art assets are self-declared Yostar/Hypergryph copyright, learning-only, removed on request (D13: no permission assumed). Redistribution is reference-link only, never bytes. ON by default (founder 2026-07-22); private + noncommercial only, never OPEN/anonymous public (D4/ADR 0009) -- startup fails closed on any anonymous non-loopback surface, so no single flag can expose it to an anonymous public. Takedown = flip enabled=false or disable this source; there is nothing to purge."
 enabled = true
 last_reviewed_at = "2026-07-22"

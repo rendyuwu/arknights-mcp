@@ -1,4 +1,4 @@
-"""Source adapters (CLI-time only; V1: no runtime network).
+"""Source adapters (CLI-time only; no runtime network).
 
-Stub scaffold (PRD Section 20). Implemented in a later SPEC.md §T task.
+Stub scaffold (PRD Section 20).
 """

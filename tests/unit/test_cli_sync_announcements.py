@@ -1,20 +1,20 @@
-"""T106: the announcement ride-along wired into ``sync`` (§V56, §V58, §V3, §V5).
+"""The announcement ride-along wired into ``sync``.
 
-Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network, §V1/§V56)
+Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network)
 that serves both the pinned 4-4 game-data snapshot and an announcement feed, and
-asserts the §T106 ride-along contract end to end:
+asserts the ride-along contract end to end:
 
 * enabled announcement source (in ``enabled_sources`` + registry-enabled + a configured
   ``feed_url``) -> metadata rows land in the PROMOTED db and ``get_announcements``
-  returns facts (§V56/I.tool);
+  returns facts;
 * a feed outage -> the game-data build STILL promotes, announcements empty, no fail
-  (fail-open, §V58/§V3);
+  (fail-open);
 * enabled + in ``enabled_sources`` but NO ``feed_url`` -> skipped rather than fetching
-  a guessed URL (§V56/§V1); the build still promotes;
-* the source absent from ``enabled_sources`` -> never fetched (§V58 opt-in), even
-  though the shipped registry enables it by default (§V56 flip).
+  a guessed URL; the build still promotes;
+* the source absent from ``enabled_sources`` -> never fetched (opt-in), even
+  though the shipped registry enables it by default.
 
-The shipped registry ships both official-news sources ENABLED by default (§V56/§T106),
+The shipped registry ships both official-news sources ENABLED by default,
 so unlike the penguin ride-along these tests point at the real registry directly.
 """
 
@@ -41,12 +41,12 @@ _GLOBAL_FEED_URL = "https://feed.test/global/news"
 _CN_FEED_URL = "https://feed.test/cn/news"
 
 #: Prose that rides every feed entry on a NON-allowlisted key. A correct metadata-only
-#: pipeline (§V16/§V18) drops it before storage; ASCII-only so JSON escaping can never
+#: pipeline drops it before storage; ASCII-only so JSON escaping can never
 #: mask a leak in the served result.
 _FORBIDDEN_PROSE = "ANNOUNCEBODYPROSE"
 
 #: Two en announcements with distinct ISO dates so ordering is deterministic; each
-#: carries a forbidden body/prose field that must never survive (§V16).
+#: carries a forbidden body/prose field that must never survive.
 _EN_FEED = [
     {
         "announceId": "ann-en-1",
@@ -80,7 +80,7 @@ class _RecordingFetcher(DictFetcher):
 
 
 def _game_files(servers: tuple[str, ...]) -> dict[str, bytes]:
-    """Map ``BASE_URL``/<rel> to the 4-4 fixture bytes for each region tree (§V5)."""
+    """Map ``BASE_URL``/<rel> to the 4-4 fixture bytes for each region tree."""
     files: dict[str, bytes] = {}
     for server in servers:
         base = BASE_URL.replace("{server}", server).rstrip("/")
@@ -134,7 +134,7 @@ def _active_db(data_dir: Path) -> Path:
     return db
 
 
-# --- enabled -> announcement rows in the promoted db + get_announcements facts (§V56) ---
+# --- enabled -> announcement rows in the promoted db + get_announcements facts ---
 
 
 def test_sync_enabled_announcements_promotes_rows(tmp_path: Path) -> None:
@@ -150,15 +150,15 @@ def test_sync_enabled_announcements_promotes_rows(tmp_path: Path) -> None:
     with read_only_connection(_active_db(tmp_path / "data")) as conn:
         result = get_announcements(conn, server="en")
     assert result.status == "ok"
-    # Newest first (§V26): ann-en-2 (2026-07-20) precedes ann-en-1 (2026-07-01).
+    # Newest first: ann-en-2 (2026-07-20) precedes ann-en-1 (2026-07-01).
     assert [a.announce_id for a in result.announcements] == ["ann-en-2", "ann-en-1"]
     assert all(a.region == "en" for a in result.announcements)
-    # §V16/§V18: the article body never rode into the served result.
+    # The article body never rode into the served result.
     served = json.dumps([vars(a) for a in result.announcements])
     assert _FORBIDDEN_PROSE not in served
 
 
-# --- outage -> game-data-only build still promotes, announcements empty (§V58/§V3) ------
+# --- outage -> game-data-only build still promotes, announcements empty ------------------
 
 
 def test_sync_announcement_outage_still_promotes_game_data(tmp_path: Path) -> None:
@@ -168,7 +168,7 @@ def test_sync_announcement_outage_still_promotes_game_data(tmp_path: Path) -> No
         servers=["en"],
     )
     # Game data is served; the feed URL is NOT mapped -> the adapter's fetch raises
-    # SourceNotFoundError, which the ride-along catches (§V58).
+    # SourceNotFoundError, which the ride-along catches.
     fetcher = DictFetcher(_game_files(("en",)))
     rc = main(["--config", str(config), "sync", "--server", "en"], fetcher=fetcher)
     assert rc == 0
@@ -178,13 +178,13 @@ def test_sync_announcement_outage_still_promotes_game_data(tmp_path: Path) -> No
         assert conn.execute("SELECT COUNT(*) FROM stages WHERE server='en'").fetchone()[0] >= 1
         assert conn.execute("SELECT COUNT(*) FROM announcements").fetchone()[0] == 0
         result = get_announcements(conn, server="en")
-    # A region with no announcements is a legitimate empty ``ok`` list (§V56), not a
+    # A region with no announcements is a legitimate empty ``ok`` list, not a
     # not_found -- this is a list tool, not an entity lookup.
     assert result.status == "ok"
     assert len(result.announcements) == 0
 
 
-# --- enabled + in enabled_sources but NO feed_url -> skipped, not guessed (§V56/§V1) ----
+# --- enabled + in enabled_sources but NO feed_url -> skipped, not guessed ----------------
 
 
 def test_sync_enabled_without_feed_url_skips(tmp_path: Path) -> None:
@@ -198,19 +198,19 @@ def test_sync_enabled_without_feed_url_skips(tmp_path: Path) -> None:
     rc = main(["--config", str(config), "sync", "--server", "en"], fetcher=fetcher)
     assert rc == 0
 
-    # No feed endpoint was ever requested (no default URL is guessed, §V56/§V1).
+    # No feed endpoint was ever requested (no default URL is guessed).
     assert not any("feed.test" in url for url in fetcher.urls)
     with read_only_connection(_active_db(tmp_path / "data")) as conn:
         assert conn.execute("SELECT COUNT(*) FROM announcements").fetchone()[0] == 0
 
 
-# --- absent from enabled_sources -> never fetched (§V58 opt-in) -------------------------
+# --- absent from enabled_sources -> never fetched (opt-in) ------------------------------
 
 
 def test_sync_source_not_in_enabled_sources_not_fetched(tmp_path: Path) -> None:
     # The announcement source is NOT in enabled_sources, so the ride-along returns early
     # (the enabled_sources gate fires before the registry check) -> never fetched, even
-    # though the shipped registry enables it by default (§V56 flip).
+    # though the shipped registry enables it by default.
     config = _write_config(
         tmp_path,
         enabled_sources=["arknights_assets_gamedata"],

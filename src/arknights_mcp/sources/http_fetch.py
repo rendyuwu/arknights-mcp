@@ -1,4 +1,4 @@
-"""Shared HTTPS fetch machinery for network source adapters (§V1, §V37).
+"""Shared HTTPS fetch machinery for network source adapters.
 
 The single home for the network-transport primitives every allowlisted network
 adapter reuses -- the HTTPS-only, redirect-capped, size-capped :class:`HttpsFetcher`,
@@ -7,8 +7,8 @@ caps, and the :func:`fetch_json` "download -> decode -> cap depth/nodes" sequenc
 Both :class:`~arknights_mcp.sources.arknights_assets.ArknightsAssetsAdapter` and
 :class:`~arknights_mcp.sources.penguin_statistics.PenguinStatsAdapter` import from
 here so the safety caps are defined once and applied identically regardless of
-source (§V37: shared logic exactly one home). These primitives are used only from
-CLI ``sync``/``import`` jobs, never at query time (§V1/§V52).
+source (shared logic exactly one home). These primitives are used only from
+CLI ``sync``/``import`` jobs, never at query time.
 
 The HTTP transport is injected (:class:`Fetcher`) so the caps are unit-testable
 without live network; the default :class:`HttpsFetcher` refuses non-HTTPS URLs and
@@ -36,7 +36,7 @@ from arknights_mcp.sources.base import (
 
 @dataclass(frozen=True)
 class DownloadLimits:
-    """Resource caps applied to every sync download (PRD §11.2)."""
+    """Resource caps applied to every sync download (PRD Section 11.2)."""
 
     max_file_bytes: int = 32 * 1024 * 1024
     max_total_bytes: int = 512 * 1024 * 1024
@@ -49,7 +49,7 @@ DEFAULT_LIMITS = DownloadLimits()
 
 
 class DownloadBudget:
-    """Mutable run-level total-byte accumulator (PRD §11.2 total-download cap).
+    """Mutable run-level total-byte accumulator (PRD Section 11.2 total-download cap).
 
     Shared across every adapter in one ``sync`` run so the cap bounds the whole
     run, not each server independently: ``sync --server all`` may not exceed
@@ -60,9 +60,9 @@ class DownloadBudget:
         self._max = max_total_bytes
         self._used = 0
         # ``self._used += n`` is not atomic under threads (read-modify-write); the
-        # parallel stager (§T79) charges from several workers, so the accumulate +
-        # cap check run under a lock ∴ the total-download cap stays exact and still
-        # fails closed (⊥ overshoot via a lost update; ⊥ TOCTOU past the cap, §V42).
+        # parallel stager charges from several workers; the accumulate + cap check
+        # run under a lock, so the total-download cap stays exact and still fails
+        # closed (never overshoot via a lost update; never TOCTOU past the cap).
         self._lock = threading.Lock()
 
     def charge(self, nbytes: int) -> None:
@@ -76,7 +76,7 @@ class DownloadBudget:
 
         A parallel stager calls this before starting each download so that once one
         worker trips the cap no further fetch begins; overshoot is bounded to the
-        in-flight set (itself bounded by the worker count), not the whole queue (§V42).
+        in-flight set (itself bounded by the worker count), not the whole queue.
         """
         with self._lock:
             if self._used > self._max:
@@ -92,12 +92,12 @@ class Fetcher(Protocol):
 #: HTTP status codes that carry a ``Location`` the fetcher follows (capped).
 _REDIRECT_CODES: frozenset[int] = frozenset({301, 302, 303, 307, 308})
 
-#: ``Content-Encoding`` values the fetcher can decompress (§V64). Anything else
+#: ``Content-Encoding`` values the fetcher can decompress. Anything else
 #: (``br``, ``deflate``, …) is rejected rather than silently mis-decoded -- we only
 #: advertise ``gzip`` in the request, so a compliant peer never returns another.
 _GZIP_ENCODINGS: frozenset[str] = frozenset({"gzip", "x-gzip"})
 
-#: Transport faults worth a bounded retry on a *fresh* connection (§V64/B55): a
+#: Transport faults worth a bounded retry on a *fresh* connection: a
 #: read/connect stall (``socket.timeout`` is ``TimeoutError`` on 3.10+), a peer that
 #: reset/aborted/refused the connection, or an HTTP framing error from a body the peer
 #: dropped mid-response. A genuine hard fault -- TLS verification, DNS ``gaierror`` --
@@ -111,7 +111,7 @@ _TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
 
 
 def _backoff_delay(attempt: int, base: float) -> float:
-    """Exponential backoff for a 1-based retry ``attempt``: ``base * 2**(attempt-1)`` (§V64).
+    """Exponential backoff for a 1-based retry ``attempt``: ``base * 2**(attempt-1)``.
 
     Deterministic (no jitter) so the delay is unit-testable and the retry budget stays
     small and predictable: attempt 1 → ``base``, attempt 2 → ``2*base``, and so on.
@@ -120,14 +120,14 @@ def _backoff_delay(attempt: int, base: float) -> float:
 
 
 def _gunzip_capped(compressed: bytes, *, max_bytes: int, url: str) -> bytes:
-    """Inflate a complete gzip body, capping the DECOMPRESSED size (§V64 zip-bomb guard).
+    """Inflate a complete gzip body, capping the DECOMPRESSED size (zip-bomb guard).
 
     ``compressed`` is the full gzip stream (the caller has already bounded the
     *compressed* read to the per-file cap, so a body already over-cap compressed is
     rejected before reaching here). Decompression is bounded to ``max_bytes + 1`` output
     bytes: a stream that would inflate past the cap leaves compressed data in
     ``unconsumed_tail`` (or overshoots the one-byte margin), and is refused -- a small
-    stream cannot inflate hugely past the §V1 per-file cap. A malformed stream raises a
+    stream cannot inflate hugely past the per-file cap. A malformed stream raises a
     typed error, never a raw ``zlib`` traceback.
     """
     dec = zlib.decompressobj(16 + zlib.MAX_WBITS)  # 16 → expect a gzip (not raw zlib) header
@@ -151,7 +151,7 @@ def _gunzip_capped(compressed: bytes, *, max_bytes: int, url: str) -> bytes:
 def _validate_redirect_target(
     newurl: str, *, origin_host: str | None, allow_cross_domain: bool
 ) -> None:
-    """Enforce the same-domain + HTTPS-only redirect policy (§V1/§V42; PRD §17.4).
+    """Enforce the same-domain + HTTPS-only redirect policy (PRD Section 17.4).
 
     A redirect that downgrades to plaintext or leaves the original request's host is
     refused (raised as ``SourceAdapterError``) unless ``allow_cross_domain`` is set,
@@ -166,21 +166,21 @@ def _validate_redirect_target(
             raise SourceAdapterError(
                 f"refusing cross-domain redirect to {target_host!r} "
                 f"(allowlisted host is {origin_host.lower()!r}); "
-                f"same-domain policy (PRD §17.4)"
+                f"same-domain policy (PRD Section 17.4)"
             )
 
 
 class HttpsFetcher:
-    """Default :class:`Fetcher`: HTTPS-only, redirect-capped, size-capped (§V1).
+    """Default :class:`Fetcher`: HTTPS-only, redirect-capped, size-capped.
 
     Reuses one keep-alive :class:`http.client.HTTPSConnection` per worker thread
-    (§T79/§V42) so a parallel ``sync`` pays the TLS handshake once per worker
+    so a parallel ``sync`` pays the TLS handshake once per worker
     instead of once per file. The connection cache is thread-local -- an
     ``http.client`` connection is not thread-safe, so a connection is never shared
-    across workers. Every §V1 gate (HTTPS-only, per-file byte cap, same-domain +
+    across workers. Every gate (HTTPS-only, per-file byte cap, same-domain +
     depth-capped redirects) is applied per file regardless of the worker.
 
-    Resilience (§V64/B55): a transient transport fault (:data:`_TRANSIENT_ERRORS` --
+    Resilience: a transient transport fault (:data:`_TRANSIENT_ERRORS` --
     read/connect timeout, connection reset, dropped-body framing error) is retried up
     to ``max_retries`` times with exponential backoff instead of aborting the whole
     ``sync``, so one stalled fetch among thousands does not kill the run; a genuine hard
@@ -200,7 +200,7 @@ class HttpsFetcher:
         self._max_redirects = max_redirects
         self._timeout = timeout
         self._allow_cross_domain = allow_cross_domain
-        # Bounded transient-retry budget (§V64): a fresh-connection timeout/reset is
+        # Bounded transient-retry budget: a fresh-connection timeout/reset is
         # retried this many times with _backoff_delay before it becomes a hard failure.
         self._max_retries = max_retries
         self._backoff_base = backoff_base
@@ -296,14 +296,14 @@ class HttpsFetcher:
                 if status in (404, 410):
                     # A referenced file that is absent upstream is distinguished from
                     # any other transport failure so the sync stager can skip a pruned
-                    # level file (B34) without swallowing a genuine 5xx / auth error.
+                    # level file without swallowing a genuine 5xx / auth error.
                     response.read()
                     raise SourceNotFoundError(f"upstream file not found ({status}): {url!r}")
                 if status != 200:
                     response.read()
                     raise SourceAdapterError(f"HTTP error {status} fetching {url!r}")
                 # Read one byte past the cap so an over-cap body is detectable. The body
-                # may arrive gzip-compressed (§V64): the cap counts the DECOMPRESSED
+                # may arrive gzip-compressed: the cap counts the DECOMPRESSED
                 # bytes -- the JSON we parse -- so a small stream that inflates hugely is
                 # refused (zip-bomb guard). The compressed read is itself cap-bounded, so
                 # a body already over-cap compressed is rejected before any inflate.
@@ -322,9 +322,9 @@ class HttpsFetcher:
                 return data
             except SourceNotFoundError:
                 # 404/410 drained its body above, so the connection is still
-                # reusable -- keep it. Pruned level files (B34) are the hot path for
+                # reusable -- keep it. Pruned level files are the hot path for
                 # 404s; dropping here would rebuild TLS per pruned file and defeat
-                # the keep-alive that §T79 exists to add.
+                # the keep-alive that the parallel sync adds.
                 raise
             except SourceAdapterError:
                 self._drop(host, port)
@@ -340,7 +340,7 @@ class HttpsFetcher:
                 if retries < self._max_retries:
                     # A genuine stall/reset on a live connection -- one blip among the
                     # thousands of files a full sync fetches. Back off and retry rather
-                    # than aborting the whole run (B55); the run only fails once the
+                    # than aborting the whole run; the run only fails once the
                     # bounded budget is exhausted.
                     retries += 1
                     time.sleep(_backoff_delay(retries, self._backoff_base))
@@ -364,19 +364,19 @@ def fetch_json(
 ) -> tuple[bytes, Any]:
     """Fetch one HTTPS URL under the run budget + per-file cap, then parse + cap it.
 
-    The one home (§V37) for the "download bytes → decode → cap depth/nodes" sequence
+    The one home for the "download bytes → decode → cap depth/nodes" sequence
     every network source adapter shares, so the size / depth / node caps are applied
     identically regardless of source. Returns ``(raw_bytes, parsed)`` -- the raw bytes
-    let a caller stage the file for hashing/provenance (§V17); the parsed value has
+    let a caller stage the file for hashing/provenance; the parsed value has
     already passed the depth/node caps. Fails closed on an over-cap or malformed
     document (never an uncaught ``RecursionError`` on pathologically deep JSON).
     """
     # Fail fast if a concurrent worker already tripped the run-level cap so no
     # further download starts once it is blown (bounds parallel overshoot to the
-    # in-flight set, itself bounded by the worker count, §V42).
+    # in-flight set, itself bounded by the worker count).
     budget.check()
     data = fetcher.fetch(url, max_bytes=limits.max_file_bytes)
-    # ``data`` is the DECOMPRESSED body (§V64): charging its length is conservative --
+    # ``data`` is the DECOMPRESSED body: charging its length is conservative --
     # it is >= the gzip bytes actually transferred, so the run-level download cap trips
     # no later than the real network volume would (fail-safe direction).
     budget.charge(len(data))

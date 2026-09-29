@@ -1,18 +1,18 @@
-"""Spawn-pressure-spike threat rule (§V6, §V26, §V39): flags enemy types that arrive
+"""Spawn-pressure-spike threat rule: flags enemy types that arrive
 in a possibly concentrated burst -- many units of the same type -- so defenses may
 face heavy pressure at once rather than a steady trickle.
 
 Reads the typed occurrence fields ``total_count`` + ``first_spawn_time`` +
-``last_spawn_time`` only (§V26). ``first/last_spawn_time`` is fragment-relative
-``preDelay`` aggregated as min/max across ALL waves, NOT elapsed stage time (B30,
-§V39): an enemy trickled across many waves each at a low per-fragment ``preDelay``
+``last_spawn_time`` only. ``first/last_spawn_time`` is fragment-relative
+``preDelay`` aggregated as min/max across ALL waves, NOT elapsed stage time:
+an enemy trickled across many waves each at a low per-fragment ``preDelay``
 collapses to a ~0 computed window. So the rule never concludes a confident burst
 from that cross-wave window -- it reports the high count at reduced confidence with
-a limitation that the window is fragment-relative and may overstate the burst
-(§V39 pick (c)). A *missing* window is likewise reported at reduced confidence + a
-limitation (§V26). A high count spread over a wide computed window is not a spike
+a limitation that the window is fragment-relative and may overstate the burst.
+A *missing* window is likewise reported at reduced confidence + a
+limitation. A high count spread over a wide computed window is not a spike
 and is skipped (a conservative decline, never a burst conclusion). One enemy across
-several level variants counts once (§V35).
+several level variants counts once.
 """
 
 from __future__ import annotations
@@ -35,30 +35,30 @@ RULE_ID = "threat.pressure_spike"
 #: A burst is at least this many spawns of one enemy type ...
 _SPIKE_MIN_COUNT = 6
 #: ... within at most this many seconds of *computed* window (first -> last spawn).
-#: The window is fragment-relative, not elapsed (B30) -> used only as a conservative
+#: The window is fragment-relative, not elapsed -> used only as a conservative
 #: gate to decline a wide spread, never as a confident burst measure.
 _SPIKE_MAX_WINDOW = 12.0
 
 #: The computed window is fragment-relative preDelay aggregated across waves, not
-#: elapsed time (B30, §V39) -> even a "windowed" fire is uncertain, so both the
+#: elapsed time -> even a "windowed" fire is uncertain, so both the
 #: windowed and window-missing cases report at the same reduced confidence.
 _CONF_WINDOWED = 0.5  # count + a tight *computed* (fragment-relative) window
 _CONF_WINDOW_MISSING = 0.5  # count only; window unknown
 
-#: §V39: the limitation stamped on a windowed fire so the client knows the window is
+#: The limitation stamped on a windowed fire so the client knows the window is
 #: not elapsed time and may overstate the burst.
 #:
 _FRAGMENT_WINDOW_LIMITATION = (
     "spawn window fragment-relative, aggregated across waves; may overstate burst"
 )
 
-#: §V108/B153 class: the window above is a min/max AGGREGATE over every wave -- a
+#: The window above is a min/max AGGREGATE over every wave -- a
 #: deliberately coarse figure whose per-wave detail (each spawn's own ``spawn_time``,
 #: ``interval`` and wave grouping) is what would settle whether the burst is real. That
 #: detail is on ``get_stage(include_spawns)`` for all 1124 EN / 1149 CN stages this arm
 #: fires on, so the caveat alone left the client with no way to resolve it.
 #:
-#: §V66: it rides the observation ONCE, not once per enemy. The caveat above is
+#: It rides the observation ONCE, not once per enemy. The caveat above is
 #: enemy-specific and stays per row; the route is the same sentence for every enemy in
 #: the stage, so repeating it would be N copies of one pointer.
 _SPAWN_TIMELINE_ROUTE = fuller_view_note(
@@ -72,7 +72,7 @@ _SPAWN_TIMELINE_ROUTE = fuller_view_note(
 
 
 class PressureSpikeRule:
-    """Flags enemy types with a high spawn count as a possible burst (§V6, §V26, §V39)."""
+    """Flags enemy types with a high spawn count as a possible burst."""
 
     rule_id = RULE_ID
 
@@ -85,10 +85,10 @@ class PressureSpikeRule:
         for occ in by_game_id(ctx.occurrences):
             count = occ.total_count
             if count is None:
-                # §V118/B165: an absent spawn count was folded in with a LOW one below,
+                # An absent spawn count was folded in with a LOW one below,
                 # so "we do not know how many arrive" read exactly like "few arrive".
                 # NULL on 0/28302 occurrences today; the column is nullable, so the arm
-                # is declared dead_today rather than dropped (§V117).
+                # is declared dead_today rather than dropped.
                 limitations.append(
                     f"{occ.game_id}: total_count missing; spawn pressure not assessed"
                 )
@@ -97,19 +97,19 @@ class PressureSpikeRule:
                 continue  # a counted, genuinely small arrival -> a real negative
             first, last = occ.first_spawn_time, occ.last_spawn_time
 
-            # §V101/B137: the note used to read "13 spawns; computed window 7s is
+            # The note used to read "13 spawns; computed window 7s is
             # fragment-relative, not elapsed" -- it restated the typed value AND buried a
             # second number the client had to parse out. The spawn count is the row's own
             # value; the window's two operands are separately emitted fields, so each is
             # its own row and the client derives the window itself. What the window MEANS
             # (fragment-relative, may overstate the burst) is prose, and it already rides
-            # the per-enemy §V39 limitation, so no note is needed on any row.
+            # the per-enemy limitation, so no note is needed on any row.
             spawn_bounds: tuple[EvidenceItem, ...] = ()
             if first is not None and last is not None:
                 window = max(last - first, 0.0)
                 if window > _SPIKE_MAX_WINDOW:
                     continue  # wide computed spread -> conservative decline, not a spike
-                # B30/§V39: the window is fragment-relative preDelay aggregated across
+                # The window is fragment-relative preDelay aggregated across
                 # waves, not elapsed -> report the count but flag the window and reduce
                 # confidence; never present it as a confirmed elapsed burst.
                 spawn_bounds = (
@@ -128,9 +128,9 @@ class PressureSpikeRule:
             confidence = max(confidence, conf)
 
         if not evidence:
-            return declined(limitations)  # §V118 (b)
+            return declined(limitations)
 
-        # §V108/§V66: one route to the per-wave timeline for the whole observation, and
+        # One route to the per-wave timeline for the whole observation, and
         # only when a window was actually computed -- the count-only arm has no window to
         # qualify, so pointing it at the timeline would answer a question it never raised.
         if windowed:

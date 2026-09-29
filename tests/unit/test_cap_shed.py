@@ -1,8 +1,8 @@
-"""T217 (a): §V120 -- what an over-cap response EMITS (B167).
+"""What an over-cap response EMITS.
 
-§V22 said what the cap is and how it is measured; nothing said what the reply looks like
+The cap rule said what it is and how it is measured; nothing said what the reply looks like
 when it bites. ``_enforce_cap`` therefore had one move -- drop all ``data``, flip to
-``partial`` -- and once T216 re-based the cap onto the full result frame (§V119 e), two
+``partial`` -- and once the cap was re-based onto the full result frame, two
 legal ``get_banners`` windows started answering with nothing at all while
 ``page_size<=80`` returned the same rows fine.
 
@@ -10,10 +10,10 @@ The rule these guards pin: when the request carries a knob that bounds the overs
 part, shrink that part until the frame fits and say what left; withholding is the floor
 for a payload no knob bounds, not the answer to every over-cap reply.
 
-Driven through :func:`~arknights_mcp.mcp.envelopes.ok` on purpose (§V120 b). The shed is
+Driven through :func:`~arknights_mcp.mcp.envelopes.ok` on purpose. The shed is
 a chokepoint rule, so a test that called the shed helpers directly would pass just as
-well against a per-service measure-and-trim copy -- the shape B135's four per-surface
-rollouts are the standing argument against.
+well against a per-service measure-and-trim copy -- the four per-surface rollouts the
+earlier sweep found are the standing argument against.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _prov() -> Provenance:
 
 
 def _row(index: int, *, refs: int, ref_bytes: int, name_bytes: int) -> dict[str, Any]:
-    """One banner row in the real ``get_banners`` wire shape (§V62)."""
+    """One banner row in the real ``get_banners`` wire shape."""
     return {
         "game_id": f"pool_{index:04d}",
         "display_name": f"Banner {index:04d} " + "n" * name_bytes,
@@ -70,18 +70,18 @@ def _row(index: int, *, refs: int, ref_bytes: int, name_bytes: int) -> dict[str,
 def _payload(
     *, rows: int, refs: int = 4, ref_bytes: int = 200, name_bytes: int = 0, total: int = 4321
 ) -> dict[str, Any]:
-    """A ``get_banners`` payload with the image-ref coupler attached (§V63/§V66)."""
+    """A ``get_banners`` payload with the image-ref coupler attached."""
     return {
         "server": "en",
         "banners": [
             _row(i, refs=refs, ref_bytes=ref_bytes, name_bytes=name_bytes) for i in range(rows)
         ],
         "page": {"page": 1, "page_size": rows, "total": total, "has_more": True},
-        # The coupler as the real shapers attach it (§V37): every hoisted key, from the one
+        # The coupler as the real shapers attach it: every hoisted key, from the one
         # home. Spelled through image_ref_hoisted_fields rather than as a literal so a key
         # added there lands in this fixture too -- the alternative is a synthetic payload
         # that stops resembling the wire, which is how a shed step keeps passing while the
-        # live response ships a key it forgot to retire (§V66 (4) (ii)).
+        # live response ships a key it forgot to retire.
         **image_ref_hoisted_fields(),
     }
 
@@ -101,17 +101,16 @@ def _banners_ok(payload: dict[str, Any]) -> ResponseEnvelope:
 #: ``page_size=100``), whose ref step takes the frame to 68444 bytes with all 100 rows
 #: aboard, ``wire_size`` on ``2026-08-13T220624Z-en-cn``.
 #:
-#: Two corrections have reached this figure, both owed under §V121 (f) (i) rather than
-#: optional: B171 (it read 215990 -> 65110, measured on a hand-assembled subset envelope
-#: that under-counts the frame by 4141 bytes -- the one direction §V22 forbids) and §T219
-#: (that window's pre-shed frame reads 173003, not 220131, now that
-#: ``image_refs_source_id`` is hoisted; the post-shed 68444 is unchanged, since this step
-#: retires the hoisted keys with the refs either way).
+#: Two corrections have reached this figure: an earlier reading of 215990 -> 65110 was
+#: measured on a hand-assembled subset envelope that under-counts the frame by 4141 bytes
+#: (the one direction the cap forbids), and that window's pre-shed frame now reads 173003,
+#: not 220131, now that ``image_refs_source_id`` is hoisted; the post-shed 68444 is
+#: unchanged, since this step retires the hoisted keys with the refs either way.
 #:
-#: §T219 also makes THIS page the reachability proof rather than an illustration of it: at
+#: This page is also the reachability proof rather than an illustration of it: at
 #: 86.5% of cap no live window reaches the plan any more, so the plan is declared
-#: ``dead_today`` in :data:`~arknights_mcp.mcp.cap_pressure.FRAME_PRESSURE` and §V113 (b)
-#: owes a synthetic proof that it still fires. This is that proof.
+#: ``dead_today`` in :data:`~arknights_mcp.mcp.cap_pressure.FRAME_PRESSURE` and
+#: a synthetic proof that it still fires is owed. This is that proof.
 _REF_HEAVY = dict(rows=100, refs=4, ref_bytes=200)
 
 #: Rows whose own metadata still overruns the frame after every ref is shed, so the
@@ -119,11 +118,11 @@ _REF_HEAVY = dict(rows=100, refs=4, ref_bytes=200)
 _ROW_HEAVY = dict(rows=100, refs=4, ref_bytes=200, name_bytes=2000)
 
 
-# --- §V120 (a): shrink the knob-bounded part; do not withhold the answer ---------
+# --- shrink the knob-bounded part; do not withhold the answer ------------------
 
 
 def test_over_cap_with_a_plan_answers_instead_of_withholding() -> None:
-    # B167 verbatim: the payload is over the frame cap and the request carries a
+    # The payload is over the frame cap and the request carries a
     # page_size that bounds it, so the client gets rows rather than an empty ``data``.
     raw = _payload(**_REF_HEAVY)
     assert wire_size(ResponseEnvelope(status="ok", data=raw)) > MAX_RESPONSE_BYTES
@@ -135,14 +134,14 @@ def test_over_cap_with_a_plan_answers_instead_of_withholding() -> None:
 
 
 def test_shed_output_is_under_the_cap_on_both_steps() -> None:
-    # Whatever the plan does, the emitted frame is bounded -- §V22 is not traded away
-    # for §V120; the shed is how the cap is met, not an exemption from it.
+    # Whatever the plan does, the emitted frame is bounded -- the cap is not traded away
+    # for the shed; the shed is how the cap is met, not an exemption from it.
     for shape in (_REF_HEAVY, _ROW_HEAVY):
         env = _banners_ok(_payload(**shape))
         assert wire_size(env) <= MAX_RESPONSE_BYTES, shape
 
 
-# --- §V120 (b): ordered, heaviest first; applied at the one chokepoint -----------
+# --- ordered, heaviest first; applied at the one chokepoint --------------------
 
 
 def test_shed_order_is_refs_before_rows() -> None:
@@ -158,13 +157,13 @@ def test_shed_order_is_refs_before_rows() -> None:
 
 
 def test_declared_order_is_the_applied_order() -> None:
-    # §V37: the declared plan and the steps that run are one home, so a plan cannot be
+    # The declared plan and the steps that run are one home, so a plan cannot be
     # documented in one order and executed in another.
     assert tuple(step.part for step in _shed_plan()) == _SHED_ORDER
 
 
 def test_shed_runs_at_the_chokepoint_and_leaves_the_callers_payload_alone() -> None:
-    # §V120 (b): the shed is the envelope builder's, not a measure-and-trim copy in the
+    # The shed is the envelope builder's, not a measure-and-trim copy in the
     # service -- the dict the caller handed in still holds everything it did.
     raw = _payload(**_REF_HEAVY)
     _banners_ok(raw)
@@ -173,7 +172,7 @@ def test_shed_runs_at_the_chokepoint_and_leaves_the_callers_payload_alone() -> N
 
 
 def test_a_page_that_fits_is_not_shed_at_all() -> None:
-    # §V96 non-degenerate: a plan that shed unconditionally would pass every assertion
+    # Non-degenerate: a plan that shed unconditionally would pass every assertion
     # above. Under the cap, nothing moves -- refs, coupler and limitations all survive.
     env = _banners_ok(_payload(rows=5))
     assert env.status == "ok"
@@ -182,11 +181,11 @@ def test_a_page_that_fits_is_not_shed_at_all() -> None:
     assert env.limitations == (IMAGE_REFS_LIMITATION,)
 
 
-# --- §V120 (c): name what left + the knob that returns it; keep the count honest --
+# --- name what left + the knob that returns it; keep the count honest ----------
 
 
 def test_shed_limitation_names_the_part_and_the_knob() -> None:
-    # §V108 routing: a client reading only this response must learn both that image
+    # Routing: a client reading only this response must learn both that image
     # references are missing and which knob brings them back.
     env = _banners_ok(_payload(**_REF_HEAVY))
     shed = [limit for limit in env.limitations if "page_size" in limit]
@@ -195,7 +194,7 @@ def test_shed_limitation_names_the_part_and_the_knob() -> None:
 
 
 def test_page_total_survives_the_shed() -> None:
-    # A trimmed list whose ``total`` shrank with it reads as §V67 CONFIRMED-none -- "that
+    # A trimmed list whose ``total`` shrank with it reads as CONFIRMED-none -- "that
     # is all there is" -- which is the one thing the shed must not claim.
     for shape in (_REF_HEAVY, _ROW_HEAVY):
         env = _banners_ok(_payload(**shape))
@@ -214,7 +213,7 @@ def test_row_shed_limitation_names_the_fitting_page_size() -> None:
     assert any(f"page_size of {kept} or smaller" in limit for limit in env.limitations)
 
 
-# --- §V63/§V67: the ref coupler is one predicate, shed or kept as a whole --------
+# --- the ref coupler is one predicate, shed or kept as a whole -----------------
 
 
 def test_ref_shed_retires_base_url_legend_and_limitation() -> None:
@@ -229,8 +228,8 @@ def test_ref_shed_retires_base_url_legend_and_limitation() -> None:
 
 
 def test_the_ref_shed_retires_every_hoisted_key() -> None:
-    # §V66 (4) (ii)/§V37, both ways: the retirement set and the attach set are ONE list, so
-    # this is derived from the home rather than enumerated. §T219 is why the assertion has to
+    # Both ways: the retirement set and the attach set are ONE list, so
+    # this is derived from the home rather than enumerated. That is why the assertion has to
     # be shaped this way -- the hoist added a third key, and a shed step holding a literal
     # two-tuple would have shipped a page that dropped every ref and kept claiming a source
     # for them. Named keys above catch a wrong key; this catches a MISSING one.
@@ -244,7 +243,7 @@ def test_the_ref_shed_retires_every_hoisted_key() -> None:
 
 
 def test_refs_leave_the_whole_page_never_half_of_it() -> None:
-    # §V67: an ``image_refs`` key absent on one row and present on another would mean
+    # An ``image_refs`` key absent on one row and present on another would mean
     # "this operator has no derived art" in one place and "the response dropped it" in
     # the other. So the part is shed whole.
     env = _banners_ok(_payload(**_ROW_HEAVY))
@@ -252,12 +251,12 @@ def test_refs_leave_the_whole_page_never_half_of_it() -> None:
     assert carriers and not any(carriers)
 
 
-# --- §V120 (d): the status split -------------------------------------------------
+# --- the status split ---------------------------------------------------------
 
 
 def test_paginated_shed_stays_ok() -> None:
-    # A smaller page is a smaller LEGAL window (§V106 set-query language), so it is not a
-    # degraded result -- and T216 rammed exactly this case into ``partial``.
+    # A smaller page is a smaller LEGAL window, so it is not a
+    # degraded result -- and an earlier cap change rammed exactly this case into ``partial``.
     for shape in (_REF_HEAVY, _ROW_HEAVY):
         assert _banners_ok(_payload(**shape)).status == "ok", shape
 
@@ -281,11 +280,11 @@ def test_a_flagged_section_shed_reports_partial() -> None:
     assert "map_image" not in env.data
 
 
-# --- §V22: the fail-closed floor is intact --------------------------------------
+# --- the fail-closed floor is intact ------------------------------------------
 
 
 def test_a_payload_no_knob_bounds_still_withholds() -> None:
-    # No plan -> the §V22 behaviour is exactly what it was: nothing oversized is emitted.
+    # No plan -> the floor behaviour is exactly what it was: nothing oversized is emitted.
     env = ok({"blob": "x" * 120_000}, provenance=[_prov()])
     assert env.status == "partial"
     assert dict(env.data) == {}
@@ -307,8 +306,8 @@ def test_a_plan_that_cannot_fit_still_withholds() -> None:
 
 
 def test_row_step_is_reachable_by_construction() -> None:
-    # §V113 (b): the second step of the plan does not fire on any live page today -- and
-    # since §T219 neither does the first, because the heaviest window sits at 86.5% of cap.
+    # The second step of the plan does not fire on any live page today -- and
+    # neither does the first, because the heaviest window sits at 86.5% of cap.
     # So the whole plan's reachability is proven here rather than declared, and an unfirable
     # step is an absent step.
     env = _banners_ok(_payload(**_ROW_HEAVY))

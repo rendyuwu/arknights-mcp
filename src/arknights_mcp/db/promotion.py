@@ -1,12 +1,12 @@
-"""Immutable versioned builds + atomic ``current.json`` promotion (§T24; §V3, §V4).
+"""Immutable versioned builds + atomic ``current.json`` promotion.
 
 A ``sync``/``import`` produces a validated SQLite *candidate*. Promotion copies it
 into an immutable, versioned file ``data/builds/<ts>-<servers>.sqlite`` and swaps
-``data/current.json`` **atomically** to point at it (PRD §11.5). The active
+``data/current.json`` **atomically** to point at it (PRD Section 11.5). The active
 database is never mutated in place; superseded builds are only ever removed by
-retention pruning, never edited (§V4).
+retention pruning, never edited.
 
-Fail-closed (§V3): a candidate that has not passed validation, is not a readable
+Fail-closed: a candidate that has not passed validation, is not a readable
 SQLite file, or carries no applied schema migrations is refused and
 ``current.json`` is left untouched, so the current database stays active.
 
@@ -14,8 +14,8 @@ SQLite file, or carries no applied schema migrations is refused and
 analyzer version, field-policy + transform versions, and the imported snapshot
 manifest hashes), not the raw SQLite bytes -- two candidates built from the same
 snapshots at different times are byte-different yet logically identical, and must
-not churn a fresh promotion. The pipeline versions are part of the identity
-(§V92/B112): an import pipeline bump (e.g. a new allowlisted field) over an
+not churn a fresh promotion. The pipeline versions are part of the identity:
+an import pipeline bump (e.g. a new allowlisted field) over an
 *identical* snapshot produces a logically NEW build that must promote, or the
 bumped code's output could never reach the active database.
 """
@@ -46,12 +46,12 @@ _SNAPSHOT_COLUMNS = ("snapshot_id", "source_id", "server", "manifest_hash", "imp
 
 
 class PromotionError(RuntimeError):
-    """A candidate could not be promoted; the current DB is left active (§V3/§V4)."""
+    """A candidate could not be promoted; the current DB is left active."""
 
 
 @dataclass(frozen=True)
 class CurrentManifest:
-    """The ``current.json`` payload selecting the active immutable build (§11.5)."""
+    """The ``current.json`` payload selecting the active immutable build (Section 11.5)."""
 
     database_filename: str
     database_hash: str
@@ -101,7 +101,7 @@ class PromotionResult:
 
 
 def read_schema_version(conn: sqlite3.Connection) -> str:
-    """Latest applied migration version (the DB schema version); raise if none (§V3)."""
+    """Latest applied migration version (the DB schema version); raise if none."""
     try:
         rows = conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
     except sqlite3.Error as exc:
@@ -133,7 +133,7 @@ def _content_hash(
 ) -> str:
     """Logical content identity for no-op detection (excludes raw SQLite bytes).
 
-    Includes the import-pipeline versions (§V92/B112): a ``FIELD_POLICY_VERSION``
+    Includes the import-pipeline versions: a ``FIELD_POLICY_VERSION``
     or ``TRANSFORM_VERSION`` bump changes what an identical snapshot imports, so a
     re-import after the bump is a NEW logical build -- without them here, the
     unchanged-snapshot no-op would discard it and the bumped pipeline's output
@@ -188,7 +188,7 @@ def resolve_active_database(
 
 
 def _versioned_filename(builds_dir: Path, timestamp: datetime, servers: Sequence[str]) -> str:
-    """``<ts>-<servers>.sqlite`` (PRD §11.5), disambiguated on same-second collision."""
+    """``<ts>-<servers>.sqlite`` (PRD Section 11.5), disambiguated on same-second collision."""
     ts_utc = timestamp.astimezone(UTC)
     token = ts_utc.strftime("%Y-%m-%dT%H%M%SZ")
     base = f"{token}-{'-'.join(servers)}"
@@ -240,15 +240,15 @@ def promote_candidate(
 ) -> PromotionResult:
     """Promote a validated candidate to the active build via atomic ``current.json``.
 
-    Fails closed (§V3): raises :class:`PromotionError` -- leaving ``current.json``
+    Fails closed: raises :class:`PromotionError` -- leaving ``current.json``
     untouched -- when ``validation_passed`` is false, the candidate is missing, or
-    it carries no schema/snapshots. Promotion is atomic (§V4): the build is copied
+    it carries no schema/snapshots. Promotion is atomic: the build is copied
     immutably into ``data/builds/`` and ``current.json`` is swapped with
     ``os.replace``; the active DB is never mutated in place. An unchanged candidate
     (same logical content) is a no-op.
     """
     if not validation_passed:
-        raise PromotionError("refusing to promote: candidate did not pass validation (§V4)")
+        raise PromotionError("refusing to promote: candidate did not pass validation")
 
     candidate = Path(candidate_path)
     if not candidate.is_file():
@@ -272,7 +272,7 @@ def promote_candidate(
     if current is not None and current.content_hash == content_hash:
         active = builds_dir / current.database_filename
         if active.is_file():
-            # Logically identical to the active build -> no-op (§11.2).
+            # Logically identical to the active build -> no-op.
             return PromotionResult(status="noop", manifest=current, database_path=active, pruned=[])
 
     ts = timestamp if timestamp is not None else datetime.now(tz=UTC)
@@ -294,7 +294,7 @@ def promote_candidate(
         created_at=ts.astimezone(UTC).isoformat(),
     )
     # Atomic promotion: the manifest swap is the single point that makes the new
-    # build active (§V4).
+    # build active.
     atomic_write_text(manifest_path, manifest.to_json())
 
     pruned = _prune_old_builds(builds_dir, keep_name=build_name, retain_versions=retain_versions)

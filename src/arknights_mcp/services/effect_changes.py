@@ -1,4 +1,4 @@
-"""Talent/trait effect-change emit shaping (§V83/§V66.3/§V71 d; §V37 single home).
+"""Talent/trait effect-change emit shaping (the single home for this reshaping).
 
 The change bundles a module or talent carries are decoded structural JSON, shared
 verbatim by two read services -- :mod:`arknights_mcp.services.operators` (``get_operator``
@@ -6,19 +6,19 @@ with ``include_modules``) and :mod:`arknights_mcp.services.module_compare`
 (``compare_operator_modules``). Everything that reshapes one for the wire lives here so
 the two surfaces cannot drift:
 
-* **§V83/§V66** -- :func:`dedup_effect_changes` collapses the duplicate/subset rows the
-  source emits for one change, and :func:`hoist_uniform_changes` lifts a bundle that is
-  byte-identical at every level onto the parent. Both are byte-lossless.
-* **§V83/§V115** -- :func:`label_token_effects` renames the source's own ``isToken`` flag
-  to the emitted ``applies_to``, so whose effect a change describes is read off the field
-  that states it rather than inferred from a neighbouring sentinel (B162).
-* **§V71 (d)** -- :func:`normalize_change_keys` is the last step: the source's camelCase
-  keys become snake_case and the doubly-encoded unlock phase becomes one encoding.
+* **the dedup/hoist pair** -- :func:`dedup_effect_changes` collapses the duplicate/subset
+  rows the source emits for one change, and :func:`hoist_uniform_changes` lifts a bundle
+  that is byte-identical at every level onto the parent. Both are byte-lossless.
+* **the token label** -- :func:`label_token_effects` renames the source's own ``isToken``
+  flag to the emitted ``applies_to``, so whose effect a change describes is read off the
+  field that states it rather than inferred from a neighbouring sentinel.
+* **the key rename** -- :func:`normalize_change_keys` is the last step: the source's
+  camelCase keys become snake_case and the doubly-encoded unlock phase becomes one encoding.
 
-This module was split out of ``services/operators.py`` under §V38: that module had
+This module was split out of ``services/operators.py``: that module had
 reached 767 lines against the 800-line hard cap, and this cluster is a self-contained
 responsibility group with two callers -- the same forced split as ``_stage_selector``
-(T195) and ``enemy_normalization`` (T210).
+and ``enemy_normalization``.
 """
 
 from __future__ import annotations
@@ -28,23 +28,23 @@ import json
 from arknights_mcp.util.coerce import suffix_int
 
 #: The source key stating WHOSE effect a change bundle describes -- the operator's, or the
-#: operator's summon/token (§V115). Carried down from the part by the importer; renamed to
+#: operator's summon/token. Carried down from the part by the importer; renamed to
 #: the emitted ``applies_to`` label by :func:`label_token_effects`.
 _IS_TOKEN_KEY = "isToken"
 
 #: The emitted label + its two values. The domain is closed because the source's flag is a
 #: bool: it either says token or says operator. A bundle whose source stated nothing keeps
-#: neither value and ships no label at all (§V67 -- absent means not-in-source).
+#: neither value and ships no label at all (absent means not-in-source).
 _APPLIES_TO_KEY = "applies_to"
 _APPLIES_TO_TOKEN = "token"
 _APPLIES_TO_OPERATOR = "operator"
 
-#: The keys that IDENTIFY which talent/trait change a bundle is (§V83): two entries sharing
+#: The keys that IDENTIFY which talent/trait change a bundle is: two entries sharing
 #: these describe the same change (same talent, same potential gate, same unlock condition,
 #: same subject); every other key (``blackboard``, ``description``) is value-bearing and may
 #: be merged.
 #:
-#: ``isToken`` is an identity member, not a value (B162): 89 en / 101 cn
+#: ``isToken`` is an identity member, not a value: 89 en / 101 cn
 #: (module, level, talentIndex, requiredPotentialRank) groups carry BOTH an operator-POV and
 #: a token-POV copy of one change, and the two are different source statements about
 #: different subjects. They are held apart today only because their descriptions differ,
@@ -52,9 +52,9 @@ _APPLIES_TO_OPERATOR = "operator"
 #: POVs happened to share a description would merge and one subject would vanish.
 #:
 #: Ordered so :func:`_effect_identity` can render a stable key from it; the frozenset is
-#: DERIVED from this tuple rather than spelled out again. They were two literals until
-#: §T202, and the identity function read the shorter one -- so adding a member to the set
-#: left the grouping unchanged and silently did nothing (§V37: one list, one home).
+#: DERIVED from this tuple rather than spelled out again. They were two literals, and the
+#: identity function read the shorter one -- so adding a member to the set
+#: left the grouping unchanged and silently did nothing (one list, one home).
 _EFFECT_IDENTITY_ORDER: tuple[str, ...] = (
     "talentIndex",
     "requiredPotentialRank",
@@ -75,16 +75,16 @@ def _empty_effect_value(value: object) -> bool:
 
 
 def _effect_identity(entry: dict[str, object]) -> str:
-    """The identity key of one change bundle (§V83): every member of the identity tuple."""
+    """The identity key of one change bundle: every member of the identity tuple."""
     return _canonical([entry.get(k) for k in _EFFECT_IDENTITY_ORDER])
 
 
 def _effect_conflict(a: dict[str, object], b: dict[str, object]) -> bool:
-    """True when two same-identity bundles carry DIFFERENT non-empty value fields (§V83).
+    """True when two same-identity bundles carry DIFFERENT non-empty value fields.
 
     A conflict means the entries are genuinely different data (e.g. two distinct
     blackboards under the same talent/potential gate), so they must NOT be merged and
-    stay as separate rows -- the dedup is byte-lossless (§V66). An empty field never
+    stay as separate rows -- the dedup is byte-lossless. An empty field never
     conflicts (it is subsumed by the other's value).
     """
     for key in (set(a) | set(b)) - _EFFECT_IDENTITY_KEYS:
@@ -95,11 +95,11 @@ def _effect_conflict(a: dict[str, object], b: dict[str, object]) -> bool:
 
 
 def _merge_effect(target: dict[str, object], entry: dict[str, object]) -> None:
-    """Fold ``entry``'s non-empty value fields into ``target`` in place (§V83).
+    """Fold ``entry``'s non-empty value fields into ``target`` in place.
 
     Only fills a field ``target`` lacks or left empty -- a conflicting field is never
     reached (the caller checks :func:`_effect_conflict` first). The merged row is a
-    superset of both inputs, so no information is lost (§V66 byte-lossless).
+    superset of both inputs, so no information is lost (byte-lossless).
     """
     for key, value in entry.items():
         if key in _EFFECT_IDENTITY_KEYS:
@@ -109,16 +109,16 @@ def _merge_effect(target: dict[str, object], entry: dict[str, object]) -> None:
 
 
 def dedup_effect_changes(changes: object) -> object:
-    """Collapse duplicate/subset talent/trait change bundles into one row each (§V83/§V66).
+    """Collapse duplicate/subset talent/trait change bundles into one row each.
 
     Two bundles sharing an identity -- (``talentIndex``, ``requiredPotentialRank``,
     ``unlockCondition``) -- describe the SAME change; the source sometimes emits it several
     times split across parts (a prose-only copy, a blackboard-only copy, a blackboard+prose
     copy). They are merged into one row carrying the union of their non-empty fields, so a
-    single talent no longer emits N near-identical rows (B88). The merge is byte-lossless:
+    single talent no longer emits N near-identical rows. The merge is byte-lossless:
     only non-conflicting entries collapse (:func:`_effect_conflict`); a genuine conflict
     (two distinct non-empty blackboards under one gate) keeps the rows separate. Group
-    order follows first appearance; a non-list value is returned unchanged. The single §V37
+    order follows first appearance; a non-list value is returned unchanged. The single
     home shared by the operator + module-compare read services.
     """
     if not isinstance(changes, list):
@@ -146,23 +146,23 @@ def dedup_effect_changes(changes: object) -> object:
 
 
 def label_token_effects(changes: object) -> object:
-    """Turn the source's own ``isToken`` flag into the emitted ``applies_to`` (§V83/§V115).
+    """Turn the source's own ``isToken`` flag into the emitted ``applies_to``.
 
     Whose effect a change describes is a fact the source STATES, on the part that owns the
     candidate: ``isToken`` true means the operator's summon/token, false means the operator.
     The importer carries that flag down to each bundle, and this renames it to the label a
     client reads. Both values are emitted, because "the source says operator" is an answer
-    and only a bundle whose source stated nothing ships no label (§V67).
+    and only a bundle whose source stated nothing ships no label.
 
     It used to read the ``talentIndex == -1`` sentinel instead, which is a DIFFERENT fact --
     a change carrying no existing talent index -- and the two nearly never coincide: at the
     pinned upstream 454 of 513 en ``-1`` rows sit on parts flagged ``isToken: false``, so the
-    label was false on those and absent on the 79 rows the source does flag (B162). The
+    label was false on those and absent on the 79 rows the source does flag. The
     sentinel keeps its own meaning, which the source never names, so it is glossed as what
-    the source did rather than read as a token marker (§V114 c).
+    the source did rather than read as a token marker.
 
     A non-list value is returned as-is; a bundle already carrying an explicit label is left
-    alone. The single §V37 home shared by both read services -- trait changes carry the flag
+    alone. The single home shared by both read services -- trait changes carry the flag
     too (13 en / 13 cn candidates describe the token), so they are labelled by the same pass.
     """
     if not isinstance(changes, list):
@@ -174,8 +174,8 @@ def label_token_effects(changes: object) -> object:
             continue
         is_token = entry.get(_IS_TOKEN_KEY)
         if not isinstance(is_token, bool):
-            # The source stated nothing (a pre-§V115 build, or a fixture without parts):
-            # no label, and the raw key never reaches the wire either way.
+            # The source stated nothing (a build predating the flag, or a fixture without
+            # parts): no label, and the raw key never reaches the wire either way.
             labelled.append({k: v for k, v in entry.items() if k != _IS_TOKEN_KEY})
             continue
         relabelled = {
@@ -191,7 +191,7 @@ def label_token_effects(changes: object) -> object:
 
 
 def dedup_and_label_changes(changes: object) -> object:
-    """Dedup subset/duplicate change rows then label token effects (§V83; §V37 home).
+    """Dedup subset/duplicate change rows then label token effects.
 
     The emit-shaping pair applied to every per-level talent/trait change list by both read
     services: :func:`dedup_effect_changes` collapses the redundant rows, then
@@ -199,7 +199,7 @@ def dedup_and_label_changes(changes: object) -> object:
     already-``shape_blackboard``ed (and, for a hoisted trait template, description-stripped)
     list so the two pipelines stay identical after their differing pre-steps.
 
-    §V71 (d)/B140: :func:`normalize_change_keys` runs LAST, so the dedup identity and the
+    :func:`normalize_change_keys` runs LAST, so the dedup identity and the
     token label still read the source's own key names while the wire sees only snake_case
     and a single phase encoding.
     """
@@ -207,14 +207,14 @@ def dedup_and_label_changes(changes: object) -> object:
 
 
 def hoist_uniform_changes(per_level: list[object | None]) -> object | None:
-    """The change bundle every present level shares byte-identically, else ``None`` (§V66.3/§V83).
+    """The change bundle every present level shares byte-identically, else ``None``.
 
     Returns the bundle when there are at least two present levels and each carries a
-    non-empty, byte-identical change list -- the per-level repeat §V66.3 targets, where the
-    bundle is hoisted once to the module and dropped from every level. Returns ``None`` when
-    a level carries none or a differing bundle, so the caller keeps the per-level copies and
-    loses nothing (byte-lossless). The single §V37 home shared by both read services; sibling
-    to :func:`hoist_uniform_template` (which hoists a single description string).
+    non-empty, byte-identical change list -- the per-level repeat the hoist targets, where
+    the bundle is hoisted once to the module and dropped from every level. Returns ``None``
+    when a level carries none or a differing bundle, so the caller keeps the per-level
+    copies and loses nothing (byte-lossless). The single home shared by both read services;
+    sibling to :func:`hoist_uniform_template` (which hoists a single description string).
     """
     if len(per_level) < 2 or any(_empty_effect_value(v) for v in per_level):
         return None
@@ -223,16 +223,16 @@ def hoist_uniform_changes(per_level: list[object | None]) -> object | None:
     return None
 
 
-#: §V71 (d)/B140: the source's camelCase change-bundle keys and the snake_case name each
+#: The source's camelCase change-bundle keys and the snake_case name each
 #: one takes on the wire. The envelope is snake_case throughout -- these three shipped
 #: ``requiredPotentialRank`` / ``talentIndex`` / ``unlockCondition`` three lines from a
 #: sibling ``unlock_phase`` / ``stat_bonus``, so one object mixed two naming conventions
 #: and a client had to know which fields came straight off the upstream dump.
 #:
-#: §V71 (d) NAMED these exact keys and gated the rename on T128's ADR. T128 closed and
-#: B69 spent the 0.1 -> 0.2 bump it was riding, so the fix lost its vehicle and the
-#: invariant has read "satisfied" ever since -- a declared-but-undelivered clause, which
-#: is worse than an undeclared one. It rides T198's own tracked 0.2 -> 0.3 flip instead.
+#: The rename was specified and gated on an ADR that later closed; the version bump it was
+#: riding was spent elsewhere, so the fix lost its vehicle and the requirement has read
+#: "satisfied" ever since -- a declared-but-undelivered clause, which is worse than an
+#: undeclared one. It rides the current tracked 0.2 -> 0.3 flip instead.
 _CHANGE_KEY_RENAMES: dict[str, str] = {
     "talentIndex": "talent_index",
     "requiredPotentialRank": "required_potential_rank",
@@ -247,17 +247,17 @@ _UNLOCK_PHASE_KEY = "phase"
 
 
 def _normalize_unlock_condition(value: object) -> object:
-    """One encoding for the unlock phase inside a change bundle (§V99/§V71 d; B140).
+    """One encoding for the unlock phase inside a change bundle.
 
     The same module object encoded its phase TWICE, two ways, three lines apart: an int
     ``unlock_phase: 2`` beside ``unlockCondition: {"level": 60, "phase": "PHASE_2"}``.
-    One concept, two types -- exactly the "1 wire key, 1 type, 1 meaning" §V99 requires,
+    One concept, two types -- exactly the "1 wire key, 1 type, 1 meaning" rule,
     and a client had to know that ``"PHASE_2"`` and ``2`` are the same fact.
 
-    The nested phase becomes the int, matching its sibling, through the existing §V37
-    home :func:`~arknights_mcp.util.coerce.suffix_int` (already how the importer reads
+    The nested phase becomes the int, matching its sibling, through the existing helper
+    :func:`~arknights_mcp.util.coerce.suffix_int` (already how the importer reads
     ``PHASE_<n>``). A value that does NOT parse is left exactly as the source sent it --
-    an unrecognized encoding is reported, never silently dropped or guessed at (§V26).
+    an unrecognized encoding is reported, never silently dropped or guessed at.
     """
     if not isinstance(value, dict):
         return value
@@ -270,7 +270,7 @@ def _normalize_unlock_condition(value: object) -> object:
 
 
 def normalize_change_keys(changes: object) -> object:
-    """Rename the camelCase change-bundle keys and collapse the phase encoding (§V71 d).
+    """Rename the camelCase change-bundle keys and collapse the phase encoding.
 
     Applied as the LAST step of :func:`dedup_and_label_changes`, deliberately: the dedup
     identity (:func:`_effect_identity`) and the token label both key on the SOURCE names,

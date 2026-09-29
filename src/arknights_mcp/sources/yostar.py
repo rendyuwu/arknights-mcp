@@ -2,13 +2,13 @@
 
 Stdlib only. Implements the email + one-time-code login and the syncData pull
 that ArkPRTS documents; no ArkPRTS code is used, only the protocol constants as
-interoperability facts. CLI-only: no MCP process imports this module (§V1).
+interoperability facts. CLI-only: no MCP process imports this module.
 
 Every request passes :func:`check_allowed`, a host+path allowlist checked as
 pairs, so no asset or game-data endpoint is reachable: the only asset-host path is
 the small ``…/official/Android/version`` JSON that ``account/login`` needs.
 Redirects are refused. Nothing here logs, and no message carries the email, code,
-or a token (§V12/§V15). ``fetch_sync_data`` keeps the u8 token and the
+or a token. ``fetch_sync_data`` keeps the u8 token and the
 game-session secret in local variables only, never retries, and every connection
 is closed (urllib sends ``Connection: close``), so no game-server state outlives
 the call.

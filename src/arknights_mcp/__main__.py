@@ -2,7 +2,7 @@
 
 Mirrors the ``arknights-mcp`` console script (``project.scripts``) so the package
 runs the same admin CLI whether invoked by module or by installed script -- e.g.
-``python -m arknights_mcp serve --transport stdio`` (§T47).
+``python -m arknights_mcp serve --transport stdio``.
 """
 
 from __future__ import annotations

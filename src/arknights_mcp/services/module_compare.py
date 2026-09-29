@@ -1,8 +1,8 @@
-"""Internal module-comparison service (§T45): the single domain entry point both
-transports call to compare one operator's modules across potential levels (§V14).
+"""Internal module-comparison service: the single domain entry point both
+transports call to compare one operator's modules across potential levels.
 
 Given a read-only SQLite connection and a ``(server, game_id)`` selector, it
-resolves the operator (region-scoped, §V5), loads each of the operator's modules
+resolves the operator (region-scoped), loads each of the operator's modules
 and their levels, and projects them to the requested potential levels (a subset of
 {1, 2, 3}) so a client sees the per-level change bundles side by side. A requested
 level a module does not define is marked ``present=False`` rather than omitted, so
@@ -10,15 +10,15 @@ level a module does not define is marked ``present=False`` rather than omitted, 
 
 ``mode`` selects the response shape: ``facts_only`` returns the typed comparison
 only; ``with_observations`` additionally runs the deterministic module analyzer
-(§T46) and returns its evidence-backed observations (§V6) -- capability facts, never
-a "mandatory"/"best" verdict (§V7). The stored structural JSON was allowlisted +
-sanitized at import (§V18/§V31) and is decoded here (never prose, §V16).
+and returns its evidence-backed observations -- capability facts, never
+a "mandatory"/"best" verdict. The stored structural JSON was allowlisted +
+sanitized at import and is decoded here (never prose).
 
-Read-only + parameterized SQL only (§V2): the parameterized ``SELECT``s live in
-:class:`~arknights_mcp.db.repositories.operators.OperatorRepository` (§T20), reused
-here (§V37); this service only reads through it and never mutates the database. It
+Read-only + parameterized SQL only: the parameterized ``SELECT``s live in
+:class:`~arknights_mcp.db.repositories.operators.OperatorRepository`, reused
+here; this service only reads through it and never mutates the database. It
 does not open the connection (callers pass one in), so both transports share this
-exact function (§V14).
+exact function.
 """
 
 from __future__ import annotations
@@ -52,14 +52,14 @@ from arknights_mcp.util.coerce import json_load
 #: Facts-only vs facts + deterministic module observations (mirrors the model).
 CompareMode = Literal["facts_only", "with_observations"]
 
-#: Typed outcome of a module comparison. The full §V23 status vocabulary is wired
-#: into the tool envelope (§T29); this service reports only these two.
+#: Typed outcome of a module comparison. The full status vocabulary is wired
+#: into the tool envelope; this service reports only these two.
 ModuleCompareStatus = Literal["ok", "not_found"]
 
 
 @dataclass(frozen=True)
 class ModuleLevelComparison:
-    """One module's change bundle at one requested level (decoded JSON; §V18/§V16).
+    """One module's change bundle at one requested level (decoded JSON).
 
     ``present`` is ``False`` when the module does not define this level; the change
     fields are then ``None`` (absent, not an empty change).
@@ -78,13 +78,13 @@ class ModuleComparison:
     """One module: metadata + its per-requested-level change bundles.
 
     ``trait_change_description`` is the in-game trait effect TEMPLATE hoisted once to the
-    module when every level's trait change carries the identical template (§V66.3); it is
+    module when every level's trait change carries the identical template; it is
     ``None`` when the module carries no trait template or the templates differ across
     levels, in which case each level's ``trait_changes`` entry keeps its own. The hoist is
     byte-lossless -- the text lives in exactly one place.
 
     ``trait_changes`` / ``talent_changes`` hoist a WHOLE change bundle to the module when it
-    is byte-identical across every present level (§V66.3/§V83) -- each present level then
+    is byte-identical across every present level -- each present level then
     omits its copy; both are ``None`` when the bundle varies by level (or is absent), in
     which case each level keeps its own. (``trait_changes`` here carries no description: the
     trait template rides ``trait_change_description`` separately.) Byte-lossless.
@@ -105,7 +105,7 @@ class ModuleComparison:
 class ModuleCompareResult:
     """Domain result of :func:`compare_operator_modules`.
 
-    Carries region + provenance (§V5) on an ``ok`` result. ``observations`` /
+    Carries region + provenance on an ``ok`` result. ``observations`` /
     ``warnings`` / ``analyzer_version`` are populated only in ``with_observations``
     mode. ``status == "not_found"`` implies ``provenance is None`` and empty modules.
     """
@@ -126,8 +126,8 @@ class ModuleCompareResult:
 def _stats(stat_bonus: object) -> tuple[ModuleStat, ...]:
     """Extract the typed ``(key, value)`` attribute pairs from a decoded stat bonus.
 
-    Reads the allowlisted ``attributeBlackboard`` shape (``[{"key", "value"}, ...]``,
-    §V18); a non-numeric or malformed entry is skipped rather than guessed at (§V26).
+    Reads the allowlisted ``attributeBlackboard`` shape (``[{"key", "value"}, ...]``);
+    a non-numeric or malformed entry is skipped rather than guessed at.
     ``bool`` is excluded explicitly (``isinstance(True, int)`` is ``True``).
     """
     if not isinstance(stat_bonus, list):
@@ -144,7 +144,7 @@ def _stats(stat_bonus: object) -> tuple[ModuleStat, ...]:
 
 
 def _change_descriptions(changes: object) -> list[str | None]:
-    """The ``description`` template of each change bundle in a decoded list (§V66.3 input).
+    """The ``description`` template of each change bundle in a decoded list.
 
     A non-list value (the source carried no change at this level) yields an empty list, so
     a trait-less level does not inject a spurious ``None`` into the uniformity check.
@@ -155,7 +155,7 @@ def _change_descriptions(changes: object) -> list[str | None]:
 
 
 def _strip_change_description(changes: object) -> object:
-    """Drop the hoisted ``description`` from each bundle of a decoded change list (§V66.3).
+    """Drop the hoisted ``description`` from each bundle of a decoded change list.
 
     Applied to a level's shaped ``trait_changes`` only when the template was hoisted to the
     parent module; every other key (blackboard, unlock condition, potential rank) is
@@ -195,15 +195,15 @@ def compare_operator_modules(
     levels: tuple[int, ...] = (1, 2, 3),
     mode: CompareMode = "facts_only",
 ) -> ModuleCompareResult:
-    """Compare one operator's modules across ``levels`` for ``server`` (§T45; §V5/§V7).
+    """Compare one operator's modules across ``levels`` for ``server``.
 
-    Read-only; parameterized SQL only (§V2). The operator is resolved by its unique
+    Read-only; parameterized SQL only. The operator is resolved by its unique
     ``(server, game_id)`` key, so an ``en`` operator is never surfaced under a ``cn``
-    query (§V5); a missing operator returns ``status == "not_found"``. ``levels`` is
+    query; a missing operator returns ``status == "not_found"``. ``levels`` is
     deduped + sorted here defensively -- the bounded input model is the validation
     gate (subset of {1, 2, 3}, non-empty); this service stays graceful for a direct
     caller. In ``with_observations`` mode it runs the deterministic module analyzer
-    (§T46) and returns its §V6 observations. Both transports call this (§V14).
+    and returns its observations. Both transports call this.
     """
     requested = tuple(sorted(set(levels)))
     repo = OperatorRepository(conn)
@@ -213,7 +213,7 @@ def compare_operator_modules(
 
     # Materialize each module's level rows once, and pre-decode + collect the
     # upgrade-cost item ids across the requested levels so a single region-scoped
-    # lookup resolves every cost name (§T132/§V69; en/cn never mixed, §V5).
+    # lookup resolves every cost name (en/cn never mixed).
     module_rows = [
         (module, {row.level: row for row in repo.module_levels(module.module_pk)})
         for module in repo.modules(operator.operator_pk)
@@ -232,7 +232,7 @@ def compare_operator_modules(
     comparisons: list[ModuleComparison] = []
     analyzer_modules: list[ModuleInput] = []
     for module, rows in module_rows:
-        # §V66.3: the trait effect TEMPLATE is byte-identical across a module's levels in
+        # The trait effect TEMPLATE is byte-identical across a module's levels in
         # the common case, so hoist it once to the module (dropped from every per-level
         # trait_changes entry below) when every level agrees; keep it inline when the
         # templates differ so no text is lost. Computed over the raw decode before shaping.
@@ -243,8 +243,8 @@ def compare_operator_modules(
             for desc in _change_descriptions(json_load(present_row.trait_changes_json))
         )
         # Shape each requested level once; a present level's trait/talent change lists are
-        # description-stripped (when the template was hoisted), then deduped + token-labelled
-        # (§V83/B88/B162). The analyzer reads the RAW decode (stat key/value only, since
+        # description-stripped (when the template was hoisted), then deduped + token-labelled.
+        # The analyzer reads the RAW decode (stat key/value only, since
         # ADR 0018 retired the trait/talent rules), so it is unaffected by this emit shaping.
         shaped_levels: list[tuple[int, bool, object, object, object, object]] = []
         analyzer_levels: list[ModuleLevelInput] = []
@@ -257,9 +257,9 @@ def compare_operator_modules(
             stat_bonus = json_load(row.stat_bonus_json)
             trait_changes = json_load(row.trait_changes_json)
             talent_changes = json_load(row.talent_changes_json)
-            # §T138/§V67/B63: drop always-null blackboard ``valueStr`` keys at emit.
+            # Drop always-null blackboard ``valueStr`` keys at emit.
             trait_shaped = shape_blackboard(trait_changes)
-            # §V66.3: when the trait template was hoisted to the module, strip it from this
+            # When the trait template was hoisted to the module, strip it from this
             # level's trait_changes so the text is emitted exactly once.
             if trait_change_description is not None:
                 trait_shaped = _strip_change_description(trait_shaped)
@@ -270,15 +270,15 @@ def compare_operator_modules(
                     shape_blackboard(stat_bonus),
                     dedup_and_label_changes(trait_shaped),
                     dedup_and_label_changes(shape_blackboard(talent_changes)),
-                    # §T132/§V69: each {id,count,type} cost entry paired with its item
-                    # display_name (additive, §V21); an un-named id is left as-is.
+                    # Each {id,count,type} cost entry paired with its item
+                    # display_name (additive); an un-named id is left as-is.
                     pair_cost_item_names(cost_by_key[(module.module_pk, level)], item_names),
                 )
             )
             analyzer_levels.append(
                 ModuleLevelInput(level=level, present=True, stats=_stats(stat_bonus))
             )
-        # §V66.3/§V83: a change bundle byte-identical across every PRESENT level is hoisted
+        # A change bundle byte-identical across every PRESENT level is hoisted
         # once to the module (dropped from each level below); ``None`` keeps it per level.
         trait_hoist = hoist_uniform_changes([t for _l, p, _s, t, _tal, _c in shaped_levels if p])
         talent_hoist = hoist_uniform_changes([tal for _l, p, _s, _t, tal, _c in shaped_levels if p])

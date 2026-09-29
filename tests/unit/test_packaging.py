@@ -1,10 +1,10 @@
-"""§T47 packaging: the wheel ships everything a fresh (non-editable) install needs.
+"""Packaging: the wheel ships everything a fresh (non-editable) install needs.
 
 Three guarantees the milestone owns:
 
 * the ``arknights-mcp`` console script (``project.scripts``) is declared, so a
   fresh install exposes the admin CLI + ``serve``;
-* the schema migrations ship *inside the package* -- the B16 fix (resolve
+* the schema migrations ship *inside the package* -- the fix (resolve
   ``migrations/*.sql`` via :mod:`importlib.resources`, not a repo-root path) whose
   enforcing test was explicitly deferred here. An editable checkout reads them
   from the source tree; the real regression is a *non-editable* install missing
@@ -13,9 +13,9 @@ Three guarantees the milestone owns:
 * ``py.typed`` ships, so downstream type-checkers see the package as typed.
 
 The wheel is built offline (``build --no-isolation`` against the locked dev-env
-hatchling), so this runs in the default gate with no network (§V16 fetch-free).
-The build itself is the shared ``built_distributions`` session fixture (§V37) --
-one ``python -m build`` for both this smoke and the §T49 release audit.
+hatchling), so this runs in the default gate with no network (fetch-free).
+The build itself is the shared ``built_distributions`` session fixture --
+one ``python -m build`` for both this smoke and the release audit.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from importlib import metadata, resources
 
 from tests.support import BuiltDistributions
 
-#: Migration stems that must ship in the package (§T12; §T19 domains). Kept in sync
+#: Migration stems that must ship in the package. Kept in sync
 #: with ``src/arknights_mcp/migrations`` -- a missing/renamed file trips this.
 _EXPECTED_MIGRATIONS = frozenset(
     {
@@ -50,7 +50,7 @@ def test_console_script_entry_point_declared() -> None:
 
 
 def test_migrations_resolve_as_package_resources() -> None:
-    # B16: migrations are found via importlib.resources (ship in the wheel), not a
+    # Migrations are found via importlib.resources (ship in the wheel), not a
     # repo-root path. Every expected migration must be a readable package resource.
     migrations = resources.files("arknights_mcp").joinpath("migrations")
     present = {r.name.removesuffix(".sql") for r in migrations.iterdir() if r.name.endswith(".sql")}
@@ -63,7 +63,7 @@ def test_py_typed_ships_as_package_resource() -> None:
 
 def test_wheel_bundles_migrations_and_py_typed(built_distributions: BuiltDistributions) -> None:
     # Inspect the offline-built wheel's members -- the faithful non-editable-
-    # install check that a source-tree resource lookup cannot make (B16).
+    # install check that a source-tree resource lookup cannot make.
     wheel = built_distributions.wheel
     names = set(built_distributions.wheel_sizes)
 

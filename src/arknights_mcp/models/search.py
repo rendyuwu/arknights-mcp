@@ -1,8 +1,8 @@
-"""Bounded input model for ``search_entities`` (§T30; §V19/§V22).
+"""Bounded input model for ``search_entities``.
 
 Mirrors the domain entry point in
 :func:`arknights_mcp.services.search.search_entities`. The bounds here are the
-§V19 enforcement point: ``limit`` is rejected outside ``[1, SEARCH_MAX_LIMIT]``
+enforcement point: ``limit`` is rejected outside ``[1, SEARCH_MAX_LIMIT]``
 so no request can widen the search window into a bulk dump.
 """
 
@@ -20,19 +20,19 @@ from arknights_mcp.models.common import (
     StrictModel,
 )
 
-#: Entity domains searchable via the shared FTS index (§T31; item added T142/§V73 so
-#: get_item_drops has a real name->id path, B67).
+#: Entity domains searchable via the shared FTS index (item added so
+#: get_item_drops has a real name->id path).
 EntityType = Literal["operator", "enemy", "stage", "item"]
 
 
 class SearchEntitiesInput(StrictModel):
-    """Parameters for ``search_entities`` (§I; §V19).
+    """Parameters for ``search_entities``.
 
-    ``query`` is free text, length-capped (§V18). ``server`` optionally scopes to
-    one region (§V5); ``entity_type`` narrows the domain. ``limit`` is bounded to
-    the §V19 window (default 10, max 50) -- an out-of-range value is rejected.
+    ``query`` is free text, length-capped. ``server`` optionally scopes to
+    one region; ``entity_type`` narrows the domain. ``limit`` is bounded to
+    the window (default 10, max 50) -- an out-of-range value is rejected.
 
-    The extra-locale (ja/ko) NAME-alias filter is RETIRED (§V57, T156 -- founder
+    The extra-locale (ja/ko) NAME-alias filter is RETIRED (founder
     2026-07-23, EN+CN only): there is no ``locale`` parameter, and ``extra="forbid"``
     rejects one if a client still sends it.
     """

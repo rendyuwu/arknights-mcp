@@ -1,15 +1,15 @@
-"""Penguin Statistics drop-rate source adapter (§T87; §V52, §V53, §V1).
+"""Penguin Statistics drop-rate source adapter.
 
 A network-touching adapter (``touches_network=True``) used **exclusively** by CLI
-``sync``/``import`` jobs, never at query time (§V1/§V52): it fetches observed
+``sync``/``import`` jobs, never at query time: it fetches observed
 drop-rate statistics from the documented Penguin Statistics v2 HTTP API over
 HTTPS, under a fixed endpoint allowlist and the shared size / JSON-depth /
-node-count / redirect caps (:mod:`arknights_mcp.sources.http_fetch`, §V37). The
-importer (§T89) consumes what this returns and stamps expiry + attribution + region
-provenance (§V53/§V54); this adapter is transport only.
+node-count / redirect caps (:mod:`arknights_mcp.sources.http_fetch`). The
+importer consumes what this returns and stamps expiry + attribution + region
+provenance; this adapter is transport only.
 
 Penguin Statistics data is licensed CC BY-NC 4.0 — noncommercial use with
-attribution (§V53; recorded in the source registry and ``NOTICE``).
+attribution (recorded in the source registry and ``NOTICE``).
 """
 
 from __future__ import annotations
@@ -30,31 +30,31 @@ from arknights_mcp.sources.http_fetch import (
 #: Source id for this adapter (matches the registry entry key).
 DEFAULT_SOURCE_ID = "penguin_statistics"
 
-#: Base URL of the documented Penguin Statistics v2 read API (HTTPS only, §V1).
+#: Base URL of the documented Penguin Statistics v2 read API (HTTPS only).
 PENGUIN_BASE_URL = "https://penguin-stats.io/PenguinStats/api/v2"
 
-#: Fixed endpoint allowlist (§V18): only these documented v2 read endpoints are
+#: Fixed endpoint allowlist: only these documented v2 read endpoints are
 #: ever fetched. An exact-match set — no path segment is built from caller input, so
 #: traversal / SSRF into another path is impossible. ``result/matrix`` is the drop
-#: matrix; ``stages``/``items`` are the metadata the importer joins against (§T89).
+#: matrix; ``stages``/``items`` are the metadata the importer joins against.
 ALLOWED_ENDPOINTS: frozenset[str] = frozenset({"result/matrix", "stages", "items"})
 
 #: Penguin's server codes. The penguin-server → fact-region mapping (US/Global→en,
-#: CN→cn, jp/kr dropped) is the importer's concern (§V54/§T89); here the server is
+#: CN→cn, jp/kr dropped) is the importer's concern; here the server is
 #: validated against this closed set only so it cannot inject arbitrary query text.
 ALLOWED_SERVERS: frozenset[str] = frozenset({"CN", "US", "JP", "KR"})
 
 
 class PenguinStatsAdapter:
-    """CLI-only network adapter for Penguin Statistics drop data (§V52/§V1).
+    """CLI-only network adapter for Penguin Statistics drop data.
 
     Fetches an allowlisted v2 endpoint and returns the parsed JSON, applying every
-    §V1 gate (HTTPS-only, per-file byte cap, JSON depth/node cap, run-level total
+    gate (HTTPS-only, per-file byte cap, JSON depth/node cap, run-level total
     cap, capped same-domain redirects) via the shared :func:`fetch_json`. It never
     touches the network at query time and is only ever constructed by a CLI job.
     """
 
-    #: This adapter performs network I/O; it is only ever run from CLI sync (§V1).
+    #: This adapter performs network I/O; it is only ever run from CLI sync.
     touches_network: bool = True
 
     def __init__(
@@ -91,7 +91,7 @@ class PenguinStatsAdapter:
         return url
 
     def fetch(self, endpoint: str, *, server: str | None = None) -> Any:
-        """Fetch one allowlisted endpoint and return the capped, parsed JSON (§V1).
+        """Fetch one allowlisted endpoint and return the capped, parsed JSON.
 
         ``server`` (when given) must be a known penguin server code; it is passed as
         the ``server`` query parameter. Fails closed on a non-allowlisted endpoint,

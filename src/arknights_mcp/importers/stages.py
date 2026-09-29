@@ -1,8 +1,8 @@
 """Stage importer: stage_table + zone_table -> zones + stages, and each stage's
 level file -> map/tiles/routes/waves/spawns + stage_enemies (via ``levels``).
 
-Applies the field allowlist + sanitization (§V18) and attaches per-record
-provenance (§V17). Spawns resolve to enemies already imported for the region.
+Applies the field allowlist + sanitization and attaches per-record
+provenance. Spawns resolve to enemies already imported for the region.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class ParsedZone:
 
 @dataclass(frozen=True)
 class ParsedActivity:
-    """One event's TITLE, as the client would name it (§V110/B155).
+    """One event's TITLE, as the client would name it.
 
     Distinct from :class:`ParsedZone`'s ``display_name``, which is the sub-zone
     SUBTITLE ``zone_table`` carries ("The Coming of The Future"). The title
@@ -77,12 +77,12 @@ class StageImportResult:
     levels: LevelImportResult
     #: Stages that named a level file, and of those how many were resolved+imported.
     #: A non-empty combat source with references but 0 imports (or 0 downstream
-    #: rows) is a silent-empty regression the pipeline fails closed on (§V30).
+    #: rows) is a silent-empty regression the pipeline fails closed on.
     levels_referenced: int = 0
     levels_imported: int = 0
-    #: Zones that got an event TITLE from ``activity_table`` (§V110). 0 is legitimate
+    #: Zones that got an event TITLE from ``activity_table``. 0 is legitimate
     #: only when the snapshot carries no activity table at all; with the table present
-    #: the importer fails closed rather than shipping a title-less index (B155).
+    #: the importer fails closed rather than shipping a title-less index.
     zone_event_names: int = 0
 
 
@@ -96,9 +96,9 @@ def parse_zones(zone_raw: Any) -> list[ParsedZone]:
         if not isinstance(entry, dict):
             continue
         kept = apply_allowlist(entry, ZONE_ALLOWLIST).kept
-        # T179 review-fix: the REAL zone_table names a zone via ``zoneNameSecond``
+        # The REAL zone_table names a zone via ``zoneNameSecond``
         # (no ``zoneName`` key -- see tests/fixtures/stage_4_4_real); reading only
-        # ``zoneName`` left display_name NULL on real builds, which nulled the §T179
+        # ``zoneName`` left display_name NULL on real builds, which nulled the
         # stage search alias ("Lone Trail" -> its stages) the tool descriptions
         # promise. Prefer ``zoneName`` (synthetic/back-compat), fall back to the
         # real-shape key.
@@ -114,19 +114,19 @@ def parse_zones(zone_raw: Any) -> list[ParsedZone]:
 
 
 def parse_activity_titles(activity_raw: Any) -> dict[str, ParsedActivity]:
-    """Map each zone game_id to its event title, from ``activity_table`` (§V110).
+    """Map each zone game_id to its event title, from ``activity_table``.
 
     Two source keys, both required: ``basicInfo[<actId>].name`` holds the title, and
     ``zoneToActivity`` maps a zone id onto its ``actId``. The join is the whole point
     -- a zone knows nothing about its event, and the event record knows nothing about
-    its zones (B155: at the pinned commit this resolves 266 of 429 EN zones onto 120
+    its zones (at the pinned commit this resolves 266 of 429 EN zones onto 120
     distinct titles; a zone with no activity row, e.g. ``camp_zone_*`` annihilation or
-    ``tower_*``, is simply absent from the returned map and keeps a NULL title, §V26).
+    ``tower_*``, is simply absent from the returned map and keeps a NULL title).
 
     Raises :class:`ImporterError` when the table is present but shaped otherwise, or
     when it yields no titles at all despite a non-empty ``basicInfo`` -- a silent-empty
-    title map is exactly the state B155 shipped in, and it is invisible downstream
-    (every zone still has its subtitle, so nothing else looks wrong, §V30).
+    title map is exactly the earlier defect's state, and it is invisible downstream
+    (every zone still has its subtitle, so nothing else looks wrong).
     """
     if not isinstance(activity_raw, dict):
         raise ImporterError("activity table is not a JSON object")
@@ -163,7 +163,6 @@ def parse_activity_titles(activity_raw: Any) -> dict[str, ParsedActivity]:
         unit="basicInfo entr(y|ies)",
         resolution="resolved to a zone event title",
         outcome="empty event-title map",
-        cite="§V110/B155",
     )
     return by_zone
 
@@ -218,8 +217,8 @@ def import_stages(
     server = adapter.server
     zones = parse_zones(adapter.read_json(zone_table_path))
     stages = parse_stages(adapter.read_json(stage_table_path))
-    # §V110/B155: the event TITLE lives in activity_table, never in zone_table. The
-    # table is fetched tolerant-absent (§V41/B36) -- a combat-only snapshot lacking it
+    # The event TITLE lives in activity_table, never in zone_table. The
+    # table is fetched tolerant-absent -- a combat-only snapshot lacking it
     # imports every zone with a NULL event_name -- but when it IS there its shape is
     # contract, so parse_activity_titles fails closed on a silent-empty map.
     activity_by_zone: dict[str, ParsedActivity] = {}
@@ -228,14 +227,14 @@ def import_stages(
     else:
         _LOG.warning(
             "snapshot has no %s: zones import with no event title, so an event is not "
-            "searchable by name (§V110)",
+            "searchable by name",
             activity_table_path,
         )
     enemy_pk_by_game_id = _enemy_pk_by_game_id(conn, server)
 
     # One provenance row per ACTIVITY record, shared by that event's zones (the title
     # is one source fact, not one per zone). Its source_path is the activity table, so
-    # the row never claims the zone table said something it did not (§V17).
+    # the row never claims the zone table said something it did not.
     activity_provenance: dict[str, int] = {}
     zone_pk_by_game_id: dict[str, int] = {}
     zone_event_names = 0
@@ -291,10 +290,10 @@ def import_stages(
             record=stage.provenance_record,
         )
         # Real levelId is a Title-case, extension-less reference; rewrite it to the
-        # actual snapshot path (§V29/§V30). A no-op for an already-resolvable path.
+        # actual snapshot path. A no-op for an already-resolvable path.
         level_path = normalize_level_id(stage.level_id)
-        # Confine the normalized path to the levels tree before it is stored or read
-        # (§V36; B17). A crafted levelId can fold back into gamedata/excel or escape
+        # Confine the normalized path to the levels tree before it is stored or read.
+        # A crafted levelId can fold back into gamedata/excel or escape
         # the tree via "..", staying inside the snapshot root so the adapter's
         # _safe_path passes; the same clean-path gate the network discovery uses must
         # also guard the local import path, else a stage reads an excel table as a
@@ -302,7 +301,7 @@ def import_stages(
         if level_path is not None and not is_clean_level_path(level_path):
             _LOG.warning(
                 "stage %s: levelId %r normalized to %r which is outside the levels "
-                "tree; refusing to read it as a level file (§V36)",
+                "tree; refusing to read it as a level file",
                 stage.game_id,
                 stage.level_id,
                 level_path,
@@ -339,7 +338,7 @@ def import_stages(
         if level_path and adapter.exists(level_path):
             raw_level = normalize_level(adapter.read_json(level_path))
             # The level file is a distinct source_path from the stage table, so it
-            # gets its own provenance row; every level-derived row links to it (§V17).
+            # gets its own provenance row; every level-derived row links to it.
             level_provenance_id = insert_record_provenance(
                 conn,
                 snapshot_id=snapshot_id,
@@ -363,7 +362,7 @@ def import_stages(
         elif level_path:
             # A stage that names a level file we cannot resolve is imported with no
             # map/waves/spawns; record it rather than silently returning an empty,
-            # wrong picture to analysis (§21.2 unresolved cross-reference).
+            # wrong picture to analysis (Section 21.2 unresolved cross-reference).
             _LOG.warning(
                 "stage %s references level file %r (from levelId %r) which is absent; "
                 "imported with no map/tiles/routes/waves/spawns",

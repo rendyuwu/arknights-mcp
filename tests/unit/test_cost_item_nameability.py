@@ -1,4 +1,4 @@
-"""Shared cost-item nameability predicate (§T132/§V69; §V37 single home).
+"""Shared cost-item nameability predicate.
 
 The upgrade-cost name pairing has three collaborators that MUST agree on which entries
 are candidates for a display name: :func:`cost_item_ids` (what to look up),
@@ -29,7 +29,7 @@ def test_int_id_is_not_nameable_and_never_flagged() -> None:
 
 def test_str_id_without_name_is_nameable_and_flagged() -> None:
     # A non-empty string id IS a pairing candidate; with no name in the build it stays a
-    # bare id (never fabricated, §V26) and the detector flags the un-named entry (§V69).
+    # bare id (never fabricated) and the detector flags the un-named entry.
     cost = [{"id": "mat_x", "count": 4, "type": "MATERIAL"}]
     assert cost_item_id(cost[0]) == "mat_x"
     assert cost_item_ids(cost) == {"mat_x"}

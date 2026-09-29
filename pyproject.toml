@@ -7,14 +7,14 @@ name = "arknights-mcp"
 version = "0.2.0"
 description = "Read-only Arknights Intelligence MCP server: one shared core, local stdio + private OAuth/OIDC Streamable HTTP, over versioned SQLite snapshots."
 requires-python = ">=3.12,<3.13"
-# Runtime dependencies are declared and locked in task T3 (V25: mcp>=1.28.1,<2).
+# Runtime dependencies are declared and locked (mcp>=1.28.1,<2).
 dependencies = [
     "mcp>=1.28.1,<2",
     "pg8000>=1.31,<2",
     "pydantic>=2,<3",
     "pyjwt[crypto]>=2.10,<3",
     "sqlalchemy>=2,<3",
-    # Streamable HTTP transport (§T51/§I.api): ASGI app + server. Already resolved
+    # Streamable HTTP transport: ASGI app + server. Already resolved
     # transitively via mcp; declared directly now that the transport imports them.
     "starlette>=0.47,<2",
     "uvicorn>=0.34,<1",

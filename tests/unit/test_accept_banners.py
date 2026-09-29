@@ -1,17 +1,16 @@
-"""T115: the M11 acceptance tests (§V62, §V5, §V30, §V16, §V7).
+"""The M11 acceptance tests.
 
 The milestone gate for M11 (banner archive). It drives the operator snapshot
 fixtures through the *entire* M11 stack the way a CLI sync would -- the real
 :func:`~arknights_mcp.importers.pipeline.build_candidate` pipeline, which imports
-banners after operators (§T113) -- then reads the archive back through the
-shared-core :func:`~arknights_mcp.services.banners.get_banners` both transports call
-(§V14):
+banners after operators -- then reads the archive back through the
+shared-core :func:`~arknights_mcp.services.banners.get_banners` both transports call:
 
   build multi-region candidate (operator en + cn fixtures) -> import_banners runs
   inside the pipeline (gacha_table.json present for en, absent for cn) -> reopen
   read-only -> get_banners.
 
-The banner archive is a metadata-only historical FACT (§V62), NOT planning: the en
+The banner archive is a metadata-only historical FACT, NOT planning: the en
 ``operator`` fixture's ``gacha_table.json`` carries a LIMITED banner (featured op under
 ``limitParam.limitedCharId``), a CLASSIC banner (an array under
 ``dynMeta.attainRare6CharList``), and a NORMAL standard banner (no typed featured-op),
@@ -24,21 +23,21 @@ region-separation and tolerant-absent cases fall straight out of the real pipeli
 Unlike the per-task unit tests (which seed banners via ``insert_banners`` directly),
 this asserts the whole M11 story end to end:
 
-* **banner metadata, no prose** (§V62/§V16): each banner carries only the typed
+* **banner metadata, no prose**: each banner carries only the typed
   schedule/identity fields + typed featured ops; gacha prose survives into neither the
   built DB nor the served result.
-* **typed featured-op per rule type** (§V62): LIMITED resolves ``limitedCharId`` to the
+* **typed featured-op per rule type**: LIMITED resolves ``limitedCharId`` to the
   present operator, CLASSIC resolves the ``attainRare6CharList`` array, NORMAL carries no
-  typed featured-op and surfaces the standard-banner limitation (§V26).
-* **region integrity** (§V5): en banners are never surfaced under a cn query; every
+  typed featured-op and surfaces the standard-banner limitation.
+* **region integrity**: en banners are never surfaced under a cn query; every
   banner + its provenance is region-tagged, en & cn never silently mixed.
-* **fail-closed vs tolerant-absent** (§V30/B36): a cn snapshot without ``gacha_table``
+* **fail-closed vs tolerant-absent**: a cn snapshot without ``gacha_table``
   promotes with zero banners (legitimate empty), but a non-empty ``gachaPoolClient`` that
   resolves to zero banners fails the whole build closed.
-* **since/until window** (§V19): the optional open-time bounds narrow the list.
-* **no new source** (§V62): the archive reuses ``arknights_assets_gamedata``;
+* **since/until window**: the optional open-time bounds narrow the list.
+* **no new source**: the archive reuses ``arknights_assets_gamedata``;
   ``get_data_sources`` grows no banner/gacha source.
-* **archive is a FACT, not planning** (§V7): no mandatory/best/pity/spark verdict leaks.
+* **archive is a FACT, not planning**: no mandatory/best/pity/spark verdict leaks.
 """
 
 from __future__ import annotations
@@ -82,11 +81,11 @@ _UNTIL = "2023-12-15T00:00:00+00:00"
 
 #: A prose sentinel shared by every prose field in the fixture gacha_table
 #: (gachaPoolSummary/gachaPoolDetail/rateUpHtml). A correct metadata-only pipeline drops
-#: it, so it appears in neither the built DB nor the served result (§V16/§V62).
+#: it, so it appears in neither the built DB nor the served result.
 _PROSE = "must never be imported"
 
 #: Planning / prescriptive language a banner ARCHIVE must never emit -- it is a
-#: historical FACT, not gacha planning (§V7/§V62). None collides with the legitimate
+#: historical FACT, not gacha planning. None collides with the legitimate
 #: "rate-up not in typed gamedata" limitation wording.
 _PROSCRIBED = ("pity", "spark", "pull probability", "guaranteed", "best banner", "mandatory")
 
@@ -96,7 +95,7 @@ def _adapter(root: Path, server: str) -> LocalSnapshotAdapter:
 
 
 def _build(tmp_path: Path) -> Path:
-    """Build the multi-region operator candidate the way a CLI sync would (§T21/§T22).
+    """Build the multi-region operator candidate the way a CLI sync would.
 
     The en fixture carries a gacha_table.json (LIMITED/CLASSIC/NORMAL + prose); the cn
     fixture has none. import_banners runs inside the pipeline after operators, so the
@@ -124,25 +123,25 @@ def _by_id(result: BannersResult) -> dict[str, object]:
     return {b.game_id: b for b in result.banners}
 
 
-# --- banner metadata rows, no prose (§V62/§V16) -------------------------------
+# --- banner metadata rows, no prose -------------------------------------------
 
 
 def test_accept_synced_db_has_banner_metadata_rows(conn: sqlite3.Connection) -> None:
-    # §V62: a synced db surfaces the en banner archive -- the three fixture pools,
-    # newest-first, each region-tagged en with a pinned banner provenance chain (§V5).
+    # A synced db surfaces the en banner archive -- the three fixture pools,
+    # newest-first, each region-tagged en with a pinned banner provenance chain.
     result = get_banners(conn, server="en")
     assert result.status == "ok"
     assert result.server == "en"
     assert [b.game_id for b in result.banners] == [_NORMAL, _CLASSIC, _LIMITED]
     assert all(b.region == "en" for b in result.banners)
-    # §V5/§V17: one en banner snapshot backs the set, region-tagged + pinned.
+    # One en banner snapshot backs the set, region-tagged + pinned.
     assert len(result.provenance) == 1
     assert result.provenance[0].snapshot_id.startswith("en:")
     assert result.provenance[0].imported_at == PINNED_IMPORTED_AT
 
 
 def test_accept_no_gacha_prose_survives(conn: sqlite3.Connection) -> None:
-    # §V16/§V62: gacha prose (summary/detail/html) survives into neither the served
+    # Gacha prose (summary/detail/html) survives into neither the served
     # result nor the built DB -- the metadata-only ceiling holds through the full pipeline.
     result = get_banners(conn, server="en")
     served = json.dumps(asdict(result), ensure_ascii=True)
@@ -164,7 +163,7 @@ def test_accept_no_gacha_prose_survives(conn: sqlite3.Connection) -> None:
 
 
 def test_accept_banner_wire_keys_are_metadata_only(conn: sqlite3.Connection) -> None:
-    # §V62: exactly the typed schedule/identity fields + typed featured ops reach the
+    # Exactly the typed schedule/identity fields + typed featured ops reach the
     # wire; there is no gacha prose field for a banner to carry.
     allowed = {
         "game_id",
@@ -182,11 +181,11 @@ def test_accept_banner_wire_keys_are_metadata_only(conn: sqlite3.Connection) -> 
             assert set(op) == op_keys
 
 
-# --- typed featured-op per rule type (§V62/§V26) ------------------------------
+# --- typed featured-op per rule type ------------------------------------------
 
 
 def test_accept_limited_featured_op_resolves_to_operator(conn: sqlite3.Connection) -> None:
-    # §V62: a LIMITED banner names one featured op under limitParam.limitedCharId, which
+    # A LIMITED banner names one featured op under limitParam.limitedCharId, which
     # soft-resolves to the present en operator's name.
     limited = _by_id(get_banners(conn, server="en"))[_LIMITED]
     ops = limited.featured_ops  # type: ignore[attr-defined]
@@ -196,7 +195,7 @@ def test_accept_limited_featured_op_resolves_to_operator(conn: sqlite3.Connectio
 
 
 def test_accept_classic_family_reads_attain_rare6_list(conn: sqlite3.Connection) -> None:
-    # §V62: a CLASSIC-family banner names its featured ops via dynMeta.attainRare6CharList.
+    # A CLASSIC-family banner names its featured ops via dynMeta.attainRare6CharList.
     classic = _by_id(get_banners(conn, server="en"))[_CLASSIC]
     ops = classic.featured_ops  # type: ignore[attr-defined]
     assert [(o.char_id, o.resolved, o.operator_name) for o in ops] == [
@@ -205,19 +204,19 @@ def test_accept_classic_family_reads_attain_rare6_list(conn: sqlite3.Connection)
 
 
 def test_accept_normal_has_no_featured_op_and_limitation(conn: sqlite3.Connection) -> None:
-    # §V62/§V26: a NORMAL standard banner carries no typed featured-op (its rate-up is
-    # prose only, §V18-forbidden) -> none emitted + the standard-banner caveat surfaced.
+    # A NORMAL standard banner carries no typed featured-op (its rate-up is
+    # prose only, forbidden) -> none emitted + the standard-banner caveat surfaced.
     result = get_banners(conn, server="en")
     normal = _by_id(result)[_NORMAL]
     assert normal.featured_ops == ()  # type: ignore[attr-defined]
     assert STANDARD_BANNER_LIMITATION in result.limitations
 
 
-# --- region integrity (§V5) ---------------------------------------------------
+# --- region integrity ---------------------------------------------------------
 
 
 def test_accept_regions_never_silently_mixed(conn: sqlite3.Connection) -> None:
-    # §V5: the cn fixture has no gacha_table, so a cn query returns zero banners; the en
+    # The cn fixture has no gacha_table, so a cn query returns zero banners; the en
     # banners are never surfaced under it, and the en set is entirely en-tagged.
     en = get_banners(conn, server="en")
     assert en.banners and all(b.region == "en" for b in en.banners)
@@ -229,11 +228,11 @@ def test_accept_regions_never_silently_mixed(conn: sqlite3.Connection) -> None:
     assert cn.provenance == ()
 
 
-# --- tolerant-absent + banner fail-open isolation (§V30/§V58/B36/B53) ---------
+# --- tolerant-absent + banner fail-open isolation -----------------------------
 
 
 def test_accept_absent_gacha_table_promotes_empty(conn: sqlite3.Connection) -> None:
-    # §V30/B36: the cn snapshot has no gacha_table.json, so the build promotes with zero
+    # The cn snapshot has no gacha_table.json, so the build promotes with zero
     # banners rather than failing -- the banner domain is optional per snapshot. That the
     # ``conn`` fixture opened at all proves the multi-region build promoted.
     assert get_banners(conn, server="cn").banners == ()
@@ -260,9 +259,9 @@ def _build_with_gacha(tmp_path: Path, payload: object) -> Path:
     return path
 
 
-#: Three ways a banner import fails-closed INSIDE import_banners (§V30 non-empty->0, and
-#: two §V33 UNIQUE collisions), each of which T116 now isolates so the combat build
-#: continues rather than the whole candidate aborting (B53).
+#: Three ways a banner import fails-closed INSIDE import_banners (non-empty->0, and
+#: two UNIQUE collisions), each of which is now isolated so the combat build
+#: continues rather than the whole candidate aborting.
 _IDLESS = {"gachaPoolClient": [{"gachaRuleType": "NORMAL"}, {"gachaPoolName": "x"}]}
 _DUP_POOL_ID = {
     "gachaPoolClient": [
@@ -285,7 +284,7 @@ _DUP_FEATURED_CHAR = {
 @pytest.mark.parametrize(
     ("payload", "label"),
     [
-        (_IDLESS, "§V30 non-empty->0"),
+        (_IDLESS, "non-empty->0"),
         (_DUP_POOL_ID, "dup pool id"),
         (_DUP_FEATURED_CHAR, "dup char"),
     ],
@@ -293,10 +292,11 @@ _DUP_FEATURED_CHAR = {
 def test_accept_banner_failure_is_isolated_combat_promotes(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, payload: dict, label: str
 ) -> None:
-    # §V62/§V58/B53: a banner ImporterError (§V30 non-empty->0, or a §V33 dup gachaPoolId /
+    # A banner ImporterError (non-empty->0, or a dup gachaPoolId /
     # repeated featured char) no longer nukes the whole candidate. The banner rows roll
     # back to the savepoint (zero banners), a warning is emitted, and the MANDATORY combat
-    # core (operators here) is STILL promoted -- an OPTIONAL archive cannot fail-close §V3.
+    # core (operators here) is STILL promoted -- an OPTIONAL archive cannot fail-close the
+    # mandatory core.
     with caplog.at_level(logging.WARNING):
         conn = open_read_only(_build_with_gacha(tmp_path, payload))
     try:
@@ -311,7 +311,7 @@ def test_accept_banner_failure_is_isolated_combat_promotes(
     assert any("banner archive unavailable" in r.getMessage() for r in caplog.records), label
 
 
-# --- since/until open-time window (§V19) --------------------------------------
+# --- since/until open-time window ---------------------------------------------
 
 
 def test_accept_since_until_filter(conn: sqlite3.Connection) -> None:
@@ -325,11 +325,11 @@ def test_accept_since_until_filter(conn: sqlite3.Connection) -> None:
     assert [b.game_id for b in window.banners] == [_CLASSIC]
 
 
-# --- no new source (§V62) -----------------------------------------------------
+# --- no new source ------------------------------------------------------------
 
 
 def test_accept_get_data_sources_unchanged_no_banner_source(conn: sqlite3.Connection) -> None:
-    # §V62: the banner archive reuses arknights_assets_gamedata -- no new source id is
+    # The banner archive reuses arknights_assets_gamedata -- no new source id is
     # registered for it, so get_data_sources grows no banner/gacha entry.
     registry = load_source_registry(REGISTRY)
     ids = {s.source_id for s in get_data_sources(registry, conn).sources}
@@ -337,11 +337,11 @@ def test_accept_get_data_sources_unchanged_no_banner_source(conn: sqlite3.Connec
     assert not any("banner" in sid or "gacha" in sid for sid in ids)
 
 
-# --- archive is a FACT, not planning (§V7) ------------------------------------
+# --- archive is a FACT, not planning ------------------------------------------
 
 
 def test_accept_no_planning_verdict_leaks(conn: sqlite3.Connection) -> None:
-    # §V7/§V62: a banner archive is a historical FACT, never gacha planning -- no
+    # A banner archive is a historical FACT, never gacha planning -- no
     # mandatory/best/pity/spark language rides the served result or its limitations.
     result = get_banners(conn, server="en")
     blob = (json.dumps(asdict(result)) + " " + " ".join(result.limitations)).lower()

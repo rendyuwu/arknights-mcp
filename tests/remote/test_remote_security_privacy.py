@@ -1,6 +1,6 @@
-"""§T57 remote security/privacy matrix over a real loopback socket (§V10/§V11/§V12).
+"""Remote security/privacy matrix over a real loopback socket.
 
-The adversarial half of the remote validation §T56 deferred: it drives the *full*
+The adversarial half of the earlier remote validation: it drives the *full*
 auth-requiring remote stack (redacted logging → bearer → rate/concurrency → request
 limits → session manager) over uvicorn, exactly as a remote MCP host would, but with
 *attack-shaped* traffic rather than an honest bearer. The unit suite already proves
@@ -11,26 +11,26 @@ This suite closes the remaining gap: **real attack tokens through the composed s
 on the wire, validated by the real** :class:`~arknights_mcp.auth.oidc.OidcTokenVerifier`
 (only the JWKS key fetch is local -- :class:`~tests.support.oidc_issuer.LocalOidcIssuer`).
 
-Coverage vs the §T57 line:
+Coverage of the matrix:
 
 * **token missing / expired / wrong-issuer / wrong-aud / insufficient-scope** (+ a
-  non-``Bearer`` scheme, ``alg=none``, and a foreign-key signature for §V10 depth):
+  non-``Bearer`` scheme, ``alg=none``, and a foreign-key signature for depth):
   each is refused with the typed ``401 invalid_token`` / ``403 insufficient_scope``
   ``WWW-Authenticate`` challenge, and the response leaks neither the presented token,
-  a JWT segment, a stack trace, nor a local path (§V10/§V12/§V23);
+  a JWT segment, a stack trace, nor a local path;
 * **isolation**: a session established by one principal cannot be resumed by another
   over the wire -- the cross-principal probe is refused ``404`` and the owner's
-  session stays live (§V10/§V14/§T53);
+  session stays live;
 * **rate limit**: a per-principal cap is enforced on the wire -- the over-cap request
-  is refused ``429`` with a ``Retry-After`` and no leak (§V11);
+  is refused ``429`` with a ``Retry-After`` and no leak;
 * **log scan**: under real authenticated *and* rejected traffic the
   ``arknights_mcp.access`` log records only method/path/status/principal -- never the
-  bearer, the ``Authorization`` header, or a tool argument (§V12).
+  bearer, the ``Authorization`` header, or a tool argument.
 
 Offline + deterministic: build promoted from the pinned 4-4 fixture via the real
-``import`` path (no network, §V1); OIDC keypair + JWKS local (no provider reached).
+``import`` path (no network); OIDC keypair + JWKS local (no provider reached).
 The shared uvicorn + fixture-import scaffolding has one home in
-:mod:`tests.support.remote_harness` (§V37).
+:mod:`tests.support.remote_harness`.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from tests.support.remote_harness import EXPECTED_TOOLS, REPO_ROOT, remote_serve
 _ACCESS_LOGGER = "arknights_mcp.access"
 
 #: A private RSA key the issuer's JWKS resolver does NOT serve -- a token signed with
-#: it fails the §V10 signature check even though its claims are otherwise valid.
+#: it fails the signature check even though its claims are otherwise valid.
 _FOREIGN_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 #: A minimal JSON-RPC body. Every attack request is refused at the bearer layer
@@ -71,7 +71,7 @@ def secured_server(
 
     Module-scoped: the auth-rejection cases, isolation, and log scan all share it (a
     rejected request never reaches the rate limiter, and the honest requests are few,
-    so the default 60/min cap is never a factor). The §V11 rate-limit test builds its
+    so the default 60/min cap is never a factor). The rate-limit test builds its
     own low-cap server.
     """
     tmp = tmp_path_factory.mktemp("t57-remote")
@@ -154,9 +154,9 @@ _MATRIX: tuple[_Case, ...] = (
 def test_attack_token_refused_without_leak(
     secured_server: tuple[str, LocalOidcIssuer], case: _Case
 ) -> None:
-    # §V10: every attack-shaped credential is refused by the real verifier over the
-    # wire with the typed challenge, before it reaches the session manager; §V12/§V23:
-    # the response leaks neither the presented token, a JWT segment, a stack trace,
+    # Every attack-shaped credential is refused by the real verifier over the
+    # wire with the typed challenge, before it reaches the session manager: the
+    # response leaks neither the presented token, a JWT segment, a stack trace,
     # nor a local path.
     url, issuer = secured_server
     header = case.make_header(issuer)
@@ -210,7 +210,7 @@ def _init_and_get_session_id(url: str, token: str) -> str:
 def test_cross_principal_cannot_resume_session(
     secured_server: tuple[str, LocalOidcIssuer],
 ) -> None:
-    # §V10/§V14/§T53: Alice establishes a session over the authenticated wire; Bob (a
+    # Alice establishes a session over the authenticated wire; Bob (a
     # different principal, same issuer) presents Alice's session id with his own valid
     # bearer and is refused 404 -- the SDK owner-binding, fed our principal-keyed user,
     # rejects the cross-user resume before dispatch, and leaks nothing.
@@ -294,7 +294,7 @@ def test_access_log_scrubbed_under_real_traffic(
     secured_server: tuple[str, LocalOidcIssuer],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # §V12: under a real authenticated tool call AND a rejected request, the access
+    # Under a real authenticated tool call AND a rejected request, the access
     # log records only method/path/status/principal -- never the bearer, the raw
     # Authorization header, or a tool argument (the game_id). A rejected request is
     # still recorded (logging is outermost) as anonymous.
@@ -326,7 +326,7 @@ def test_access_log_scrubbed_under_real_traffic(
 
 
 def test_rate_limit_enforced_over_wire(tmp_path: Path) -> None:
-    # §V11: a per-principal rate cap is enforced on the wire. With a 2/min cap the
+    # A per-principal rate cap is enforced on the wire. With a 2/min cap the
     # third authenticated request is refused 429 with a Retry-After hint, and the
     # rejection leaks no token. (Auth passes; the limiter counts at reserve, before
     # the inner app, so the count holds regardless of each request's inner outcome.)

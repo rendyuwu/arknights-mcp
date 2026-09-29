@@ -1,4 +1,4 @@
-"""§V37 / §V33: the single sqlite ``IntegrityError`` -> typed-error guard.
+"""The single sqlite ``IntegrityError`` -> typed-error guard.
 
 Three formerly inline copies (``enemies.insert_enemies``, ``levels.insert_level``,
 ``purge.purge_and_rebuild``) now route through
@@ -36,7 +36,7 @@ def _raise_integrity() -> None:
 
 
 def test_guard_translates_with_prefix_message() -> None:
-    # V33: a constraint anomaly becomes a typed error, chained to the original.
+    # A constraint anomaly becomes a typed error, chained to the original.
     with pytest.raises(_Err, match=r"boom: .*UNIQUE") as exc_info, integrity_guard("boom", _Err):
         _raise_integrity()
     assert isinstance(exc_info.value.__cause__, sqlite3.IntegrityError)
@@ -74,7 +74,7 @@ def test_guard_is_transparent_on_success() -> None:
 
 
 def test_integrity_guard_has_single_home() -> None:
-    # V37: the translate-and-reraise pattern lives in exactly one module; the
+    # The translate-and-reraise pattern lives in exactly one module; the
     # three former copies now import the shared guard and hold no local copy.
     for mod in (enemies_mod, levels_mod, purge_mod):
         src = inspect.getsource(mod)

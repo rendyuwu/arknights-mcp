@@ -1,12 +1,12 @@
-"""T43: module importer (uniequip_table, uniequip_data, battle_equip_table).
+"""Module importer (uniequip_table, uniequip_data, battle_equip_table).
 
 Parses the real ``uniequip_table`` (``equipDict`` + ``charEquip``) and
 ``battle_equip_table`` shapes into the module domain with the field allowlist +
-sanitization (§V18/§V31), per-record provenance (§V17), and fail-closed constraint
-handling (§V33). The trait/talent-change effect-description TEMPLATE (mechanic text
-referencing the change's blackboard keys) is imported into the change bundles (§V65
-(a)/ADR 0010); module-level lore (``uniEquipDesc``) stays excluded and
-``module_levels.gameplay_description`` stays ``NULL`` (§V16). The ``INITIAL`` default
+sanitization, per-record provenance, and fail-closed constraint
+handling. The trait/talent-change effect-description TEMPLATE (mechanic text
+referencing the change's blackboard keys) is imported into the change bundles
+(ADR 0010); module-level lore (``uniEquipDesc``) stays excluded and
+``module_levels.gameplay_description`` stays ``NULL``. The ``INITIAL`` default
 slot is skipped; a module whose ``charId`` is absent from the roster is skipped.
 """
 
@@ -31,10 +31,10 @@ from arknights_mcp.importers.operators import import_operators
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 PROSE = "A module lore blurb that must never be imported into the database."
-#: §T127/§V65/ADR 0010: module trait/talent-change effect TEMPLATES (mechanic text
+#: Module trait/talent-change effect TEMPLATES (mechanic text
 #: referencing the change's blackboard keys) ARE imported into the change bundles;
-#: the module-level lore ``uniEquipDesc`` above stays excluded (§V16 ceiling). The raw
-#: source carries in-game rich-text tags; T136/§V18 strips them at import so only the
+#: the module-level lore ``uniEquipDesc`` above stays excluded. The raw
+#: source carries in-game rich-text tags; the importer strips them at import so only the
 #: ``{blackboard-key}`` placeholders remain -- the ``*_GROUNDED`` form is what lands in
 #: the change bundle.
 TRAIT_TEMPLATE = "Increases ATK to <@ba.vup>{atk_scale:0%}</> when attacking."
@@ -233,14 +233,14 @@ def test_parse_reads_typed_fields_and_skips_initial() -> None:
 
 def test_parse_excludes_prose() -> None:
     mod = {m.game_id: m for m in parse_modules(UNIEQUIP, BATTLE)}["uniequip_002_amiya"]
-    assert PROSE not in str(mod.provenance_record)  # §V16/§V18 prose excluded
+    assert PROSE not in str(mod.provenance_record)  # prose excluded
 
 
 def test_parse_sanitizes_nested_display_name() -> None:
     mod = {m.game_id: m for m in parse_modules(UNIEQUIP, BATTLE)}["uniequip_002_amiya"]
     assert mod.display_name is not None
     assert "Magician" in mod.display_name
-    assert "\x00" not in mod.display_name  # §V31 nested string leaf sanitized
+    assert "\x00" not in mod.display_name  # nested string leaf sanitized
 
 
 def test_parse_item_cost_is_allowlisted() -> None:
@@ -297,7 +297,7 @@ def test_provenance_attached_to_modules(tmp_path: Path) -> None:
 
 
 def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Path) -> None:
-    # §T127/§V65/§V16 (ADR 0010): the module-level lore `uniEquipDesc` stays excluded
+    # The module-level lore `uniEquipDesc` stays excluded
     # and `module_levels.gameplay_description` stays NULL, but the trait/talent-change
     # effect TEMPLATE rides the trait_changes_json/talent_changes_json bundle alongside
     # its blackboard for grounding.
@@ -310,8 +310,8 @@ def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Pat
         for table in ("modules", "module_levels", "record_provenance")
         for row in conn.execute(f"SELECT * FROM {table}")
     )
-    assert PROSE not in dump  # §V16 module lore excluded
-    # §V16: the module templates live per-candidate in the change bundles, not the
+    assert PROSE not in dump  # module lore excluded
+    # The module templates live per-candidate in the change bundles, not the
     # gameplay_description column, which stays NULL for modules.
     assert (
         conn.execute(
@@ -319,7 +319,7 @@ def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Pat
         ).fetchone()[0]
         == 0
     )
-    # §V65 (a): the trait template lands in trait_changes_json (level 1), the talent
+    # The trait template lands in trait_changes_json (level 1), the talent
     # template in talent_changes_json (level 2).
     trait_json, talent_json = conn.execute(
         "SELECT "
@@ -333,7 +333,7 @@ def test_lore_excluded_template_imported_gameplay_description_null(tmp_path: Pat
 
 
 def test_parse_carries_change_template_alongside_blackboard() -> None:
-    # §T127/§V65 (a): the parsed trait/talent change keeps its effect TEMPLATE next to
+    # The parsed trait/talent change keeps its effect TEMPLATE next to
     # the blackboard (unit-testable without a DB); `overrideDescripton` is the fallback,
     # so `additionalDescription`/`upgradeDescription` win when present.
     mod = {m.game_id: m for m in parse_modules(UNIEQUIP, BATTLE)}["uniequip_002_amiya"]
@@ -387,7 +387,7 @@ def test_module_without_battle_data_still_imports_cost_levels(tmp_path: Path) ->
 
 def test_duplicate_module_fails_gracefully(tmp_path: Path) -> None:
     # A repeated (server, game_id) collides on UNIQUE and must raise a typed
-    # ImporterError, not an uncaught sqlite3.IntegrityError (§V33).
+    # ImporterError, not an uncaught sqlite3.IntegrityError.
     root = _adapter(tmp_path)
     conn = build_database(tmp_path / "cand.sqlite")
     _seed_snapshot(conn)

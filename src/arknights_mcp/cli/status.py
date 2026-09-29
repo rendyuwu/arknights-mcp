@@ -1,6 +1,6 @@
-"""``status`` + ``doctor`` commands: active snapshot + environment health (§T25).
+"""``status`` + ``doctor`` commands: active snapshot + environment health.
 
-``doctor`` never prints secrets or secret values (§V12): auth is reported only as
+``doctor`` never prints secrets or secret values: auth is reported only as
 a configured/not-configured boolean, never issuer/audience/JWKS contents.
 """
 
@@ -37,7 +37,7 @@ def _cmd_status(args: argparse.Namespace, ctx: CliContext) -> int:
         return 0
 
     with read_only_connection(active) as conn:
-        # Single §V37 home for the mode label (shared with the get_data_status tool).
+        # Single home for the mode label (shared with the get_data_status tool).
         status = get_data_status(conn, mode=config.deployment_mode)
 
     if args.json:
@@ -72,7 +72,7 @@ def _mcp_sdk_version() -> str:
 def _cmd_doctor(args: argparse.Namespace, ctx: CliContext) -> int:
     """Health report: versions, DB, sources, transport, config warnings.
 
-    Never prints secrets or secret values (§V12): auth is reported only as a
+    Never prints secrets or secret values: auth is reported only as a
     configured/not-configured boolean, never issuer/audience/JWKS contents.
     """
     lines: list[tuple[str, str, str]] = []

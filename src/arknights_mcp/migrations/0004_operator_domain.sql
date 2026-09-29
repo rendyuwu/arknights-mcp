@@ -1,9 +1,9 @@
--- 0004 operator domain (SPEC §T19; PRD §12.3).
+-- 0004 operator domain (PRD Section 12.3).
 -- operators, operator_aliases, operator_phases, skills, operator_skills,
 -- skill_levels, talents, talent_levels, modules, module_levels. Source identity
--- = (server, game_id). Core rows carry provenance_id -> record_provenance (§V17);
+-- = (server, game_id). Core rows carry provenance_id -> record_provenance;
 -- sub-tables link through their parent. gameplay_description columns are
--- nullable and policy-controlled (§V16: excluded by default unless field policy
+-- nullable and policy-controlled (excluded by default unless field policy
 -- permits). Depends on 0001 (record_provenance).
 
 CREATE TABLE operators (

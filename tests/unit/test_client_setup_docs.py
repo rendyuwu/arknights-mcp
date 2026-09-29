@@ -1,13 +1,12 @@
-"""T48: client-setup docs exist and carry the *current* official MCP config
+"""Client-setup docs exist and carry the *current* official MCP config
 formats plus the read-only / CLI-only guardrail notes.
 
 `docs/clients/claude-code.md` and `docs/clients/codex.md` are the setup guides
 the README promises. This guard keeps them from drifting away from the actual
 `serve --transport stdio` invocation, the current Claude Code / Codex config
 formats, and the guardrails they must not contradict: data is built via the
-admin CLI (§V28) and the server never fetches at query time (§V1), it is
-read-only (§V2), and stdio keeps the protocol on stdout / logs on stderr
-(§V13).
+admin CLI, the server never fetches at query time, it is read-only, and stdio
+keeps the protocol on stdout / logs on stderr.
 """
 
 from __future__ import annotations
@@ -55,30 +54,30 @@ def test_codex_doc_uses_current_format() -> None:
 def test_both_docs_carry_guardrail_notes() -> None:
     for name in ("claude-code.md", "codex.md"):
         text = _norm(name)
-        # §V28: building data is an admin-CLI step, not an MCP tool.
+        # Building data is an admin-CLI step, not an MCP tool.
         assert "arknights-mcp import" in text or "arknights-mcp sync" in text
         assert "cli" in text
-        # §V1: no query-time fetch.
+        # No query-time fetch.
         assert "query time" in text or "query-time" in text
-        # §V2: read-only.
+        # Read-only.
         assert "read-only" in text
-        # §V13: stdout = protocol, stderr = logs.
+        # stdout = protocol, stderr = logs.
         assert "stdout" in text and "stderr" in text
 
 
 def test_both_docs_offer_the_docker_stdio_option() -> None:
-    # T215: the deploy image serves stdio too, and a client entry that misses any
+    # The deploy image serves stdio too, and a client entry that misses any
     # of these fails in a way that looks like a broken server rather than a wrong
     # flag. Each doc must carry the working invocation, not just mention Docker.
     for name in ("claude-code.md", "codex.md"):
         text = _norm(name)
         assert "docker run" in text
         assert "serve --transport stdio" in text
-        # The build is a read-only mount, never in the image (§V16/§V2).
+        # The build is a read-only mount, never in the image.
         assert ":/app/data:ro" in text
         # -i keeps stdin open; without it the server sees EOF before `initialize`.
         assert '"-i"' in text or " -i " in text
-        # A TTY would fold stderr into the stdout the JSON-RPC frames own (§V13).
+        # A TTY would fold stderr into the stdout the JSON-RPC frames own.
         assert "-t" in text and "tty" in text
         # The uid must own the promoted build or every tool answers internal_error.
         assert "--user" in text

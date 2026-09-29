@@ -1,33 +1,33 @@
-"""§T63 (M7) consolidated no-bulk-reconstruction suite (§V19; §V22).
+"""M7 consolidated no-bulk-reconstruction suite.
 
 The per-tool tests (``test_input_models`` / ``test_search_service`` /
 ``test_get_stage_tool`` / ``test_search_entities_tool``) already prove each bound
-in isolation. This suite makes the *aggregate* §V19 claim the others cannot: that
+in isolation. This suite makes the *aggregate* claim the others cannot: that
 the MCP tool surface **as a whole** offers no path to reconstruct the dataset. It
-asserts the systemic properties, not the individual bounds again (§V37 DRY):
+asserts the systemic properties, not the individual bounds again (DRY):
 
 1. the full tool registry exposes no bulk-dump / DB-download / list-everything /
    admin capability -- and every registered tool is a *classified, bounded* shape
    (a new unbounded tool would leave the partition incomplete and fail here);
-2. the §V19 window is one contract enforced identically at BOTH layers -- the
+2. the bounded window is one contract enforced identically at BOTH layers -- the
    Pydantic model *and* the service reject an out-of-range limit/page_size, with
-   no silent clamp/widen in either (the B23 hole), asserted as a cross-surface
+   no silent clamp/widen in either, asserted as a cross-surface
    parity matrix rather than per tool;
 3. search is a hard cap with no walk (no offset/page/cursor), and the entity tools
    are selector-gated, so neither the search window nor pagination can be walked to
    enumerate the whole dataset;
-4. the §V22 response cap never leaks an oversized payload, so it is not a
+4. the response cap never leaks an oversized payload, so it is not a
    reconstruction vector.
 
-On (4), read §V120 (e) before touching anything: **the §V19 property is the bounded
+On (4), read this before touching anything: **the property is the bounded
 window and the absence of a walk, not the emptiness of an over-cap reply.** Withholding
 is a fail-closed *mechanism* for a payload no request knob bounds; where a knob does
 bound it, the response now shrinks that part instead and hands back a prefix of the same
-page (T217 a). That is not a weakening -- the rows a shed returns are rows the same
+page. That is not a weakening -- the rows a shed returns are rows the same
 caller may already request at a smaller ``page_size``, still one page per call, still no
 offset/cursor to walk. This note is here because the prose it replaces read the emptiness
 as the security property, and on that reading a reviewer would "restore" the behaviour
-that made two legal windows answer with nothing (B167).
+that made two legal windows answer with nothing.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The full §I.tool set. Any drift here (a tool added or removed) is a deliberate
+#: The full tool set. Any drift here (a tool added or removed) is a deliberate
 #: surface change that must be re-classified in :func:`test_every_tool_is_bounded`.
 _EXPECTED_TOOLS = frozenset(
     {
@@ -79,7 +79,7 @@ _EXPECTED_TOOLS = frozenset(
     }
 )
 
-#: §V19 classification of the surface. The union must cover the whole registry, so
+#: Classification of the surface. The union must cover the whole registry, so
 #: an unclassified (potentially unbounded) new tool fails the partition assertion.
 _SEARCH_TOOLS = frozenset({"search_entities", "search_stages"})  # bounded window
 _STAGE_DETAIL_TOOLS = frozenset({"get_stage"})  # selector-gated + paged sections
@@ -99,7 +99,7 @@ _LIST_TOOLS = frozenset(  # region-scoped list, bounded top-level page
 )
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
 
-#: A tool name that leaks any of these is an enumeration/admin surface (§V19/§V28).
+#: A tool name that leaks any of these is an enumeration/admin surface.
 _FORBIDDEN_NAME_SUBSTRINGS = (
     "dump",
     "export",
@@ -129,7 +129,7 @@ _ENUMERATION_KNOBS = frozenset({"offset", "cursor", "skip", "page", "limit"})
 
 @pytest.fixture
 def conn(tmp_path: Path) -> sqlite3.Connection:
-    """Build the 4-4 fixture candidate read-only (shared production path, §V2)."""
+    """Build the 4-4 fixture candidate read-only (shared production path)."""
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
     build_candidate(
@@ -142,7 +142,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 @pytest.fixture
 def tool_registry(conn: sqlite3.Connection) -> ToolRegistry:
-    """The single shared registry both transports dispatch (§V14) -- the exact
+    """The single shared registry both transports dispatch -- the exact
     tool surface a client can reach. Handlers are never invoked here (the schema +
     name enumeration needs no query), so the connection provider is only stored."""
     return build_tool_registry(
@@ -156,15 +156,15 @@ def tool_registry(conn: sqlite3.Connection) -> ToolRegistry:
 
 
 def test_registry_is_exactly_the_nine_read_only_tools(tool_registry: ToolRegistry) -> None:
-    # The surface is closed: exactly the §I.tool set, every one read-only. An admin
-    # op (sync/import/purge, §V28) or a dump tool could not be here -- the registry
+    # The surface is closed: exactly the tool set, every one read-only. An admin
+    # op (sync/import/purge) or a dump tool could not be here -- the registry
     # rejects a non-read-only spec, and this pins the membership.
     assert set(tool_registry.names()) == _EXPECTED_TOOLS
     assert all(spec.read_only for spec in tool_registry.specs())
 
 
 def test_no_tool_name_exposes_a_dump_or_admin_surface(tool_registry: ToolRegistry) -> None:
-    # §V19/§V28: no tool advertises bulk export / DB download / raw-SQL / admin
+    # No tool advertises bulk export / DB download / raw-SQL / admin
     # mutation. Guards a future addition, not just today's names.
     for name in tool_registry.names():
         lowered = name.lower()
@@ -173,7 +173,7 @@ def test_no_tool_name_exposes_a_dump_or_admin_surface(tool_registry: ToolRegistr
 
 
 def test_every_tool_is_classified_and_bounded(tool_registry: ToolRegistry) -> None:
-    # §V19: the classification must partition the *whole* registry -- an unclassified
+    # The classification must partition the *whole* registry -- an unclassified
     # tool (a plausible unbounded escape hatch) fails here and forces a reviewer to
     # place it in a bounded category.
     covered = (
@@ -183,7 +183,7 @@ def test_every_tool_is_classified_and_bounded(tool_registry: ToolRegistry) -> No
 
     for spec in tool_registry.specs():
         schema = spec.input_schema
-        # §V18: every tool is a closed object -- no smuggled fields past the model.
+        # Every tool is a closed object -- no smuggled fields past the model.
         assert schema.get("additionalProperties") is False, spec.name
         props = set(schema.get("properties", {}))
 
@@ -218,12 +218,12 @@ def test_every_tool_is_classified_and_bounded(tool_registry: ToolRegistry) -> No
             assert props == set()
 
 
-# --- (2) the §V19 window is rejected identically at BOTH layers (no clamp) ------
+# --- (2) the window is rejected identically at BOTH layers (no clamp) -----------
 
 
 @pytest.mark.parametrize("bad", [0, -1, MAX_LIMIT + 1, 100])
 def test_search_limit_rejected_at_model_and_service(conn: sqlite3.Connection, bad: int) -> None:
-    # One §V19 contract, enforced twice with no silent clamp/widen (B23): the model
+    # One contract, enforced twice with no silent clamp/widen: the model
     # gate rejects, and a caller reaching the service directly gets the *same*
     # rejection -- it raises rather than returning a clamped <=MAX_LIMIT result.
     with pytest.raises(ValidationError):
@@ -259,7 +259,7 @@ def test_page_below_one_rejected_at_model_and_service(conn: sqlite3.Connection) 
 
 
 def test_search_window_is_a_hard_cap_with_no_walk() -> None:
-    # §V19: search takes only a bounded ``limit`` -- no offset/page/cursor/skip. So
+    # Search takes only a bounded ``limit`` -- no offset/page/cursor/skip. So
     # the max window (50) is a hard ceiling: rows beyond it are unreachable, there
     # is no cursor to fetch the "next" page and enumerate the dataset.
     for model in (SearchEntitiesInput, SearchStagesInput):
@@ -271,7 +271,7 @@ def test_search_window_is_a_hard_cap_with_no_walk() -> None:
 def test_stage_pagination_requires_a_selector_so_stages_are_not_listable(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V19: get_stage's bounded pagination only walks one *already-selected* stage's
+    # Get_stage's bounded pagination only walks one *already-selected* stage's
     # sub-rows; it cannot list stages. Neither selector -> rejected, so there is no
     # "get every stage" call to seed an enumeration.
     with pytest.raises(ValidationError):
@@ -283,17 +283,17 @@ def test_stage_pagination_requires_a_selector_so_stages_are_not_listable(
     assert page is not None and page.page_size == 1 and page.total >= len(("only-a-cap-check",))
 
 
-# --- (4) the §V22 response cap bounds the wire; it is not a reconstruction vector -
+# --- (4) the response cap bounds the wire; it is not a reconstruction vector -----
 
 
 def test_response_cap_is_the_documented_200kb_ceiling() -> None:
-    # §V22: default response < 200 KB. The cap is measured worst-case ASCII-escaped
-    # (B21), so this constant is the on-the-wire ceiling regardless of encoding.
+    # Default response < 200 KB. The cap is measured worst-case ASCII-escaped,
+    # so this constant is the on-the-wire ceiling regardless of encoding.
     assert MAX_RESPONSE_BYTES == 200_000
 
 
 def test_oversized_payload_with_no_bounding_knob_fails_closed() -> None:
-    # §V22: an oversized payload is not emitted. With no shed plan -- nothing in the
+    # An oversized payload is not emitted. With no shed plan -- nothing in the
     # request bounds this payload -- the builder fails closed to a bounded ``partial``
     # with the data dropped + a cap limitation, so a caller cannot use one huge response
     # to exfiltrate a bulk slice; the data is withheld, never truncated-but-leaked.
@@ -306,14 +306,14 @@ def test_oversized_payload_with_no_bounding_knob_fails_closed() -> None:
     # the emitted response is itself under the cap.
     rendered = str(envelope.to_dict())
     assert blob not in rendered
-    # Measured on the frame both payload copies ride in (§V119 e), so "under the cap"
+    # Measured on the frame both payload copies ride in, so "under the cap"
     # means under it on the wire, not per copy.
     assert wire_size(envelope) <= MAX_RESPONSE_BYTES
 
 
 def test_a_shed_response_is_still_one_bounded_page_with_no_walk() -> None:
-    # §V120 (e): where a knob DOES bound the payload the response shrinks that part and
-    # answers (T217 a). The §V19 claim survives intact, and this is what it rests on: the
+    # Where a knob DOES bound the payload the response shrinks that part and
+    # answers. The claim survives intact, and this is what it rests on: the
     # shed returns a prefix of the page already asked for, adds no offset/cursor/page
     # field a caller could walk, and does not raise the ceiling on what one call returns.
     payload = {

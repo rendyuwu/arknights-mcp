@@ -1,4 +1,4 @@
-"""T216: §V119 -- the ``tools/call`` result shape a CONTENT-ONLY client sees (B166).
+"""The ``tools/call`` result shape a CONTENT-ONLY client sees.
 
 Every earlier sweep of the tool surface read ``structuredContent``. So did the stdio
 smoke, the streamable-http smoke, and the transport-parity suite -- and
@@ -8,7 +8,7 @@ as the contract. A client that reads ``content`` and nothing else (LibreChat:
 got an empty answer to all 13 tools while ``initialize`` and ``tools/list`` looked
 perfectly healthy, and three structured-reading clients hid it.
 
-The guard is registry-driven for the same reason the null sweep is (§V37,
+The guard is registry-driven for the same reason the null sweep is (
 ``tests.support.tool_calls``): a property asserted on whichever tool someone happened to
 call is a property a new tool ships past. Four claims per registered tool:
 
@@ -18,10 +18,10 @@ call is a property a new tool ships past. Four claims per registered tool:
 3. the mirror is compact (the SDK's ``indent=2`` fallback is ~15% of dead wire bytes,
    which is what the deleted-copy transport was avoiding);
 4. the envelope validates against the ``outputSchema`` the tool publishes, so the
-   structured half is a declared contract rather than an undeclared extra (§V119 d).
+   structured half is a declared contract rather than an undeclared extra.
 
-Plus the accounting §V22 needs once two copies ride the wire: the emitted frame must be
-no larger than what :func:`wire_size` measured (B21's gap, in the direction the one-copy
+Plus the accounting needed once two copies ride the wire: the emitted frame must be
+no larger than what :func:`wire_size` measured (the gap, in the direction the one-copy
 fix could not close).
 
 Two arms, matching the null-discipline guard: the pinned fixture corpus under the default
@@ -90,9 +90,9 @@ def fixture_conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 def _assert_mirrors_structured(name: str, result: types.CallToolResult) -> None:
-    """§V119 (a)/(b) on one result: both halves present, identical, compact."""
+    """Both halves present, identical, compact on one result."""
     assert result.isError is False, name
-    # (1) a content-only client has something to read at all -- B166's whole defect.
+    # (1) a content-only client has something to read at all -- the whole defect.
     assert result.content, f"{name}: empty content renders as (No response) for a text client"
     assert len(result.content) == 1, name
     block = result.content[0]
@@ -106,13 +106,13 @@ def _assert_mirrors_structured(name: str, result: types.CallToolResult) -> None:
 
 
 def _assert_matches_output_schema(name: str, registry: ToolRegistry, body: object) -> None:
-    """§V119 (d): the payload validates against the schema the tool publishes."""
+    """The payload validates against the schema the tool publishes."""
     schema = registry.get(name).to_mcp_tool().outputSchema
     assert schema is not None, f"{name}: no outputSchema published"
     jsonschema.validate(instance=body, schema=schema)
 
 
-# --- the registry-driven sweep (the anti-B135/B166 clause) ----------------------
+# --- the registry-driven sweep (the anti-regression clause) ----------------------
 
 
 def test_every_registered_tool_is_covered(fixture_conn: sqlite3.Connection) -> None:
@@ -123,7 +123,7 @@ def test_every_registered_tool_is_covered(fixture_conn: sqlite3.Connection) -> N
 def test_every_tool_declares_the_shared_envelope_output_schema(
     fixture_conn: sqlite3.Connection,
 ) -> None:
-    # §V119 (d): before T216 the string "outputSchema" appeared nowhere in src/, so
+    # Before this guard the string "outputSchema" appeared nowhere in src/, so
     # tools/list never told a client that results carry structured output -- which is
     # exactly why reading ``content`` alone is a reasonable client design.
     registry = registry_for(fixture_conn)
@@ -137,7 +137,7 @@ def test_every_tool_declares_the_shared_envelope_output_schema(
 def test_every_tool_mirrors_its_envelope_into_content_on_the_fixture_corpus(
     fixture_conn: sqlite3.Connection,
 ) -> None:
-    # §V119 (a)-(d) over the offline corpus -- runs on every ``pytest -q``.
+    # The full result contract over the offline corpus -- runs on every ``pytest -q``.
     registry = registry_for(fixture_conn)
     results = wire_results(registry, FIXTURE_CALLS)
     assert len(results) >= len(registry.names())
@@ -162,12 +162,12 @@ def test_every_tool_mirrors_its_envelope_into_content_on_the_promoted_build() ->
             _assert_matches_output_schema(name, registry, result.structuredContent)
 
 
-# --- §V22 accounting once two copies ride the wire ------------------------------
+# --- accounting once two copies ride the wire ------------------------------
 
 
 def test_measured_cap_upper_bounds_the_emitted_frame(fixture_conn: sqlite3.Connection) -> None:
-    # §V119 (e): the cap is enforced on ``wire_size``; if the transport emitted more
-    # bytes than that measured, the cap would be back to bounding the wrong number (B21).
+    # The cap is enforced on ``wire_size``; if the transport emitted more
+    # bytes than that measured, the cap would be back to bounding the wrong number.
     registry = registry_for(fixture_conn)
     for name in registry.names():
         params = FIXTURE_CALLS[name][0]
@@ -192,11 +192,11 @@ def test_wire_size_counts_the_mirror_it_ships(fixture_conn: sqlite3.Connection) 
 def test_declared_output_schema_is_enforced_on_the_live_path(
     fixture_conn: sqlite3.Connection,
 ) -> None:
-    # §V119 (d): the transport returns (content, structured) rather than a prebuilt
+    # The transport returns (content, structured) rather than a prebuilt
     # CallToolResult precisely so the SDK validates structuredContent against the
     # declared schema on every call -- a prebuilt result returns before that check
     # (mcp/server/lowlevel/server.py). Register a tool whose envelope carries a status
-    # outside the §V23 vocabulary and assert the wire rejects it.
+    # outside the status vocabulary and assert the wire rejects it.
     registry = registry_for(fixture_conn)
     bogus = ResponseEnvelope(status="not_a_status", data={"x": 1})  # type: ignore[arg-type]
     registry.register(

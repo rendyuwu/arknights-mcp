@@ -1,11 +1,11 @@
-"""T88: migration 0009 drop-rate domain schema (§V17/§V53).
+"""Migration 0009 drop-rate domain schema.
 
 ``items`` + ``stage_drops`` back the v0.2 M8 penguin drop-rate cache. These tests
-assert the migration applies cleanly, that both tables carry a provenance FK (§V17),
-that ``stage_drops`` carries the §V53 stale/attribution columns (fetched_at,
+assert the migration applies cleanly, that both tables carry a provenance FK,
+that ``stage_drops`` carries the stale/attribution columns (fetched_at,
 expires_at, penguin snapshot_id, region), that the foreign keys are enforced, and
-that a drop row round-trips its rate/sample/expiry. Schema only -- the importer
-(T89), analyzer (T90), and tool (T91) land separately.
+that a drop row round-trips its rate/sample/expiry. Schema only -- the importer,
+analyzer, and tool land separately.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def test_items_and_stage_drops_tables_exist(tmp_path: Path) -> None:
 
 
 def test_both_tables_carry_provenance_fk(tmp_path: Path) -> None:
-    # §V17: every imported record carries provenance.
+    # Every imported record carries provenance.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         assert "provenance_id" in _columns(conn, "items")
@@ -103,7 +103,7 @@ def test_both_tables_carry_provenance_fk(tmp_path: Path) -> None:
 
 
 def test_stage_drops_carries_v53_stale_and_attribution_columns(tmp_path: Path) -> None:
-    # §V53: drop fact carries fetched_at + expires_at + penguin snapshot_id + region.
+    # A drop fact carries fetched_at + expires_at + penguin snapshot_id + region.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         cols = _columns(conn, "stage_drops")
@@ -145,7 +145,7 @@ def test_stage_drop_roundtrips_rate_sample_and_expiry(tmp_path: Path) -> None:
 
 
 def test_stage_drop_provenance_fk_enforced(tmp_path: Path) -> None:
-    # A drop with a dangling provenance_id is rejected (FKs on, §V17 fail-closed).
+    # A drop with a dangling provenance_id is rejected (FKs on, fail-closed).
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         stage_pk, item_pk, snap = _seed(conn)
@@ -163,7 +163,7 @@ def test_stage_drop_provenance_fk_enforced(tmp_path: Path) -> None:
 
 def test_stage_drop_unique_stage_item(tmp_path: Path) -> None:
     # UNIQUE(stage_pk, item_pk): a duplicate (stage, item) drop collides so the
-    # importer (T89) can map the anomaly to a typed ImporterError (§V33 pattern).
+    # importer can map the anomaly to a typed ImporterError.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         stage_pk, item_pk, snap = _seed(conn)

@@ -1,15 +1,15 @@
-"""Skin-gallery importer: skin_table.json -> operator_skins (§T182, ADR 0015).
+"""Skin-gallery importer: skin_table.json -> operator_skins (ADR 0015).
 
 Parses the primary ``skin_table.json`` ``charSkins`` dict (the SAME
-``arknights_assets_gamedata`` snapshot as enemy/stage/operator, §V88 -- NOT a new
+``arknights_assets_gamedata`` snapshot as enemy/stage/operator -- NOT a new
 source) into the metadata-only named skin gallery:
 
-* the field allowlist + recursive sanitize on every kept entry (§V18/§V31), routed
+* the field allowlist + recursive sanitize on every kept entry, routed
   through :mod:`arknights_mcp.importers.field_policy` -- only the structural
   identity/label fields (``skinId``/``charId``/``tmplId``/``portraitId``/``isBuySkin``
   + the ``displaySkin`` name/group leaves) survive, so outfit flavor prose
   (``content``/``dialog``/``usage``/``description``/``drawerList``) is never stored
-  (§V16/§V18 metadata-only ceiling);
+  (metadata-only ceiling);
 * a TOKEN filter: a ``charSkins`` entry whose ``charId`` is not a ``char_``-prefixed
   operator id is a summon/token skin, not part of the operator gallery -> dropped;
 * the alt-form link via ``tmplId`` (ADR 0015): an alt-form skin (Amiya family)
@@ -18,20 +18,20 @@ source) into the metadata-only named skin gallery:
   ``char_patch_table.json`` is NOT imported;
 * a SOFT-resolve of ``charId`` to an ``operator_pk`` when that operator is present in
   the same snapshot, else the raw char id with a NULL ``operator_pk`` -- an
-  unresolvable skin never fails the build (operators are optional-zero per B36, so a
+  unresolvable skin never fails the build (operators are optional-zero, so a
   combat-only snapshot yields raw char ids);
-* per-record provenance so a skin carries its provenance chain (§V17); region on
-  every row (§V5), en and cn never mixed.
+* per-record provenance so a skin carries its provenance chain; region on
+  every row, en and cn never mixed.
 
 The mirror image URL stays QUERY-TIME DERIVED from ``portrait_id``
-(``skin/<portraitId>b.png``, §V63 derive-not-store): no URL and no bytes are
+(``skin/<portraitId>b.png``, derive-not-store): no URL and no bytes are
 persisted. Pure parsing (:func:`parse_skins`) is separated from the DB write so it
 is unit-testable without a database. An entry missing a ``skinId`` or a
 ``portraitId`` is skipped (fail-closed, no fabricated row -- a skin without its art
 stem cannot be surfaced). A non-empty operator ``charSkins`` set that resolves to
-zero skins fails closed (§V30); an absent or empty ``skin_table`` is a legitimate
+zero skins fails closed; an absent or empty ``skin_table`` is a legitimate
 empty build (``operator_skins`` is not a CRITICAL_TABLE -- the table is fetched
-tolerant-absent per §V41/B36).
+tolerant-absent).
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def _is_operator_entry(entry: Any) -> bool:
     """True when a ``charSkins`` entry belongs to an operator (``char_`` charId).
 
     Token/summon skins carry a ``token_``/``trap_`` charId and are not part of the
-    operator gallery (ADR 0015) -- they are dropped before the §V30 candidate count
+    operator gallery (ADR 0015) -- they are dropped before the candidate count
     so an all-token table still reads as an empty (legitimate) operator gallery.
     """
     return isinstance(entry, dict) and str(entry.get("charId") or "").startswith(
@@ -94,11 +94,11 @@ def _is_operator_entry(entry: Any) -> bool:
 
 
 def parse_skins(skin_raw: Any) -> list[ParsedSkin]:
-    """Transform a raw ``skin_table`` into typed, allowlisted skins (§V18/§V88).
+    """Transform a raw ``skin_table`` into typed, allowlisted skins.
 
     Reads the ``charSkins`` id-keyed dict; only the ADR 0015 metadata allowlist
     survives (``displaySkin`` sub-extracted, never kept whole), so outfit prose is
-    dropped (§V16). Token skins are filtered out. An entry with a missing OR blank
+    dropped. Token skins are filtered out. An entry with a missing OR blank
     ``skinId``/``charId``/``portraitId`` is skipped so no row is fabricated without
     its stable id or its art stem (fail-closed). Iteration is key-sorted so the
     parse order (and thus provenance ids) is deterministic across builds.
@@ -123,8 +123,8 @@ def parse_skins(skin_raw: Any) -> list[ParsedSkin]:
         char_id = as_str(kept.get("charId"))
         portrait_id = as_str(kept.get("portraitId"))
         if not skin_id or not char_id or not portrait_id:
-            # No stable id or no art stem -> the row can neither be keyed (§V17,
-            # UNIQUE(server, skin_id)) nor surfaced (§V63 URL derives from
+            # No stable id or no art stem -> the row can neither be keyed
+            # (UNIQUE(server, skin_id)) nor surfaced (the URL derives from
             # portrait_id). Skip fail-closed, never a fabricated row.
             continue
         is_buy_raw = kept.get("isBuySkin")
@@ -132,7 +132,7 @@ def parse_skins(skin_raw: Any) -> list[ParsedSkin]:
             ParsedSkin(
                 skin_id=skin_id,
                 char_id=char_id,
-                # A label sanitized down to an empty string is no label (B52): None.
+                # A label sanitized down to an empty string is no label: None.
                 tmpl_id=as_str(kept.get("tmplId")) or None,
                 portrait_id=portrait_id,
                 display_name=as_str(display_skin.get("skinName")) or None,
@@ -153,18 +153,18 @@ def insert_skins(
     snapshot_id: str,
     source_path: str,
 ) -> SkinImportResult:
-    """Insert operator_skins rows (§V17/§V33/§V88).
+    """Insert operator_skins rows.
 
     Each skin's ``char_id`` SOFT-resolves to an ``operator_pk`` when that operator is
-    present for ``server`` (via the shared :func:`operator_pk_by_game_id`, §V37),
+    present for ``server`` (via the shared :func:`operator_pk_by_game_id`),
     else the row keeps the raw char id with a NULL ``operator_pk`` -- an unresolvable
     skin never fails the build. The resolution state is exactly ``operator_pk IS
-    NULL``; there is no second ``resolved`` column re-encoding it (§V94/B123). An
+    NULL``; there is no second ``resolved`` column re-encoding it. An
     alt-form skin resolves through its BASE ``charId``
     (ADR 0015), so the Amiya-family gallery attaches to base Amiya, labeled via
     ``tmpl_id``. A duplicate ``skinId`` (UNIQUE(server, skin_id)) collides on a
     constraint; that anomaly maps to a typed :class:`ImporterError` rather than an
-    uncaught ``IntegrityError`` tearing down the multi-region build (§V33).
+    uncaught ``IntegrityError`` tearing down the multi-region build.
     """
     operator_pk_map = operator_pk_by_game_id(conn, server)
     inserted = 0
@@ -198,7 +198,7 @@ def insert_skins(
                     skin.skin_group_name,
                     skin.portrait_id,
                     None if skin.is_buy_skin is None else int(skin.is_buy_skin),
-                    server,  # region == the fact region (§V5); server and region kept in step
+                    server,  # region == the fact region; server and region kept in step
                     provenance_id,
                 ),
             )
@@ -208,7 +208,7 @@ def insert_skins(
 
 
 def _operator_entry_count(skin_raw: Any) -> int:
-    """Count candidate operator (non-token) ``charSkins`` entries for the §V30 guard."""
+    """Count candidate operator (non-token) ``charSkins`` entries for the silent-empty guard."""
     if not isinstance(skin_raw, dict):
         return 0
     char_skins = skin_raw.get("charSkins")
@@ -227,14 +227,14 @@ def import_skins(
     """Read ``skin_table.json`` via the adapter and import the named skin gallery.
 
     A snapshot without ``skin_table.json`` (e.g. a combat-only fixture) yields an
-    empty result rather than failing, so the skin domain is optional per snapshot
-    (B36/§V41). Must run AFTER operators so char ids soft-resolve to a real
-    ``operator_pk`` (§V88). A non-empty operator ``charSkins`` set that resolves to
-    zero skins fails closed (§V30) so a shape/id mismatch is never promoted as a
+    empty result rather than failing, so the skin domain is optional per snapshot.
+    Must run AFTER operators so char ids soft-resolve to a real
+    ``operator_pk``. A non-empty operator ``charSkins`` set that resolves to
+    zero skins fails closed so a shape/id mismatch is never promoted as a
     silent empty gallery; the candidate is discarded and the active DB stays
-    untouched (§V3). A PARTIAL skip (some entries missing an id/stem while others
+    untouched. A PARTIAL skip (some entries missing an id/stem while others
     parse) is warned so a truncated gallery is at least visible in the sync log --
-    the §V30 guard alone only catches the all-zero case.
+    the silent-empty guard alone only catches the all-zero case.
     """
     if not adapter.exists(skin_table_path):
         return SkinImportResult()

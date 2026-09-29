@@ -1,5 +1,5 @@
-"""T10: the local snapshot adapter reads files under its root, never touches the
-network (§V1), and refuses any path that escapes the root (§V2 path safety).
+"""The local snapshot adapter reads files under its root, never touches the
+network, and refuses any path that escapes the root.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def test_exists_and_iter_files(tmp_path: Path) -> None:
 def test_satisfies_protocol_and_is_offline(tmp_path: Path) -> None:
     adapter = LocalSnapshotAdapter(_make_snapshot(tmp_path), server="en")
     assert isinstance(adapter, SourceAdapter)
-    assert adapter.touches_network is False  # §V1: local adapter never networks
+    assert adapter.touches_network is False  # local adapter never networks
     assert adapter.source_id == "local_snapshot"
     assert adapter.server == "en"
 

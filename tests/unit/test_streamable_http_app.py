@@ -1,7 +1,7 @@
-"""§T51 Streamable HTTP app wiring (fast, in-process; no socket).
+"""Streamable HTTP app wiring (fast, in-process; no socket).
 
-The transport must reuse the shared core (§V14) and expose the MCP endpoint at
-``/mcp`` (§I.api). These checks introspect the built Starlette app + the session
+The transport must reuse the shared core and expose the MCP endpoint at
+``/mcp``. These checks introspect the built Starlette app + the session
 manager without opening a listener; the over-the-wire proof is the subprocess-free
 socket smoke in ``tests/integration/test_serve_streamable_http_smoke.py``.
 """
@@ -23,20 +23,20 @@ def _routes(app: Starlette) -> list[Route]:
 
 
 def test_app_routes_mcp_path() -> None:
-    # §I.api: the MCP endpoint is served at POST /mcp by default.
+    # The MCP endpoint is served at POST /mcp by default.
     app = build_asgi_app(build_application(AppConfig()))
     paths = {r.path for r in _routes(app)}
     assert paths == {"/mcp"}
 
 
 def test_app_honors_configured_path() -> None:
-    # §I.api: the path is the operator's [mcp.remote] path, not hard-coded.
+    # The path is the operator's [mcp.remote] path, not hard-coded.
     app = build_asgi_app(build_application(AppConfig()), path="/custom-mcp")
     assert {r.path for r in _routes(app)} == {"/custom-mcp"}
 
 
 def test_app_reuses_shared_server() -> None:
-    # §V14: the session manager wraps the *same* transport-agnostic server stdio
+    # The session manager wraps the *same* transport-agnostic server stdio
     # runs -- same serverInfo.name + same shared instructions, no per-transport
     # server. The manager is stashed on app.state for this introspection.
     core = build_application(AppConfig())
@@ -45,12 +45,12 @@ def test_app_reuses_shared_server() -> None:
     assert server.name == SERVER_NAME
     assert server.instructions is not None
     assert server.instructions.startswith("Arknights Intelligence MCP")
-    # Same instructions string the stdio-built server carries (§V14).
+    # Same instructions string the stdio-built server carries.
     assert server.instructions == build_server(core).instructions
 
 
 def test_app_dispatches_the_shared_registry() -> None:
-    # §V14: no per-transport tool list -- the app is built over core.registry, the
+    # No per-transport tool list -- the app is built over core.registry, the
     # one registry both transports dispatch. The registry object identity is shared
     # (build_asgi_app never forks its own tool set).
     core = build_application(AppConfig())

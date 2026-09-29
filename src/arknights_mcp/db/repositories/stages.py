@@ -1,15 +1,15 @@
-"""Stage read repository (§V2; §T20).
+"""Stage read repository.
 
 Encapsulates the parameterized ``SELECT``s that back the ``analyze_stage``
 service: a single stage keyed by ``(server, game_id | stage_code)`` with its
-region-scoped provenance joined in (§V5), and the stage's typed enemy
-occurrences from the derived ``stage_enemies`` summary (§V6/§V26 inputs). Rows
+region-scoped provenance joined in, and the stage's typed enemy
+occurrences from the derived ``stage_enemies`` summary (the analyzer inputs). Rows
 are returned as flat, typed dataclasses that mirror the selected columns 1:1;
 domain shaping (analyzer inputs, ability parsing) stays in the service.
 
 The two stage joins are on NOT NULL foreign keys
 (``stages -> record_provenance -> source_snapshots``), so an "ok" stage always
-carries ``snapshot_id`` + ``imported_at`` (§V5). Every value is bound (§V2).
+carries ``snapshot_id`` + ``imported_at``. Every value is bound.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from arknights_mcp.util.sqlite import column_exists
 
 @dataclass(frozen=True)
 class StageRow:
-    """One stage row plus its joined region provenance (§V5)."""
+    """One stage row plus its joined region provenance."""
 
     stage_pk: int
     server: str
@@ -33,11 +33,11 @@ class StageRow:
     display_name: str | None
     zone_game_id: str | None
     #: The zone's display name, pairing the opaque ``zone_game_id`` with something a
-    #: client can read (§V69, T186); ``None`` when the zone is unnamed in source.
+    #: client can read; ``None`` when the zone is unnamed in source.
     zone_display_name: str | None
-    #: The TITLE of the event that zone belongs to (§V110/B155): a different fact from
+    #: The TITLE of the event that zone belongs to: a different fact from
     #: a different file than ``zone_display_name`` (the sub-zone subtitle). ``None`` for
-    #: a zone with no activity row and on a build predating migration 0015 (§V21).
+    #: a zone with no activity row and on a build predating migration 0015.
     event_name: str | None
     stage_type: str | None
     difficulty: str | None
@@ -52,18 +52,18 @@ class StageRow:
 class StageEnemyRow:
     """One enemy's typed occurrence in a stage (from ``stage_enemies``).
 
-    Carries the §V47 per-enemy stat block (``hp`` / ``atk`` / ``def_`` / ``res`` /
+    Carries the per-enemy stat block (``hp`` / ``atk`` / ``def_`` / ``res`` /
     ``attack_interval`` / ``move_speed`` / ``weight``) plus the analyzer inputs the
     threat rules decide from (``attack_range`` / ``targeting``, and the enemy-level
-    ``damage_types_json``), joined from the matching ``enemy_levels`` variant (§T39);
-    each is ``None`` when the level row or the source field is absent (§V26).
+    ``damage_types_json``), joined from the matching ``enemy_levels`` variant;
+    each is ``None`` when the level row or the source field is absent.
 
     ``abilities_json`` / ``block_behavior`` are NOT selected: no real source fills
-    either column (§V113 ``no_home``; B160 (c)), and the three rules that read them
-    were retired in §T210 (c) rather than left registered and unable to fire.
+    either column, and the three rules that read them
+    were retired rather than left registered and unable to fire.
 
-    For a stage-scoped inline variant (``variant_id`` set; §T80/§V43) every
-    §V29-verified stat (``hp`` / ``atk`` / ``def_`` / ``res`` / ``attack_interval`` /
+    For a stage-scoped inline variant (``variant_id`` set) every
+    verified stat (``hp`` / ``atk`` / ``def_`` / ``res`` / ``attack_interval`` /
     ``move_speed`` / ``weight`` / ``motion_type``) reads the variant's value **over**
     the base prefab's (COALESCE), so the analyzers and the detailed occurrence see
     the real per-variant stat; an un-overridden stat falls back to the base.
@@ -88,7 +88,7 @@ class StageEnemyRow:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
-    #: §V114/B161: whether the source DECLARED no attack radius (its ``-1.0`` sentinel)
+    #: Whether the source DECLARED no attack radius (its ``-1.0`` sentinel)
     #: rather than leaving one unstated -- the two are the same NULL in ``attack_range``,
     #: and the threat rule must not call a declared "none" a missing field.
     attack_range_declared_none: bool
@@ -143,15 +143,15 @@ class StageSpawnRow:
     interval: float | None
     spawn_group: str | None
     hidden: bool
-    #: The inline-variant id when this spawn is a ``useDb:false`` variant (§T80),
+    #: The inline-variant id when this spawn is a ``useDb:false`` variant,
     #: else ``None``; ``enemy_game_id`` stays the base prefab.
     variant_id: str | None
 
 
-# ``zones.event_name`` arrives in migration 0015 (§V110), and this code may be serving
+# ``zones.event_name`` arrives in migration 0015, and this code may be serving
 # an ACTIVE build made before it, so the expression is picked from a closed set of two
-# AUTHORED literals per :data:`_EVENT_NAME_EXPRESSIONS` -- never from request data (§V2,
-# §V21; the same degrade as ``OperatorRepository.skins`` one level down).
+# AUTHORED literals per :data:`_EVENT_NAME_EXPRESSIONS` -- never from request data
+# (the same degrade as ``OperatorRepository.skins`` one level down).
 _EVENT_NAME_COLUMN = "z.event_name"
 _EVENT_NAME_ABSENT = "NULL"
 _EVENT_NAME_EXPRESSIONS = (_EVENT_NAME_COLUMN, _EVENT_NAME_ABSENT)
@@ -166,7 +166,7 @@ def _stage_select(event_name: str) -> str:
         "FROM stages s "
         "JOIN record_provenance p ON p.provenance_id = s.provenance_id "
         "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
-        # §V5 parity with the T179 search-index zones join: region-guarded, so a stage
+        # Region-guarded in parity with the search-index zones join, so a stage
         # can never surface the other region's zone game_id even from a corrupt FK.
         "LEFT JOIN zones z ON z.zone_pk = s.zone_pk AND z.server = s.server "
         "WHERE s.server = ? AND "
@@ -182,10 +182,10 @@ _STAGE_BY_GAME_ID_SQL = {
     for expr in _EVENT_NAME_EXPRESSIONS
 }
 
-# A stage-scoped inline variant (§T80) overlays its stats on the base: COALESCE the
-# variant's §V29-verified stat block (hp/atk/def/res/attack_interval/move_speed/
+# A stage-scoped inline variant overlays its stats on the base: COALESCE the
+# variant's verified stat block (hp/atk/def/res/attack_interval/move_speed/
 # weight) + motion over the base enemy_levels/enemies value, so an overridden stat
-# wins and an un-overridden one inherits the base (§V46/§V47). variant_id is
+# wins and an un-overridden one inherits the base. variant_id is
 # surfaced for traceability (NULL for a plain base-enemy occurrence).
 _OCCURRENCES_SQL = (
     "SELECT e.game_id, e.display_name, e.enemy_class, e.is_boss, e.is_elite, "
@@ -207,7 +207,7 @@ _OCCURRENCES_SQL = (
     "ORDER BY e.game_id, se.enemy_level_variant, se.variant_pk"
 )
 
-# Deploy-surface tile counts for the tiles/deploy rule (§T39): a buildable LOWLAND
+# Deploy-surface tile counts for the tiles/deploy rule: a buildable LOWLAND
 # tile holds a melee unit, a buildable HIGHLAND tile a ranged unit; a NONE/absent
 # ``buildable_type`` is not deployable. SUM over zero rows is NULL (coalesced to 0).
 _TILE_SUMMARY_SQL = (
@@ -219,17 +219,17 @@ _TILE_SUMMARY_SQL = (
     "FROM stage_tiles WHERE stage_pk = ?"
 )
 
-# --- get_stage opt-in sections (§T34): each paged through a bounded LIMIT/OFFSET
+# --- get_stage opt-in sections: each paged through a bounded LIMIT/OFFSET
 # with a deterministic ORDER BY so a client can page without ever pulling an
-# unbounded slice (§V19), and repeat a page reproducibly.
+# unbounded slice, and repeat a page reproducibly.
 _MAP_SQL = "SELECT width, height, map_version, environment_json FROM stage_maps WHERE stage_pk = ?"
 
 _ROUTE_COUNT_SQL = "SELECT COUNT(*) FROM stage_routes WHERE stage_pk = ?"
 
-# --- full-grid read (§T122 render + §V74 (c) tile grid): the full grid is read
+# --- full-grid read (render + tile grid): the full grid is read
 # (bounded by an explicit LIMIT the caller derives from the map cell cap) so the
 # derived SVG / compact grid covers the whole stage; both are coarse derived views,
-# not a per-tile record dump (§V22).
+# not a per-tile record dump.
 _ALL_TILES_SQL = (
     "SELECT x, y, tile_key, height_type, buildable_type, passable "
     "FROM stage_tiles WHERE stage_pk = ? "
@@ -417,13 +417,13 @@ def _to_stage_spawn_row(row: Any) -> StageSpawnRow:
 
 
 class StageRepository(Repository):
-    """Read-only access to stages and their enemy occurrences (§V2)."""
+    """Read-only access to stages and their enemy occurrences."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         super().__init__(conn)
         # Probed once per repository: an ACTIVE build predating migration 0015 has no
         # ``zones.event_name``, and the read must degrade to NULL rather than raise
-        # (§V21, mirrors the ``operator_skins`` table-level degrade).
+        # (mirrors the ``operator_skins`` table-level degrade).
         self._event_name = (
             _EVENT_NAME_COLUMN if column_exists(conn, "zones", "event_name") else _EVENT_NAME_ABSENT
         )
@@ -434,16 +434,16 @@ class StageRepository(Repository):
         return _to_stage_row(row) if row is not None else None
 
     def stages_by_code(self, server: str, stage_code: str, limit: int) -> list[StageRow]:
-        """Every stage sharing ``(server, stage_code)``, ordered by ``stage_pk`` (§V102).
+        """Every stage sharing ``(server, stage_code)``, ordered by ``stage_pk``.
 
         A stage_code is NOT unique: 927 en codes (2293 stages) on the 2026-07-28 build
         are shared by two or more stages -- ``4-4`` by ``main_04-04`` and its four-star
         ``main_04-04#f#``, ``LT-1`` by 36 tower stages. The lookup used to take the first
         row and drop the rest silently, so the caller could neither disclose which one it
-        answered with nor name the alternates (B139). It returns the whole matching set,
-        bounded by ``limit`` (§V19 -- never an unbounded slice), and the service picks +
-        discloses. ``ORDER BY stage_pk`` keeps the pick deterministic across runs (§V91),
-        and the covering ``idx_stages_code`` serves the filter (§V94)."""
+        answered with nor name the alternates. It returns the whole matching set,
+        bounded by ``limit`` (never an unbounded slice), and the service picks +
+        discloses. ``ORDER BY stage_pk`` keeps the pick deterministic across runs,
+        and the covering ``idx_stages_code`` serves the filter."""
         rows = self._all(_STAGES_BY_CODE_SQL[self._event_name], (server, stage_code, limit))
         return [_to_stage_row(r) for r in rows]
 
@@ -453,12 +453,12 @@ class StageRepository(Repository):
 
     def tile_summary(self, stage_pk: int) -> tuple[int, int, int]:
         """Deploy-surface tile counts ``(total, buildable_melee, buildable_ranged)``
-        for the tiles/deploy rule (§T39). Melee = buildable LOWLAND, ranged =
+        for the tiles/deploy rule. Melee = buildable LOWLAND, ranged =
         buildable HIGHLAND; a ``total`` of 0 means the stage has no tile rows."""
         total, melee, ranged = self._one(_TILE_SUMMARY_SQL, (stage_pk,))
         return int(total), int(melee or 0), int(ranged or 0)
 
-    # --- get_stage opt-in sections (§T34): map header + paged tiles/routes/spawns.
+    # --- get_stage opt-in sections: map header + paged tiles/routes/spawns.
 
     def stage_map(self, stage_pk: int) -> StageMapRow | None:
         """The stage's map header (``stage_maps``) or ``None`` if absent."""
@@ -468,28 +468,28 @@ class StageRepository(Repository):
     def route_count(self, stage_pk: int) -> int:
         """Total RAW route records in the stage.
 
-        Feeds the §V49 lane/route analyzer (raw record count, carried with its
+        Feeds the lane/route analyzer (raw record count, carried with its
         "raw route records != distinct lanes" limitation). The ``get_stage`` routes
-        section pages over DISTINCT geometry instead (§V74 (a)), reading the full
+        section pages over DISTINCT geometry instead, reading the full
         set via :meth:`all_routes` and digesting in the service."""
         return int(self._one(_ROUTE_COUNT_SQL, (stage_pk,))[0])
 
     def spawn_count(self, stage_pk: int) -> int:
-        """Total scheduled spawns in the stage (for the §V19 page descriptor)."""
+        """Total scheduled spawns in the stage (for the page descriptor)."""
         return int(self._one(_SPAWN_COUNT_SQL, (stage_pk,))[0])
 
     def spawns(self, stage_pk: int, limit: int, offset: int) -> list[StageSpawnRow]:
         """One bounded page of spawns, ordered ``(wave, spawn_time, enemy, spawn_pk)``."""
         return [_to_stage_spawn_row(r) for r in self._all(_SPAWNS_SQL, (stage_pk, limit, offset))]
 
-    # --- full-grid reads (§T122 render + §V74 (c) tile grid), each bounded by ``limit``.
+    # --- full-grid reads (render + tile grid), each bounded by ``limit``.
 
     def all_tiles(self, stage_pk: int, limit: int) -> list[StageTileRow]:
         """Every tile of the stage grid (up to ``limit``), ordered ``(y, x)``.
 
         Bounded by an explicit ``limit`` the caller derives from the map cell cap so
-        an oversized tile table is never read whole (§V22); the rows feed the
-        derived map render (§T122) and the compact per-row tile grid (§V74 (c)), not
+        an oversized tile table is never read whole; the rows feed the
+        derived map render and the compact per-row tile grid, not
         a per-tile record response.
         """
         return [_to_stage_tile_row(r) for r in self._all(_ALL_TILES_SQL, (stage_pk, limit))]

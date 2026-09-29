@@ -1,4 +1,4 @@
-"""Shared JSON-value coercion helpers for importers (§V37 DRY).
+"""Shared JSON-value coercion helpers for importers.
 
 These four helpers were previously copy-pasted across ``importers/enemies.py``,
 ``importers/levels.py``, and ``importers/stages.py``. They live here as the
@@ -6,11 +6,11 @@ single home so a behavioural change happens in exactly one place.
 
 The one behavioural difference between the old copies -- ``levels`` sanitized
 strings while ``enemies``/``stages`` returned them raw -- is now an explicit
-``sanitize=`` argument on :func:`as_str`, not a silent divergent copy (§V37).
+``sanitize=`` argument on :func:`as_str`, not a silent divergent copy.
 That difference is intentional: ``enemies``/``stages`` read from a ``kept`` dict
 already sanitized by :func:`~arknights_mcp.importers.field_policy.apply_allowlist`,
 whereas ``levels`` reads raw tile/wave dicts that never passed through the
-allowlist and so must sanitize their own string leaves (§V18).
+allowlist and so must sanitize their own string leaves.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def as_float(value: Any) -> float | None:
 def as_dict(value: Any) -> dict[str, Any]:
     """Return ``value`` if it is a dict, else an empty dict (narrowing).
 
-    The single home (§V37) for the nested-parent narrowing previously copied
+    The single home for the nested-parent narrowing previously copied
     privately into the banner and skin importers (``limitParam``/``dynMeta``/
     ``displaySkin`` sub-extraction reads).
     """
@@ -67,7 +67,7 @@ def suffix_int(value: Any, prefix: str) -> int | None:
     their int payload as a ``<prefix>_<n>`` suffix; older dumps use a bare int, kept
     as-is (a documented limitation for the 0-indexed legacy form). ``bool`` -- an
     ``int`` subclass -- is rejected so a stray ``True`` never counts as ``1``. The
-    single home (§V37) for the two former private copies in the operator importer.
+    single home for the two former private copies in the operator importer.
     """
     if isinstance(value, bool):
         return None
@@ -83,15 +83,15 @@ def suffix_int(value: Any, prefix: str) -> int | None:
 
 
 def uniform_str(values: Iterable[str | None]) -> str | None:
-    """The one string every element of ``values`` carries, else ``None`` (§V112/§V66.3).
+    """The one string every element of ``values`` carries, else ``None``.
 
     A field a repeated source structure scopes PER ENTRY (a skill level, a module level)
     may only be lifted to the parent when every entry agrees; ``None`` says "the entries
     disagree, or none carried a value", which is the caller's signal to keep the per-entry
-    copies rather than pick ``entries[0]`` and lose the rest (§V112 b). Empty input, a lone
+    copies rather than pick ``entries[0]`` and lose the rest. Empty input, a lone
     ``None``, and a mix of ``None`` with a string all read as "no single shared value".
 
-    The single §V37 home for both sides of that lift: the importer decides what a skill
+    The single home for both sides of that lift: the importer decides what a skill
     scalar may store (:func:`~arknights_mcp.importers.operators.parse_skills`), and the
     read side hoists a uniform effect template out of the level rows
     (:func:`~arknights_mcp.services.operators.hoist_uniform_template`).
@@ -105,9 +105,9 @@ def uniform_str(values: Iterable[str | None]) -> str | None:
 
 
 def json_load(raw: str | None) -> Any:
-    """Decode a stored (already allowlisted + sanitized) JSON fragment (§V18/§V31).
+    """Decode a stored (already allowlisted + sanitized) JSON fragment.
 
-    The inverse of :func:`json_or_none`, and the single home (§V37) for the
+    The inverse of :func:`json_or_none`, and the single home for the
     read-side decode shared by the stage/enemy services: a ``NULL`` column or an
     undecodable string maps to ``None`` (absent), never a raw string leak.
     """

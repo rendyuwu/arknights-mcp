@@ -1,4 +1,4 @@
-"""Atomic file write helpers (§V4 atomic promotion).
+"""Atomic file write helpers.
 
 Promotion swaps ``data/current.json`` atomically so a reader never observes a
 half-written manifest: the payload is written to a temporary file in the *same*

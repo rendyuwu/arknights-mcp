@@ -1,6 +1,6 @@
-"""T12: the migration runner applies the core-metadata schema, records versions
+"""The migration runner applies the core-metadata schema, records versions
 with checksums, is idempotent, detects drift, and produces a DB that passes
-integrity + foreign-key checks. The record_provenance table carries the §V17
+integrity + foreign-key checks. The record_provenance table carries the
 provenance columns.
 """
 
@@ -26,8 +26,9 @@ CORE_TABLES = {
     "source_policy_events",
 }
 
-# T19 / PRD §12.3 (operator) + §12.6 (analysis). Enemy (§12.4) + stage (§12.5)
-# tables are covered by their own migration tests; this file guards the full set.
+# PRD section 12.3 (operator) + section 12.6 (analysis). Enemy (section 12.4) +
+# stage (section 12.5) tables are covered by their own migration tests; this file
+# guards the full set.
 OPERATOR_TABLES = {
     "operators",
     "operator_aliases",
@@ -136,7 +137,7 @@ def test_default_migrations_dir_exists() -> None:
     assert (default_migrations_dir() / "0001_core_metadata.sql").is_file()
 
 
-# --- T19: operator (§12.3) + analysis (§12.6) domain migrations -------------
+# --- operator (section 12.3) + analysis (section 12.6) domain migrations ----
 
 
 def _seed_provenance(conn: sqlite3.Connection) -> int:
@@ -220,9 +221,9 @@ def test_operator_domain_columns(tmp_path: Path) -> None:
 
 
 def test_skill_levels_carry_the_per_level_source_fields(tmp_path: Path) -> None:
-    # §V112/B159 (migration 0016): skill_table scopes name + the three enums PER LEVEL, so
+    # Migration 0016: skill_table scopes name + the three enums PER LEVEL, so
     # the level row can hold them. All four are nullable -- NULL means the skill row
-    # carries the value every level shares (§V66.3 hoist), never "unknown".
+    # carries the value every level shares (hoist), never "unknown".
     conn = build_database(tmp_path / "candidate.sqlite")
     cols = {r[1]: r for r in conn.execute("PRAGMA table_info(skill_levels)")}
     for column in ("display_name", "skill_type", "sp_type", "duration_type"):
@@ -231,7 +232,7 @@ def test_skill_levels_carry_the_per_level_source_fields(tmp_path: Path) -> None:
 
 
 def test_gameplay_description_columns_present_but_optional(tmp_path: Path) -> None:
-    # V16: policy-controlled prose columns exist in the schema (importer excludes
+    # Policy-controlled prose columns exist in the schema (importer excludes
     # them by default) and are nullable, never NOT NULL.
     conn = build_database(tmp_path / "candidate.sqlite")
     for table in ("skill_levels", "module_levels", "talent_levels"):
@@ -241,8 +242,8 @@ def test_gameplay_description_columns_present_but_optional(tmp_path: Path) -> No
 
 
 def test_analysis_findings_carries_v6_fields(tmp_path: Path) -> None:
-    # V6: a stored observation carries rule_id + evidence + confidence +
-    # analyzer_version (limitations live inside finding_json per §12.6).
+    # A stored observation carries rule_id + evidence + confidence +
+    # analyzer_version (limitations live inside finding_json per section 12.6).
     conn = build_database(tmp_path / "candidate.sqlite")
     assert _column_names(conn, "analysis_findings") >= {
         "rule_id",
@@ -262,7 +263,7 @@ def test_analysis_findings_carries_v6_fields(tmp_path: Path) -> None:
 
 
 def test_operator_provenance_fk_enforced(tmp_path: Path) -> None:
-    # V17: operators reference record_provenance; an unknown parent must fail.
+    # Operators reference record_provenance; an unknown parent must fail.
     conn = build_database(tmp_path / "candidate.sqlite")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
@@ -273,7 +274,7 @@ def test_operator_provenance_fk_enforced(tmp_path: Path) -> None:
 
 
 def test_module_operator_fk_enforced(tmp_path: Path) -> None:
-    # §12.1: modules reference operators; unknown operator_pk must fail even with
+    # Section 12.1: modules reference operators; unknown operator_pk must fail even with
     # a valid provenance row (isolating the operator FK).
     conn = build_database(tmp_path / "candidate.sqlite")
     provenance_id = _seed_provenance(conn)
@@ -298,7 +299,7 @@ def test_analysis_finding_rule_fk_enforced(tmp_path: Path) -> None:
 
 def test_operator_and_analysis_round_trip(tmp_path: Path) -> None:
     # A valid operator -> module -> finding chain inserts cleanly and the whole
-    # DB still passes integrity + foreign-key checks (§12.1).
+    # DB still passes integrity + foreign-key checks (section 12.1).
     conn = build_database(tmp_path / "candidate.sqlite")
     provenance_id = _seed_provenance(conn)
     cur = conn.execute(

@@ -3,7 +3,7 @@
   "build": "2026-07-26T221440Z-en-cn.sqlite",
   "snapshot_id": "en:70e89c4c9329",
   "server": "en",
-  "note": "stored stage_routes rows extracted verbatim from a real build (post-import shape consumed by services.stage_route_digest); checkpoint `type` tokens are verbatim upstream values -- the real corpus the classifier partition is pinned against (B128/B129)",
+  "note": "stored stage_routes rows extracted verbatim from a real build (post-import shape consumed by services.stage_route_digest); checkpoint `type` tokens are verbatim upstream values -- the real corpus the classifier partition is pinned against",
   "stages": {
    "main_07-01": "stage code 7-2",
    "main_07-02": "stage code 7-3"

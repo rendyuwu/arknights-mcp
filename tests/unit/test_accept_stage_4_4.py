@@ -1,18 +1,18 @@
-"""T18: the M0 acceptance test (§V5, §V6, §V16).
+"""The M0 acceptance test.
 
 This is the milestone gate for M0: it drives the *pinned 4-4 fixture* through the
-entire M0 stack the way a transport would -- build candidate DB (T12) -> import
-enemies (T13) + stages/levels (T14) -> call the shared ``analyze_stage`` service
-(T17), which runs the deterministic threat analyzer (T16). Unlike the per-task
-tests, this one asserts the whole M0 story end to end:
+entire M0 stack the way a transport would -- build candidate DB -> import enemies
++ stages/levels -> call the shared ``analyze_stage`` service, which runs the
+deterministic threat analyzer. Unlike the per-task tests, this one asserts the
+whole M0 story end to end:
 
-* **4-4 -> stage + enemy occurrence + provenance** with region on the result
-  (§V5): the factual response carries ``server`` + ``snapshot_id`` +
-  ``imported_at``, and ``en`` data is never surfaced under a ``cn`` query.
-* **threat finding** (§V6): an evidence-backed observation with every mandated
+* **4-4 -> stage + enemy occurrence + provenance** with region on the result: the
+  factual response carries ``server`` + ``snapshot_id`` + ``imported_at``, and
+  ``en`` data is never surfaced under a ``cn`` query.
+* **threat finding**: an evidence-backed observation with every mandated
   field (``rule_id`` + evidence + confidence + limitations + ``analyzer_version``),
-  decided from a typed field (§V26).
-* **no wiki text** (§V16): source-side game-content prose is stripped through the
+  decided from a typed field.
+* **no wiki text**: source-side game-content prose is stripped through the
   full pipeline -- it appears in neither the built database nor the serialized
   domain result the ``analyze_stage`` tool would return.
 """
@@ -37,11 +37,12 @@ FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
 SNAPSHOT_ID = "en:fixture0000"
 IMPORTED_AT = "2026-07-17T00:00:00+00:00"
 
-#: A game-content prose sentinel: the kind of wiki/lore blurb §V16 forbids from
-#: shipping. Injected only into NON-allowlisted keys, so a correct pipeline drops
-#: it everywhere. If it ever surfaces in the DB or a tool result, §V16 regressed.
-#: ASCII-only so JSON escaping never masks a leak (a real one would show as-is).
-WIKI_PROSE = "LOREBLURB community wiki prose that must never ship to a client - see V16."
+#: A game-content prose sentinel: the kind of wiki/lore blurb the field policy
+#: forbids from shipping. Injected only into NON-allowlisted keys, so a correct
+#: pipeline drops it everywhere. If it ever surfaces in the DB or a tool result,
+#: the stripping regressed. ASCII-only so JSON escaping never masks a leak (a
+#: real one would show as-is).
+WIKI_PROSE = "LOREBLURB community wiki prose that must never ship to a client."
 
 
 def _seed_snapshot(conn: sqlite3.Connection) -> None:
@@ -90,7 +91,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
     return _build_from(FIXTURE_ROOT, tmp_path / "cand.sqlite")
 
 
-# --- 4-4 -> stage + occurrence + provenance + threat finding (§V5, §V6) --------
+# --- 4-4 -> stage + occurrence + provenance + threat finding ------------------
 
 
 def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
@@ -98,7 +99,7 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
     occurrences + provenance + a threat finding (the M0 acceptance story)."""
     result = analyze_stage(conn, server="en", stage_code="4-4")
 
-    # stage + region + provenance (§V5)
+    # stage + region + provenance
     assert result.status == "ok"
     assert result.server == "en"
     assert result.stage is not None
@@ -117,8 +118,8 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
     assert occ_by_id["enemy_1105_drone"].motion_type == "FLY"
     assert occ_by_id["enemy_1007_slime"].total_count == 3
 
-    # threat findings with every §V6 field, decided from typed fields (§V26). Two fire:
-    # the drone is an arts flyer, and §T210 revived the substrate ranged_arts reads.
+    # threat findings with every mandated field, decided from typed fields. Two fire:
+    # the drone is an arts flyer, and ranged_arts reads the revived substrate.
     assert result.analyzer_version is not None
     assert {o.rule_id for o in result.observations} == {RULE_ID, "threat.ranged_arts"}
     obs = next(o for o in result.observations if o.rule_id == RULE_ID)
@@ -130,8 +131,8 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
     assert {e.ref for e in obs.evidence} == {"enemy_1105_drone"}
     assert obs.evidence[0].field == "motion_type"
     assert obs.evidence[0].value == "FLY"
-    # §T210 end to end: the radius the §V30 bridge now carries reaches the rule, so the
-    # conclusion rests on a measured field instead of the §V26 "range unknown" arm.
+    # End to end: the radius the bridge now carries reaches the rule, so the
+    # conclusion rests on a measured field instead of the "range unknown" arm.
     arts = next(o for o in result.observations if o.rule_id == "threat.ranged_arts")
     assert (arts.evidence[0].field, arts.evidence[0].value) == ("attack_range", 1.2)
     assert arts.confidence >= 0.9
@@ -139,13 +140,13 @@ def test_accept_4_4_full_pipeline(conn: sqlite3.Connection) -> None:
 
 
 def test_accept_region_not_silently_mixed(conn: sqlite3.Connection) -> None:
-    """§V5: the imported region is ``en``; a ``cn`` lookup of the same stage must
+    """The imported region is ``en``; a ``cn`` lookup of the same stage must
     not surface it (en & cn never silently mixed)."""
     assert analyze_stage(conn, server="en", stage_code="4-4").status == "ok"
     assert analyze_stage(conn, server="cn", stage_code="4-4").status == "not_found"
 
 
-# --- no wiki text leaks through the whole pipeline (§V16) ----------------------
+# --- no wiki text leaks through the whole pipeline ----------------------------
 
 
 def _poison_json(path: Path, inject: dict[str, str]) -> None:
@@ -180,7 +181,7 @@ def _poisoned_snapshot(tmp_path: Path) -> Path:
 
 
 def test_accept_no_wiki_text_leaks_through_pipeline(tmp_path: Path) -> None:
-    """§V16: even when the source snapshot carries wiki/lore prose, it survives
+    """Even when the source snapshot carries wiki/lore prose, it survives
     into neither the built DB nor the serialized tool result."""
     root = _poisoned_snapshot(tmp_path)
 
@@ -200,7 +201,7 @@ def test_accept_no_wiki_text_leaks_through_pipeline(tmp_path: Path) -> None:
     assert result.occurrences
     assert len(result.observations) == 2
 
-    # §V16: prose absent from every column of the built database ...
+    # prose absent from every column of the built database ...
     tables = [
         name
         for (name,) in conn.execute(
@@ -219,7 +220,7 @@ def test_accept_no_wiki_text_leaks_through_pipeline(tmp_path: Path) -> None:
 
 def test_accept_result_is_json_serializable(conn: sqlite3.Connection) -> None:
     """The domain result is a plain dataclass tree (no prose, no opaque objects),
-    so a transport can serialize it into the typed tool envelope (T29)."""
+    so a transport can serialize it into the typed tool envelope."""
     result = analyze_stage(conn, server="en", stage_code="4-4")
     assert isinstance(result, StageAnalysisResult)
     dumped = json.dumps(asdict(result), default=str)

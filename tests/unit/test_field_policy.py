@@ -1,4 +1,4 @@
-"""T11: field allowlist + untrusted-string sanitization (§V18)."""
+"""Field allowlist + untrusted-string sanitization."""
 
 from __future__ import annotations
 
@@ -17,49 +17,49 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text, stri
 
 
 def test_field_policy_version_present() -> None:
-    # 2: B46/§V59 added name_i18n to ITEM_ALLOWLIST (region-locale item names).
-    # 3: T107/§V61 added day/month/webUrl/group to ANNOUNCEMENT_ALLOWLIST (real feed
+    # 2: added name_i18n to ITEM_ALLOWLIST (region-locale item names).
+    # 3: added day/month/webUrl/group to ANNOUNCEMENT_ALLOWLIST (real feed
     #    field-map: day+month->date, webUrl->url, group->category).
-    # 4: T99/§V57 added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
-    # 5: T111/§V62 added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists.
-    # 6: T127/§V65 added `description` (effect TEMPLATE) to SKILL_LEVEL_ALLOWLIST +
+    # 4: added LOCALE_NAME_ALLOWLIST (extra-locale jp/kr canonical NAMES only).
+    # 5: added BANNER_ALLOWLIST + LIMIT_PARAM/DYN_META sub-allowlists.
+    # 6: added `description` (effect TEMPLATE) to SKILL_LEVEL_ALLOWLIST +
     #    TALENT_CANDIDATE_ALLOWLIST (ADR 0010 ceiling: mechanic text in, lore out).
-    # 7: T182/§V88 added SKIN_ALLOWLIST + DISPLAY_SKIN sub-allowlist (ADR 0015: named
+    # 7: added SKIN_ALLOWLIST + DISPLAY_SKIN sub-allowlist (ADR 0015: named
     #    skin gallery ids/labels in, displaySkin prose/credit out).
-    # 8: T179 review-fix added zoneNameSecond to ZONE_ALLOWLIST (real zone_table
+    # 8: review-fix added zoneNameSecond to ZONE_ALLOWLIST (real zone_table
     #    carries zoneID/zoneNameSecond, no zoneName -> zone name imported NULL and
-    #    the §T179 stage search alias was dead on real builds).
-    # 9: T193/§V97 (B130) no allowlist change -- the sanitize TRANSFORM changed, so the
+    #    the stage search alias was dead on real builds).
+    # 9: no allowlist change -- the sanitize TRANSFORM changed, so the
     #    same allowlisted fields store different bytes (a removed control char now
     #    leaves a space instead of welding the words either side).
-    # 10: T204/§V109 (B154) no allowlist change either -- §V65 (a) templates now bypass
+    # 10: no allowlist change either -- templates now bypass
     #    this module's cap and go through util.text.clean_template_text (tags stripped
     #    BEFORE a 1024-char cap), so templates this allowlist silently cut mid-sentence
     #    at 512 store whole.
-    # 11: T205/§V110 (B155) added ACTIVITY_ALLOWLIST -- the event TITLE
+    # 11: added ACTIVITY_ALLOWLIST -- the event TITLE
     #    (activity_table basicInfo[<actId>].name) was in no allowlist at all, so the
     #    name a client searches an event by ("Lone Trail") reached no column.
-    # 12: T210/§V113 (B160) added `damageType` -- the enemy's damage kind moved
+    # 12: added `damageType` -- the enemy's damage kind moved
     #    upstream from the now-always-null `attackType` scalar to a typed LIST, and
     #    42 enemies deal PHYSIC *and* MAGIC, so no scalar could carry it.
-    # 13: T211/§V114 (B161) added `attackRangeDeclaredNone` -- the §V103 strip that keeps
+    # 13: added `attackRangeDeclaredNone` -- the strip that keeps
     #    upstream's -1.0 no-radius mask out of the distance column was erasing the fact
     #    that the source ANSWERED, so "said none" and "said nothing" arrived as one NULL.
-    # 14: T202/§V69 (B150) added SUBPROF_ALLOWLIST -- the subclass NAME sat in a file
+    # 14: added SUBPROF_ALLOWLIST -- the subclass NAME sat in a file
     #    every sync already fetched (uniequip_table.subProfDict) and no importer read,
-    #    so 71 EN / 72 CN subclass ids shipped bare -- and §V115 (B162) the module change
+    #    so 71 EN / 72 CN subclass ids shipped bare -- and the module change
     #    bundles' own `isToken`, the source's statement of whose effect a change is.
-    # 15: T200/§V98 (B132) added RANGE_ALLOWLIST + RANGE_GRID_ALLOWLIST -- `range_table
+    # 15: added RANGE_ALLOWLIST + RANGE_GRID_ALLOWLIST -- `range_table
     #    .json` was DECLARED in the registry's fields_consumed while no sync fetched it
     #    and no importer read it, so `range_id` shipped bare on 2548 phase + 5334
-    #    skill-level rows with no resolver and no limitation (§V69).
+    #    skill-level rows with no resolver and no limitation.
     assert FIELD_POLICY_VERSION == "15"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:
-    """§T127/§V65/ADR 0010: the skill-level `description` is the in-game effect
+    """ADR 0010: the skill-level `description` is the in-game effect
     TEMPLATE (mechanic text referencing the blackboard keys) -> allowlisted; it is
-    sanitized as untrusted data (§V18)."""
+    sanitized as untrusted data."""
     assert "description" in SKILL_LEVEL_ALLOWLIST
     raw = {
         "name": "Chain Cast",
@@ -69,12 +69,12 @@ def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> Non
     }
     result = apply_allowlist(raw, SKILL_LEVEL_ALLOWLIST)
     assert result.kept["description"] == "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage."
-    assert "\x00" not in result.kept["description"]  # §V18 control char stripped
+    assert "\x00" not in result.kept["description"]  # control char stripped
     assert "internalFlag" in result.dropped
 
 
 def test_talent_candidate_allowlist_keeps_effect_template() -> None:
-    """§T127/§V65/ADR 0010: the talent-candidate `description` is the in-game effect
+    """ADR 0010: the talent-candidate `description` is the in-game effect
     TEMPLATE -> allowlisted alongside its blackboard; other prose stays dropped."""
     assert "description" in TALENT_CANDIDATE_ALLOWLIST
     raw = {
@@ -105,7 +105,7 @@ def test_allowlist_drops_unlisted_prose() -> None:
 
 
 def test_overwritten_data_allowlist_drops_variant_prose() -> None:
-    """§T80/§V18: a useDb:false ref's overwrittenData carries prose (name/
+    """A useDb:false ref's overwrittenData carries prose (name/
     description) alongside its stats; only the structural keys survive the
     allowlist, so the inline variant is built without any prose leaf."""
     raw = {
@@ -125,7 +125,7 @@ def test_overwritten_data_allowlist_drops_variant_prose() -> None:
 
 
 def test_banner_allowlist_keeps_typed_schedule_drops_prose() -> None:
-    """§T111/§V62/§V18: a gacha_table gachaPoolClient entry carries typed schedule
+    """A gacha_table gachaPoolClient entry carries typed schedule
     facts alongside gacha prose (gachaPoolSummary/gachaPoolDetail); only the
     structural keys survive the allowlist, so the banner archive is metadata-only."""
     raw = {
@@ -144,8 +144,8 @@ def test_banner_allowlist_keeps_typed_schedule_drops_prose() -> None:
     assert result.kept["gachaPoolId"] == "LIMITED_1"
     assert result.kept["gachaRuleType"] == "LIMITED"
     # Prose + the prose-bearing nested parents are dropped: the typed featured-op ids
-    # under limitParam/dynMeta are sub-extracted with their own allowlists (§V31),
-    # never kept whole here (dynMeta also carries rate-up html/image, §V16/§V62).
+    # under limitParam/dynMeta are sub-extracted with their own allowlists,
+    # never kept whole here (dynMeta also carries rate-up html/image).
     assert "gachaPoolSummary" in result.dropped
     assert "gachaPoolDetail" in result.dropped
     assert "limitParam" in result.dropped
@@ -153,7 +153,7 @@ def test_banner_allowlist_keeps_typed_schedule_drops_prose() -> None:
 
 
 def test_limit_param_allowlist_keeps_only_featured_char_id() -> None:
-    """§V62: a LIMITED banner's limitParam yields only the featured limited char id;
+    """A LIMITED banner's limitParam yields only the featured limited char id;
     event/mission metadata is dropped (typed featured-op, not prose)."""
     raw = {"limitedCharId": "char_1028_texas2", "freeCount": 0, "leastFragCount": 300}
     result = apply_allowlist(raw, LIMIT_PARAM_ALLOWLIST)
@@ -163,7 +163,7 @@ def test_limit_param_allowlist_keeps_only_featured_char_id() -> None:
 
 
 def test_dyn_meta_allowlist_keeps_only_attain_list_drops_html() -> None:
-    """§V62/§V16: a CLASSIC-family banner's dynMeta yields only the typed
+    """A CLASSIC-family banner's dynMeta yields only the typed
     attainRare6CharList array; rate-up html/image prose never survives."""
     raw = {
         "attainRare6CharList": ["char_002_amiya", "char_003_kalts"],
@@ -195,7 +195,7 @@ def test_allowlist_keeps_nonstring_values() -> None:
 
 
 def test_allowlist_sanitizes_nested_string_leaves() -> None:
-    # H3/§V18: control + bidi chars nested inside kept dict/list values are
+    # H3: control + bidi chars nested inside kept dict/list values are
     # stripped too, not only top-level strings.
     from arknights_mcp.importers.field_policy import ENEMY_LEVEL_ALLOWLIST
 
@@ -216,6 +216,6 @@ def test_sanitize_caps_length() -> None:
 
 
 def test_strip_control_chars_removes_controls_keeps_spaces() -> None:
-    # §V97/B130: a removed control char leaves a SPACE, never welds its neighbours.
+    # A removed control char leaves a SPACE, never welds its neighbours.
     assert strip_control_chars("a\x00b\tc\nd") == "a b c d"
     assert strip_control_chars("keep spaces") == "keep spaces"

@@ -1,14 +1,14 @@
-"""Bounded Pydantic v2 input/output models for the MCP tools (§T30; §V22).
+"""Bounded Pydantic v2 input/output models for the MCP tools.
 
 Every tool's parameters are a bounded :class:`~arknights_mcp.models.common.StrictModel`
 (``extra="forbid"``, string caps, numeric bounds). The bounds are the enforcement
-point for §V19 (search limit / page_size) and §V22 (opt-in heavy sections), and
+point for the search limit / page_size and opt-in heavy-section caps, and
 they surface in each tool's ``inputSchema`` via
 :func:`~arknights_mcp.models.common.tool_input_schema`.
 
 Per-entity *output* fact payloads stay owned by the service layer (the
 ``StageFacts`` / ``DataStatus`` / ``SourceInfo`` dataclasses) -- a single home per
-§V14/§V37; only the shared bounded output primitive :class:`PageInfo` lives here.
+domain; only the shared bounded output primitive :class:`PageInfo` lives here.
 """
 
 from __future__ import annotations

@@ -1,13 +1,13 @@
-"""Configuration loading and startup safety checks (SPEC §I ``config.toml``).
+"""Configuration loading and startup safety checks.
 
 Loads ``config.toml`` into typed Pydantic models mirroring PRD Section 19, and
-enforces the §V9 startup rule: a non-loopback remote deployment without HTTPS
+enforces the startup rule: a non-loopback remote deployment without HTTPS
 assumptions and valid OAuth/OIDC settings must fail startup.
 
 Secrets are never read from TOML; non-secret OIDC descriptors (issuer,
 audience, jwks_url, required_scopes, advertised_scopes) may be supplied via TOML,
 and the three URL/id descriptors are overlaid from the environment (the two scope
-lists are TOML-only, §I.env).
+lists are TOML-only).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from arknights_mcp.util.text import is_placeholder
 
-# Hosts that do not require HTTPS + OAuth for remote serving (§V9 loopback dev).
+# Hosts that do not require HTTPS + OAuth for remote serving (loopback dev).
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "0::1"})
 
 # Environment variables that overlay the non-secret OIDC descriptors.
@@ -65,17 +65,17 @@ class SyncSourceConfig(_Model):
     base_url: str = ""
     # Optional per-region overrides. A region without an explicit entry falls back
     # to ``base_url``; a ``{server}`` token in either is substituted per region so a
-    # single region-partitioned repo can serve distinct en/cn trees (§V5).
+    # single region-partitioned repo can serve distinct en/cn trees.
     base_urls: dict[str, str] = Field(default_factory=dict)
     # A single feed endpoint for sources fetched from ONE URL rather than a
-    # region-partitioned tree (the announcement feeds, §T106/§V56). Kept distinct
+    # region-partitioned tree (the announcement feeds). Kept distinct
     # from ``base_url`` so an announcement source configures its feed without a
     # spurious ``{server}`` tree; unset/placeholder -> the ride-along skips it.
     feed_url: str = ""
     servers: list[str] = Field(default_factory=lambda: ["en", "cn"])
 
     def base_url_for(self, server: str) -> str:
-        """Resolve the upstream base URL for ``server`` (§V5: en/cn never mixed)."""
+        """Resolve the upstream base URL for ``server`` (en/cn never mixed)."""
         url = self.base_urls.get(server, self.base_url)
         return url.replace("{server}", server)
 
@@ -85,9 +85,9 @@ class SyncConfig(_Model):
     allow_remote_download: bool = True
     retain_versions: int = 3
     max_total_download_mb: int = 500
-    # Bounded parallelism for the network sync (§T79/§V42): reuse a keep-alive
+    # Bounded parallelism for the network sync: reuse a keep-alive
     # connection per worker and fan out downloads over a thread pool. ``1`` forces
-    # the serial fallback; the pool never exceeds this bound (⊥ unbounded fan-out).
+    # the serial fallback; the pool never exceeds this bound (never unbounded fan-out).
     max_parallel_downloads: int = 8
     # Per-source subtables (``[sync.<source_id>]``) folded here from the raw TOML.
     sources: dict[str, SyncSourceConfig] = Field(default_factory=dict)
@@ -144,10 +144,10 @@ class McpRemoteConfig(_Model):
     path: str = "/mcp"
     public_base_url: str = "https://mcp.example.com"
     trust_proxy_headers: bool = True
-    # §V40: a reverse proxy / tunnel (e.g. Cloudflare Tunnel) binds the server
+    # A reverse proxy / tunnel (e.g. Cloudflare Tunnel) binds the server
     # loopback yet serves the public internet, so a loopback bind is NOT proof the
-    # listener is private. This explicit intent flag forces the §V9 HTTPS+OIDC gate
-    # and per-request bearer enforcement even on a 127.0.0.1 bind (B31).
+    # listener is private. This explicit intent flag forces the HTTPS+OIDC gate
+    # and per-request bearer enforcement even on a 127.0.0.1 bind.
     behind_proxy: bool = False
 
     @property
@@ -156,12 +156,12 @@ class McpRemoteConfig(_Model):
 
     @property
     def requires_auth(self) -> bool:
-        """True when bearer validation must be enforced (§V40).
+        """True when bearer validation must be enforced.
 
         Auth enforcement is independent of the bind address: a non-loopback bind
         always requires auth, and a loopback bind requires it too when
         ``behind_proxy`` declares a public-facing proxy in front. Only a genuine
-        loopback dev bind (loopback AND not behind a proxy) is the authless §V9
+        loopback dev bind (loopback AND not behind a proxy) is the authless
         exception.
         """
         return not self.is_loopback or self.behind_proxy
@@ -185,17 +185,17 @@ class McpConfig(_Model):
 
 
 class AuthConfig(_Model):
-    """OIDC descriptors plus the two distinct scope lists (§V45 scope split, B126).
+    """OIDC descriptors plus the two distinct scope lists (the scope split).
 
-    ``required_scopes`` is what a token must CARRY: the §V10 AND-check over the
+    ``required_scopes`` is what a token must CARRY: the AND-check over the
     granted set, and the ``scope=`` hint on an ``insufficient_scope`` challenge.
     ``advertised_scopes`` is what an interactive client should REQUEST: the RFC 9728
-    protected-resource metadata ``scopes_supported`` (§V45). They differ because the
+    protected-resource metadata ``scopes_supported``. They differ because the
     authorization server consumes some scopes without minting them into the access
     token -- Auth0 turns ``offline_access`` into a refresh token and never puts it in
     the ``scope`` claim. Advertising it is what makes ``claude mcp login`` ask for a
     refresh token (without it the session dies at access-token expiry, ~24h); adding
-    it to ``required_scopes`` instead would 403 every token (B126).
+    it to ``required_scopes`` instead would 403 every token.
     """
 
     mode: str = "oidc"
@@ -203,7 +203,7 @@ class AuthConfig(_Model):
     audience: str | None = None
     jwks_url: str | None = None
     required_scopes: list[str] = Field(default_factory=lambda: ["arknights:read"])
-    # Additive optional field (§V21): absent config → this default, which advertises
+    # Additive optional field: absent config → this default, which advertises
     # the required read scope plus the flow-only ``offline_access`` (refresh token).
     advertised_scopes: list[str] = Field(
         default_factory=lambda: ["arknights:read", "offline_access"]
@@ -211,12 +211,12 @@ class AuthConfig(_Model):
 
     @property
     def is_valid_oidc(self) -> bool:
-        """True when OIDC descriptors are present and non-placeholder (§V9/§V10).
+        """True when OIDC descriptors are present and non-placeholder.
 
         Deliberately does not consider ``advertised_scopes``: advertising drives the
         client's authorize request, never token validation, so an empty or partial
-        advertise list must not fail a deployment closed (§V9 gates authority, §V45
-        gates bootstrap convenience).
+        advertise list must not fail a deployment closed (authority gating and
+        bootstrap convenience are separate).
         """
         return (
             self.mode == "oidc"
@@ -228,14 +228,14 @@ class AuthConfig(_Model):
 
     @property
     def prm_scopes(self) -> list[str]:
-        """``scopes_supported`` for the RFC 9728 metadata document (§V45).
+        """``scopes_supported`` for the RFC 9728 metadata document.
 
-        Single home (§V37) for the ``advertised ⊇ required`` guarantee: every required
+        Single home for the ``advertised ⊇ required`` guarantee: every required
         scope is emitted first (in config order), then any advertise-only extra
         (``offline_access``). Union rather than assert -- a deployment that lists
         ``advertised_scopes`` without a required scope would otherwise publish metadata
         that makes clients request too little, and every resulting token 403s at the
-        §V10 check. Order is deterministic and duplicates collapse.
+        scope check. Order is deterministic and duplicates collapse.
         """
         seen: set[str] = set()
         scopes: list[str] = []
@@ -261,9 +261,9 @@ class LimitsConfig(_Model):
     max_concurrent_requests_per_principal: int = 4
     request_timeout_seconds: int = 30
     max_page_size: int = 100
-    # §V11 request cap: max accepted request body size (bytes). Default 1 MiB -- an
+    # Request cap: max accepted request body size (bytes). Default 1 MiB -- an
     # MCP ``tools/call`` payload is small; a body past this is refused 413 before the
-    # handler runs. Additive optional field (§V21): absent config → this default.
+    # handler runs. Additive optional field: absent config → this default.
     max_request_bytes: int = 1_048_576
 
 
@@ -274,17 +274,17 @@ class PrivacyConfig(_Model):
 
 
 class ImageRefsConfig(_Model):
-    """Query-time image URL-reference surface toggle (§T119/§T124/§V63/ADR 0008+0009).
+    """Query-time image URL-reference surface toggle (ADR 0008+0009).
 
-    ON by default (§T124, founder 2026-07-22: all existing user features default-enabled).
+    ON by default (founder 2026-07-22: all existing user features default-enabled).
     This flag is the config half of the emission gate
     (:attr:`AppConfig.image_refs_enabled`); the tool wiring additionally requires the
-    ``arknights_game_resource`` source to be enabled in the machine registry (§V20
-    kill switch) before any reference is emitted. As of ADR 0009 the gate carries NO
+    ``arknights_game_resource`` source to be enabled in the machine registry
+    (kill switch) before any reference is emitted. As of ADR 0009 the gate carries NO
     deployment-posture term: "private" means access-controlled, not loopback-only --
-    §V9 already fails startup closed on any anonymous non-loopback surface, so an
-    authenticated (OIDC/bearer) deployment may emit references (§C/D4). Kill switch =
-    set this ``false`` or disable the ``arknights_game_resource`` source (§V20).
+    startup already fails closed on any anonymous non-loopback surface, so an
+    authenticated (OIDC/bearer) deployment may emit references (D4). Kill switch =
+    set this ``false`` or disable the ``arknights_game_resource`` source.
     """
 
     enabled: bool = True
@@ -302,9 +302,9 @@ class AppConfig(_Model):
     image_refs: ImageRefsConfig = Field(default_factory=ImageRefsConfig)
 
     def _remote_safety_problems(self) -> list[str]:
-        """Collect §V9 posture problems for an auth-requiring remote deployment.
+        """Collect posture problems for an auth-requiring remote deployment.
 
-        Single home (§V37) for the HTTPS + valid-OIDC checks shared by the doctor
+        Single home for the HTTPS + valid-OIDC checks shared by the doctor
         report and the serve-time gate.
         """
         remote = self.mcp.remote
@@ -321,12 +321,12 @@ class AppConfig(_Model):
         return problems
 
     def assert_remote_startup_safe(self) -> None:
-        """Enforce §V9/§V40: refuse an auth-requiring remote without HTTPS + OAuth.
+        """Refuse an auth-requiring remote without HTTPS + OAuth.
 
-        Auth enforcement is decoupled from the bind address (§V40): the gate fires
+        Auth enforcement is decoupled from the bind address: the gate fires
         whenever :attr:`McpRemoteConfig.requires_auth` -- a non-loopback bind, or a
         loopback bind declared ``behind_proxy``. A genuine loopback dev bind (not
-        behind a proxy) is the authless §V9 exception. Raises :class:`ConfigError`
+        behind a proxy) is the authless exception. Raises :class:`ConfigError`
         on an unsafe posture.
         """
         if not self.mcp.remote.requires_auth:
@@ -334,15 +334,14 @@ class AppConfig(_Model):
         problems = self._remote_safety_problems()
         if problems:
             raise ConfigError(
-                "refusing to start remote mode without a safe posture (§V9/§V40): "
-                + "; ".join(problems)
+                "refusing to start remote mode without a safe posture: " + "; ".join(problems)
             )
 
     @property
     def deployment_mode(self) -> str:
         """The deployment-mode label (``"remote"`` | ``"local"``) reported to clients.
 
-        Single home (§V37) for the mode derivation shared by the ``status`` CLI and
+        Single home for the mode derivation shared by the ``status`` CLI and
         the ``get_data_status`` MCP tool: ``remote`` iff the Streamable HTTP
         transport is enabled, else ``local``.
         """
@@ -350,24 +349,24 @@ class AppConfig(_Model):
 
     @property
     def image_refs_enabled(self) -> bool:
-        """§V63 config gate for the image URL-reference surface (§T119/§T124; ADR 0008+0009).
+        """Config gate for the image URL-reference surface (ADR 0008+0009).
 
-        ON by default (§T124, founder 2026-07-22). As of ADR 0009 (D4 refined) the gate
+        ON by default (founder 2026-07-22). As of ADR 0009 (D4 refined) the gate
         carries NO deployment-posture term -- it is exactly ``[image_refs].enabled``.
         "Private" means access-controlled,
-        not loopback-only: §V9's :meth:`assert_remote_startup_safe` already fails startup
+        not loopback-only: :meth:`assert_remote_startup_safe` already fails startup
         closed on any anonymous non-loopback surface (``requires_auth`` without HTTPS +
         valid OIDC), so every *startable* deployment is either an authenticated (OIDC/bearer)
         remote or a genuine loopback dev bind on the owner's own machine. Both are
         access-controlled in the sense D4 cares about, so the old ``and not requires_auth``
         term was merely "loopback-only" -- stricter than the private+noncommercial intent --
         and is dropped. There is no startable open/anonymous public surface to protect
-        against (§C; ⊥ single *public-mode* flag -- this is a private-emit toggle gated by
-        §V9, not a public-hosting switch).
+        against (no single *public-mode* flag -- this is a private-emit toggle gated by
+        the startup gate, not a public-hosting switch).
 
-        Single home (§V37) for the gate consumed by both transports' tool wiring (§T120).
+        Single home for the gate consumed by both transports' tool wiring.
         The registry ``enabled`` check for the ``arknights_game_resource`` source is an
-        additional, separate gate (§V20 kill switch) applied at the wiring layer.
+        additional, separate gate (kill switch) applied at the wiring layer.
         """
         return self.image_refs.enabled
 

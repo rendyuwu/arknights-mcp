@@ -7,7 +7,7 @@
         "rarity": 0,
         "itemType": "MATERIAL",
         "iconId": "sprite_item_30012",
-        "description": "PENGUINPROSE drop-rate item description that must never ship to a client - see V16."
+        "description": "PENGUINPROSE drop-rate item description that must never ship to a client."
       },
       {
         "itemId": "30013",

@@ -2,7 +2,7 @@
 
 ``built_distributions`` builds the wheel + sdist exactly once per session (the
 build shells out and is slow) and shares them with every test that inspects a
-release artifact -- the packaging smoke (§T47) and the release audit (§T49).
+release artifact -- the packaging smoke and the release audit.
 """
 
 from __future__ import annotations

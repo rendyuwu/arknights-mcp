@@ -1,10 +1,10 @@
-"""T95: the official-announcement network adapter (§V56/§V1 CLI-only fetch, caps).
+"""The official-announcement network adapter (CLI-only fetch, caps).
 
 Exercises the safety machinery of :class:`AnnouncementsAdapter` with an in-memory
-fetcher (no live network): HTTPS enforcement, the en/cn region gate (§V56), the
-network flag (§V1), and the per-file / total-size / JSON-depth / JSON-node caps
-shared via :mod:`arknights_mcp.sources.http_fetch` (§V37). The adapter is transport
-only -- it never touches the network at query time (§V1); the importer (T95)
+fetcher (no live network): HTTPS enforcement, the en/cn region gate, the
+network flag, and the per-file / total-size / JSON-depth / JSON-node caps
+shared via :mod:`arknights_mcp.sources.http_fetch`. The adapter is transport
+only -- it never touches the network at query time; the importer
 consumes what it returns.
 """
 
@@ -38,15 +38,15 @@ def _fetcher(extra: dict[str, bytes] | None = None) -> DictFetcher:
     return DictFetcher(files)
 
 
-# --- CLI-only network posture (§V1) -------------------------------------------
+# --- CLI-only network posture -------------------------------------------------
 
 
 def test_adapter_touches_network_is_true() -> None:
-    # §V1: this is a network adapter -- flagged so it is only ever run from CLI.
+    # This is a network adapter -- flagged so it is only ever run from CLI.
     assert AnnouncementsAdapter(FEED_URL, "en", fetcher=_fetcher()).touches_network is True
 
 
-# --- HTTPS enforcement (§V1) --------------------------------------------------
+# --- HTTPS enforcement --------------------------------------------------------
 
 
 def test_feed_url_must_be_https() -> None:
@@ -54,7 +54,7 @@ def test_feed_url_must_be_https() -> None:
         AnnouncementsAdapter("http://www.arknights.global/feed", "en", fetcher=_fetcher())
 
 
-# --- region gate (§V56/§V5) ---------------------------------------------------
+# --- region gate --------------------------------------------------------------
 
 
 def test_region_must_be_en_or_cn() -> None:
@@ -78,7 +78,7 @@ def test_fetch_returns_parsed_json() -> None:
     assert adapter.fetch() == _feed_payload()
 
 
-# --- resource caps (PRD §11.2; shared with the other adapters, §V37) ----------
+# --- resource caps (PRD Section 11.2; shared with the other adapters) ---------
 
 
 def test_per_file_size_cap() -> None:

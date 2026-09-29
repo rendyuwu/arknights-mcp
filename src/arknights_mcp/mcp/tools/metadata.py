@@ -1,23 +1,21 @@
-"""``get_data_status`` + ``get_data_sources`` MCP tools (§T77; §V5/§V27; §I.tool).
+"""``get_data_status`` + ``get_data_sources`` MCP tools.
 
-These two data-metadata tools bring the MCP tool surface to the full §I.tool set
-of nine: they report *server-side posture* -- the active build's data status and
-the public-safe source registry -- rather than an entity lookup. Both bridge an
-empty bounded input model (§T30 -- ``extra="forbid"`` still rejects any smuggled
-parameter, §V18) to a shared T27 domain service (§V14 -- the ``status``/``doctor``
-CLI and the ``arknights://`` resources call the same services, so there is no
-second query path) and wrap the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§V21/§V22/§V23). Neither
-owns query logic of its own -- only the model -> service -> envelope mapping -- so
-both transports dispatch identical read-only (§V2) behaviour from the one registry.
+These two data-metadata tools round out the MCP tool surface: they report
+*server-side posture* -- the active build's data status and the public-safe source
+registry -- rather than an entity lookup. Both bridge an empty bounded input model
+(``extra="forbid"`` still rejects any smuggled parameter) to a shared domain
+service (the ``status``/``doctor`` CLI and the ``arknights://`` resources call the
+same services, so there is no second query path) and wrap the outcome in the typed
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`. Neither owns query logic of
+its own -- only the model -> service -> envelope mapping -- so both transports
+dispatch identical read-only behaviour from the one registry.
 
-Two invariants are load-bearing here:
+Two rules are load-bearing here:
 
-* **§V5** -- ``get_data_status`` tags every active snapshot with its region and
-  emits one provenance entry per snapshot (region + snapshot_id + imported_at), so
-  a build spanning en + cn is region-attributed and the two are never silently
-  mixed.
-* **§V27/§V34** -- ``get_data_sources`` routes through
+* ``get_data_status`` tags every active snapshot with its region and emits one
+  provenance entry per snapshot (region + snapshot_id + imported_at), so a build
+  spanning en + cn is region-attributed and the two are never silently mixed.
+* ``get_data_sources`` routes through
   :func:`~arknights_mcp.services.source_status.get_data_sources` ->
   ``registry.public_view``, the single public-safe projection: it never
   re-enumerates the allowlist, so it cannot leak secrets, local paths, OAuth
@@ -68,13 +66,13 @@ _SOURCES_TOOL_DESCRIPTION = (
 
 
 def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
-    """Map the shared :class:`DataStatus` to a typed §V23 envelope (§V5).
+    """Map the shared :class:`DataStatus` to a typed envelope.
 
-    Each active snapshot contributes one region-scoped provenance entry (§V5:
-    region + snapshot_id + imported_at travel with the facts); the service's own
+    Each active snapshot contributes one region-scoped provenance entry (region +
+    snapshot_id + imported_at travel with the facts); the service's own
     ``ok``/``data_stale`` verdict becomes the envelope status. The full status body
     (schema/analyzer version, mode, per-region snapshots, warnings, action) is the
-    service's own serialization -- reused, not re-enumerated (§V37).
+    service's own serialization -- reused, not re-enumerated.
 
     ``get_data_status`` is a *posture* tool: a non-``ok`` result (``data_stale`` on
     an empty/unpromoted build) is a reported state, not a failed request, so it
@@ -87,17 +85,17 @@ def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
         Provenance(server=s.server, snapshot_id=s.snapshot_id, imported_at=s.imported_at)
         for s in status.snapshots
     )
-    # §V99/§V66 (B148): ``to_envelope_data`` is the §V37 projection for an enveloped
-    # caller -- the DB migration id keyed ``db_schema_version`` (``schema_version`` is
-    # the envelope's own response-contract version, a different axis entirely), and the
-    # ``status``/``analyzer_version`` echoes dropped because the envelope already carries
-    # both. §V66/B78: the envelope ``provenance`` above is likewise the sole carrier of
+    # ``to_envelope_data`` is the projection for an enveloped caller -- the DB
+    # migration id keyed ``db_schema_version`` (``schema_version`` is the envelope's
+    # own response-contract version, a different axis entirely), and the
+    # ``status``/``analyzer_version`` echoes dropped because the envelope already
+    # carries both. The envelope ``provenance`` above is likewise the sole carrier of
     # ``imported_at`` -- trimmed from the ``data.snapshots`` rows so it is emitted
     # once, not duplicated per snapshot. The rows DO inline ``server`` AND
-    # ``snapshot_id`` (§V87/B96): one region can hold several active snapshots
-    # (game data + penguin + announcements), so only ``snapshot_id`` joins a row to
-    # its provenance entry without the "row N ↔ provenance N" order contract §V87
-    # forbids. Null commit/version/age keys are omitted by the extras view (§V67).
+    # ``snapshot_id``: one region can hold several active snapshots (game data +
+    # penguin + announcements), so only ``snapshot_id`` joins a row to its provenance
+    # entry without the "row N ↔ provenance N" order contract that forbids it. Null
+    # commit/version/age keys are omitted by the extras view.
     data = status.to_envelope_data()
     data["snapshots"] = [s.to_provenance_extras(include_server=True) for s in status.snapshots]
     return build_envelope(
@@ -109,22 +107,22 @@ def _status_to_envelope(status: DataStatus) -> ResponseEnvelope:
 
 
 def _sources_to_envelope(result: DataSourcesResult) -> ResponseEnvelope:
-    """Wrap the public-safe registry projection in an ``ok`` envelope (§V27/§V34)."""
+    """Wrap the public-safe registry projection in an ``ok`` envelope."""
     return ok(result.to_dict())
 
 
 def build_get_data_status_spec(get_conn: ConnectionProvider, *, mode: str) -> ToolSpec:
-    """Build the ``get_data_status`` :class:`ToolSpec` (§T77; §V5/§V14).
+    """Build the ``get_data_status`` :class:`ToolSpec`.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
     build; ``mode`` is the deployment-mode label reported in the status body. The
-    spec is read-only (§V2) for the single shared registry both transports dispatch
-    from (§V14); its ``input_schema`` is the empty bounded model, so a smuggled
-    parameter is rejected on the wire (§V18) before any query runs.
+    spec is read-only for the single shared registry both transports dispatch
+    from; its ``input_schema`` is the empty bounded model, so a smuggled
+    parameter is rejected on the wire before any query runs.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V18 gate: the empty bounded model rejects any unknown parameter before a
+        # The empty bounded model rejects any unknown parameter before a
         # query runs (a ValidationError propagates as a protocol-level rejection).
         GetDataStatusInput.model_validate(params)
         return run_guarded(
@@ -145,17 +143,17 @@ def build_get_data_status_spec(get_conn: ConnectionProvider, *, mode: str) -> To
 def build_get_data_sources_spec(
     get_conn: ConnectionProvider, *, registry: SourceRegistry
 ) -> ToolSpec:
-    """Build the ``get_data_sources`` :class:`ToolSpec` (§T77; §V27/§V34/§V14).
+    """Build the ``get_data_sources`` :class:`ToolSpec`.
 
     ``registry`` is the source posture (enabled/disabled) as loaded from the machine
     registry at startup and held for the process lifetime -- a ``source
-    enable``/``disable`` run against a live server (§V20) is reflected only after a
+    enable``/``disable`` run against a live server is reflected only after a
     restart, matching the active-build refresh policy. The service annotates each
     source with its active snapshot per region from the read-only ``get_conn`` build
     (and degrades to the registry-only projection when no build is promoted). The
-    projection is the single ``registry.public_view`` allowlist (§V34) -- no secrets,
-    local paths, OAuth config, or policy notes reach the client (§V27). Read-only
-    (§V2) for the shared registry both transports use (§V14).
+    projection is the single ``registry.public_view`` allowlist -- no secrets,
+    local paths, OAuth config, or policy notes reach the client. Read-only
+    for the shared registry both transports use.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
@@ -163,8 +161,8 @@ def build_get_data_sources_spec(
         # The registry lives in memory; the active build only *enriches* each source
         # with its latest snapshot. So a missing/unpromoted build degrades to the
         # registry-only projection (conn=None) rather than failing closed -- the
-        # source/license/attribution posture (PRD §10.7/§13.10) stays reachable
-        # before any build exists (§V27).
+        # source/license/attribution posture (PRD sections 10.7, 13.10) stays reachable
+        # before any build exists.
         return run_registry_guarded(
             get_conn,
             lambda conn: get_data_sources(registry, conn),

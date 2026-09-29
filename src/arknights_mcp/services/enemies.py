@@ -1,17 +1,17 @@
-"""Internal enemy intel service (§T35): the single domain entry point both
-transports call to fetch one enemy's facts (§V14).
+"""Internal enemy intel service: the single domain entry point both
+transports call to fetch one enemy's facts.
 
 Given a read-only SQLite connection and a ``(server, game_id)`` selector, it loads
-the enemy's typed facts + region + provenance (§V5) and its level variants (the
+the enemy's typed facts + region + provenance and its level variants (the
 stat block plus the allowlisted structural JSON fragments, decoded here). The
 service adds no natural-language interpretation of its own -- it emits only typed,
 vetted fields.
 
-Read-only + parameterized SQL only (§V2): the parameterized ``SELECT``s live in
-:class:`~arknights_mcp.db.repositories.enemies.EnemyRepository` (§T20), the sole
+Read-only + parameterized SQL only: the parameterized ``SELECT``s live in
+:class:`~arknights_mcp.db.repositories.enemies.EnemyRepository`, the sole
 sanctioned SQL surface; this service only reads through it and never mutates the
 database. It does not open the connection (callers pass one in), so both
-transports share this exact function (§V14). No transport-specific logic lives
+transports share this exact function. No transport-specific logic lives
 here.
 """
 
@@ -24,14 +24,14 @@ from typing import Literal
 from arknights_mcp.db.repositories.enemies import EnemyLevelRow, EnemyRepository, EnemyRow
 from arknights_mcp.util.coerce import json_load
 
-#: Typed outcome of an enemy lookup. The full §V23 status vocabulary is wired into
-#: the tool envelope (§T29); this service reports only these two.
+#: Typed outcome of an enemy lookup. The full status vocabulary is wired into
+#: the tool envelope; this service reports only these two.
 EnemyLookupStatus = Literal["ok", "not_found"]
 
 
 @dataclass(frozen=True)
 class EnemyProvenance:
-    """Region-scoped provenance for a factual enemy response (§V5)."""
+    """Region-scoped provenance for a factual enemy response."""
 
     snapshot_id: str
     imported_at: str
@@ -40,15 +40,15 @@ class EnemyProvenance:
 @dataclass(frozen=True)
 class EnemyLevelFacts:
     """One level variant of an enemy: the typed stat block + decoded structural
-    JSON (immunities/abilities were allowlisted + sanitized at import, §V18/§V31, so
+    JSON (immunities/abilities were allowlisted + sanitized at import, so
     decoding re-exposes only vetted data).
 
     ``targeting`` is a plain token (upstream ``applyWay``: MELEE/RANGED/ALL/NONE), so
     it needs no decode. ``immunities`` is the nine typed upstream flags folded into
-    one list (§V67): ``[]`` = the source defined them and the enemy resists none,
-    absent = the source defined none of them (§T210).
+    one list: ``[]`` = the source defined them and the enemy resists none,
+    absent = the source defined none of them.
 
-    ``attack_range_declared_none`` is the scalar counterpart of that list rule (§V114):
+    ``attack_range_declared_none`` is the scalar counterpart of that list rule:
     a list says "confirmed none" with ``[]``, a scalar has no ``[]``, so the answer needs
     a field of its own. ``True`` = the source stated this enemy has no attack radius,
     ``False`` = it stated a radius (in ``attack_range``) or stated nothing."""
@@ -72,9 +72,9 @@ class EnemyLevelFacts:
 
 @dataclass(frozen=True)
 class EnemyFacts:
-    """Typed, allowlisted facts about one enemy (no prose; §V16, §V18).
+    """Typed, allowlisted facts about one enemy (no prose).
 
-    Carries region (``server``) + provenance (§V5). ``levels`` is the enemy's
+    Carries region (``server``) + provenance. ``levels`` is the enemy's
     ordered stat block (bounded -- an enemy has a small, fixed set of variants).
     """
 
@@ -84,8 +84,8 @@ class EnemyFacts:
     enemy_class: str | None
     is_boss: bool
     is_elite: bool
-    #: The RETIRED handbook scalar: NULL on every real enemy (§V113 retired arm).
-    #: ``damage_types`` is where the damage kind lives now (§T210/B160).
+    #: The RETIRED handbook scalar: NULL on every real enemy.
+    #: ``damage_types`` is where the damage kind lives now.
     attack_type: str | None
     damage_types: tuple[str, ...] | None
     motion_type: str | None
@@ -98,7 +98,7 @@ class EnemyDetailResult:
     """Domain result of :func:`get_enemy`.
 
     ``status == "not_found"`` implies ``enemy is None``. An ``ok`` result carries
-    region + provenance on ``enemy`` (§V5).
+    region + provenance on ``enemy``.
     """
 
     status: EnemyLookupStatus
@@ -107,9 +107,9 @@ class EnemyDetailResult:
 
 
 def _damage_types(raw: str | None) -> tuple[str, ...] | None:
-    """Decode ``enemies.damage_types_json`` keeping the §V67 missing/empty split:
+    """Decode ``enemies.damage_types_json`` keeping the missing/empty split:
     SQL ``NULL`` (or an undecodable fragment) -> ``None`` (the source carried no such
-    key), ``"[]"`` -> ``()`` (present but empty). Decodes through the shared §V37
+    key), ``"[]"`` -> ``()`` (present but empty). Decodes through the shared
     :func:`~arknights_mcp.util.coerce.json_load` home."""
     data = json_load(raw)
     if not isinstance(data, list):
@@ -139,7 +139,7 @@ def _level_facts(level: EnemyLevelRow) -> EnemyLevelFacts:
 
 
 def _enemy_facts(enemy: EnemyRow, levels: tuple[EnemyLevelFacts, ...]) -> EnemyFacts:
-    """Shape a repository row into the typed, region-attributed facts (§V5).
+    """Shape a repository row into the typed, region-attributed facts.
 
     The enemy join is on NOT NULL foreign keys, so ``provenance`` (snapshot_id +
     imported_at) is always present on an ``ok`` result.
@@ -165,12 +165,12 @@ def get_enemy(
     server: str,
     game_id: str,
 ) -> EnemyDetailResult:
-    """Fetch one enemy's facts + level variants for ``server`` (§T35; §V5/§V23).
+    """Fetch one enemy's facts + level variants for ``server``.
 
-    Read-only; parameterized SQL only (§V2). The enemy is resolved by its unique
+    Read-only; parameterized SQL only. The enemy is resolved by its unique
     ``(server, game_id)`` key, so an ``en`` enemy is never surfaced under a ``cn``
-    query (§V5). A missing enemy returns ``status == "not_found"`` (the tool maps
-    it to the typed §V23 envelope). Both transports call this function (§V14).
+    query. A missing enemy returns ``status == "not_found"`` (the tool maps
+    it to the typed envelope). Both transports call this function.
     """
     repo = EnemyRepository(conn)
     enemy = repo.enemy_by_game_id(server, game_id)

@@ -5,13 +5,13 @@ remote** transport against real MCP hosts: the MCP Inspector, Claude's custom
 connector, the OpenAI API, and ChatGPT web. The steps below are the current
 official flows (verified 2026-07).
 
-> This server is **read-only** and never fetches upstream data at query time
-> (§V1); it serves whatever build you have already promoted locally (§V28). The
+> This server is **read-only** and never fetches upstream data at query time;
+> it serves whatever build you have already promoted locally. The
 > remote transport adds **auth**: every `/mcp` request must carry a bearer the
-> server validates (§V10), and the server must sit behind HTTPS (§V9/§V40).
+> server validates, and the server must sit behind HTTPS.
 
 The one machine-checkable claim these hosts rest on — an authenticated request
-over the wire is served by the *same shared core* `stdio` serves (§V14) — is
+over the wire is served by the *same shared core* `stdio` serves — is
 covered offline by `tests/remote/test_remote_authenticated_e2e.py`. This runbook
 is the human half: it needs a public HTTPS endpoint, a live OIDC provider, and
 host accounts, so it cannot run in CI.
@@ -19,7 +19,7 @@ host accounts, so it cannot run in CI.
 ## Prerequisites
 
 1. **A promoted build.** `serve` opens the promoted SQLite build strictly
-   read-only; build one first (admin CLI, §V28), then confirm:
+   read-only; build one first (admin CLI), then confirm:
 
    ```bash
    uv sync
@@ -31,12 +31,12 @@ host accounts, so it cannot run in CI.
    [`../../deploy/README.md`](../../deploy/README.md) (systemd + nginx, or
    docker) so the server binds loopback with `behind_proxy = true` and a
    TLS-terminating proxy fronts it at `https://mcp.example.com/mcp`. Startup
-   **fails closed** (§V9/§V40) unless HTTPS is declared and valid OIDC settings
+   **fails closed** unless HTTPS is declared and valid OIDC settings
    are present.
 
 3. **An OIDC provider + a test bearer.** The server validates RS256 tokens
    against your provider's JWKS by `kid`, matching `iss`/`aud`/`exp` and the
-   required scope (§V10). The OIDC descriptors are **env-only** (§I.env/§V12):
+   required scope. The OIDC descriptors are **env-only**:
 
    | Variable | Meaning |
    |---|---|
@@ -78,7 +78,7 @@ curl -sS -i https://mcp.example.com/mcp \
 
 For clients that log in interactively (`claude mcp login`) rather than carrying a
 pre-issued bearer, the server publishes **RFC 9728 protected-resource metadata**
-*unauthenticated* (§V45), so the client can discover the authorization server from
+*unauthenticated*, so the client can discover the authorization server from
 a `401` without a hand-pasted token. The discovery document is reachable with **no**
 `Authorization` header:
 
@@ -92,16 +92,16 @@ curl -sS https://mcp.example.com/.well-known/oauth-protected-resource
 
 The metadata advertises the **issuer only**; the client fetches the
 authorization-server metadata straight from your OIDC provider (Auth0's own
-`.well-known`), so this server never proxies it and makes no query-time network call
-(§V1). The `401` on `/mcp` carries a `resource_metadata="…"` hint pointing back at
-this document (RFC 9728 §5.1). Only the two well-known paths bypass auth — `/mcp`
-itself stays bearer-gated (§V10).
+`.well-known`), so this server never proxies it and makes no query-time network call.
+The `401` on `/mcp` carries a `resource_metadata="…"` hint pointing back at
+this document (RFC 9728 section 5.1). Only the two well-known paths bypass auth — `/mcp`
+itself stays bearer-gated.
 
-#### Two scope lists, two contracts (§V45)
+#### Two scope lists, two contracts
 
 `scopes_supported` comes from `[auth].advertised_scopes` — what an interactive client
 should **request** — and is deliberately *not* `[auth].required_scopes`, which is what
-a token must **carry** (validated per request, §V10):
+a token must **carry** (validated per request):
 
 | config key | drives | contains |
 |---|---|---|
@@ -118,7 +118,7 @@ requiring it would reject **every** token with a `403`. The server publishes
 everything validation will demand.
 
 Two provider-side settings are the ops half of this (Auth0 dashboard, one-time — the
-server cannot check them, §V1):
+server cannot check them):
 
 - the **API** (your audience) has **Allow Offline Access** enabled;
 - the **application** the client logs in through has the **Refresh Token** grant enabled.
@@ -142,10 +142,10 @@ In the UI: set **Transport** to *Streamable HTTP*, **URL** to
   `search_stages`, `get_stage`, `get_enemy`, `get_operator`,
   `compare_operator_modules`, `analyze_stage`. Each shows `readOnlyHint: true`.
 - **Call Tool** `get_enemy` with `{"server":"en","game_id":"enemy_1007_slime"}`
-  → a typed `ok` envelope with `provenance[0].server == "en"` (§V5/§V23).
+  → a typed `ok` envelope with `provenance[0].server == "en"`.
 
-Record: connected, seven tools, an `ok` call — identical to what `stdio` serves
-(§V14). Clear the bearer and confirm the connection is refused.
+Record: connected, seven tools, an `ok` call — identical to what `stdio` serves.
+Clear the bearer and confirm the connection is refused.
 
 ## Claude Code (`claude mcp login`)
 
@@ -220,14 +220,14 @@ Inspector + Claude connector + OpenAI API checks above.
 ## Troubleshooting
 
 - **`401` with a valid-looking token.** Check `iss` (exact, trailing slash),
-  `aud`, and `exp`; the server requires `exp`/`iat`/`iss`/`aud` and RS256 (§V10).
+  `aud`, and `exp`; the server requires `exp`/`iat`/`iss`/`aud` and RS256.
   A wrong audience or issuer is a `401`; a missing scope is a `403` with a
   `scope=` hint.
-- **Startup refused (`ConfigError`).** The §V9/§V40 gate: `public_base_url` must
+- **Startup refused (`ConfigError`).** The startup gate: `public_base_url` must
   be `https://` **and** valid OIDC settings must be present whenever auth is
   required (a non-loopback bind, or loopback with `behind_proxy = true`).
 - **Every query is `not_found` / `data_stale`.** No build is promoted for that
-  region, or it is stale. Refresh with `import`/`sync` (§V24 — the server never
+  region, or it is stale. Refresh with `import`/`sync` (the server never
   downloads on demand) and **restart** the server; it holds the build it opened
   at startup for the process lifetime.
 - **Connector reaches the server but no tools appear.** The bearer authenticates
@@ -243,5 +243,5 @@ Inspector + Claude connector + OpenAI API checks above.
   setup.
 - [`../adr/0006-oauth-oidc-remote-auth.md`](../adr/0006-oauth-oidc-remote-auth.md)
   — the fail-closed OAuth/OIDC decision.
-- SPEC §V9/§V40 (auth posture), §V10 (bearer validation), §V11 (limits),
-  §V12/§I.env (env-only secrets), §V14 (one shared core, both transports).
+- Fail-closed auth posture, bearer validation, request limits, env-only secrets,
+  one shared core across both transports.

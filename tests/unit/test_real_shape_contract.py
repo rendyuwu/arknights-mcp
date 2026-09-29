@@ -1,13 +1,13 @@
-"""T67: real-shape contract test (§V29, §V30).
+"""Real-shape contract test.
 
 Unlike the minimal synthetic fixture (``tests/fixtures/stage_4_4``, which already
 matches the parser), this drives the full ``sync`` and ``import`` CLI paths over a
 fixture authored from the *real* ``arknights_assets_gamedata`` shapes — id-keyed
 ``m_value`` enemy DB with ``motion``, Title-case ``levelId``, a grid ``map`` with
-``passableMask`` tiles, and ``key``-based wave actions resolved via ``enemyDbRefs``
-(§V29). It fails if the schema bridge (T66) regresses: real snapshots must yield
-non-empty enemies + tiles + spawns + ``stage_enemies`` (§V30), never a silent
-empty combat build. It also asserts the §V30 fail-closed guard fires when a
+``passableMask`` tiles, and ``key``-based wave actions resolved via ``enemyDbRefs``.
+It fails if the schema bridge regresses: real snapshots must yield
+non-empty enemies + tiles + spawns + ``stage_enemies``, never a silent
+empty combat build. It also asserts the fail-closed guard fires when a
 non-empty combat source produces no combat rows.
 """
 
@@ -78,7 +78,7 @@ def _assert_full_combat(data_dir: Path) -> None:
         assert counts["stage_tiles"] > 0, counts
         assert counts["stage_spawns"] > 0, counts
         assert counts["stage_enemies"] > 0, counts
-        # Motion is sourced from the enemy DB (§V29 (d)); the drone must read FLY.
+        # Motion is sourced from the enemy DB; the drone must read FLY.
         drone_motion = conn.execute(
             "SELECT motion_type FROM enemies WHERE game_id = 'enemy_1105_drone'"
         ).fetchone()[0]
@@ -86,7 +86,7 @@ def _assert_full_combat(data_dir: Path) -> None:
         assert "4-4" in {
             r[0] for r in conn.execute("SELECT stage_code FROM stages WHERE server = 'en'")
         }
-        # T179 review-fix: the real shape names a zone via zoneNameSecond -- the zone
+        # The real shape names a zone via zoneNameSecond -- the zone
         # display name (the stage search alias) must survive a real-shape import.
         zone_name = conn.execute(
             "SELECT display_name FROM zones WHERE server = 'en' AND game_id = 'main_4'"
@@ -94,7 +94,7 @@ def _assert_full_combat(data_dir: Path) -> None:
         assert zone_name == "Chapter 4"
 
 
-# --- import + sync over the real shapes (§V29, §V30) --------------------------
+# --- import + sync over the real shapes ---------------------------------------
 
 
 def test_import_real_shape_yields_combat(tmp_path: Path) -> None:
@@ -115,7 +115,7 @@ def test_sync_real_shape_yields_combat(tmp_path: Path) -> None:
 
 
 def test_real_shape_drops_all_prose(tmp_path: Path) -> None:
-    """§V18: the real fixture carries prose in non-allowlisted keys (handbook,
+    """The real fixture carries prose in non-allowlisted keys (handbook,
     enemy DB, stage table, wave action); none of it survives into the DB."""
     config, data_dir = _import_config(tmp_path)
     assert (
@@ -143,11 +143,11 @@ def test_real_shape_drops_all_prose(tmp_path: Path) -> None:
     assert REAL_PROSE not in dump
 
 
-# --- §V30 fail-closed: non-empty combat source yielding 0 combat rows ---------
+# --- fail-closed: non-empty combat source yielding 0 combat rows -------------
 
 
 def test_unresolved_level_fails_closed(tmp_path: Path) -> None:
-    """§V30: a stage that references a level file which does not resolve must fail
+    """A stage that references a level file which does not resolve must fail
     the build closed (silent empty combat build refused), leaving no active DB."""
     config, data_dir = _import_config(tmp_path)
     broken = tmp_path / "broken"
@@ -158,4 +158,4 @@ def test_unresolved_level_fails_closed(tmp_path: Path) -> None:
 
     rc = main(["--config", str(config), "import", "--server", "en", "--source-path", str(broken)])
     assert rc == 1
-    assert not (data_dir / "current.json").exists()  # active DB untouched (§V3)
+    assert not (data_dir / "current.json").exists()  # active DB untouched

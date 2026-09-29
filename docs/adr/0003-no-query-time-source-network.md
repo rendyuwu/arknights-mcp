@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Founder decision:** D3 (Data acquisition), D7 (Update cadence)
-- **Invariants:** §V1, §V2, §V24
 
 ## Context
 
@@ -23,7 +22,7 @@ entity is absent, tools return a typed `not_found` / `region_unavailable` /
 
 ## Consequences
 
-- Deterministic, offline-capable read path (§V11 determinism, §V1).
+- Deterministic, offline-capable read path.
 - Clear separation: acquisition (CLI, may touch net) vs. serving (MCP,
   never).
 - Freshness is an operational concern surfaced via `get_data_status` and typed

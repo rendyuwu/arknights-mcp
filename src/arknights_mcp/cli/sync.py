@@ -1,7 +1,7 @@
-"""``sync`` command: build a candidate from an allowlisted remote source (§T21).
+"""``sync`` command: build a candidate from an allowlisted remote source.
 
-Network access happens only here -- never at query time (§V1). Each region must
-resolve to a distinct upstream tree so en/cn data is never silently mixed (§V5).
+Network access happens only here -- never at query time. Each region must
+resolve to a distinct upstream tree so en/cn data is never silently mixed.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _download_limits(config: AppConfig) -> DownloadLimits:
 
     ``[sync].max_total_download_mb`` bounds the *whole run* (all servers), in MiB,
     replacing the hardcoded default so the configured value actually takes effect
-    (PRD §17.4).
+    (PRD section 17.4).
     """
     return DownloadLimits(max_total_bytes=config.sync.max_total_download_mb * 1024 * 1024)
 
@@ -65,7 +65,7 @@ def _penguin_base_url(config: AppConfig) -> str:
     """Resolve the penguin API base URL from ``[sync.penguin_statistics].base_url``.
 
     Folded via the existing :class:`SyncSourceConfig`; an unset/placeholder value
-    falls back to the documented default endpoint (§T102).
+    falls back to the documented default endpoint.
     """
     penguin_cfg = config.sync.sources.get(_PENGUIN_SOURCE_ID)
     base_url = penguin_cfg.base_url if penguin_cfg is not None else ""
@@ -73,12 +73,12 @@ def _penguin_base_url(config: AppConfig) -> str:
 
 
 def _announcement_feed_url(config: AppConfig, source_id: str) -> str | None:
-    """Resolve an announcement feed URL from ``[sync.<source_id>].feed_url`` (§T106).
+    """Resolve an announcement feed URL from ``[sync.<source_id>].feed_url``.
 
     Unlike penguin (which has a documented default endpoint), the official feed URL
     is operator-supplied and has no shipped default -- an unset/placeholder value
     returns ``None`` so the ride-along skips that region rather than fetching a
-    guessed URL (§V56/§V1).
+    guessed URL.
     """
     source_cfg = config.sync.sources.get(source_id)
     feed_url = source_cfg.feed_url if source_cfg is not None else ""
@@ -93,20 +93,20 @@ def _ride_along(
     per_server: Callable[[sqlite3.Connection, str], str | None],
     after_all: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
-    """Import an optional per-region ride-along source into the candidate (§V58/§V37).
+    """Import an optional per-region ride-along source into the candidate.
 
-    The one shared home for the penguin-drop (§T102), announcement (§T106), and
-    extra-locale alias (§T109) ride-alongs: each fetches a secondary source AFTER the
+    The one shared home for the penguin-drop, announcement, and
+    extra-locale alias ride-alongs: each fetches a secondary source AFTER the
     game-data import, into the SAME candidate, before validate/promote, so the extra
-    rows join one atomic build (§V4/§V58). The candidate connection runs in autocommit
+    rows join one atomic build. The candidate connection runs in autocommit
     mode so each region's ``RELEASE`` commits its rows independently, and each region is
     imported under a per-server :func:`~arknights_mcp.util.sqlite.savepoint` (the single
-    §V37 home for the savepoint dance, shared with the main-build banner isolation §T116)
+    home for the savepoint dance, shared with the main-build banner isolation)
     so a fetch/import failure rolls back only THAT region's partial inserts (all-or-nothing
-    per server, §V58).
+    per server).
 
-    Fail-open (§V58, must not break §V3): a failure of ANY kind (network, importer
-    :class:`ImporterError` incl. its own §V30 non-empty-or-fail, a duplicate collision,
+    Fail-open (must not break the build): a failure of ANY kind (network, importer
+    :class:`ImporterError` incl. its own non-empty-or-fail, a duplicate collision,
     or a malformed payload surfacing as ``ValueError``/``OverflowError``) re-raises out of
     the ``savepoint`` helper (which has already rolled back the region's partial inserts)
     and is caught + warned by this loop, so the build continues game-data-only -- the
@@ -120,11 +120,11 @@ def _ride_along(
 
     ``after_all`` (optional) runs once on the candidate after every region has been
     processed -- used by the extra-locale ride-along to rebuild ``entity_fts`` from the
-    surviving rows so the freshly-imported jp/kr aliases become searchable (§T109/§V37,
-    the single FTS-rebuild home). It runs under its OWN savepoint with the same fail-open
+    surviving rows so the freshly-imported jp/kr aliases become searchable (the single
+    FTS-rebuild home). It runs under its OWN savepoint with the same fail-open
     catch: if the post-step fails, its savepoint is rolled back (restoring the index the
     game-data build already populated) and the build continues -- a broken post-step must
-    not defeat §V3 either.
+    not defeat the build either.
     """
     conn = sqlite3.connect(str(candidate), isolation_level=None)
     try:
@@ -137,19 +137,15 @@ def _ride_along(
                     _out(f"  {message}")
             except Exception as exc:
                 # The savepoint helper already rolled back this region's partial inserts;
-                # swallow the failure and keep going (fail-open, §V58/§V3).
-                _out(
-                    f"  {label} {server}: unavailable, skipped; "
-                    f"continuing game-data-only (§V58): {exc}"
-                )
+                # swallow the failure and keep going (fail-open).
+                _out(f"  {label} {server}: unavailable, skipped; continuing game-data-only: {exc}")
         if after_all is not None:
             try:
                 with savepoint(conn, "ride_along_after"):
                     after_all(conn)
             except Exception as exc:
                 _out(
-                    f"  {label}: post-import step failed, skipped; "
-                    f"continuing game-data-only (§V58): {exc}"
+                    f"  {label}: post-import step failed, skipped; continuing game-data-only: {exc}"
                 )
     finally:
         conn.close()
@@ -165,16 +161,16 @@ def _ride_along_penguin(
     limits: DownloadLimits,
     budget: DownloadBudget,
 ) -> None:
-    """Import penguin drops into the freshly-built candidate before validation (§V58).
+    """Import penguin drops into the freshly-built candidate before validation.
 
     Runs only when ``penguin_statistics`` is both in ``[sync].enabled_sources`` and
-    registry-enabled -- otherwise it fetches nothing (§V58 opt-in). Per region it maps
-    the fact region back to its penguin server (inverse §V54: en->US, cn->CN; a region
+    registry-enabled -- otherwise it fetches nothing (opt-in). Per region it maps
+    the fact region back to its penguin server (inverse mapping: en->US, cn->CN; a region
     with no penguin server is skipped silently), then imports that server's drops under
-    the shared per-server-savepoint, fail-open ride-along (:func:`_ride_along`, §V37):
+    the shared per-server-savepoint, fail-open ride-along (:func:`_ride_along`):
     a penguin failure of any kind rolls back only THAT region and the build continues
     game-data-only. ``items``/``stage_drops`` are outside CRITICAL_TABLES (0009), so an
-    empty drops domain is legitimate -- never a §V30 combat regression.
+    empty drops domain is legitimate -- never a combat regression.
     """
     if _PENGUIN_SOURCE_ID not in config.sync.enabled_sources:
         return
@@ -188,7 +184,7 @@ def _ride_along_penguin(
         penguin_server = penguin_server_for_region(server)
         if penguin_server is None:
             # A region with no penguin server (never en/cn here, defensive) is
-            # skipped silently rather than mislabelled (§V54/§V58).
+            # skipped silently rather than mislabelled.
             return None
         adapter = PenguinStatsAdapter(base_url, fetcher=fetcher, limits=limits, budget=budget)
         result = import_penguin_drops(conn, adapter, penguin_server=penguin_server)
@@ -198,7 +194,7 @@ def _ride_along_penguin(
 
 
 def _announcement_region_eligible(config: AppConfig, registry: SourceRegistry, server: str) -> bool:
-    """Whether one region actually has an announcement feed to fetch (§V56/§V58).
+    """Whether one region actually has an announcement feed to fetch.
 
     Eligible == the region's source id resolves AND the source is both in
     ``[sync].enabled_sources`` and registry-enabled AND a ``feed_url`` is configured.
@@ -228,24 +224,24 @@ def _ride_along_announcements(
     limits: DownloadLimits,
     budget: DownloadBudget,
 ) -> None:
-    """Import announcement metadata into the candidate before validation (§V56/§T106).
+    """Import announcement metadata into the candidate before validation.
 
-    Mirrors the penguin ride-along (:func:`_ride_along`, §V37). Per region it resolves
+    Mirrors the penguin ride-along (:func:`_ride_along`). Per region it resolves
     the announcement source id (en->Global, cn->CN; a region outside {en,cn} has none)
     and runs only when that source is both in ``[sync].enabled_sources`` and
     registry-enabled AND a ``[sync.<source_id>].feed_url`` is configured -- the official
     feed URL has no shipped default, so an unset feed skips that region rather than
-    guessing a URL (§V56/§V1). The metadata-only importer stores only the §V56 allowlist;
-    the article body is never fetched into storage (§V16).
+    guessing a URL. The metadata-only importer stores only the allowlist;
+    the article body is never fetched into storage.
 
-    Fail-open (§V58, must not break §V3): a feed/import failure rolls back only THAT
+    Fail-open (must not break the build): a feed/import failure rolls back only THAT
     region and the build continues game-data-only -- ``announcements`` is outside
     CRITICAL_TABLES (0010), so an empty announcement domain is legitimate.
 
     Mirrors penguin's pre-check: if NO region is eligible (source enabled +
     registry-enabled + a configured ``feed_url``), return before ``_ride_along`` opens a
     writable connection and churns per-server savepoints for no work. The announcement
-    source ships enabled by default (§V56) but the operator-supplied ``feed_url`` has no
+    source ships enabled by default but the operator-supplied ``feed_url`` has no
     default, so a fresh install has nothing to fetch -- the hot promote path should not
     pay for a write connection on every such sync.
     """
@@ -265,7 +261,7 @@ def _ride_along_announcements(
         feed_url = _announcement_feed_url(config, source_id)
         if feed_url is None:
             # Enabled but no feed URL configured yet -- skip rather than fetch a
-            # guessed endpoint (§V56/§V1). Logged so the operator sees why it is empty.
+            # guessed endpoint. Logged so the operator sees why it is empty.
             _out(
                 f"  announcements {server}: no feed_url configured "
                 f"([sync.{source_id}].feed_url); skipped"
@@ -287,15 +283,15 @@ def _reindex_after_ride_alongs(candidate: Path) -> None:
     """Rebuild ``entity_fts`` after the post-build ride-alongs so items are searchable.
 
     The pipeline builds the FTS index (:func:`build_search_index`) at the end of the
-    game-data import -- BEFORE the penguin ride-along imports the ``items`` table
-    (§V58/§T102). Items are a searchable entity domain (§V73/§T142: an item locator's
+    game-data import -- BEFORE the penguin ride-along imports the ``items`` table.
+    Items are a searchable entity domain (an item locator's
     game_id feeds ``get_item_drops``), so the freshly-imported item rows would be
     invisible to ``search_entities(entity_type=item)`` unless the index is rebuilt from
-    the now-complete row set. This is the single §V37 rebuild home
-    (:func:`rebuild_search_index`), run once after every ride-along has settled (B83:
-    a build that predates the item FTS rows dead-ends the drops name->id path).
+    the now-complete row set. This is the single rebuild home
+    (:func:`rebuild_search_index`), run once after every ride-along has settled (a
+    build that predates the item FTS rows dead-ends the drops name->id path).
 
-    Fail-open under its own savepoint (§V58, must not defeat §V3): a rebuild failure is
+    Fail-open under its own savepoint (must not defeat the build): a rebuild failure is
     caught + warned and rolled back to the game-data index the pipeline already built --
     a broken post-step degrades item search, it never blocks the promote.
     """
@@ -305,7 +301,7 @@ def _reindex_after_ride_alongs(candidate: Path) -> None:
         with savepoint(conn, "reindex_after"):
             rebuild_search_index(conn)
     except Exception as exc:
-        _out(f"  search index: rebuild failed, skipped; continuing (§V58): {exc}")
+        _out(f"  search index: rebuild failed, skipped; continuing: {exc}")
     finally:
         conn.close()
 
@@ -317,13 +313,13 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
         return 1
     entry = registry.get(_PRIMARY_SOURCE_ID)
     if entry is None or not entry.enabled:
-        _err(f"source {_PRIMARY_SOURCE_ID!r} is disabled; enable it before syncing (§V20)")
+        _err(f"source {_PRIMARY_SOURCE_ID!r} is disabled; enable it before syncing")
         return 1
     source_cfg = config.sync.sources.get(_PRIMARY_SOURCE_ID)
     servers = _resolve_servers(args.server)
 
     # Resolve a per-region base_url; each region must point at a distinct upstream
-    # tree so en/cn data is never silently mixed (§V5).
+    # tree so en/cn data is never silently mixed.
     resolved: dict[str, str] = {}
     for server in servers:
         url = source_cfg.base_url_for(server) if source_cfg is not None else ""
@@ -337,7 +333,7 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
     if len(set(resolved.values())) != len(resolved):
         _err(
             "multiple servers resolve to the same base_url; refusing to import "
-            "identical upstream data under different region labels (§V5). "
+            "identical upstream data under different region labels. "
             "Configure a distinct [sync."
             f"{_PRIMARY_SOURCE_ID}].base_urls entry per region or use a {{server}} token."
         )
@@ -383,7 +379,7 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
                     budget=budget,
                 )
                 # Rebuild the FTS index once the ride-alongs have settled so penguin
-                # items land in ``search_entities`` (§V73/B83); the pipeline built the
+                # items land in ``search_entities``; the pipeline built the
                 # index before the item rows existed.
                 _reindex_after_ride_alongs(candidate)
 
@@ -392,7 +388,7 @@ def _cmd_sync(args: argparse.Namespace, ctx: CliContext) -> int:
             )
     finally:
         # Release any keep-alive sockets the fetcher opened across worker threads
-        # (§T79): the pool threads have exited, so only the fetcher's own registry
+        # -- the pool threads have exited, so only the fetcher's own registry
         # can close them. Not every Fetcher keeps connections (e.g. a test double).
         close = getattr(ctx.fetcher, "close", None)
         if callable(close):

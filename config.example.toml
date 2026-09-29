@@ -3,7 +3,7 @@
 # Copy to config.toml and adjust. Secrets are NEVER placed in this file:
 # supply OAuth/OIDC secrets via environment variables or a secret manager.
 # Remote mode is disabled here; enabling non-loopback remote without HTTPS and
-# valid OAuth/OIDC settings will refuse startup (SPEC §V9).
+# valid OAuth/OIDC settings will refuse startup.
 
 [database]
 data_dir = "./data"
@@ -21,7 +21,7 @@ max_parallel_downloads = 8
 
 [sync.arknights_assets_gamedata]
 # Each region must point at a DISTINCT upstream tree so en/cn data is never
-# silently mixed (SPEC §V5). Either use a "{server}" token in base_url (below,
+# silently mixed. Either use a "{server}" token in base_url (below,
 # substituted per region), or give each region its own entry in [.base_urls].
 base_url = "<configured allowlisted repository endpoint>/{server}"
 servers = ["en", "cn"]
@@ -30,36 +30,36 @@ servers = ["en", "cn"]
 # en = "<allowlisted EN repository endpoint>"
 # cn = "<allowlisted CN repository endpoint>"
 
-# Penguin Statistics drop-rate cache (v0.2 M8, SPEC §V58). Opt-in: it rides along
+# Penguin Statistics drop-rate cache (v0.2 M8). Opt-in: it rides along
 # with `sync` ONLY when penguin_statistics is BOTH in [sync].enabled_sources above
 # AND enabled in the machine registry (`arknights-mcp source enable
 # penguin_statistics`). When enabled, `sync` fetches each region's drops (en->US,
 # cn->CN) into the SAME candidate after the game data; a penguin outage is caught
-# and the build still promotes game-data-only (fail-open, §V58). Penguin data is
-# CC BY-NC 4.0 (noncommercial + attribution, §V53).
+# and the build still promotes game-data-only (fail-open). Penguin data is
+# CC BY-NC 4.0 (noncommercial + attribution).
 # [sync.penguin_statistics]
 # base_url = "https://penguin-stats.io/PenguinStats/api/v2"  # default if omitted
 
-# Official announcement metadata (v0.2 M9, SPEC §V56/§T106). Enabled by default in
+# Official announcement metadata (v0.2 M9). Enabled by default in
 # the machine registry (metadata-only maximum scope, D14 review recorded). It rides
 # along with `sync` ONLY when the source id is BOTH in [sync].enabled_sources above
 # AND a feed_url is configured below (there is NO shipped default feed URL). When
 # wired, `sync` fetches each region's announcement feed (en->Global, cn->CN) into the
 # SAME candidate after the game data and stores ONLY the metadata allowlist
 # (announce_id/title/date/url/category) -- never the article body/html/prose/image
-# (§V16). A feed outage is caught and the build still promotes game-data-only
-# (fail-open, §V58). Add the source ids to [sync].enabled_sources and set the feeds:
-# The feed URLs below were verified live 2026-07-21 (§V61). Each region points at a
-# distinct first-party host (§V5); the en URL is the client network_config `an` value
+# A feed outage is caught and the build still promotes game-data-only
+# (fail-open). Add the source ids to [sync].enabled_sources and set the feeds:
+# The feed URLs below were verified live 2026-07-21. Each region points at a
+# distinct first-party host; the en URL is the client network_config `an` value
 # with the canonical `Android` platform. The feed carries announceId/title/day/month/
 # webUrl/group and the importer field-maps day+month->date, webUrl->url, group->category,
-# keeping ONLY that metadata -- never the article body/html/image (§V16).
+# keeping ONLY that metadata -- never the article body/html/image.
 # [sync.arknights_global_official_news]
 # feed_url = "https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json"
 # [sync.arknights_cn_official_news]
 # feed_url = "https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json"
 
-# Extra-locale (jp/kr) NAME aliases are RETIRED (SPEC §V57, T156 -- founder 2026-07-23,
+# Extra-locale (jp/kr) NAME aliases are RETIRED (founder 2026-07-23,
 # EN+CN only): there is no `arknights_extra_locale_names` source and no `search_entities`
 # locale filter.
 
@@ -92,7 +92,7 @@ path = "/mcp"
 public_base_url = "https://mcp.example.com"
 trust_proxy_headers = true
 # Set true when a reverse proxy / tunnel (e.g. Cloudflare Tunnel, nginx) sits in
-# front of a loopback bind and serves the public internet (§V40): forces the §V9
+# front of a loopback bind and serves the public internet: forces the
 # HTTPS + OIDC startup gate and per-request bearer validation even on 127.0.0.1.
 behind_proxy = false
 
@@ -101,11 +101,11 @@ mode = "oidc"
 issuer = "<OIDC issuer>"
 audience = "<MCP audience>"
 jwks_url = "<JWKS endpoint or discovery-derived value>"
-# Scopes a token must CARRY: validated per request (§V10), and named in the
+# Scopes a token must CARRY: validated per request, and named in the
 # `scope=` hint of an insufficient_scope challenge.
 required_scopes = ["arknights:read"]
 # Scopes an interactive client should REQUEST: published as RFC 9728
-# `scopes_supported` (§V45). Keep `offline_access` here (and enable it on the
+# `scopes_supported`. Keep `offline_access` here (and enable it on the
 # provider side) so `claude mcp login` receives a refresh token instead of a bearer
 # that expires in ~24h. Never add a flow-only scope to required_scopes: the AS does
 # not mint it into the access token, so every request would 403.
@@ -116,7 +116,7 @@ requests_per_minute_per_principal = 60
 max_concurrent_requests_per_principal = 4
 request_timeout_seconds = 30
 max_page_size = 100
-# §V11 request cap: max accepted request body size in bytes (default 1 MiB). A
+# Request cap: max accepted request body size in bytes (default 1 MiB). A
 # larger body is refused with 413 before the tool handler runs.
 max_request_bytes = 1048576
 
@@ -125,15 +125,15 @@ log_tool_arguments = false
 log_tool_results = false
 operational_log_retention_days = 14
 
-# Image URL references (v0.3 M12, SPEC §V63 / ADR 0008+0009). ON by default (§T124, founder
+# Image URL references (v0.3 M12, ADR 0008+0009). ON by default (founder
 # 2026-07-22: all existing user features default-enabled). get_operator/get_enemy responses
 # gain an additive `image_refs` list of query-time DERIVED links to the
-# yuanyan3060/ArknightsGameResource mirror -- no bytes are ever stored or fetched (§V1/§V16).
+# yuanyan3060/ArknightsGameResource mirror -- no bytes are ever stored or fetched.
 # Per ADR 0009 this flag carries NO deployment-posture term: "private" means access-controlled,
-# not loopback-only. §V9 already fails startup closed on any anonymous non-loopback surface, so
+# not loopback-only. Startup already fails closed on any anonymous non-loopback surface, so
 # an AUTHENTICATED (OIDC/bearer) deployment emits references when this is true; a genuine
-# loopback dev bind does too. There is no startable open/anonymous public surface (§C/D4). The
-# `arknights_game_resource` source must ALSO be enabled in the machine registry (§V20 kill
+# loopback dev bind does too. There is no startable open/anonymous public surface (D4). The
+# `arknights_game_resource` source must ALSO be enabled in the machine registry (kill
 # switch, shipped enabled) before any reference is emitted. Kill switch = set this false or
 # `arknights-mcp source disable arknights_game_resource`.
 [image_refs]

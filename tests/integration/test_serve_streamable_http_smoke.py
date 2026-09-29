@@ -1,22 +1,22 @@
-"""§T51 Streamable HTTP end-to-end smoke over a real loopback socket.
+"""Streamable HTTP end-to-end smoke over a real loopback socket.
 
 Drives the transport exactly as a remote MCP host would: bind the built ASGI app
 with uvicorn on an ephemeral loopback port, then run the MCP handshake --
 ``initialize`` -> ``tools/list`` -> ``tools/call`` -- through the SDK's
 ``streamable_http_client`` over real HTTP.
 
-This is §T51's runnable proof, covering what the in-process app test cannot:
+This is the runnable proof, covering what the in-process app test cannot:
 
-* the Streamable HTTP transport reuses the shared core (§V14): serverInfo + the
+* the Streamable HTTP transport reuses the shared core: serverInfo + the
   shared instructions + the identical tool set come back over the wire, matching
   what ``stdio`` serves;
-* ``POST /mcp`` speaks the MCP protocol (§I.api);
+* ``POST /mcp`` speaks the MCP protocol;
 * a factual call returns a typed ``ok`` envelope with region provenance
-  (§V5/§V23) as structured content -- one domain path, both transports.
+  as structured content -- one domain path, both transports.
 
 Offline + deterministic: the active build is promoted from the pinned 4-4 fixture
-via the real ``import`` path, so no network is touched (§V1). TLS is the reverse
-proxy's job (§I.api); the process speaks plain HTTP on loopback.
+via the real ``import`` path, so no network is touched. TLS is the reverse
+proxy's job; the process speaks plain HTTP on loopback.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The read-only tool set the shared registry exposes (§V14) -- the streamable-http
+#: The read-only tool set the shared registry exposes -- the streamable-http
 #: server must enumerate exactly this over the wire, identical to stdio.
 _EXPECTED_TOOLS = frozenset(
     {
@@ -100,14 +100,14 @@ async def _drive(url: str) -> None:
         async with streamable_http_client(url) as (read_stream, write_stream, _get_session_id):
             async with ClientSession(read_stream, write_stream) as session:
                 init = await session.initialize()
-                # §V14; PRD §13.1: shared serverInfo + instructions, same as stdio.
+                # PRD section 13.1: shared serverInfo + instructions, same as stdio.
                 assert init.serverInfo.name == "arknights-mcp"
                 assert init.instructions == SERVER_INSTRUCTIONS
 
                 listed = await session.list_tools()
                 assert {t.name for t in listed.tools} == _EXPECTED_TOOLS
                 for tool in listed.tools:
-                    # §V2/§V28: every exposed tool is read-only over the wire.
+                    # Every exposed tool is read-only over the wire.
                     assert tool.annotations is not None
                     assert tool.annotations.readOnlyHint is True
 
@@ -120,11 +120,11 @@ async def _drive(url: str) -> None:
                 assert envelope is not None
                 assert envelope["status"] == "ok"
                 assert envelope["schema_version"] == "0.4"
-                # §V5: a factual result carries region provenance; en is not mixed.
+                # A factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"
-                # §V119 (a)/(c): the remote wire carries the same content mirror as
-                # stdio -- the content-only client that hit B166 can be pointed at
+                # The remote wire carries the same content mirror as
+                # stdio -- the content-only client that hit the defect can be pointed at
                 # either transport, so a mirror gated to one of them fixes nothing.
                 assert result.content, "empty content renders as (No response) for a text client"
                 block = result.content[0]

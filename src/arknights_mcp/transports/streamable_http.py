@@ -1,21 +1,21 @@
-"""Private Streamable HTTP transport (§T51/M6; §V14; §I.api).
+"""Private Streamable HTTP transport.
 
 Serves the *same* shared core both transports use over the MCP Streamable HTTP
-wire: a single ``POST /mcp`` ASGI endpoint (§I.api) driven by the SDK's
+wire: a single ``POST /mcp`` ASGI endpoint driven by the SDK's
 :class:`~mcp.server.streamable_http_manager.StreamableHTTPSessionManager`. The
 session manager wraps :func:`arknights_mcp.transports._server.build_server`, the
-one transport-agnostic server (§V14/§V37) -- so ``tools/list`` / ``tools/call``
+one transport-agnostic server -- so ``tools/list`` / ``tools/call``
 dispatch the identical registry + handlers as ``stdio``; there is no second query
 path to drift.
 
-Bearer validation lands here in §T52: when the deployment requires auth (a
-non-loopback bind, or a loopback bind declared ``behind_proxy`` -- §V40), the ASGI
-app is wrapped in :class:`_BearerAuthASGIApp`, which enforces the §V10
-resource-server checks on every ``/mcp`` request and issues typed ``401``/``403``
+Bearer validation lands here: when the deployment requires auth (a
+non-loopback bind, or a loopback bind declared ``behind_proxy``), the ASGI
+app is wrapped in :class:`_BearerAuthASGIApp`, which enforces the resource-server
+checks on every ``/mcp`` request and issues typed ``401``/``403``
 ``WWW-Authenticate`` challenges. A genuine loopback dev bind (not behind a proxy)
-stays authless -- the explicit §V9 exception.
+stays authless -- the explicit dev-bind exception.
 
-Principal/session isolation lands in §T53: the shared session manager runs
+Principal/session isolation lands here: the shared session manager runs
 *stateful* (``stateless=False``), so it keeps one persistent MCP session per
 ``Mcp-Session-Id`` and -- crucially -- binds each session to the credential that
 created it, rejecting any request that presents a session id owned by a different
@@ -23,22 +23,21 @@ credential (SDK ``StreamableHTTPSessionManager._handle_stateful_request``). That
 owner-binding only activates when the request carries a validated
 ``scope["user"]``; :class:`_BearerAuthASGIApp` therefore attaches an
 :class:`~mcp.server.auth.middleware.bearer_auth.AuthenticatedUser` keyed on
-:attr:`~arknights_mcp.auth.principal.Principal.principal_id` (§V10 ``iss|sub``, the
-one home for the namespacing -- §V37). Without it every session's owner is ``None``
+:attr:`~arknights_mcp.auth.principal.Principal.principal_id` (``iss|sub``, the
+one home for the namespacing). Without it every session's owner is ``None``
 and any validated principal could resume any other's session -- a cross-user leak.
-The shared read-only core carries no other per-principal state (§V14: same DB +
-same input → identical result ∀ caller), so the session binding is the whole
-isolation surface. Redacted logging remains a separate M6 task (§T54). The intended
-production shape is loopback ``127.0.0.1`` behind a TLS-terminating reverse proxy
-(§I.api; §T55).
+The shared read-only core carries no other per-principal state (same DB +
+same input → identical result for every caller), so the session binding is the whole
+isolation surface. Redacted logging remains a separate task. The intended
+production shape is loopback ``127.0.0.1`` behind a TLS-terminating reverse proxy.
 
-Interactive OAuth bootstrap lands in §T81: :class:`_ProtectedResourceMetadataASGIApp`
+Interactive OAuth bootstrap lands here: :class:`_ProtectedResourceMetadataASGIApp`
 serves the RFC 9728 protected-resource metadata *unauthenticated* (above the bearer
 layer that would 401 it) so an MCP OAuth client -- e.g. ``claude mcp login`` -- can
-discover the authorization server from a 401 instead of a hand-pasted bearer (§V45).
+discover the authorization server from a 401 instead of a hand-pasted bearer.
 The metadata advertises only the OIDC issuer; the client fetches the
 authorization-server metadata from the issuer itself, so this server makes no
-query-time network call (§V1).
+query-time network call.
 """
 
 from __future__ import annotations
@@ -65,8 +64,8 @@ from arknights_mcp.middleware import (
 from arknights_mcp.transports._server import build_server
 
 #: Placeholder carried in the session-owner :class:`AccessToken` in place of the
-#: real bearer. The owner-binding only needs the identity components, and §V12
-#: forbids stashing the raw token anywhere it could be logged; the SDK's
+#: real bearer. The owner-binding only needs the identity components, and the
+#: raw token must never be stashed anywhere it could be logged; the SDK's
 #: ``authorization_context`` never reads this field.
 _REDACTED_SESSION_TOKEN = "[redacted]"
 
@@ -94,11 +93,11 @@ def build_asgi_app(
     json_response: bool = False,
     stateless: bool = False,
 ) -> Starlette:
-    """Build the Streamable HTTP ASGI app for ``core`` (§V14; §I.api).
+    """Build the Streamable HTTP ASGI app for ``core``.
 
     The MCP server is :func:`build_server` -- the same one ``stdio`` runs -- so the
-    two transports share one registry + one set of handlers (§V14). The returned
-    Starlette app routes ``path`` (default ``/mcp``, §I.api) to the session manager
+    two transports share one registry + one set of handlers. The returned
+    Starlette app routes ``path`` (default ``/mcp``) to the session manager
     and runs the manager's task group for the app's lifespan. The manager is also
     stashed on ``app.state.session_manager`` so the shared-server reuse is
     inspectable without opening a socket.
@@ -137,18 +136,18 @@ def _bearer_token(scope: Scope) -> str | None:
 
 
 def _session_user(principal: Principal) -> AuthenticatedUser:
-    """Project ``principal`` into the SDK's session-owner identity (§T53/§V10).
+    """Project ``principal`` into the SDK's session-owner identity.
 
     The stateful :class:`StreamableHTTPSessionManager` binds each MCP session to
     ``authorization_context(scope["user"])`` -- a ``(client_id, iss, sub)`` tuple --
     and rejects a request whose credential does not match the session's owner. We
-    want that owner key to be *exactly* the principal identity §V10 defines:
+    want that owner key to be *exactly* the principal identity:
     ``iss|sub`` (:attr:`Principal.principal_id`), never the OAuth client (``azp``) --
     two clients acting for the same subject are the same principal, and a leak
     across *different* principals must be impossible. So we carry ``principal_id`` in
     the ``client_id`` slot and leave ``iss``/``sub`` unset: the owner tuple collapses
-    to ``(principal_id, None, None)``, keyed solely on the one-home namespacing
-    (§V37). The real bearer is never stored here (§V12) -- ``authorization_context``
+    to ``(principal_id, None, None)``, keyed solely on the one-home namespacing.
+    The real bearer is never stored here -- ``authorization_context``
     ignores the token field.
     """
     return AuthenticatedUser(
@@ -161,7 +160,7 @@ def _session_user(principal: Principal) -> AuthenticatedUser:
 
 
 class _BearerAuthASGIApp:
-    """ASGI middleware enforcing §V10 bearer validation on every HTTP request.
+    """ASGI middleware enforcing bearer validation on every HTTP request.
 
     Wraps the Streamable HTTP app: an ``http`` request must carry a bearer token
     that :class:`~arknights_mcp.auth.oidc.OidcTokenVerifier` validates, else the
@@ -171,10 +170,10 @@ class _BearerAuthASGIApp:
     so the session manager's task group still starts.
 
     On success the validated :class:`~arknights_mcp.auth.principal.Principal` is
-    stashed on ``scope["state"]["principal"]`` (for §T54 per-principal limits +
+    stashed on ``scope["state"]["principal"]`` (for per-principal limits +
     redacted logging), and an :class:`AuthenticatedUser` keyed on the principal is
     placed on ``scope["user"]`` so the session manager binds each MCP session to its
-    creator and refuses cross-principal session reuse (§T53 isolation; §V10). Absent
+    creator and refuses cross-principal session reuse. Absent
     ``scope["user"]`` the SDK would own every session as ``None`` -- any validated
     caller could then resume any other's session.
     """
@@ -189,12 +188,12 @@ class _BearerAuthASGIApp:
     ) -> None:
         self._app = app
         self._verifier = verifier
-        # REQUIRED, never advertised (§V45 scope split, B126): an insufficient_scope
-        # challenge states what is missing for authorization, not what the login flow
-        # should request -- a flow-only scope (offline_access) is never in a token.
+        # REQUIRED, never advertised: an insufficient_scope challenge states what is
+        # missing for authorization, not what the login flow should request -- a
+        # flow-only scope (offline_access) is never in a token.
         self._scope_challenge = " ".join(settings.required_scopes)
-        # RFC 9728 §5.1: point the client at the protected-resource metadata so an MCP
-        # OAuth client can discover the authorization server from a 401 (§V45). None
+        # RFC 9728 section 5.1: point the client at the protected-resource metadata so
+        # an MCP OAuth client can discover the authorization server from a 401. None
         # in the authless dev path, where no challenge is ever emitted.
         self._resource_metadata_url = resource_metadata_url
 
@@ -212,23 +211,23 @@ class _BearerAuthASGIApp:
             await self._reject(send, exc.status, exc.error, exc.description)
             return
         except Exception:
-            # Fail closed on any unexpected verifier fault; never leak details (§V12).
+            # Fail closed on any unexpected verifier fault; never leak details.
             await self._reject(send, 401, "invalid_token", "token validation failed")
             return
-        # Attach the validated identity (§T54 limits/logging) and the session-owner
+        # Attach the validated identity (for limits/logging) and the session-owner
         # user so the SDK binds this session to its creator + refuses cross-principal
-        # reuse (§T53 isolation; §V10). Both are set only after validation.
+        # reuse. Both are set only after validation.
         scope["state"] = {**scope.get("state", {}), "principal": principal}
         scope["user"] = _session_user(principal)
         await self._app(scope, receive, send)
 
     async def _reject(self, send: Send, status: int, error: str, description: str) -> None:
-        """Emit an RFC 6750 ``WWW-Authenticate`` challenge; no token/secret (§V12)."""
+        """Emit an RFC 6750 ``WWW-Authenticate`` challenge; no token/secret."""
         params = [f'error="{error}"', f'error_description="{description}"']
         if error == "insufficient_scope" and self._scope_challenge:
             params.append(f'scope="{self._scope_challenge}"')
         if self._resource_metadata_url:
-            # RFC 9728 §5.1 discovery hint; the URL is server config, never a secret.
+            # RFC 9728 section 5.1 discovery hint; the URL is server config, never a secret.
             params.append(f'resource_metadata="{self._resource_metadata_url}"')
         challenge = "Bearer " + ", ".join(params)
         body = json.dumps({"error": error, "error_description": description}).encode("utf-8")
@@ -241,12 +240,12 @@ class _BearerAuthASGIApp:
         await send({"type": "http.response.body", "body": body})
 
 
-#: RFC 9728 well-known root for OAuth 2.0 Protected Resource Metadata (§V45).
+#: RFC 9728 well-known root for OAuth 2.0 Protected Resource Metadata.
 _PRM_WELL_KNOWN = "/.well-known/oauth-protected-resource"
 
 
 def _prm_paths(resource_path: str) -> frozenset[str]:
-    """Local request paths the PRM document answers (RFC 9728, §V45).
+    """Local request paths the PRM document answers (RFC 9728).
 
     A client discovers the metadata either at the bare well-known root or with the
     protected resource's own path appended (``/.well-known/oauth-protected-resource``
@@ -256,30 +255,30 @@ def _prm_paths(resource_path: str) -> frozenset[str]:
 
 
 def _prm_url(remote: McpRemoteConfig) -> str:
-    """Absolute canonical PRM URL for the ``resource_metadata`` challenge hint (§V45)."""
+    """Absolute canonical PRM URL for the ``resource_metadata`` challenge hint."""
     return remote.public_base_url.rstrip("/") + _PRM_WELL_KNOWN + remote.path
 
 
 def _protected_resource_metadata(
     remote: McpRemoteConfig, settings: OidcSettings
 ) -> dict[str, object]:
-    """Build the RFC 9728 Protected Resource Metadata document (§V45).
+    """Build the RFC 9728 Protected Resource Metadata document.
 
     ``resource`` is the canonical MCP endpoint URL (public base + path, = the token
     ``aud`` this deployment accepts). ``authorization_servers`` advertises *only* the
     OIDC issuer -- the client fetches the authorization-server metadata straight from
     it (Auth0's own ``.well-known``), so this server neither serves nor proxies AS
-    metadata and makes no query-time network call (§V1). No secret appears here: the
+    metadata and makes no query-time network call. No secret appears here: the
     document carries only public discovery descriptors.
 
-    ``scopes_supported`` is the ADVERTISE list, not the required list (§V45 scope
-    split, B126): a client derives its authorize request from this document, so it
-    must also name the flow-only scopes the AS consumes without minting them into the
+    ``scopes_supported`` is the ADVERTISE list, not the required list: a client
+    derives its authorize request from this document, so it must also name the
+    flow-only scopes the AS consumes without minting them into the
     access token (``offline_access`` → refresh token). Requiring those instead would
     403 every token; advertising them is what keeps an interactive session alive past
     access-token expiry. The advertise list is a superset of ``required_scopes``
     (:attr:`~arknights_mcp.config.AuthConfig.prm_scopes`), so a client always asks for
-    everything §V10 will demand.
+    everything the bearer check will demand.
     """
     resource = remote.public_base_url.rstrip("/") + remote.path
     return {
@@ -291,17 +290,17 @@ def _protected_resource_metadata(
 
 
 class _ProtectedResourceMetadataASGIApp:
-    """Serve RFC 9728 Protected Resource Metadata *unauthenticated* (§V45).
+    """Serve RFC 9728 Protected Resource Metadata *unauthenticated*.
 
     An MCP OAuth client bootstraps auth by fetching the protected-resource metadata
     (RFC 9728) to learn which authorization server to use -- but that fetch cannot
     itself carry a bearer, so this layer sits *outside* :class:`_BearerAuthASGIApp`
     and answers a ``GET``/``HEAD`` on the well-known path(s) directly with the static
     metadata document, before any token check. Every other request -- including the
-    ``/mcp`` endpoint -- falls through to the wrapped app and stays bearer-gated
-    (§V10). The response is a small static JSON body (no per-principal state), so it
+    ``/mcp`` endpoint -- falls through to the wrapped app and stays bearer-gated.
+    The response is a small static JSON body (no per-principal state), so it
     is served above the per-principal limiter; pre-auth flood protection is the
-    reverse proxy's job (§I.api), as for the bearer challenge itself.
+    reverse proxy's job, as for the bearer challenge itself.
     """
 
     def __init__(self, app: ASGIApp, *, paths: frozenset[str], document: dict[str, object]) -> None:
@@ -338,7 +337,7 @@ def wrap_remote_app(
 ) -> ASGIApp:
     """Wrap the Streamable HTTP app in the auth-requiring remote middleware stack.
 
-    Composition, outermost → innermost (§T54/§T81; §V11/§V12/§V10/§V45):
+    Composition, outermost → innermost:
 
     ``RedactedLoggingMiddleware`` → ``_ProtectedResourceMetadataASGIApp`` →
     ``_BearerAuthASGIApp`` → ``RateLimitMiddleware`` → ``RequestLimitsMiddleware`` →
@@ -349,22 +348,22 @@ def wrap_remote_app(
     * **Logging outermost** so it records *every* request's real outcome, including a
       ``401`` bearer challenge or a ``429`` limiter rejection, and so it can read the
       validated principal the bearer layer stashes on the scope once the inner stack
-      returns (§V12).
+      returns.
     * **Protected-resource metadata next** so RFC 9728 OAuth discovery
       (``/.well-known/oauth-protected-resource``) is answered *unauthenticated* --
       above the bearer layer that would otherwise 401 it -- letting an MCP OAuth client
-      bootstrap from a 401 without a hand-pasted token (§V45). It matches only the
+      bootstrap from a 401 without a hand-pasted token. It matches only the
       well-known path(s); ``/mcp`` falls through and stays bearer-gated.
     * **Bearer next** so the per-principal limits below it always see a validated
       :class:`~arknights_mcp.auth.principal.Principal` on the scope; a request that
       fails auth is rejected before any limiter bucket is touched. Its 401/403
-      challenge carries the ``resource_metadata`` discovery hint (RFC 9728 §5.1).
-    * **Rate/concurrency then request cap/timeout inside** so the §V11 controls wrap
+      challenge carries the ``resource_metadata`` discovery hint (RFC 9728 section 5.1).
+    * **Rate/concurrency then request cap/timeout inside** so the limiter controls wrap
       the actual handler: the concurrency slot is held for the request's whole
       lifetime, and the timeout bounds the handler's own work.
 
     Pre-auth flood protection (unauthenticated request storms that never reach a
-    per-principal bucket) is the reverse proxy's job (§I.api; the §T55 nginx example).
+    per-principal bucket) is the reverse proxy's job (the nginx example).
     """
     limits = config.limits
     remote = config.mcp.remote
@@ -389,22 +388,22 @@ def wrap_remote_app(
 
 
 def serve_streamable_http(core: ApplicationCore, config: AppConfig) -> None:
-    """Blocking entry point: serve ``core`` over Streamable HTTP (§T51/§T52/§T54).
+    """Blocking entry point: serve ``core`` over Streamable HTTP.
 
     Binds ``[mcp.remote] bind_host:bind_port`` at ``path``. When the deployment
-    requires auth (§V40: a non-loopback bind, or a loopback bind declared
-    ``behind_proxy``), the §V9/§V40 startup gate is enforced (HTTPS assumption +
+    requires auth (a non-loopback bind, or a loopback bind declared
+    ``behind_proxy``), the startup gate is enforced (HTTPS assumption +
     valid OIDC, else :class:`~arknights_mcp.config.ConfigError`) and the app is
     wrapped in the full remote middleware stack (:func:`wrap_remote_app`: redacted
     logging + bearer validation + per-principal rate/concurrency + per-request
-    size/timeout limits -- §V10/§V11/§V12). A genuine loopback dev bind stays authless
-    and unmetered (§V9 exception). TLS termination is the reverse proxy's job (§I.api).
+    size/timeout limits). A genuine loopback dev bind stays authless
+    and unmetered. TLS termination is the reverse proxy's job.
     """
     import uvicorn
 
     remote = config.mcp.remote
     if remote.requires_auth:
-        # Fail closed before binding: refuse an unsafe posture (§V9/§V40).
+        # Fail closed before binding: refuse an unsafe posture.
         config.assert_remote_startup_safe()
     app: ASGIApp = build_asgi_app(core, path=remote.path)
     if remote.requires_auth:

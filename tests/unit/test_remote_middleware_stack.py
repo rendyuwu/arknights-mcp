@@ -1,4 +1,4 @@
-"""§T54/§V11/§V12/§V10: the composed remote middleware stack.
+"""The composed remote middleware stack.
 
 :func:`~arknights_mcp.transports.streamable_http.wrap_remote_app` layers redacted
 logging + bearer validation + per-principal rate/concurrency + per-request
@@ -135,7 +135,7 @@ def test_oversized_request_rejected_after_auth() -> None:
 
 
 def test_rejected_request_is_still_logged(caplog: pytest.LogCaptureFixture) -> None:
-    # §V12 + composition: logging is the OUTERMOST layer, so a 401 from the bearer
+    # Composition: logging is the OUTERMOST layer, so a 401 from the bearer
     # challenge is still recorded (as anonymous -- no principal was attached).
     import logging
 
@@ -149,5 +149,5 @@ def test_rejected_request_is_still_logged(caplog: pytest.LogCaptureFixture) -> N
     message = records[0].getMessage()
     assert "401" in message
     assert "principal=anonymous" in message
-    # The presented token never reaches the log (§V12).
+    # The presented token never reaches the log.
     assert "bad.token" not in message

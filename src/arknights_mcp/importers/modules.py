@@ -1,20 +1,20 @@
-"""Module importer (§T43; PRD §12.3).
+"""Module importer (PRD section 12.3).
 
 Parses the real ``uniequip_table.json`` (``equipDict`` module metadata + the
 ``charEquip`` operator→module map) and ``battle_equip_table.json`` (per-level
 stat/trait/talent changes) into the normalized module domain: ``modules`` +
 ``module_levels``.
 
-Applies the explicit field allowlist and string sanitization (§V18/§V31) and
-attaches per-record provenance (§V17) to each core ``modules`` row (level rows
+Applies the explicit field allowlist and string sanitization and
+attaches per-record provenance to each core ``modules`` row (level rows
 link through their parent). The ``INITIAL`` "no-module" default slot is skipped;
 a module whose ``charId`` names an operator absent from the roster is skipped
 (the ``modules.operator_pk`` FK must resolve, mirroring the operator→skill link).
 The per-candidate trait/talent-change effect description TEMPLATE (mechanic text
 that references the change's blackboard keys) is imported and rides the
 ``trait_changes_json`` / ``talent_changes_json`` bundle alongside its blackboard
-for grounding (§V65 path (a), ADR 0010). Lore/story prose -- the module's own
-``uniEquipDesc`` -- is never allowlisted and is excluded (§V16 ceiling holds);
+for grounding (ADR 0010). Lore/story prose -- the module's own
+``uniEquipDesc`` -- is never allowlisted and is excluded;
 ``module_levels.gameplay_description`` stays ``NULL`` (the module templates live
 per-candidate in the change bundles, next to the blackboard they ground).
 
@@ -22,8 +22,8 @@ Per level only the numeric substrate is kept: ``attributeBlackboard`` →
 ``stat_bonus_json``, the trait/talent override bundles' ``blackboard`` (+ unlock
 condition / talent index) → ``trait_changes_json`` / ``talent_changes_json``, and
 ``itemCost`` → ``cost_json`` -- each re-allowlisted from the raw source rather than
-stored whole, so no unallowlisted dict/list leaf reaches a ``*_json`` column
-(§V31). Pure parsing (:func:`parse_modules`) is separated from insertion so it is
+stored whole, so no unallowlisted dict/list leaf reaches a ``*_json`` column.
+Pure parsing (:func:`parse_modules`) is separated from insertion so it is
 unit-testable without a database.
 """
 
@@ -142,12 +142,12 @@ def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | Non
     template under a source-shape-specific key (trait: ``additionalDescription`` then
     ``overrideDescripton``; talent: ``upgradeDescription`` then ``description``). The
     template is mechanic text that references the sibling ``blackboard`` keys, so it is
-    imported + emitted alongside the blackboard for grounding (§V65 path (a), ADR 0010).
+    imported + emitted alongside the blackboard for grounding (ADR 0010).
     Read from the raw candidate (not the allowlist) and run through the shared
     ``clean_template_text``: the in-game rich-text tags go first so only the
     ``{blackboard-key}`` grounding placeholders remain, then the untrusted string is
-    control-stripped and capped at the template ceiling (§V18/§V109). Capping before the
-    strip spends the budget on markup and cuts the template mid-sentence (B154). A
+    control-stripped and capped at the template ceiling. Capping before the
+    strip spends the budget on markup and cuts the template mid-sentence. A
     blank-after-clean or absent value yields ``None`` -- never an empty template.
     """
     for key in keys:
@@ -159,17 +159,17 @@ def _effect_template(source: dict[str, Any], keys: tuple[str, ...]) -> str | Non
 
 
 def _is_token(part: dict[str, Any]) -> bool | None:
-    """The PART's typed ``isToken`` flag -- whose effect the change describes (§V115).
+    """The PART's typed ``isToken`` flag -- whose effect the change describes.
 
     A module's phase splits into parts, and the part says whether its candidates
     describe the operator or the operator's summon/token. The flag lives one level
     ABOVE the candidate, so it has to be carried down: nothing inside a candidate
     states it, and the ``talentIndex`` sentinel that used to stand in for it is a
-    different fact entirely (B162 -- the two disagree on 454 of 513 en rows).
+    different fact entirely (the two disagree on 454 of 513 en rows).
 
     ``None`` when the source states nothing, which keeps "the source said operator"
-    apart from "the source said nothing" instead of collapsing both to false
-    (§V114/§V67); every real part at the pinned upstream fills it.
+    apart from "the source said nothing" instead of collapsing both to false;
+    every real part at the pinned upstream fills it.
     """
     value = part.get("isToken")
     return value if isinstance(value, bool) else None
@@ -181,9 +181,9 @@ def _trait_change(cand: dict[str, Any], is_token: bool | None) -> dict[str, Any]
     Keeps the ``blackboard`` params, unlock condition, potential rank, and the in-game
     trait effect description TEMPLATE (``additionalDescription`` then the misspelled
     upstream ``overrideDescripton``) -- mechanic text referencing the blackboard keys,
-    emitted alongside them for grounding (§V65 path (a), ADR 0010; sanitized + capped
-    §V18). No lore/story prose is kept (§V16 ceiling). ``is_token`` rides from the
-    parent part (§V115): 13 en / 13 cn trait candidates describe the token, not the
+    emitted alongside them for grounding (ADR 0010; sanitized + capped).
+    No lore/story prose is kept. ``is_token`` rides from the
+    parent part: 13 en / 13 cn trait candidates describe the token, not the
     operator, and nothing in the candidate itself says so.
     """
     change: dict[str, Any] = {
@@ -203,9 +203,9 @@ def _talent_change(cand: dict[str, Any], is_token: bool | None) -> dict[str, Any
     Keeps the talent index, unlock condition, potential rank, ``blackboard`` params,
     and the in-game talent effect description TEMPLATE (``upgradeDescription`` then
     ``description``) -- mechanic text referencing the blackboard keys, emitted alongside
-    them for grounding (§V65 path (a), ADR 0010; sanitized + capped §V18). The ``name``
-    label and any lore/story prose are dropped (§V16 ceiling). ``is_token`` rides from
-    the parent part (§V115): it is the source's own statement of whose effect this is,
+    them for grounding (ADR 0010; sanitized + capped). The ``name``
+    label and any lore/story prose are dropped. ``is_token`` rides from
+    the parent part: it is the source's own statement of whose effect this is,
     and the read side turns it into the emitted ``applies_to`` label.
     """
     change: dict[str, Any] = {
@@ -223,7 +223,7 @@ def _talent_change(cand: dict[str, Any], is_token: bool | None) -> dict[str, Any
 def _parse_parts(parts: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split a phase's ``parts`` into trait changes + talent changes (numeric only).
 
-    Each candidate carries its part's ``isToken`` down with it (§V115/B162): the
+    Each candidate carries its part's ``isToken`` down with it: the
     candidates are flattened into one per-level list here, so a flag left behind on
     the part is a fact the wire can never recover.
     """
@@ -243,7 +243,7 @@ def _parse_parts(parts: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
 def _parse_item_cost(item_cost_raw: Any) -> dict[int, list[dict[str, Any]]]:
     """Real per-level ``itemCost`` (``{"1": [...], ...}``) → ``{level: [items]}``.
 
-    Each item is re-allowlisted to ``{id, count, type}`` (§V31); unknown fields are
+    Each item is re-allowlisted to ``{id, count, type}``; unknown fields are
     dropped. A ``null`` / absent ``itemCost`` (the INITIAL default) yields ``{}``.
     """
     out: dict[int, list[dict[str, Any]]] = {}
@@ -359,12 +359,12 @@ def insert_modules(
     snapshot_id: str,
     uniequip_source_path: str,
 ) -> ModuleImportResult:
-    """Insert modules + module_levels (§V17/§V33).
+    """Insert modules + module_levels.
 
     A module whose ``charId`` names an operator not present for ``server`` is
     skipped (the ``operator_pk`` FK cannot resolve), not inserted with a dangling
     reference. A duplicate ``(server, game_id)`` collides on UNIQUE and raises a
-    typed :class:`ImporterError` rather than tearing down the build (§V33).
+    typed :class:`ImporterError` rather than tearing down the build.
     """
     operator_pk_map = operator_pk_by_game_id(conn, server)
     modules_inserted = 0
@@ -419,7 +419,7 @@ def insert_modules(
                         json_or_none(level.trait_changes),
                         json_or_none(level.talent_changes),
                         json_or_none(level.cost),
-                        None,  # prose excluded by default (§V16)
+                        None,  # prose excluded by default
                     ),
                 )
                 levels_inserted += 1

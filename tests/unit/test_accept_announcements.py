@@ -1,26 +1,26 @@
-"""T97 (M9): the announcement-domain acceptance test (§V16, §V27, §V56, §V5).
+"""The announcement-domain acceptance test (M9).
 
 The milestone gate for M9 (official-announcement metadata intelligence). It drives
 an announcement feed through the entire M9 stack the way a CLI ``import`` would, then
-reads it back through the shared-core services both transports call (§V14):
+reads it back through the shared-core services both transports call:
 
-  build 4-4 candidate -> import_announcements (T95) for en + cn against a fixture
-  fetcher (never a live fetch, §V1) -> reopen read-only -> get_announcements (T96) /
-  get_data_sources (T27).
+  build 4-4 candidate -> import_announcements for en + cn against a fixture
+  fetcher (never a live fetch) -> reopen read-only -> get_announcements /
+  get_data_sources.
 
 Each fixture feed entry carries a forbidden ``body``/``html``/``content``/``imageUrl``
 alongside its metadata, so a correct metadata-only pipeline (importer field allowlist
 -> repo -> service) is proven to drop every one of them -- from both the built DB and
 the served result. The four milestone assertions:
 
-* **disabled-by-default gate honored** (§V56/D14): the shipped registry ships both
+* **disabled-by-default gate honored** (D14): the shipped registry ships both
   official-news sources ``enabled = False``; enabling is an explicit, reviewed act.
-* **enabled source -> metadata rows, no body** (§V16/§V56): with the source imported,
+* **enabled source -> metadata rows, no body**: with the source imported,
   ``get_announcements`` returns exactly the five metadata fields + region; no body /
   html / prose / image survives into the DB or the wire.
-* **en/cn separation** (§V5): an en query returns en-only rows, a cn query cn-only, in
+* **en/cn separation**: an en query returns en-only rows, a cn query cn-only, in
   one DB; every fact carries its region + a region-prefixed provenance snapshot.
-* **attribution + last_reviewed surfaced** (§V27): ``get_data_sources`` reports each
+* **attribution + last_reviewed surfaced**: ``get_data_sources`` reports each
   announcement source's ``attribution_text`` + ``last_reviewed_at`` while withholding
   ``policy_notes`` (the field that may carry takedown correspondence) and any local
   path / secret.
@@ -46,23 +46,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The two shipped official-news sources and their fact regions (§V5/§V56).
+#: The two shipped official-news sources and their fact regions.
 _ANNOUNCEMENT_SOURCES = {
     "arknights_global_official_news": "en",
     "arknights_cn_official_news": "cn",
 }
 
-#: The only keys a served announcement fact may carry: the five §V56 metadata fields
-#: plus the explicit region (§V5). Anything else is a leak.
+#: The only keys a served announcement fact may carry: the five metadata fields
+#: plus the explicit region. Anything else is a leak.
 _ALLOWED_KEYS = {"announce_id", "title", "date", "url", "category", "region"}
 
 #: Prose that rides every fixture feed entry on a NON-allowlisted key. A correct
-#: metadata-only pipeline (§V16/§V56) drops it before storage; ASCII-only so JSON
+#: metadata-only pipeline drops it before storage; ASCII-only so JSON
 #: escaping can never mask a leak in the DB dump or the served result.
 _FORBIDDEN_PROSE = "ANNOUNCEBODYPROSE"
 
 #: Two en announcements with distinct ISO dates so region + ordering are deterministic;
-#: each carries a forbidden body/html/prose/image field that must never survive (§V16).
+#: each carries a forbidden body/html/prose/image field that must never survive.
 _EN_FEED: list[dict[str, Any]] = [
     {
         "announceId": "ann-en-1",
@@ -84,7 +84,7 @@ _EN_FEED: list[dict[str, Any]] = [
     },
 ]
 
-#: One cn announcement so a cn query returns cn-only data (en/cn never mixed, §V5).
+#: One cn announcement so a cn query returns cn-only data (en/cn never mixed).
 _CN_FEED: list[dict[str, Any]] = [
     {
         "announceId": "ann-cn-1",
@@ -98,7 +98,7 @@ _CN_FEED: list[dict[str, Any]] = [
 
 
 class _FakeFetcher:
-    """Returns a preset announcement feed payload (no network, §V1)."""
+    """Returns a preset announcement feed payload (no network)."""
 
     def __init__(self, payload: Any) -> None:
         self._payload = payload
@@ -108,12 +108,12 @@ class _FakeFetcher:
 
 
 def _candidate(tmp_path: Path) -> Path:
-    """Build the 4-4 candidate, then import en + cn announcements via the real T95 path.
+    """Build the 4-4 candidate, then import en + cn announcements via the real importer path.
 
     ``build_candidate`` seeds the full source registry into ``data_sources`` (so the
     announcement snapshot FK holds), then the real importer runs against an in-memory
     fake fetcher on the writable candidate -- mirroring the CLI ``import`` shape before
-    the read-only reopen (§V2).
+    the read-only reopen.
     """
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
@@ -134,15 +134,15 @@ def _candidate(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def conn(tmp_path: Path) -> sqlite3.Connection:
-    """4-4 build with en + cn announcements imported, reopened read-only (§V2)."""
+    """4-4 build with en + cn announcements imported, reopened read-only."""
     return open_read_only(_candidate(tmp_path))
 
 
-# --- disabled-by-default gate honored (§V56/D14) ------------------------------
+# --- disabled-by-default gate honored (D14) -----------------------------------
 
 
 def test_enabled_by_default_gate_honored() -> None:
-    # §V56/D14/§T106: the M9 review satisfied the D14 gate (metadata-only importer +
+    # The M9 review satisfied the D14 gate (metadata-only importer +
     # get_announcements landed), so the shipped registry ships both official-news
     # sources ENABLED. Enabling in the registry is the gate; the sync ride-along still
     # additionally requires the source in [sync].enabled_sources + a configured feed_url.
@@ -150,16 +150,16 @@ def test_enabled_by_default_gate_honored() -> None:
     for source_id, region in _ANNOUNCEMENT_SOURCES.items():
         entry = reg.get(source_id)
         assert entry is not None, f"missing announcement source: {source_id}"
-        assert entry.enabled is True, f"{source_id} must be enabled by default (§V56/§T106)"
-        assert entry.regions == [region], f"{source_id} region must be [{region!r}] (§V5)"
+        assert entry.enabled is True, f"{source_id} must be enabled by default"
+        assert entry.regions == [region], f"{source_id} region must be [{region!r}]"
 
 
-# --- enabled source -> metadata rows, no body (§V16/§V56) ---------------------
+# --- enabled source -> metadata rows, no body ---------------------------------
 
 
 def test_enabled_source_yields_metadata_rows(conn: sqlite3.Connection) -> None:
-    # §V56: once imported, the source yields the announcement metadata rows, newest
-    # first (§V26) -- exactly the five metadata fields + region, nothing else.
+    # Once imported, the source yields the announcement metadata rows, newest
+    # first -- exactly the five metadata fields + region, nothing else.
     result = get_announcements(conn, server="en")
     assert result.status == "ok"
     assert [a.announce_id for a in result.announcements] == ["ann-en-2", "ann-en-1"]
@@ -167,12 +167,12 @@ def test_enabled_source_yields_metadata_rows(conn: sqlite3.Connection) -> None:
         assert a.region == "en"
         assert a.title and a.url and a.category
         # The dataclass shape itself cannot hold a body/prose field -- its attributes
-        # are exactly the metadata set (§V16 at the type level).
+        # are exactly the metadata set (at the type level).
         assert set(vars(a)) == _ALLOWED_KEYS
 
 
 def test_no_body_survives_to_result_or_db(conn: sqlite3.Connection) -> None:
-    # §V16/§V56: the forbidden body/html/content/image prose rode every feed entry on a
+    # The forbidden body/html/content/image prose rode every feed entry on a
     # non-allowlisted key -> stripped by the importer allowlist -> absent from BOTH the
     # served result and the whole built DB (schema cannot hold it; allowlist drops it).
     for server in ("en", "cn"):
@@ -193,13 +193,13 @@ def test_no_body_survives_to_result_or_db(conn: sqlite3.Connection) -> None:
     assert _FORBIDDEN_PROSE not in db_dump, "prose leaked into the built DB"
 
 
-# --- en/cn separation (§V5) ---------------------------------------------------
+# --- en/cn separation ---------------------------------------------------------
 
 
 def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
-    # §V5: a cn query returns cn-only data; en announcements are never surfaced under it,
+    # A cn query returns cn-only data; en announcements are never surfaced under it,
     # and vice versa -- in one DB. Every fact carries region + a region-prefixed
-    # provenance snapshot (its own provenance chain, §V17).
+    # provenance snapshot (its own provenance chain).
     en = get_announcements(conn, server="en")
     cn = get_announcements(conn, server="cn")
 
@@ -217,11 +217,11 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     assert en_snaps.isdisjoint(cn_snaps)
 
 
-# --- attribution + last_reviewed surfaced (§V27) ------------------------------
+# --- attribution + last_reviewed surfaced -------------------------------------
 
 
 def test_get_data_sources_shows_attribution_and_last_reviewed(conn: sqlite3.Connection) -> None:
-    # §V27: get_data_sources reports each announcement source's attribution + review
+    # get_data_sources reports each announcement source's attribution + review
     # date through the single public projection, while withholding policy_notes (which
     # may carry takedown correspondence) and any local path / secret.
     result = get_data_sources(load_source_registry(REGISTRY), conn)
@@ -229,14 +229,14 @@ def test_get_data_sources_shows_attribution_and_last_reviewed(conn: sqlite3.Conn
     for source_id in _ANNOUNCEMENT_SOURCES:
         info = by_id[source_id]
         view = info.to_dict()
-        # §V27: attribution + last_reviewed present.
+        # attribution + last_reviewed present.
         assert str(view["attribution_text"]).strip(), f"{source_id}: attribution missing"
         assert view["last_reviewed_at"] == "2026-07-21", f"{source_id}: review date not surfaced"
-        # §V27/§T106: the enabled posture is reported truthfully (the gate is public).
+        # The enabled posture is reported truthfully (the gate is public).
         assert view["enabled"] is True
-        # §V27: policy_notes is withheld from every public projection.
+        # policy_notes is withheld from every public projection.
         assert "policy_notes" not in view
-        # §V16/§V56: no consumed field names a body/html/prose/image scope.
+        # No consumed field names a body/html/prose/image scope.
         for field in view["fields_consumed"]:  # type: ignore[union-attr]
             low = str(field).lower()
             assert not any(bad in low for bad in ("body", "html", "prose", "image"))

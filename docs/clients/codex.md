@@ -5,9 +5,9 @@ CLI](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) as a local `stdio`
 server. The config formats below are the current official ones (verified
 2026-07).
 
-> This server is **read-only**. It never fetches upstream data at query time
-> (SPEC §V1); it serves whatever build you have already promoted locally.
-> Building and refreshing data is a **separate admin-CLI step** (§V28) — see
+> This server is **read-only**. It never fetches upstream data at query time;
+> it serves whatever build you have already promoted locally.
+> Building and refreshing data is a **separate admin-CLI step** — see
 > [Prerequisite](#prerequisite) first.
 
 ## Prerequisite: build a database
@@ -23,7 +23,7 @@ uv run arknights-mcp status        # shows the active snapshot + schema version
 ```
 
 `import`, `sync`, `validate`, `status`, and `source` are admin-only CLI
-commands, never MCP tools (§V28). Run them yourself before starting the server.
+commands, never MCP tools. Run them yourself before starting the server.
 To refresh, run them and then **restart** the server: it opens the promoted
 build once at startup and holds it for the process lifetime, so a build promoted
 under a running server is not picked up live.
@@ -101,15 +101,15 @@ Four things there are load-bearing:
 - **`-i` is required.** Without it the container has no stdin, reads EOF at once,
   and exits before Codex's `initialize` arrives.
 - **Never pass `-t`.** A TTY merges stderr into stdout and rewrites newlines,
-  corrupting the JSON-RPC framing stdout carries (§V13).
+  corrupting the JSON-RPC framing stdout carries.
 - **`--user` with your own uid, not root.** The image runs non-root as uid 999
   and reads the build through host file permissions, but `import` writes
   `data/current.json` and the `.sqlite` builds mode `600` owned by whoever ran
   it — so uid 999 gets `PermissionError` and every tool answers
   `internal_error`. There is no shell to expand `$(id -u)` inside a TOML `args`
   list, so put the number in (check it with `id -u`). The mounts stay `:ro`: read
-  access only, never a write path (§V2).
-- **The image is code-only (§V16).** It holds no database; the promoted build
+  access only, never a write path.
+- **The image is code-only.** It holds no database; the promoted build
   arrives through the read-only `data` mount, so you still build it on the host
   first. No OIDC or env file is involved — a stdio pipe has no bind, no bearer.
 
@@ -126,7 +126,7 @@ then ask something a promoted build can answer, e.g. *"analyze stage 4-4"*.
 
 - **Every query is `not_found` / `data_stale`.** No build is promoted for that
   region, or it is stale. Run `uv run arknights-mcp status`; refresh with
-  `import` or `sync` (§V24 — the server never downloads on demand), **then
+  `import` or `sync` (the server never downloads on demand), **then
   restart the server** — it holds the build it opened at startup for the process
   lifetime, so a fresh promote under a running server is not picked up until you
   restart it.
@@ -135,7 +135,7 @@ then ask something a promoted build can answer, e.g. *"analyze stage 4-4"*.
 - **`config.toml` / `data/` not found.** `cwd` (or `uv run --directory`) is
   unset or wrong; point it at the clone.
 - **Stray text in the transport.** The server writes the MCP JSON-RPC stream to
-  **stdout** and all operational notices to **stderr** (§V13); don't wrap the
+  **stdout** and all operational notices to **stderr**; don't wrap the
   command in anything that prints to stdout.
 - **(Docker) every tool answers `internal_error`.** The container uid cannot read
   the mounted build; the container's stderr (or `docker run ... arknights-mcp
@@ -148,5 +148,4 @@ then ask something a promoted build can answer, e.g. *"analyze stage 4-4"*.
 
 - [`claude-code.md`](claude-code.md) — the same server from Claude Code.
 - [`../../README.md`](../../README.md) — project overview and data policy.
-- SPEC §V1/§V2/§V13/§V28 — the read-only, CLI-only, stdout/stderr guardrails
-  this setup relies on.
+- Read-only, CLI-only, stdout/stderr guardrails this setup relies on.

@@ -1,9 +1,9 @@
-"""T21: the ``sync`` CLI command end to end (§V1, §V3, §V4, §V28, I.cmd).
+"""The ``sync`` CLI command end to end.
 
-Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network, §V1):
+Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network):
 the pinned 4-4 snapshot is "downloaded", staged, imported, validated, and
 promoted atomically. Re-running an unchanged sync is a no-op, and a disabled
-source or missing endpoint fails closed without touching the active DB (§V3/§V4).
+source or missing endpoint fails closed without touching the active DB.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def test_sync_refuses_placeholder_base_url(tmp_path: Path) -> None:
 
 
 def test_sync_all_same_base_url_refused(tmp_path: Path) -> None:
-    """--server all with one region-agnostic base_url refuses: en/cn must differ (§V5)."""
+    """--server all with one region-agnostic base_url refuses: en/cn must differ."""
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     config = tmp_path / "config.toml"

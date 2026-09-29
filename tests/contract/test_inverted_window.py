@@ -1,6 +1,6 @@
-"""T201: the real-build proof that rejecting an inverted window withholds nothing.
+"""The real-build proof that rejecting an inverted window withholds nothing.
 
-§V105 lets an impossible window be answered either way -- a typed ``invalid_input`` or an
+An impossible window can be answered either way -- a typed ``invalid_input`` or an
 ``ok`` plus an explicit limitation. This task ships the rejection, and a rejection needs a
 stronger warrant than a limitation does: it must be impossible for it to swallow a row a
 client would otherwise have received. The argument is that strings are totally ordered, so
@@ -37,7 +37,7 @@ MANIFEST = REPO_ROOT / "data" / "current.json"
 
 REGIONS = ("en", "cn")
 
-#: B143's own filed pair.
+#: The filed pair.
 INVERTED = ("2026-07-01", "2026-06-01")
 
 #: How many stored dates to draw the inverted pairs from. Evenly spaced over the region's
@@ -124,7 +124,7 @@ def test_every_inverted_pair_of_real_banner_dates_matches_nothing(
 def test_the_same_domain_still_returns_rows_the_right_way_round(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # Non-degenerate control (§V96): the zero above is the INVERSION's doing, not an
+    # Non-degenerate control: the zero above is the INVERSION's doing, not an
     # unreachable window or a broken query -- the widest pair over the identical stored
     # values returns rows in both domains.
     announcement_dates = _stored_dates(conn, _ANNOUNCEMENT_DATES, region)
@@ -141,7 +141,7 @@ def test_the_same_domain_still_returns_rows_the_right_way_round(
 def test_the_filed_pair_is_rejected_on_the_real_build(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # B143's own query, on the build that shipped it. Before this task both services
+    # The filed query, on the build that shipped it. Before this task both services
     # answered it ``ok`` with an empty collection -- get_banners with no limitation at all.
     since, until = INVERTED
     for service in (get_announcements, get_banners):

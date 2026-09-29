@@ -1,25 +1,25 @@
-"""T217 (b): §V120 for ``get_stage`` -- the shed order is COUNTED, not fixed (B169).
+"""The shed order for ``get_stage`` is COUNTED, not fixed.
 
 Arm (a) taught ``get_banners`` to shrink instead of withhold. ``get_stage`` never got a
 plan, so one real stage answered ``partial`` with ``data: {}`` for every flag combination
 that asked for its routes -- while a smaller ``routes_page.page_size`` returned the same
-routes fine. That is B167's harm on a second tool, and the reason it stayed open is the
-reason B167 shipped: no test drove the widest legal request over the real corpus.
+routes fine. That is the harm on a second tool, and the reason it stayed open is the
+reason the defect shipped: no test drove the widest legal request over the real corpus.
 
-What these guards pin beyond "it answers" is the ORDER. §V120 (b) originally illustrated
+What these guards pin beyond "it answers" is the ORDER. The rule originally illustrated
 ``get_stage`` with ``map_image`` then ``spawns`` then ``routes``, uncounted; the promoted
 build says the over-cap frame is route-heavy, and shedding the image and the spawns first
 still leaves it over the cap -- so that plan sheds three parts and reports ``partial``
 where trimming routes alone fits at ``ok``. A test that only asserted "under the cap and
-non-empty" would pass on both, which is exactly how a guessed order ships (§V121 b).
+non-empty" would pass on both, which is exactly how a guessed order ships.
 
-Driven through :func:`~arknights_mcp.mcp.envelopes.ok` (§V120 b): the shed is a
+Driven through :func:`~arknights_mcp.mcp.envelopes.ok`: the shed is a
 chokepoint rule, so calling the plan helpers directly would pass equally against a
-per-service trim, the shape B135's four per-surface rollouts argue against.
+per-service trim, the shape four per-surface rollouts argue against.
 
 Synthetic payloads here, the real corpus next door. Both are needed: only the build says
 the order was counted right, and only a synthetic frame can reach the ``map_image`` step,
-which fires on zero live shapes today (§V113 b -- reachability proven, never declared).
+which fires on zero live shapes today (reachability proven, never declared).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from arknights_mcp.mcp.tools._stage_shed import _SHED_PARTS, stage_shed_plan
 from arknights_mcp.models.common import PAGE_SIZE_MAX
 from arknights_mcp.services.stage_map_render import MAX_MAP_IMAGE_BYTES
 
-#: The join-key gloss ``get_stage`` attaches whenever it emits spawn rows (§V104/§V111).
+#: The join-key gloss ``get_stage`` attaches whenever it emits spawn rows.
 #: Carried verbatim so a trim that dropped the last spawn row would orphan it here.
 _SPAWN_NOTE = "An enemy's stats are listed per level_variant"
 
@@ -47,7 +47,7 @@ def _prov() -> Provenance:
 
 
 def _route(index: int, *, checkpoints: int) -> dict[str, Any]:
-    """One route in the ``get_stage`` wire shape (§V51: checkpoints are always a list)."""
+    """One route in the ``get_stage`` wire shape (checkpoints are always a list)."""
     return {
         "motion_mode": "WALK",
         "start": {"row": index % 8, "col": index % 12},
@@ -134,13 +134,13 @@ def _over_cap_image_heavy() -> dict[str, Any]:
     return _payload(routes=7, checkpoints=12, spawns=21, image_bytes=110_000)
 
 
-# --------------------------------------------------------------------------- §V120 (a)
+# ---------------------------------------------------------------------------
 
 
 def test_an_over_cap_stage_answers_instead_of_withholding() -> None:
-    # B169 verbatim: this shape returned ``partial`` with ``data: {}``, while the same
-    # routes came back fine at a smaller routes_page.page_size. The answer is now on the
-    # wire and under the cap.
+    # The original defect verbatim: this shape returned ``partial`` with ``data: {}``,
+    # while the same routes came back fine at a smaller routes_page.page_size. The answer
+    # is now on the wire and under the cap.
     env = _emit(_over_cap_route_heavy())
     assert env.data != {}
     assert env.data["stage"]["game_id"] == "act1football_01"
@@ -148,7 +148,7 @@ def test_an_over_cap_stage_answers_instead_of_withholding() -> None:
 
 
 def test_a_response_that_fits_is_left_alone() -> None:
-    # §V96 non-degenerate control: the plan is built on every call, so a shed that fired
+    # The non-degenerate control: the plan is built on every call, so a shed that fired
     # on measure rather than on the cap would strip this one too.
     payload = _payload(routes=8, checkpoints=10, spawns=12, image_bytes=4_000)
     env = _emit(payload)
@@ -158,13 +158,13 @@ def test_a_response_that_fits_is_left_alone() -> None:
     assert env.limitations == ()
 
 
-# --------------------------------------------------------------------------- §V120 (b)
+# ---------------------------------------------------------------------------
 
 
 def test_plan_order_follows_the_measured_weight() -> None:
     # The ordering RULE, both directions, on the two families the corpus actually holds.
     # A constant order passes one of these and fails the other -- which is the whole
-    # reason the declaration is the step set plus the rule (§V121 d).
+    # reason the declaration is the step set plus the rule.
     route_heavy = [step.part for step in stage_shed_plan(_over_cap_route_heavy())]
     image_heavy = [step.part for step in stage_shed_plan(_over_cap_image_heavy())]
     assert route_heavy[0] == "routes"
@@ -173,7 +173,7 @@ def test_plan_order_follows_the_measured_weight() -> None:
 
 
 def test_the_route_heavy_shape_keeps_its_image_and_spawns() -> None:
-    # The counted order sheds ONE part. The order §V120 (b) first illustrated would shed
+    # The counted order sheds ONE part. The order the rule first illustrated would shed
     # the image and the spawns first, still be over the cap, and trim the routes anyway.
     env = _emit(_over_cap_route_heavy())
     assert "map_image" in env.data
@@ -199,11 +199,11 @@ def test_ties_fall_back_to_the_declared_order() -> None:
     assert [step.part for step in stage_shed_plan({})] == list(_SHED_PARTS)
 
 
-# --------------------------------------------------------------------------- §V120 (c)
+# ---------------------------------------------------------------------------
 
 
 def test_page_totals_survive_the_shed() -> None:
-    # A total that shrank with the trim would read as §V67 CONFIRMED-none: "this stage
+    # A total that shrank with the trim would read as CONFIRMED-none: "this stage
     # has 41 routes". The count stays truthful; the shortfall is a limitation.
     env = _emit(_over_cap_route_heavy())
     assert env.data["routes_page"]["total"] == 116
@@ -228,7 +228,7 @@ def test_the_image_shed_limitation_names_its_flag() -> None:
     assert "include_routes" in shed_note
 
 
-# --------------------------------------------------------------------------- §V120 (d)
+# ---------------------------------------------------------------------------
 
 
 def test_a_paginated_trim_stays_ok() -> None:
@@ -247,13 +247,13 @@ def test_a_section_shed_is_partial() -> None:
     assert env.data["stage"]["game_id"] == "act1football_01"
 
 
-# --------------------------------------------------------------------------- §V113 (b)
+# ---------------------------------------------------------------------------
 
 
 def test_the_image_step_is_reachable() -> None:
     # The image step fires on ZERO live shapes on the promoted build (the heaviest real
     # image response sits at 95.5% of the cap), so its reachability is PROVEN here rather
-    # than declared -- T217 (a) owed the same proof for its own row step. The image is
+    # than declared -- the earlier arm owed the same proof for its own row step. The image is
     # sized UNDER MAX_MAP_IMAGE_BYTES: an image the renderer would refuse proves nothing,
     # and the point is that the shipped bound already permits one that overruns the frame.
     assert MAX_MAP_IMAGE_BYTES > 120_000
@@ -264,11 +264,11 @@ def test_the_image_step_is_reachable() -> None:
 
 
 def test_spawns_declares_no_step_because_it_cannot_reach_the_cap() -> None:
-    # §V117: unreachable ⇒ retire, and the retirement carries the count that makes it
+    # Unreachable, so retire -- and the retirement carries the count that makes it
     # true. PAGE_SIZE_MAX bounds the section at 100 rows of fixed scalars (19055 bytes on
     # the whole promoted build), so once routes are down to one row and the image is gone,
     # no stage can present a remainder near the cap. A spawns step would be an arm that
-    # cannot fire; if the bounds move, the §V120 (f) tripwire is what says so.
+    # cannot fire; if the bounds move, the tripwire is what says so.
     assert "spawns" not in _SHED_PARTS
     fat_spawns = _payload(routes=2, checkpoints=4, spawns=PAGE_SIZE_MAX, image_bytes=0)
     env = _emit(fat_spawns)
@@ -277,12 +277,12 @@ def test_spawns_declares_no_step_because_it_cannot_reach_the_cap() -> None:
     assert wire_size(env) < MAX_RESPONSE_BYTES // 2
 
 
-# ---------------------------------------------------------------------------- §V67
+# ----------------------------------------------------------------------------
 
 
 def test_a_trim_keeps_a_prefix_never_a_partial_row() -> None:
     # Rows leave whole and from the tail: a half-written route, or rows dropped from the
-    # middle, would make the kept list something no page_size ever returns (§V120 e).
+    # middle, would make the kept list something no page_size ever returns.
     payload = _over_cap_route_heavy()
     env = _emit(payload)
     kept = env.data["routes"]
@@ -292,9 +292,9 @@ def test_a_trim_keeps_a_prefix_never_a_partial_row() -> None:
 def test_a_route_trim_never_empties_the_section() -> None:
     # The floor is only observable where NO depth fits -- a page whose single heaviest
     # route already overruns the cap. Without it the step would return ``routes: []``
-    # beside ``routes_page.total: 116``, which is a §V67 lie no page_size can produce
+    # beside ``routes_page.total: 116``, which is a lie no page_size can produce
     # and which orphans every caveat describing the route data. The plan runs out
-    # instead, and the §V22 withhold takes over (the floor, not the first answer).
+    # instead, and the withhold takes over (the floor, not the first answer).
     env = _emit(_payload(routes=2, checkpoints=2_400))
     assert env.data.get("routes") != []
     assert env.status == "partial"

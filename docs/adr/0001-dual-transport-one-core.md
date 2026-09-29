@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Founder decision:** D1 (Deployment target), D2 (Language)
-- **Invariants:** §V14, §V13, §V22, §V23
 
 ## Context
 
@@ -29,8 +28,8 @@ either transport.
 
 ## Consequences
 
-- No duplicated domain logic (§V14); parity is testable (local↔remote parity
-  tests, T61).
+- No duplicated domain logic; parity is testable (local↔remote parity
+  tests).
 - Adding a tool means adding it once to the registry.
-- `stdio` keeps stdout clean for protocol only (§V13).
+- `stdio` keeps stdout clean for protocol only.
 - Reversal (e.g., diverging cores per transport) would require a new ADR.

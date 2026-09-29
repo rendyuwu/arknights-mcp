@@ -1,30 +1,30 @@
-"""Operator / talent importer (§T42; PRD §12.3).
+"""Operator / talent importer (PRD section 12.3).
 
 Parses the real ``character_table.json`` shape (a top-level id-keyed dict, no
 wrapper) into the normalized operator domain: ``operators`` + ``operator_aliases``
 + ``operator_phases`` + ``operator_skills`` + ``talents`` + ``talent_levels``, and
 drives :mod:`~arknights_mcp.importers.skills` for the ``skill_table`` half so one
-call still imports the whole domain (the split is §V38's, not the pipeline's).
+call still imports the whole domain (the split is the size cap's, not the pipeline's).
 
 ``uniequip_table.json`` is read here too, for one field: ``subProfDict`` supplies
-each operator's subclass DISPLAY NAME, which shipped as a bare id until §T202
-(§V69/B150). The file was already fetched for the module importer (§V41), so the
-pairing costs no new source -- it was fetched and never read (§V98).
+each operator's subclass DISPLAY NAME (it shipped as a bare id before). The file
+was already fetched for the module importer, so the pairing costs no new source --
+it was fetched and never read.
 
-Applies the explicit field allowlist and string sanitization (§V18/§V31) and
-attaches per-record provenance (§V17) to each core row (operators + skills);
+Applies the explicit field allowlist and string sanitization and
+attaches per-record provenance to each core row (operators + skills);
 sub-tables link through their parent. The skill-level + talent-candidate effect
 description TEMPLATE (mechanic text that references the blackboard keys) is
 imported into the ``gameplay_description`` columns and emitted alongside the
-blackboard for grounding (§V65 path (a), ADR 0010). Lore/story prose -- the
+blackboard for grounding (ADR 0010). Lore/story prose -- the
 operator's own ``description``, ``itemUsage``, ``itemDesc`` -- is never allowlisted
-and is excluded (§V16 ceiling holds; ADR 0010). Pure parsing
+and is excluded (ADR 0010). Pure parsing
 (:func:`parse_operators` / :func:`parse_skills`) is separated from insertion so it
 is unit-testable without a database.
 
 Nested numeric blocks (``spData``, phase attribute ``data``) and ``blackboard``
 parameter lists are each re-allowlisted from the raw source rather than stored
-whole, so no unallowlisted dict/list leaf reaches a ``*_json`` column (§V31).
+whole, so no unallowlisted dict/list leaf reaches a ``*_json`` column.
 """
 
 from __future__ import annotations
@@ -101,8 +101,8 @@ class ParsedTalentVariant:
     potential_rank: int | None
     blackboard: Any
     #: In-game talent effect description TEMPLATE (mechanic text referencing the
-    #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
-    #: at parse time (§V18); ``None`` when the candidate carries no description.
+    #: blackboard keys; ADR 0010). Allowlisted + sanitized + capped
+    #: at parse time; ``None`` when the candidate carries no description.
     description: str | None
 
 
@@ -152,10 +152,10 @@ class OperatorImportResult:
 
 
 def operator_pk_by_game_id(conn: sqlite3.Connection, server: str) -> dict[str, int]:
-    """``{operator game_id: operator_pk}`` for ``server`` (the single §V37 home).
+    """``{operator game_id: operator_pk}`` for ``server`` (the single home).
 
     Shared by the module importer (``modules.operator_pk`` FK resolution) and the banner
-    importer (featured-op soft-resolve, §V62/§T113): both need to map a source char id to
+    importer (featured-op soft-resolve): both need to map a source char id to
     an internal ``operator_pk`` for the same server, so the lookup lives in exactly one
     place rather than being copy-pasted per consumer.
     """
@@ -251,9 +251,9 @@ def _parse_talents(raw_talents: Any) -> tuple[list[ParsedTalent], list[dict[str,
                     unlock_level=as_int(cond.get("level")),
                     potential_rank=as_int(kept.get("requiredPotentialRank")),
                     blackboard=blackboard,
-                    # §V65 (a)/ADR 0010: as for skill levels above -- read the template
-                    # from the RAW candidate so the tag strip precedes the cap
-                    # (§V109/B154). `description` is on TALENT_CANDIDATE_ALLOWLIST.
+                    # ADR 0010: as for skill levels above -- read the template
+                    # from the RAW candidate so the tag strip precedes the cap.
+                    # `description` is on TALENT_CANDIDATE_ALLOWLIST.
                     description=template_text(cand.get("description")),
                 )
             )
@@ -272,16 +272,16 @@ def _operator_aliases(name: str | None, appellation: str | None) -> list[ParsedA
 
 
 def parse_subclass_names(uniequip_raw: Any) -> dict[str, str]:
-    """``uniequip_table.subProfDict`` → ``{subProfessionId: display name}`` (§V69/B150).
+    """``uniequip_table.subProfDict`` → ``{subProfessionId: display name}``.
 
     The name for the ``subProfessionId`` every operator row already stores lives in the
     module table, keyed by that same id: ``{"corecaster": {"subProfessionId":
     "corecaster", "subProfessionName": "Core Caster", ...}}``. Verified against the
     pinned upstream for both regions; CN ships the Chinese label under the same key, so
-    the map is region-scoped exactly like every other display string (§V5).
+    the map is region-scoped exactly like every other display string.
 
     Returns an empty map for an absent/foreign shape, which leaves ``subclass_name``
-    NULL rather than guessing -- the §V69 limitation arm. An entry with no id or no
+    NULL rather than guessing -- the limitation arm. An entry with no id or no
     name is skipped for the same reason; the id is read from the entry's own
     ``subProfessionId`` rather than the dict key so a mismatch cannot invent a pairing.
     """
@@ -306,7 +306,7 @@ def parse_operators(
     """Transform raw ``character_table`` (id-keyed dict) into typed operators.
 
     Summon tokens + map traps (``profession`` in ``TOKEN``/``TRAP``) are skipped.
-    ``subclass_names`` pairs each ``subProfessionId`` with its display name (§V69/B150);
+    ``subclass_names`` pairs each ``subProfessionId`` with its display name;
     an id the map does not cover keeps a NULL name rather than a fabricated one, which a
     snapshot without ``uniequip_table.json`` makes the norm rather than the exception.
     """
@@ -365,7 +365,7 @@ def insert_operators(
     character_source_path: str,
     skills_inserted: int = 0,
 ) -> OperatorImportResult:
-    """Insert operators + aliases + phases + skill links + talents (§V17/§V33)."""
+    """Insert operators + aliases + phases + skill links + talents."""
     counts = {"operators": 0, "phases": 0, "talents": 0, "links": 0, "aliases": 0}
     for op in parsed:
         provenance_id = insert_record_provenance(
@@ -377,7 +377,7 @@ def insert_operators(
         )
         # A duplicate character id (UNIQUE(server, game_id)) or a repeated phase /
         # slot / talent index collides on a UNIQUE/PK constraint; translate to a
-        # typed ImporterError instead of tearing down the build (§V33 / §V3).
+        # typed ImporterError instead of tearing down the build.
         with integrity_guard(
             f"operator {op.game_id!r} collides on a UNIQUE/PK constraint (dup id or index)",
             ImporterError,
@@ -422,13 +422,13 @@ def insert_operators(
 def _insert_aliases(
     conn: sqlite3.Connection, operator_pk: int, aliases: list[ParsedAlias], server: str
 ) -> int:
-    # Stamp each alias with its language-locale tag (§V57/T98). An en/cn operator's
+    # Stamp each alias with its language-locale tag. An en/cn operator's
     # canonical name+appellation are in that region's language, so the locale is
     # derived from the fact region via the shared REGION_TO_NAME_LOCALE map (en->en,
-    # cn->zh; single §V37 home). This is the real fresh-build "backfill": migration
+    # cn->zh; single home). This is the real fresh-build "backfill": migration
     # 0011's UPDATE runs against an empty candidate, so the importer is the guarantor
     # that new alias rows carry a locale. The tag is NOT a fact region -- the operator
-    # still returns its own region facts (§V57). An unmapped region falls back to the
+    # still returns its own region facts. An unmapped region falls back to the
     # raw server string rather than NULL, so the column is always populated.
     locale = REGION_TO_NAME_LOCALE.get(server, server)
     for alias in aliases:
@@ -477,7 +477,7 @@ def _insert_skill_links(
         skill_pk = skill_pk_by_game_id.get(link.skill_game_id)
         if skill_pk is None:
             # Operator names a skill absent from skill_table: skip the link rather
-            # than violate the operator_skills.skill_pk FK (§21.2 unresolved ref).
+            # than violate the operator_skills.skill_pk FK (section 21.2 unresolved ref).
             _LOG.warning(
                 "operator %s references skill %r absent from skill_table; skipping link",
                 game_id,
@@ -515,7 +515,7 @@ def _insert_talents(conn: sqlite3.Connection, operator_pk: int, talents: list[Pa
                     variant.potential_rank,
                     None,  # condition captured by the typed phase/level/rank columns
                     json_or_none(variant.blackboard),
-                    variant.description,  # effect template (§V65 (a)/ADR 0010)
+                    variant.description,  # effect template (ADR 0010)
                 ),
             )
     return len(talents)
@@ -538,10 +538,10 @@ def import_operators(
     ``skill_pk`` (FK).
 
     ``uniequip_table.json`` is read here for its ``subProfDict`` alone -- the display
-    name of each operator's subclass (§V69/B150). It is read tolerantly for the same
+    name of each operator's subclass. It is read tolerantly for the same
     reason the skill table is: a combat-only snapshot has neither, and its absence
     leaves ``subclass_name`` NULL rather than failing the domain. The file is already
-    in the sync's supplementary set for the module importer (§V41), so pairing the name
+    in the sync's supplementary set for the module importer, so pairing the name
     costs no new source; the module importer reads its own keys from the same file.
     """
     if not adapter.exists(character_table_path):

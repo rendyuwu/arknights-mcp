@@ -1,7 +1,7 @@
-"""§T52/§V10: OIDC resource-server bearer validation.
+"""OIDC resource-server bearer validation.
 
 Drives :class:`~arknights_mcp.auth.oidc.OidcTokenVerifier` with a local RS256
-keypair and an injected JWKS resolver (no network), covering every §V10 rule:
+keypair and an injected JWKS resolver (no network), covering every validation rule:
 RS256-only (no ``none``/HS* key confusion), exact issuer, string-or-array audience,
 required registered claims, 60s leeway, ``iss|sub`` identity, ``azp`` client id, and
 the typed ``invalid_token`` / ``insufficient_scope`` rejections.
@@ -28,7 +28,7 @@ ISSUER = "https://issuer.example.com/"
 AUDIENCE = "arknights-mcp"
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
 
-# §V37: the honest-token substrate (one RSA keypair + static JWKS resolver) has a
+# The honest-token substrate (one RSA keypair + static JWKS resolver) has a
 # single home in tests.support.oidc_issuer -- share it rather than regenerating a
 # parallel keypair here. The adversarial token construction below (HS256 confusion,
 # alg=none, omitted claims) stays local: it builds on the shared keypair but is this
@@ -50,8 +50,8 @@ class _RaisingJWKS:
 
 
 def _settings(required: tuple[str, ...] = ("arknights:read",)) -> OidcSettings:
-    # The advertise list carries the flow-only scope the AS never mints into a token
-    # (§V45 split): validation must key on `required` alone (B126).
+    # The advertise list carries the flow-only scope the AS never mints into a token:
+    # validation must key on `required` alone.
     return OidcSettings(
         issuer=ISSUER,
         audience=AUDIENCE,
@@ -98,7 +98,7 @@ def test_valid_token_yields_principal() -> None:
     assert principal.subject == "auth0|user123"
     assert principal.client_id == "client-abc"
     assert principal.scopes == frozenset({"arknights:read"})
-    # §V10: identity is namespaced iss|sub (sub unique only per issuer).
+    # Identity is namespaced iss|sub (sub unique only per issuer).
     assert principal.principal_id == f"{ISSUER}|auth0|user123"
 
 
@@ -111,7 +111,7 @@ def test_expired_token_beyond_leeway_rejected() -> None:
 
 
 def test_expired_within_leeway_accepted() -> None:
-    # §V10: 60s leeway absorbs small clock skew.
+    # 60s leeway absorbs small clock skew.
     now = int(time.time())
     principal = _verifier().verify(_token(exp=now - 30, iat=now - 90))
     assert principal.subject == "auth0|user123"
@@ -124,7 +124,7 @@ def test_wrong_issuer_rejected() -> None:
 
 
 def test_issuer_trailing_slash_is_exact() -> None:
-    # §V10: issuer matched exactly, trailing slash included.
+    # Issuer matched exactly, trailing slash included.
     with pytest.raises(AuthError):
         _verifier().verify(_token(iss=ISSUER.rstrip("/")))
 
@@ -136,7 +136,7 @@ def test_wrong_audience_rejected() -> None:
 
 
 def test_audience_as_array_containing_expected_accepted() -> None:
-    # §V10: Auth0 emits aud as an array once openid is added → accept both shapes.
+    # Auth0 emits aud as an array once openid is added → accept both shapes.
     principal = _verifier().verify(_token(aud=[AUDIENCE, "https://other.api"]))
     assert principal.subject == "auth0|user123"
 
@@ -165,7 +165,7 @@ def _forge_hs256(payload: dict[str, Any], secret: bytes) -> str:
 
 
 def test_hs256_key_confusion_rejected() -> None:
-    # §V10: an HS256 token signed with the public key PEM as the shared secret must
+    # An HS256 token signed with the public key PEM as the shared secret must
     # NOT validate -- algorithms=["RS256"] forecloses symmetric-key confusion.
     forged = _forge_hs256(_payload(), _PUBLIC_PEM)
     with pytest.raises(AuthError) as exc:
@@ -174,7 +174,7 @@ def test_hs256_key_confusion_rejected() -> None:
 
 
 def test_alg_none_rejected() -> None:
-    # §V10: alg=none must be rejected (no unsigned tokens).
+    # No unsigned tokens: alg=none is rejected.
     unsigned = jwt.encode(_payload(), key="", algorithm="none")
     with pytest.raises(AuthError) as exc:
         _verifier().verify(unsigned)
@@ -206,13 +206,13 @@ def test_insufficient_scope_is_typed_403() -> None:
 
 
 def test_scope_from_permissions_array_only() -> None:
-    # §V10: granted authority = scope ∪ permissions; Auth0 M2M may emit permissions.
+    # Granted authority = scope ∪ permissions; Auth0 M2M may emit permissions.
     principal = _verifier().verify(_token(scope=_OMIT, permissions=["arknights:read"]))
     assert principal.scopes == frozenset({"arknights:read"})
 
 
 def test_required_scopes_are_anded_across_sources() -> None:
-    # §V10: every required scope must be present; the union spans scope+permissions.
+    # Every required scope must be present; the union spans scope+permissions.
     verifier = _verifier(required=("arknights:read", "arknights:stages"))
     with pytest.raises(AuthError):
         verifier.verify(_token(scope="arknights:read"))  # missing arknights:stages
@@ -221,7 +221,7 @@ def test_required_scopes_are_anded_across_sources() -> None:
 
 
 def test_advertised_only_scope_is_never_required() -> None:
-    # §V45 scope split (B126): the PRM advertises `offline_access` so an interactive
+    # The PRM advertises `offline_access` so an interactive
     # client requests a refresh token, but the AS consumes it and never mints it into
     # the access token -- validation keys on required_scopes alone, so a token that
     # grants only `arknights:read` still verifies. Requiring the advertised list would
@@ -239,7 +239,7 @@ def test_missing_azp_yields_none_client_id() -> None:
 
 
 def test_auth_error_message_carries_no_token() -> None:
-    # §V10/§V12: rejection descriptions never contain the token or a secret.
+    # Rejection descriptions never contain the token or a secret.
     token = _token(iss="https://evil.example.com/")
     with pytest.raises(AuthError) as exc:
         _verifier().verify(token)
@@ -254,12 +254,12 @@ def test_verify_token_adapter_valid_returns_access_token() -> None:
     assert access is not None
     assert access.subject == "auth0|user123"
     assert access.client_id == "client-abc"
-    # §V12: the SDK AccessToken never echoes the raw bearer.
+    # The SDK AccessToken never echoes the raw bearer.
     assert access.token == ""
 
 
 def test_verify_token_adapter_invalid_returns_none() -> None:
-    # §V10: "return None past auth backend" on any validation failure.
+    # "Return None past auth backend" on any validation failure.
     verifier = _verifier()
     token = _token(scope="other:read")
     assert anyio.run(verifier.verify_token, token) is None

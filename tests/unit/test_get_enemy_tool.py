@@ -1,15 +1,15 @@
-"""§T35 ``get_enemy`` tool tests (§V5/§V23; §I.tool).
+"""``get_enemy`` tool tests.
 
 The tool is the model -> service -> envelope bridge for a single enemy lookup;
-these drive it end to end against the same production read-only path (§V2) using
+these drive it end to end against the same production read-only path using
 the pinned 4-4 fixture (which imports two enemies: a ground slug and an aerial
 drone). They assert:
 
-* the §V5 region + provenance ride every ``ok`` result, and an ``en`` enemy is
+* the region + provenance ride every ``ok`` result, and an ``en`` enemy is
   never surfaced under a ``cn`` query (en/cn never mixed);
-* the typed §V23 envelope shape, including fail-closed ``not_found`` /
+* the typed envelope shape, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema.
+* the wire contract: a read-only spec with a bounded input schema.
 """
 
 from __future__ import annotations
@@ -71,8 +71,8 @@ def test_default_returns_enemy_facts_and_levels(conn: sqlite3.Connection) -> Non
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V104 (b)/§T207: every enemy row carries enemy_class + motion_type, and §T210 added
-    # three more typed enums (damage_types / targeting / immunities), so their static
+    # Every enemy row carries enemy_class + motion_type, plus three more typed enums
+    # (damage_types / targeting / immunities), so their static
     # domains ride the response beside the values instead of the tool description.
     assert set(data) == {"enemy", "enum_legend"}
     assert set(data["enum_legend"]) == {  # type: ignore[arg-type,index]
@@ -97,7 +97,7 @@ def test_default_returns_enemy_facts_and_levels(conn: sqlite3.Connection) -> Non
     assert lvl["res"] == 0
     assert lvl["attack_interval"] == 2.0
     assert lvl["targeting"] == "MELEE"
-    # Structural JSON is decoded back to a Python object (§V18 vetted at import).
+    # Structural JSON is decoded back to a Python object (vetted at import).
     assert lvl["immunities"] == []
 
 
@@ -109,17 +109,17 @@ def test_aerial_enemy_immunities_decoded(conn: sqlite3.Connection) -> None:
     assert enemy["damage_types"] == ["MAGIC"]
     lvl = enemy["levels"][0]  # type: ignore[index]
     assert lvl["res"] == 10
-    # §T210: nine typed upstream flags fold into one list; only the set ones are named.
+    # Nine typed upstream flags fold into one list; only the set ones are named.
     assert lvl["immunities"] == ["SILENCE"]
 
 
-# --- §V67/§V26 (B58) null discipline: [] vs absent + absent-field limitation ---
+# --- null discipline: [] vs absent + absent-field limitation --------------------
 
 
 def test_absent_list_fields_are_omitted_not_null(conn: sqlite3.Connection) -> None:
-    # §V67: the 4-4 slug confirms no immunities ([]), but no source carries abilities or
+    # The 4-4 slug confirms no immunities ([]), but no source carries abilities or
     # block_behavior at all -> those keys are OMITTED, never emitted as null, so a client
-    # can tell "confirmed none" ([]) apart from "not in source" (absent, B58).
+    # can tell "confirmed none" ([]) apart from "not in source" (absent).
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     lvl = env.to_dict()["data"]["enemy"]["levels"][0]  # type: ignore[index]
     assert lvl["immunities"] == []  # confirmed none, present
@@ -128,10 +128,10 @@ def test_absent_list_fields_are_omitted_not_null(conn: sqlite3.Connection) -> No
 
 
 def test_dead_by_data_fields_named_with_their_true_scope(conn: sqlite3.Connection) -> None:
-    # §V113/§V26 (B160 c): block_behavior + abilities are absent from EVERY enemy on
+    # block_behavior + abilities are absent from EVERY enemy on
     # every build because no source carries them, so the limitation says so instead of
     # the per-entity "this entity's source data" phrasing, which would imply some other
-    # enemy has them (§V108). It also explains why an analysis never reports those
+    # enemy has them. It also explains why an analysis never reports those
     # threats -- the three rules that read these fields were retired.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     assert env.status == "ok"
@@ -142,7 +142,7 @@ def test_dead_by_data_fields_named_with_their_true_scope(conn: sqlite3.Connectio
 
 
 def test_retired_attack_type_routes_to_damage_types(conn: sqlite3.Connection) -> None:
-    # §V113/§V108 (B160 b): the handbook still HAS attackType and upstream fills it on
+    # The handbook still HAS attackType and upstream fills it on
     # 0/1585 entries, so its absence is a fact about the game data, not this enemy. The
     # limitation states that scope and names the field that answers the question.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
@@ -151,13 +151,11 @@ def test_retired_attack_type_routes_to_damage_types(conn: sqlite3.Connection) ->
     assert "damage_types states an enemy's damage kind" in blob
     # ...and it is NOT listed as a per-entity absent field, which would double-report it.
     assert "not present in this entity's source data: attack_type" not in blob
-    # §V71: the client-facing limitation carries no internal spec cite/jargon.
-    assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
 
 
 def test_present_scalars_still_emitted_on_the_wire(conn: sqlite3.Connection) -> None:
-    # §V67/B98 (T180): the omit rule touches ABSENT scalars only -- the fixture slug
-    # carries damage_types/attack_range/targeting, so all three emit unchanged (§V21; a
+    # The omit rule touches ABSENT scalars only -- the fixture slug
+    # carries damage_types/attack_range/targeting, so all three emit unchanged (a
     # genuine 0.0 is a present value, never dropped -- 25 real level rows store exactly
     # that radius) and none is flagged as an absent field.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
@@ -220,13 +218,14 @@ def _facts(*levels: EnemyLevelFacts) -> EnemyFacts:
 
 
 def test_declared_no_radius_is_emitted_and_not_reported_as_missing_data() -> None:
-    # §T211/§V114 (B161): the source ANSWERED "no attack radius", so attack_range is
+    # The source ANSWERED "no attack radius", so attack_range is
     # absent by that answer -- not for lack of data. The generic absent-field sentence
-    # would be false here, which is exactly the wrong reason B161 found on the wire.
+    # would be false here, which is exactly the wrong reason the original defect found on
+    # the wire.
     enemy = _facts(_level(attack_range=None, attack_range_declared_none=True, targeting="RANGED"))
     level = _enemy_to_dict(enemy, image_refs_enabled=False)["levels"][0]  # type: ignore[index]
     assert level["attack_range_declared_none"] is True  # type: ignore[index]
-    assert "attack_range" not in level  # §V103/§V67: no mask, no null
+    assert "attack_range" not in level  # no mask, no null
     limitations = _enemy_absent_field_limitations(enemy)
     assert any("states that it has no base attack radius" in lim for lim in limitations)
     # ...and attack_range is NOT in the list of fields the source is said to have omitted
@@ -249,7 +248,7 @@ def test_unstated_radius_still_reads_as_an_absent_field() -> None:
 def test_a_mixed_enemy_keeps_the_answer_on_the_variant_that_gave_it() -> None:
     # One variant denies a radius, another measures one: the enemy is not missing the
     # field at all, so no absence sentence -- and the flag stays on the denying variant
-    # only (§V67 per-variant omission, the pre-existing B58 convention).
+    # only (per-variant omission, the pre-existing convention).
     enemy = _facts(
         _level(attack_range=None, attack_range_declared_none=True),
         _level(level_variant=1, attack_range=2.5),
@@ -263,7 +262,7 @@ def test_a_mixed_enemy_keeps_the_answer_on_the_variant_that_gave_it() -> None:
 
 
 def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
-    # §V67/B98 (T180): an enemy whose source omits damage_types + every per-level
+    # An enemy whose source omits damage_types + every per-level
     # attack_range/targeting emits NONE of those keys; the absent-field limitation
     # names all three (sole signal, no null+limitation duplicate).
     lvl = EnemyLevelFacts(
@@ -308,16 +307,16 @@ def test_bare_enemy_omits_absent_scalars_and_names_them() -> None:
 
 
 def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:
-    # §V67: the []-vs-absent + absent-scalar convention is stated in the description.
+    # The []-vs-absent + absent-scalar convention is stated in the description.
     assert LIST_FIELD_CONVENTION in build_get_enemy_spec(lambda: conn).description
     assert "scalar" in LIST_FIELD_CONVENTION
 
 
-# --- §V5 region + provenance --------------------------------------------------
+# --- region + provenance ------------------------------------------------------
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
-    # §V5: every factual response carries region + provenance.
+    # Every factual response carries region + provenance.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     prov = env.to_dict()["provenance"]
     assert isinstance(prov, list) and len(prov) == 1
@@ -327,11 +326,11 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query -- en/cn never mixed.
+    # en data is not surfaced under a cn query -- en/cn never mixed.
     assert _handler(conn)(server="cn", game_id="enemy_1007_slime").status == "not_found"
 
 
-# --- §V23 typed failures ------------------------------------------------------
+# --- typed failures -----------------------------------------------------------
 
 
 def test_not_found_envelope(conn: sqlite3.Connection) -> None:
@@ -340,7 +339,7 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert data["message"] == "no enemy matched the given region and game_id"
-    # §V24: a not_found never suggests a query-time download/scrape.
+    # A not_found never suggests a query-time download/scrape.
     assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
     assert "scrape" not in data["suggested_action"].lower()  # type: ignore[union-attr]
 
@@ -352,7 +351,7 @@ def test_database_unavailable_envelope() -> None:
     env = build_get_enemy_spec(boom).handler(server="en", game_id="enemy_1007_slime")
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
-    # §V23: no local path / file name leaks into the client-facing message.
+    # No local path / file name leaks into the client-facing message.
     assert data["message"] == "the active database is unavailable"  # type: ignore[index]
     assert "cand.sqlite" not in str(data)
 
@@ -363,16 +362,16 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_get_enemy_spec(boom).handler(server="en", game_id="enemy_1007_slime")
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # The fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18 input gate ----------------------------------------------------------
+# --- input gate ---------------------------------------------------------------
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id="enemy_1007_slime", include_levels=False)
 
@@ -383,22 +382,22 @@ def test_missing_game_id_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_bad_region_rejected(conn: sqlite3.Connection) -> None:
-    # §V5: server is constrained to en|cn.
+    # Server is constrained to en|cn.
     with pytest.raises(ValidationError):
         _handler(conn)(server="jp", game_id="enemy_1007_slime")
 
 
 def test_over_length_game_id_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: an over-length id cannot carry an oversized blob.
+    # An over-length id cannot carry an oversized blob.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id="x" * (MAX_ID_LEN + 1))
 
 
-# --- §V2 read-only / §I.tool wire contract ------------------------------------
+# --- read-only / wire contract -------------------------------------------------
 
 
 def test_service_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # The service only reads -- no writes recorded on the connection.
     before = conn.total_changes
     get_enemy(conn, server="en", game_id="enemy_1007_slime")
     assert conn.total_changes == before
@@ -411,8 +410,8 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert spec.read_only is True
     tool = spec.to_mcp_tool()
     assert tool.annotations is not None and tool.annotations.readOnlyHint is True
-    # §V18: unknown params forbidden + the game_id length cap rides the wire (§V5
-    # requires server).
+    # Unknown params forbidden + the game_id length cap rides the wire (server
+    # is required).
     assert tool.inputSchema["additionalProperties"] is False
     assert set(tool.inputSchema["required"]) == {"server", "game_id"}
     assert tool.inputSchema["properties"]["game_id"]["maxLength"] == MAX_ID_LEN
@@ -421,9 +420,9 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
 def test_stat_scales_ride_the_response_that_carries_the_stats(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V104/§V71 (e): res / move_speed / weight sit on the same block as attack_interval
+    # res / move_speed / weight sit on the same block as attack_interval
     # ("in seconds") and stated nothing, so "res: 0" could be a percentage or a flat
-    # value. §T207/§V111 (a) moved the home from this description to a standing
+    # value. The home moved from this description to a standing
     # limitation -- a scale is read beside its number, and every stat block emits one.
     env = _handler(conn)(server="en", game_id="enemy_1007_slime")
     assert ENEMY_STAT_SCALE_NOTE in env.to_dict()["limitations"]

@@ -1,7 +1,7 @@
-"""T212 since/until bound FORM (§V116/B163; §V105/§V26/§V37).
+"""Since/until bound FORM.
 
-B48/B49 typed the bound SHAPE and T201/§V105 typed the bound RELATION; neither typed the
-NOTATION, and the window compares TEXT. Counted on the promoted build before this task,
+The bound SHAPE was already typed, and so was the bound RELATION; neither typed the
+NOTATION, and the window compares TEXT. Counted on the promoted build before the fix,
 all four arms of that gap were live:
 
 1. ``since="20260101"`` (ISO basic format -- accepted by ``fromisoformat``) sorted above
@@ -9,7 +9,7 @@ all four arms of that gap were live:
    regions, where the extended form returned 14/22 announcements + 44/45 banners;
 2. ``until="20260101"`` sorted below nothing, so the bound was silently IGNORED and the
    FULL archive came back -- a false inclusion, which reads as a filtered answer;
-3. T201's own guard used a bare ``since > until`` while the banner SQL compares the upper
+3. the relation guard used a bare ``since > until`` while the banner SQL compares the upper
    bound against ``until || '~'``, so the legitimate intra-day pair
    ``since="<day>T00:00:00", until="<day>"`` was rejected as impossible on every one of
    the 359 en / 424 cn banner-open days, withholding rows the query would have returned;
@@ -23,7 +23,7 @@ mixed-notation pair now ANSWERS instead of being rejected (its instants were nev
 contradictory), and a coarsened bound is disclosed rather than silently applied.
 
 The real-build half is ``tests/contract/test_window_bound_forms.py``: the harm is a
-COLLATION against the dates really stored, which a fixture cannot witness (§V116 (d)).
+COLLATION against the dates really stored, which a fixture cannot witness.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ from arknights_mcp.util.iso_bounds import (
 _SOURCE_ID = "local_snapshot"
 
 #: Notations ``datetime.fromisoformat`` accepts, paired with the canonical rendering each
-#: must collapse to. Every pair denotes ONE instant; before T212 each sorted differently
+#: must collapse to. Every pair denotes ONE instant; before the fix each sorted differently
 #: against the stored columns, which is the whole defect.
 NOTATIONS: tuple[tuple[str, str], ...] = (
     ("2026-07-01", "2026-07-01"),
@@ -69,7 +69,7 @@ NOTATIONS: tuple[tuple[str, str], ...] = (
 )
 
 #: Text no ISO parse can place: still rejected, at the same gate, with the same message
-#: (§V116 (a) -- normalizing is not loosening).
+#: (normalizing is not loosening).
 NOT_A_BOUND = ("july", "2026", "2026-01", "2026-13-01", "2026-07-01T99:00:00", "tomorrow")
 
 #: The three announcements seeded below, oldest first.
@@ -132,7 +132,7 @@ _EN_BANNERS = [
 
 
 class _FakeFetcher:
-    """Returns a preset announcement feed payload (no network, §V1)."""
+    """Returns a preset announcement feed payload (no network)."""
 
     def __init__(self, payload: Any) -> None:
         self._payload = payload
@@ -199,7 +199,7 @@ def _banner_ids(conn: sqlite3.Connection, **kwargs: Any) -> list[str]:
     return [b.game_id for b in get_banners(conn, server="en", **kwargs).banners]
 
 
-# --- the render itself (§V116 (a), §V37 single home) ---------------------------
+# --- the render itself ---------------------------------------------------------
 
 
 @pytest.mark.parametrize(("written", "canonical"), NOTATIONS)
@@ -225,7 +225,7 @@ def test_text_that_denotes_no_instant_is_still_rejected(value: str) -> None:
 
 def test_a_date_bound_stays_a_date_and_a_datetime_stays_a_datetime() -> None:
     # Granularity carries intent, so the render preserves it; only the column's owner
-    # coarsens it (§V116 (b)).
+    # coarsens it.
     assert canonical_iso_bound("20260701") == "2026-07-01"
     assert canonical_iso_bound("20260701T000000") == "2026-07-01T00:00:00"
 
@@ -244,7 +244,7 @@ def test_day_granular_column_coarsens_inclusively_and_says_which_bound() -> None
     assert coarsened_window_bounds("2026-07-01T10:00:00", None, granularity="datetime") == ()
 
 
-# --- the model gate normalizes (§V116 (a)) -------------------------------------
+# --- the model gate normalizes -------------------------------------------------
 
 
 @pytest.mark.parametrize("model", (GetAnnouncementsInput, GetBannersInput))
@@ -256,17 +256,17 @@ def test_model_gate_hands_the_service_canonical_bounds(
     assert (parsed.since, parsed.until) == (canonical, canonical)
 
 
-# --- the predicate mirrors the SQL, sentinel included (§V116 (c)) --------------
+# --- the predicate mirrors the SQL, sentinel included --------------------------
 
 
 @pytest.mark.parametrize(
     ("since", "until"),
     [
-        # The intra-day pair B163 arm 3 rejected on every banner-open day of the build.
+        # The intra-day pair the old guard rejected on every banner-open day of the build.
         ("2026-07-20T00:00:00", "2026-07-20"),
         ("2026-07-20T23:59:59", "2026-07-20"),
         # A mixed-notation pair: chronologically ascending, so it must ANSWER rather than
-        # be rejected for its notation (T201's second message, superseded by the render).
+        # be rejected for its notation (superseded by the render).
         ("20260701", "2026-07-20"),
         ("2026-07-01T10:00:00Z", "2026-07-20T11:00:00+00:00"),
         ("2026-07-01", "2026-07-01"),
@@ -314,12 +314,12 @@ def test_a_window_nothing_can_satisfy_is_rejected_as_an_inversion(since: str, un
 def test_predicate_is_the_comparison_the_window_performs(since: str, until: str) -> None:
     # The guard must fire on exactly the pairs the SQL cannot match: canonical text,
     # upper bound terminated by the sentinel the banner SQL appends. One notation off in
-    # either direction is a withheld answer (too wide) or a re-admitted B143 (too narrow).
+    # either direction is a withheld answer (too wide) or a re-admitted inversion (too narrow).
     impossible = canonical_iso_bound(since) > canonical_iso_bound(until) + UNTIL_UPPER_SENTINEL
     assert (inverted_window_reason(since, until) is not None) is impossible
 
 
-# --- the services render too (§V19's one-contract-both-places shape) -----------
+# --- the services render too ---------------------------------------------------
 
 
 @pytest.mark.parametrize(("written", "canonical"), NOTATIONS)
@@ -342,13 +342,13 @@ def test_banner_window_is_notation_independent(
 def test_basic_format_lower_bound_no_longer_empties_the_window(
     conn: sqlite3.Connection,
 ) -> None:
-    # B163 arm 1, on both domains: this exact call returned nothing at all.
+    # The first arm, on both domains: this exact call returned nothing at all.
     assert _announce_ids(conn, since="20260701") == ["ann-en-3", "ann-en-2", "ann-en-1"]
     assert _banner_ids(conn, since="20260701") == ["LIMITED_1", "CLASSIC_1", "NORMAL_1"]
 
 
 def test_basic_format_upper_bound_is_no_longer_ignored(conn: sqlite3.Connection) -> None:
-    # B163 arm 2, the false-inclusion half: this call used to return the FULL archive.
+    # The second arm, the false-inclusion half: this call used to return the FULL archive.
     assert _announce_ids(conn, until="20260710") == ["ann-en-2", "ann-en-1"]
     assert _banner_ids(conn, until="20260710") == ["CLASSIC_1", "NORMAL_1"]
 
@@ -356,16 +356,16 @@ def test_basic_format_upper_bound_is_no_longer_ignored(conn: sqlite3.Connection)
 def test_the_intra_day_window_answers_instead_of_being_rejected(
     conn: sqlite3.Connection,
 ) -> None:
-    # B163 arm 3: rejected as "impossible" before, though the banner opening at 11:00 that
-    # day satisfies both bounds -- a rejection that withholds a row (§V116 (c)).
+    # The third arm: rejected as "impossible" before, though the banner opening at 11:00 that
+    # day satisfies both bounds -- a rejection that withholds a row.
     assert _banner_ids(conn, since="2026-07-20T00:00:00", until="2026-07-20") == ["LIMITED_1"]
 
 
 def test_a_mixed_notation_pair_answers_instead_of_being_rejected(
     conn: sqlite3.Connection,
 ) -> None:
-    # T201 rejected this pair naming the notation; its instants are ordered, so answering
-    # it is the truthful outcome (§V105 as amended).
+    # The old guard rejected this pair naming the notation; its instants are ordered, so
+    # answering it is the truthful outcome.
     assert _banner_ids(conn, since="20260701", until="2026-07-10") == ["CLASSIC_1", "NORMAL_1"]
     assert _announce_ids(conn, since="20260701", until="2026-07-10") == ["ann-en-2", "ann-en-1"]
 
@@ -382,19 +382,19 @@ def test_service_direct_junk_bound_is_rejected_not_silently_empty(
     conn: sqlite3.Connection,
 ) -> None:
     # The gate's rejection mirrored at the service: "july" used to reach the SQL and empty
-    # the window there (B48's own harm, one layer down).
+    # the window there (one layer down).
     for service in (get_announcements, get_banners):
         with pytest.raises(ValueError):
             service(conn, server="en", since="july")  # type: ignore[operator]
 
 
-# --- the day-granular disclosure (§V116 (b)/§V26) ------------------------------
+# --- the day-granular disclosure -----------------------------------------------
 
 
 def test_sub_day_bound_keeps_its_day_and_discloses_the_widening(
     conn: sqlite3.Connection,
 ) -> None:
-    # B163 arm 4: comparing "2026-07-01T10:00:00" against the day-granular date column
+    # The fourth arm: comparing "2026-07-01T10:00:00" against the day-granular date column
     # verbatim dropped that whole day, and the day is exactly what the column can place.
     result = get_announcements(conn, server="en", since="2026-07-01T10:00:00")
     assert [a.announce_id for a in result.announcements] == ["ann-en-3", "ann-en-2", "ann-en-1"]
@@ -413,7 +413,7 @@ def test_the_disclosure_names_both_bounds_when_both_are_widened(
 
 
 def test_no_disclosure_when_no_bound_was_widened(conn: sqlite3.Connection) -> None:
-    # A caveat that always fires teaches a client nothing (§V71 (f)): a day-granular bound
+    # A caveat that always fires teaches a client nothing: a day-granular bound
     # on a day-granular column loses nothing, and the plain listing carries no window.
     for kwargs in ({"since": "2026-07-01", "until": "2026-07-20"}, {}):
         result = get_announcements(conn, server="en", **kwargs)  # type: ignore[arg-type]
@@ -429,17 +429,17 @@ def test_banner_window_needs_no_granularity_caveat(conn: sqlite3.Connection) -> 
 
 
 def test_the_disclosure_is_client_safe_text(conn: sqlite3.Connection) -> None:
-    # §V71 (b): it reaches a client verbatim, so no internal cite or jargon rides it.
+    # It reaches a client verbatim, so no internal cite or jargon rides it.
     result = get_announcements(conn, server="en", since="2026-07-01T10:00:00")
     text = " ".join(result.limitations)
-    for token in ("§V", "§T", "B163", "B48", "granular", "lexicograph", "collat"):
+    for token in ("granular", "lexicograph", "collat"):
         assert token not in text
 
 
 def test_the_windowed_empty_advice_is_only_given_when_widening_can_help(
     conn: sqlite3.Connection,
 ) -> None:
-    # T206's "widen or drop the since/until bounds" was FALSE advice under B163 arm 1: the
+    # The "widen or drop the since/until bounds" advice was FALSE under the first arm: the
     # window was empty because of the notation, and no widening could have fixed it. With
     # the render in place, an empty window really is a window question again.
     empty = get_announcements(conn, server="en", since="2026-08-01", until="2026-08-02")

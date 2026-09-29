@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-07-21
 - **Founder decision:** D5 (MVP domain scope — banners deferred)
-- **Invariants:** §V62, §V16, §V17, §V5, §V30, §V26, §V7
 
 ## Context
 
@@ -15,8 +14,8 @@ snapshots" and, separately, "pull probability and spark planning" as distinct
 Phase 2 candidates.
 
 Two of those Phase 2 candidates have already been carved in under the same
-pattern this ADR follows: the Penguin Statistics drop-rate cache (§V52–V55) and
-the official-announcement metadata adapter (§V56, ADR 0005 D14 gate). Each took
+pattern this ADR follows: the Penguin Statistics drop-rate cache and
+the official-announcement metadata adapter (ADR 0005 D14 gate). Each took
 one narrowly scoped **historical FACT** slice of a deferred domain, left the
 **planning/prediction** slice deferred, and pinned the boundary with an
 invariant. Banners are the third.
@@ -37,7 +36,7 @@ past plus near-future scheduled) carries `gachaPoolId`, `gachaPoolName`,
 `dynMeta.attainRare6CharList`. The standard-banner rule types
 (`NORMAL`/`SINGLE`/`DOUBLE`/`LINKAGE`, 282/389 EN) carry **no** typed
 featured-op; the rate-up lives only in prose (CN `<@ga.up>` HTML,
-EN `gachaPoolDetail` = `"-"`), which §V18 forbids importing. Critically, the
+EN `gachaPoolDetail` = `"-"`), which the field allowlist forbids importing. Critically, the
 rate/pity/spark constants that planning would require are **verified absent**
 from `gacha_table` — building a planner would mean hardcoding non-snapshot
 constants, exactly the kind of unsourced fabrication the project's FACT/observation
@@ -50,26 +49,26 @@ Carve the **banner ARCHIVE** (historical schedule FACT) into scope; keep
 deferred.
 
 - The archive is a **FACT domain**: each pool carries region and provenance
-  (§V5/§V17) and is metadata-only (§V62/§V16 ceiling) — pool id, display name
-  (capped + sanitized §V18), open/end time (epoch → ISO), rule type, and the
+  and is metadata-only — pool id, display name (capped + sanitized), open/end
+  time (epoch → ISO), rule type, and the
   **typed** featured-op per rule type. No `gachaPoolSummary`,
   `gachaPoolDetail`, `dynMeta` prose, HTML, or image is stored. Standard-rule
   banners emit no featured-op plus a limitation "standard-banner rate-up not in
-  typed gamedata" (§V26 missing-field → limitation; never fabricate or parse
-  prose §V7).
+  typed gamedata" (missing field becomes a limitation; never fabricate or parse
+  prose).
 - The archive reuses the **primary `arknights_assets_gamedata` snapshot** — the
   same snapshot as enemy/stage/operator data. It introduces **no new source,
   adapter, or registry entry**; `gacha_table.json` is fetched every sync via
-  `SUPPLEMENTARY_FILES` (tolerant-absent, §V41/B36), and the §V41 introspection
+  `SUPPLEMENTARY_FILES` (tolerant-absent), and the introspection
   test catches an un-wired file.
 - Featured char ids **soft-resolve** to an `operator_pk` when the operator is
   present, else carry the raw char id plus a limitation; an unresolvable
-  featured-op never fails the build (archive is a standalone FACT, §V3
-  preserved; operators are optional-zero for a combat-only snapshot, B36). A
-  non-empty `gacha_table` yielding zero banners fails closed (§V30).
+  featured-op never fails the build (archive is a standalone FACT;
+  operators are optional-zero for a combat-only snapshot). A
+  non-empty `gacha_table` yielding zero banners fails closed.
 
 Planning stays **out and ADR-gated**: no rate/pity/spark/shop model ships,
-because the constants are verified absent from the snapshot (§C). Widening the
+because the constants are verified absent from the snapshot. Widening the
 archive into planning requires a new founder decision, a new source of those
 constants, and a new ADR — not a config flag (same posture as ADR 0004's
 public-distribution gate).
@@ -78,10 +77,9 @@ public-distribution gate).
 
 - Users can query historical banner schedules and typed featured operators with
   region and provenance, without any prediction surface.
-- The metadata-only ceiling (§V62/§V16) is permanent; standard-banner rate-up is
+- The metadata-only ceiling is permanent; standard-banner rate-up is
   reported as a limitation, never inferred from prose.
 - No new data source or legal-posture change: the archive rides the existing
   primary-snapshot registry entry, so `get_data_sources` is unchanged.
 - A future planning capability remains a deliberate, gated decision rather than
-  an incremental slide — the FACT/planning boundary is pinned by §V62 and this
-  ADR.
+  an incremental slide — the FACT/planning boundary is pinned by this ADR.

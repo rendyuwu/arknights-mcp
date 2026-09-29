@@ -1,4 +1,4 @@
-"""Local snapshot source adapter (SPEC §V1, §V2 path safety; PRD 10.2, 17.4).
+"""Local snapshot source adapter (path safety; PRD 10.2, 17.4).
 
 Reads a user-supplied snapshot directory for one region. Performs **no** network
 I/O and refuses any path that escapes the snapshot root (path-traversal
@@ -19,7 +19,7 @@ from arknights_mcp.sources.base import SourceAdapterError, json_within_limits
 class LocalSnapshotAdapter:
     """Read-only file access rooted at a single region's snapshot directory."""
 
-    #: This adapter never performs network I/O (§V1).
+    #: This adapter never performs network I/O.
     touches_network: bool = False
 
     def __init__(self, root: str | Path, server: str, source_id: str = "local_snapshot") -> None:
@@ -59,11 +59,11 @@ class LocalSnapshotAdapter:
         except RecursionError as exc:
             # Pathologically deep JSON blows the parser's stack before the depth cap
             # can reject it; surface a graceful capped error rather than an uncaught
-            # traceback out of `arknights-mcp import` (B5, matching the network stager).
+            # traceback out of `arknights-mcp import` (matching the network stager).
             raise SourceAdapterError(f"JSON exceeds safe nesting depth: {relative_path!r}") from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise SourceAdapterError(f"invalid JSON in {relative_path!r}: {exc}") from exc
-        # Bound nesting depth + node count identically to the network path (§V37 home).
+        # Bound nesting depth + node count identically to the network path.
         json_within_limits(parsed)
         return parsed
 

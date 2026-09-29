@@ -1,7 +1,7 @@
-"""T204: §V109 template-cap guard against the REAL corpus (B154).
+"""Template-cap guard against the REAL corpus.
 
-The §V18 length cap used to run *before* the §V18/T136 rich-text tag strip, at all
-three §V65 (a) call sites. Two things follow from that order, and the second is why
+The length cap used to run *before* the rich-text tag strip, at all
+three grounding call sites. Two things follow from that order, and the second is why
 the bug survived a milestone::
 
     raw      "...deal True damage; <@ba.vup>{atk_scale:0%}</> of ATK to ..."   805 chars
@@ -13,12 +13,12 @@ the strip pulls the result back *under* the cap, so the stored string carries no
 ``len == cap`` fingerprint. In the shipped build ``2026-07-26T230656Z`` the longest EN
 template is 428 chars and no row is 512 long, yet 349 of 12057 were cut mid-sentence.
 
-That is a §V65 (a) grounding template: the one path closing B56's fabrication hole, and
+That is a grounding template: the one path closing the fabrication hole, and
 exactly the text the server instructions tell a client to trust over the raw blackboard
 keys. A truncated one reads as a *complete* sentence, so the client confidently states
 half a mechanic -- strictly worse than the bare keys the template replaced.
 
-This module is the guard §V109 demands, over real upstream bytes (§V29 class):
+This module is the cap guard, over real upstream bytes:
 
 * every EN skill / talent / module template imports WHOLE -- zero truncations;
 * the corpus post-strip maximum is asserted to sit under ``MAX_TEMPLATE_LENGTH``, so
@@ -27,8 +27,8 @@ This module is the guard §V109 demands, over real upstream bytes (§V29 class):
 * a floor on how many templates exceed the old name-class cap, so the corpus is still
   shown to exercise the bug rather than passing vacuously.
 
-CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like §T68 and the §V97
-weld guard. Nothing fetched is persisted (§V16, code-only distribution).
+CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like the other live-upstream
+guards. Nothing fetched is persisted (code-only distribution).
 """
 
 from __future__ import annotations
@@ -60,14 +60,14 @@ pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_S
 BASE_URL = arknights_assets_base_url("en")
 
 #: Floor on how many real EN templates exceed the old name-class cap once their tags are
-#: stripped. These are precisely the texts the pre-T204 order truncated, so if upstream
-#: ever drops below this the corpus has stopped exercising B154 and the guard would pass
+#: stripped. These are precisely the texts the earlier order truncated, so if upstream
+#: ever drops below this the corpus has stopped exercising the defect and the guard would pass
 #: vacuously. At the pinned commit the real count is 141 (of 12057).
 MIN_TEMPLATES_OVER_DEFAULT_CAP = 100
 
 
 def _fetch_table(relative_path: str) -> Any:
-    """Fetch + parse one pinned upstream table; never written to disk (§V16)."""
+    """Fetch + parse one pinned upstream table; never written to disk."""
     return json.loads(fetch_upstream_bytes(f"{BASE_URL}/{relative_path}").decode("utf-8"))
 
 
@@ -115,7 +115,7 @@ def _raw_module_templates(node: Any) -> list[str]:
 
 
 def test_real_templates_are_never_truncated() -> None:
-    """§V109: no real EN template is cut by the cap, and the cap has headroom."""
+    """No real EN template is cut by the cap, and the cap has headroom."""
     templates = _raw_templates()
     assert templates, "pinned upstream tables produced no templates"
 
@@ -134,28 +134,28 @@ def test_real_templates_are_never_truncated() -> None:
 
     assert not truncated, (
         f"{len(truncated)} of {len(templates)} real EN templates were truncated "
-        f"mid-text by the §V65 (a) cap (§V109/B154); first few: {truncated[:5]}"
+        f"mid-text by the cap; first few: {truncated[:5]}"
     )
     assert longest < MAX_TEMPLATE_LENGTH, (
         f"longest real EN template is {longest} chars against a "
         f"MAX_TEMPLATE_LENGTH of {MAX_TEMPLATE_LENGTH}: upstream has grown into the "
-        "ceiling and templates are about to be cut mid-sentence again (§V109) -- raise "
+        "ceiling and templates are about to be cut mid-sentence again -- raise "
         "the cap (and bump FIELD_POLICY_VERSION + TRANSFORM_VERSION), do not re-pin away"
     )
     assert over_default_cap >= MIN_TEMPLATES_OVER_DEFAULT_CAP, (
         f"only {over_default_cap} of {len(templates)} real EN templates exceed the "
-        f"name-class cap ({DEFAULT_MAX_TEXT_LENGTH}); the corpus no longer exercises "
-        f"B154 (expected >= {MIN_TEMPLATES_OVER_DEFAULT_CAP}) -- re-pin "
+        f"name-class cap ({DEFAULT_MAX_TEXT_LENGTH}); the corpus no longer exercises the cap "
+        f"(expected >= {MIN_TEMPLATES_OVER_DEFAULT_CAP}) -- re-pin "
         "ARKNIGHTS_ASSETS_COMMIT or re-derive the floor"
     )
 
 
 def test_parsed_skill_and_talent_templates_route_through_the_shared_home() -> None:
-    """§V109/§V37: both operator call sites emit exactly ``clean_template_text(raw)``.
+    """Both operator call sites emit exactly ``clean_template_text(raw)``.
 
     Deliberately a wiring check, not a second truncation check: the truncation itself is
     asserted above, against a cap-free reference. What this catches is the specific
-    regression B154 was -- a call site reading the ``apply_allowlist`` output (already
+    regression: a call site reading the ``apply_allowlist`` output (already
     capped at 512, tags intact) instead of the raw source, which no assertion phrased in
     terms of the shared helper alone would notice.
     """
@@ -173,7 +173,7 @@ def test_parsed_skill_and_talent_templates_route_through_the_shared_home() -> No
             if not isinstance(raw, str) or not raw:
                 continue
             assert level.description == (clean_template_text(raw) or None), (
-                f"skill {game_id} L{index + 1}: imported template != full source (§V109)"
+                f"skill {game_id} L{index + 1}: imported template != full source"
             )
 
     character_raw = _fetch_table("gamedata/excel/character_table.json")
@@ -201,15 +201,15 @@ def test_parsed_skill_and_talent_templates_route_through_the_shared_home() -> No
                 variant = variants.get((ti, vi))
                 assert variant is not None, f"{game_id}: talent {ti}.{vi} lost"
                 assert variant.description == (clean_template_text(raw) or None), (
-                    f"talent {game_id} {ti}.{vi}: imported template != full source (§V109)"
+                    f"talent {game_id} {ti}.{vi}: imported template != full source"
                 )
 
 
 def test_real_module_change_templates_are_never_truncated() -> None:
-    """§V109: the third §V65 (a) call site -- module trait/talent-change templates.
+    """The third grounding call site -- module trait/talent-change templates.
 
     These ride ``trait_changes_json`` / ``talent_changes_json`` rather than a
-    ``gameplay_description`` column, which is why the §V97 weld guard never covered
+    ``gameplay_description`` column, which is why the weld guard never covered
     them; the real corpus cut one of them at the pinned commit.
     """
     uniequip_raw = _fetch_table("gamedata/excel/uniequip_table.json")
@@ -237,12 +237,12 @@ def test_real_module_change_templates_are_never_truncated() -> None:
                 longest = max(longest, len(description))
                 assert description in raw_by_text, (
                     f"module {module.game_id} L{level.level}: imported template is not "
-                    f"the whole cleaned source -- truncated? (§V109/B154): {description!r}"
+                    f"the whole cleaned source -- truncated?: {description!r}"
                 )
 
     assert checked > 0, "no real module-change templates were checked"
     assert longest < MAX_TEMPLATE_LENGTH, (
         f"longest real EN module template is {longest} chars against a "
-        f"MAX_TEMPLATE_LENGTH of {MAX_TEMPLATE_LENGTH} (§V109) -- see the skill/talent "
+        f"MAX_TEMPLATE_LENGTH of {MAX_TEMPLATE_LENGTH} -- see the skill/talent "
         "leg for what to do"
     )

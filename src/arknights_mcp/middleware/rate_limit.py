@@ -1,7 +1,7 @@
-"""Per-principal rate + concurrency limits for the remote transport (§V11).
+"""Per-principal rate + concurrency limits for the remote transport.
 
-Two of the five §V11 remote controls live here (the other three -- request cap,
-request timeout, response cap -- are in :mod:`.request_limits` and the §V22 envelope
+Two of the five remote controls live here (the other three -- request cap,
+request timeout, response cap -- are in :mod:`.request_limits` and the envelope
 builder):
 
 * **Rate limit** -- a per-principal sliding-window log: at most
@@ -12,9 +12,9 @@ builder):
   principal at once; the ``+1`` gets ``429`` until an in-flight request finishes.
 
 Both key on :attr:`~arknights_mcp.auth.principal.Principal.principal_id` (``iss|sub``,
-the one home for the namespacing -- §V37), read from the request scope via
+the one home for the namespacing), read from the request scope via
 :func:`~arknights_mcp.middleware._shared.principal_id_of`. The full stack is wired
-only on the auth-requiring remote path (§V40), so every http request reaching this
+only on the auth-requiring remote path, so every http request reaching this
 layer carries a validated principal; a request with none buckets under
 ``ANONYMOUS_PRINCIPAL`` (fail-closed: shared, never unlimited).
 
@@ -24,7 +24,7 @@ intervening ``await`` -- so no two requests interleave between the test and the
 reservation. The in-flight count is released in a ``finally`` around the inner app.
 
 Pre-auth flood protection (unauthenticated request storms, which never reach a
-per-principal bucket) is the reverse proxy's job (§I.api; the §T55 nginx example),
+per-principal bucket) is the reverse proxy's job (the nginx example),
 not this app-layer control.
 """
 
@@ -44,7 +44,7 @@ _WINDOW_SECONDS = 60.0
 
 
 class RateLimitMiddleware:
-    """ASGI middleware enforcing per-principal rate + concurrency limits (§V11).
+    """ASGI middleware enforcing per-principal rate + concurrency limits.
 
     :param app: the wrapped ASGI app (the next layer inward).
     :param requests_per_minute: max requests served per principal per trailing 60s.

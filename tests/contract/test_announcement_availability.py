@@ -1,11 +1,11 @@
-"""T206: §V50's real-build guard -- the availability probe matches the shipped build.
+"""The real-build guard: the availability probe matches the shipped build.
 
-The §V50 verdict this task adds is only as true as the source id it probes with. A
+The verdict this guard adds is only as true as the source id it probes with. A
 fixture cannot check that: the unit tests seed announcements through the SAME
 ``source_id_for_region`` constant the probe reads, so a typo in it stays self-consistent
 and invisible -- every seeded test would still pass while every real response gained a
 false "this feed was never imported" limitation, on a build where both feeds ARE
-imported (§V29/§V96 class: verify against the real corpus, never against a fixture that
+imported (verify against the real corpus, never against a fixture that
 matches the code).
 
 So this reads the PROMOTED build and asserts the probe agrees with what actually sits in
@@ -33,7 +33,7 @@ from arknights_mcp.sources.announcements import source_id_for_region
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = REPO_ROOT / "data" / "current.json"
 
-#: The regions whose official feed is expected on a full sync (§V56 region ∈ {en,cn}).
+#: The regions whose official feed is expected on a full sync (region ∈ {en,cn}).
 REGIONS = ("en", "cn")
 
 
@@ -65,7 +65,7 @@ def conn() -> sqlite3.Connection:
 
 @pytest.mark.parametrize("region", REGIONS)
 def test_probed_source_id_is_the_one_in_the_build(conn: sqlite3.Connection, region: str) -> None:
-    # The typo catcher: the id the §V50 probe asks about must be an id the sync really
+    # The typo catcher: the id the probe asks about must be an id the sync really
     # wrote. Read the truth straight from the table, never through the probe.
     source_id = source_id_for_region(region)
     assert source_id is not None
@@ -83,9 +83,9 @@ def test_probed_source_id_is_the_one_in_the_build(conn: sqlite3.Connection, regi
 def test_imported_feed_carries_no_availability_limitation(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # Both feeds are imported on the shipped build, so the §V50 verdict must stay
+    # Both feeds are imported on the shipped build, so the verdict must stay
     # silent: a false "never imported" caveat on every live response is the exact
-    # inverse of B146 and just as unfalsifiable to a client.
+    # inverse of a false absence claim and just as unfalsifiable to a client.
     result = get_announcements(conn, server=region)
     assert result.status == "ok"
     assert result.announcements, f"{region}: promoted build carries no announcement"
@@ -102,7 +102,7 @@ def test_empty_window_on_the_real_build_blames_the_window_not_the_import(
     # exactly here: on a build where the feed IS imported, an out-of-range window must
     # be told it is the window, never "the admin never synced this feed".
     # A DAY bound: this column is day-granular, so a bound carrying a time of day would
-    # also carry the §V116 widening disclosure (its own fact, pinned in
+    # also carry the widening disclosure (its own fact, pinned in
     # ``tests/contract/test_window_bound_forms.py``); the one under test here is WHICH
     # empty-reason fires, and exactly one still does.
     result = get_announcements(conn, server=region, since="2099-01-01")

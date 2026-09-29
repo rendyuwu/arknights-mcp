@@ -1,5 +1,5 @@
-"""§T29 tool-registry tests: one shared registry (§V14), read-only enforced
-(§V2/§V28), unique names, and correct ``mcp.types.Tool`` projection."""
+"""Tool-registry tests: one shared registry, read-only enforced,
+unique names, and correct ``mcp.types.Tool`` projection."""
 
 from __future__ import annotations
 
@@ -55,17 +55,17 @@ def test_duplicate_name_is_rejected() -> None:
 
 
 def test_non_read_only_tool_is_rejected() -> None:
-    # §V2/§V28: MCP tools are read-only; admin/mutating ops stay CLI-only.
+    # MCP tools are read-only; admin/mutating ops stay CLI-only.
     reg = ToolRegistry()
     with pytest.raises(ToolRegistryError):
         reg.register(_spec("purge_source", read_only=False))
 
 
 def test_over_budget_description_is_rejected() -> None:
-    # §V71 (f)/§V111 (d) (§T207, B156): the description budget is enforced at
+    # The description budget is enforced at
     # registration for the same reason read-only is -- a rule only a test knows about is
-    # one a new tool can ship past, and B156's failure was precisely that §V71 (f) "read
-    # satisfied" while the worst offender had never been audited.
+    # one a new tool can ship past, and the earlier failure was precisely that the rule
+    # "read satisfied" while the worst offender had never been audited.
     reg = ToolRegistry()
     over = ToolSpec(
         name="get_verbose",
@@ -93,9 +93,9 @@ def test_description_exactly_at_budget_is_accepted() -> None:
 
 
 def test_over_budget_rejection_names_the_alternative_homes() -> None:
-    # §V111 (b): over budget is closed by MOVING a fact to a named home, never by
+    # Over budget is closed by MOVING a fact to a named home, never by
     # deleting a mandated one -- so the error has to say which homes exist, or the next
-    # reader closes it the one way the spec forbids.
+    # reader closes it the one forbidden way.
     reg = ToolRegistry()
     spec = ToolSpec(
         name="get_verbose",

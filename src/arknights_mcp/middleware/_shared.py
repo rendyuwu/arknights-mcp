@@ -1,8 +1,8 @@
-"""Shared ASGI helpers for the remote middleware stack (§V37).
+"""Shared ASGI helpers for the remote middleware stack.
 
 One home for the request-scope principal lookup and the typed JSON error response
 used by the per-principal rate limiter and the per-request size/timeout limiter --
-neither re-implements them (§V37 DRY). The bearer challenge in
+neither re-implements them. The bearer challenge in
 :mod:`arknights_mcp.transports.streamable_http` stays separate: it emits an RFC 6750
 ``WWW-Authenticate`` challenge, a different concern from these limiter rejections.
 """
@@ -14,7 +14,7 @@ import json
 from starlette.types import Message, Scope, Send
 
 #: Bucket key for a request that carries no validated principal. The full stack is
-#: wired only on the auth-requiring remote path (§V40), so in practice every http
+#: wired only on the auth-requiring remote path, so in practice every http
 #: request reaching the per-principal limiters already carries a principal; this is
 #: the defensive fallback (and the identity the outer access log records for a
 #: request rejected by bearer before any principal was attached).
@@ -26,8 +26,8 @@ def principal_id_of(scope: Scope) -> str:
 
     The bearer middleware stashes the validated
     :class:`~arknights_mcp.auth.principal.Principal` on ``scope["state"]["principal"]``
-    after §V10 validation; per-principal limits (§V11) key on its ``principal_id``
-    (``iss|sub`` -- the one home for the namespacing, §V37). Read defensively
+    after validation; per-principal limits key on its ``principal_id``
+    (``iss|sub`` -- the one home for the namespacing). Read defensively
     (duck-typed) so the middleware layer takes no dependency on the auth layer.
     """
     state = scope.get("state") or {}
@@ -44,7 +44,7 @@ async def send_error(
     *,
     extra_headers: list[tuple[bytes, bytes]] | None = None,
 ) -> None:
-    """Emit a typed JSON error response carrying no secrets (§V12).
+    """Emit a typed JSON error response carrying no secrets.
 
     The body holds only the static OAuth-style ``error`` / ``error_description`` --
     never the token, a request/response body, or any presented header value. Used

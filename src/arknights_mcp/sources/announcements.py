@@ -1,18 +1,18 @@
-"""Official-announcement source adapter (§T95; §V56, §V16, §V1).
+"""Official-announcement source adapter.
 
 A network-touching adapter (``touches_network=True``) used **exclusively** by CLI
-``sync``/``import`` jobs, never at query time (§V1): it fetches the official
+``sync``/``import`` jobs, never at query time: it fetches the official
 Arknights (Global/CN) announcement *feed* over HTTPS under the shared size /
-JSON-depth / node-count / redirect caps (:mod:`arknights_mcp.sources.http_fetch`,
-§V37). The importer (:mod:`arknights_mcp.importers.announcements`) consumes what
-this returns and keeps only the §V56 metadata allowlist; this adapter is transport
+JSON-depth / node-count / redirect caps (:mod:`arknights_mcp.sources.http_fetch`).
+The importer (:mod:`arknights_mcp.importers.announcements`) consumes what
+this returns and keeps only the metadata allowlist; this adapter is transport
 only.
 
-The scope is METADATA-ONLY (D14/§V56): the feed carries announcement metadata, and
+The scope is METADATA-ONLY (D14): the feed carries announcement metadata, and
 the importer's field allowlist keeps only ``announceId``/``title``/``date``/``url``/
 ``category``. The full announcement BODY / html / prose / image is never fetched into
-storage (§V16). The source stays **disabled by default** in the registry; enabling it
-requires an explicit config change plus a recorded policy review (§V56/D14).
+storage. The source stays **disabled by default** in the registry; enabling it
+requires an explicit config change plus a recorded policy review (D14).
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ from arknights_mcp.sources.http_fetch import (
 GLOBAL_SOURCE_ID = "arknights_global_official_news"
 CN_SOURCE_ID = "arknights_cn_official_news"
 
-#: Fact region -> registry source id (§V5): en is the Global feed, cn the CN feed.
-#: A region outside {en,cn} has no announcement source (§V56 region ∈ {en,cn}).
+#: Fact region -> registry source id: en is the Global feed, cn the CN feed.
+#: A region outside {en,cn} has no announcement source.
 SOURCE_ID_FOR_REGION: dict[str, str] = {"en": GLOBAL_SOURCE_ID, "cn": CN_SOURCE_ID}
 
 
@@ -44,17 +44,17 @@ def source_id_for_region(region: str) -> str | None:
 
 
 class AnnouncementsAdapter:
-    """CLI-only network adapter for the official announcement feed (§V56/§V1).
+    """CLI-only network adapter for the official announcement feed.
 
     Fetches the configured feed URL over HTTPS and returns the parsed JSON, applying
-    every §V1 gate (HTTPS-only, per-file byte cap, JSON depth/node cap, run-level
+    every gate (HTTPS-only, per-file byte cap, JSON depth/node cap, run-level
     total cap, capped same-domain redirects) via the shared :func:`fetch_json`. It
     never touches the network at query time and is only ever constructed by a CLI
-    job (§V1). The feed is a single URL configured per source; no path segment is
+    job. The feed is a single URL configured per source; no path segment is
     ever built from caller input, so traversal / SSRF into another path is impossible.
     """
 
-    #: This adapter performs network I/O; it is only ever run from CLI sync (§V1).
+    #: This adapter performs network I/O; it is only ever run from CLI sync.
     touches_network: bool = True
 
     def __init__(
@@ -72,7 +72,7 @@ class AnnouncementsAdapter:
             raise SourceAdapterError(f"announcement feed_url must be https://, got {feed_url!r}")
         resolved_source_id = source_id if source_id is not None else source_id_for_region(region)
         if resolved_source_id is None:
-            # §V56: an announcement region must be en or cn -- never mislabelled.
+            # An announcement region must be en or cn -- never mislabelled.
             raise SourceAdapterError(f"announcement region must be en|cn, got {region!r}")
         self.feed_url: str = cleaned
         self.server: str = region
@@ -86,7 +86,7 @@ class AnnouncementsAdapter:
         self._budget = budget if budget is not None else DownloadBudget(limits.max_total_bytes)
 
     def fetch(self) -> Any:
-        """Fetch the announcement feed and return the capped, parsed JSON (§V1).
+        """Fetch the announcement feed and return the capped, parsed JSON.
 
         Fails closed on a non-HTTPS URL, an over-cap/malformed body, or a
         pathologically deep document (surfaced as a capped ``SourceAdapterError``,

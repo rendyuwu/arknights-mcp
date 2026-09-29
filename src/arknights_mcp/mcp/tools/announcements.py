@@ -1,28 +1,28 @@
-"""``get_announcements`` MCP tool (§T96; §V5/§V19/§V22/§V23/§V56; §I.tool).
+"""``get_announcements`` MCP tool.
 
 Bridges the bounded :class:`~arknights_mcp.models.announcements.GetAnnouncementsInput`
-model (§T30) to the shared :func:`~arknights_mcp.services.announcements.get_announcements`
-service (§V14) and wraps the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29). It owns no query logic --
+model to the shared :func:`~arknights_mcp.services.announcements.get_announcements`
+service and wraps the outcome in the typed
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`. It owns no query logic --
 only the model -> service -> envelope mapping -- so both transports dispatch identical
-read-only (§V2) behaviour from the single registry, and it never fetches the feed at
-query time (§V1); it only reads the metadata cache a CLI sync/import promoted.
+read-only behaviour from the single registry, and it never fetches the feed at
+query time; it only reads the metadata cache a CLI sync/import promoted.
 
 The load-bearing invariants:
 
-* **§V5** -- ``server`` is required, so every listed announcement is region-attributed +
+* **region-required** -- ``server`` is required, so every listed announcement is region-attributed +
   the envelope carries the region-scoped provenance; en/cn are never silently mixed.
-* **§V56/§V16/§V18** -- METADATA-ONLY: the shaper emits exactly the five metadata fields
+* **metadata-only** -- the shaper emits exactly the five metadata fields
   (announce_id/title/date/url/category); there is no body/html/prose to surface, and the
   0010 schema cannot hold one.
-* **§V19/§V22** -- the list is paged through a bounded window (``page``); the ranking is
+* **bounded paging** -- the list is paged through a bounded window (``page``); the ranking is
   fixed (newest first) + provenance computed over the FULL set upstream, so a page never
   shifts them, and the size-capped envelope keeps the default response small.
-* **§V50/§V106 (b)** -- an empty list is an ``ok`` answer that says WHY: the service's
+* **empty list states why** -- an empty list is an ``ok`` answer that says WHY: the service's
   availability verdict (was this region's feed ever imported?) rides ``limitations``, so
   an unimported feed and a live feed with nothing in the window never ship the same
-  bytes (B146).
-* **§V23** -- every result is a typed-status envelope; a database failure or any
+  bytes.
+* **typed envelope** -- every result is a typed-status envelope; a database failure or any
   unexpected error fails closed to a fixed, path/trace-free envelope via the shared
   :func:`~arknights_mcp.mcp.tools._shared.run_guarded` guard.
 """
@@ -64,10 +64,10 @@ _TOOL_DESCRIPTION = (
 
 
 def _announcement_to_dict(ann: AnnouncementFacts) -> dict[str, object]:
-    """One announcement's metadata fields for the wire (metadata-only, §V56/§V16).
+    """One announcement's metadata fields for the wire (metadata-only).
 
-    §V77/§V66 (B79): no per-row ``region`` -- the response is single-region (``server``
-    is required, §V5), so region is stated ONCE on the parent ``server`` field, never
+    No per-row ``region`` -- the response is single-region (``server``
+    is required), so region is stated ONCE on the parent ``server`` field, never
     repeated on every row.
     """
     return {
@@ -80,22 +80,22 @@ def _announcement_to_dict(ann: AnnouncementFacts) -> dict[str, object]:
 
 
 def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
-    """Map the domain result to a typed §V23 ``ok`` envelope (§V5 region + provenance).
+    """Map the domain result to a typed ``ok`` envelope (region + provenance).
 
     A region with no announcements in the requested window is a legitimate empty list, so
-    this is always an ``ok`` result -- never a ``not_found`` (§V106 (b): this is a set
+    this is always an ``ok`` result -- never a ``not_found`` (this is a set
     query, not an entity lookup). The adapter has been ENABLED by default since the M9
-    policy review (§V56/§T93), so the description must not tell a client to expect
-    nothing (B146): both feeds import on a normal sync. An empty list is never BARE
-    either -- the service's §V50 availability verdict rides ``limitations``, so a feed
+    policy review, so the description must not tell a client to expect
+    nothing: both feeds import on a normal sync. An empty list is never BARE
+    either -- the service's availability verdict rides ``limitations``, so a feed
     that was never imported for the region cannot be mistaken for a feed reporting
-    nothing. The list is paged (§V19/§V22): the ``page`` descriptor reports the full
+    nothing. The list is paged: the ``page`` descriptor reports the full
     ``total`` + ``has_more`` while ``announcements`` holds only the requested page.
     Provenance is the distinct announcement snapshots backing the FULL filtered set
-    (§V5, derived in the service so a later page never drops one); the comparison is
+    (derived in the service so a later page never drops one); the comparison is
     region-scoped, so every provenance row shares the requested region.
 
-    §V77/§V66 (B79): region is stated ONCE on the parent ``server`` field (and the
+    Region is stated ONCE on the parent ``server`` field (and the
     envelope provenance), never repeated on every announcement row.
     """
     data: dict[str, object] = {
@@ -114,20 +114,20 @@ def _shape(result: AnnouncementsResult) -> ResponseEnvelope:
 
 
 def build_get_announcements_spec(get_conn: ConnectionProvider) -> ToolSpec:
-    """Build the ``get_announcements`` :class:`ToolSpec` (§T96; §V14).
+    """Build the ``get_announcements`` :class:`ToolSpec`.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted build.
-    The returned spec is read-only (§V2) for the single shared registry both transports
-    dispatch from (§V14); its ``input_schema`` is the bounded model's JSON Schema, so
-    the §V5 required ``server`` + the optional since/until window + the bounded ``page``
+    The returned spec is read-only for the single shared registry both transports
+    dispatch from; its ``input_schema`` is the bounded model's JSON Schema, so
+    the required ``server`` + the optional since/until window + the bounded ``page``
     land on the wire exactly as validated.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V5/§V18/§V19 gate: the bounded model requires a region, caps the date-bound
+        # Validation gate: the bounded model requires a region, caps the date-bound
         # strings, rejects an out-of-range page_size, and rejects an unknown parameter
         # *before* any query runs -- a ValidationError propagates as a protocol-level
-        # rejection, never a silently widened page (§V19).
+        # rejection, never a silently widened page.
         parsed = GetAnnouncementsInput.model_validate(params)
         return run_guarded(
             get_conn,

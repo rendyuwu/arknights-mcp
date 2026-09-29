@@ -1,19 +1,19 @@
-"""§T40 ``analyze_stage`` tool tests (§V6/§V7/§V23; §V5/§V14; §I.tool).
+"""``analyze_stage`` tool tests.
 
 The tool is the model -> service -> envelope bridge for a single stage's threat
 analysis; these drive it end to end against the same production read-only path
-(§V2) using the pinned 4-4 fixture. They assert:
+using the pinned 4-4 fixture. They assert:
 
-* **§V6** -- every emitted observation carries all five mandated fields
+* every emitted observation carries all five mandated fields
   (``rule_id`` + evidence + confidence + limitations + ``analyzer_version``) at
   *every* depth, and the envelope stamps the analyzer version;
-* **§V7** -- the tool returns facts + evidence-backed observations only; it emits
+* the tool returns facts + evidence-backed observations only; it emits
   no recommendations key and no "mandatory"/best-in-slot verdict;
 * the ``depth`` ladder (summary / standard / detailed) scales the surrounding
   facts, not the observations: summary is observations-only, standard adds the
   compact enemy roster + warnings, detailed swaps in full per-enemy context;
-* the §V5 region + provenance ride every ``ok`` result, en/cn never mixed;
-* the typed §V23 envelope shape, including fail-closed ``not_found`` /
+* the region + provenance ride every ``ok`` result, en/cn never mixed;
+* the typed envelope shape, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak.
 """
 
@@ -87,7 +87,7 @@ def test_standard_is_the_default_depth(conn: sqlite3.Connection) -> None:
 
 def test_summary_is_observations_only(conn: sqlite3.Connection) -> None:
     data = _handler(conn)(server="en", stage_code="4-4", depth="summary").to_dict()["data"]
-    # summary drops the enemy roster + warnings; observations stay full (§V6).
+    # summary drops the enemy roster + warnings; observations stay full.
     assert set(data) == {"depth", "stage", "observations"}  # type: ignore[arg-type]
     assert data["observations"]  # type: ignore[index]
 
@@ -126,7 +126,7 @@ def test_detailed_roster_carries_full_typed_context(conn: sqlite3.Connection) ->
     assert {"enemy_class", "damage_types", "targeting", "level_variant", "route_count"} <= set(
         drone
     )
-    # §T210/§V101: the three fields the ranged-arts rule decides from all resolve on
+    # The three fields the ranged-arts rule decides from all resolve on
     # this response, so an evidence row naming one is a path the client can look up.
     assert drone["damage_types"] == ["MAGIC"]
     assert drone["targeting"] == "RANGED"
@@ -134,7 +134,7 @@ def test_detailed_roster_carries_full_typed_context(conn: sqlite3.Connection) ->
 
 
 def test_detailed_occurrence_carries_the_promised_stat_block(conn: sqlite3.Connection) -> None:
-    # §V47 (B41): the detailed occurrence must emit the per-enemy stat block its tool
+    # The detailed occurrence must emit the per-enemy stat block its tool
     # description promises ("full per-enemy stat/timing context") -- not just identity +
     # timing. The integration test pins the contract so a desc ⊃ output regression trips.
     data = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()["data"]
@@ -184,8 +184,8 @@ def _occurrence(damage_types: tuple[str, ...] | None) -> EnemyOccurrenceFacts:
 
 
 def test_detailed_occurrence_omits_absent_damage_types() -> None:
-    # §V67/B98 (T180): an absent-in-source damage_types is OMITTED from the detailed
-    # occurrence, never emitted as null; a present one still emits (§V21). The retired
+    # An absent-in-source damage_types is OMITTED from the detailed
+    # occurrence, never emitted as null; a present one still emits. The retired
     # attack_type is never emitted either way -- no build has ever carried a value.
     assert "damage_types" not in _occurrence_full(_occurrence(None))
     assert _occurrence_full(_occurrence(("PHYSIC",)))["damage_types"] == ["PHYSIC"]
@@ -193,7 +193,7 @@ def test_detailed_occurrence_omits_absent_damage_types() -> None:
 
 
 def test_detailed_envelope_names_absent_occurrence_damage_types() -> None:
-    # §V67/B98 follow-through (review-fix): when a detailed occurrence omits an
+    # Follow-through (review-fix): when a detailed occurrence omits an
     # absent-in-source damage_types, the envelope must NAME the omission (limitation
     # = sole signal, mirroring get_enemy) -- never a silent key drop. standard depth
     # emits no per-occurrence damage kind at all, so it carries no such caveat.
@@ -223,7 +223,7 @@ def test_detailed_envelope_names_absent_occurrence_damage_types() -> None:
     )
     detailed = _shape_analysis("detailed", result)
     assert any("damage_types" in lim.lower() for lim in detailed.limitations)
-    # §V113/§V108 (B160 b): the retired scalar's own note states the corpus-wide scope
+    # The retired scalar's own note states the corpus-wide scope
     # rather than pretending this stage is special.
     assert any("for any enemy" in lim for lim in detailed.limitations)
     standard = _shape_analysis("standard", result)
@@ -231,7 +231,7 @@ def test_detailed_envelope_names_absent_occurrence_damage_types() -> None:
 
 
 def test_summary_depth_still_carries_a_warning(conn: sqlite3.Connection) -> None:
-    """§V118 (d)/B165: ``depth`` scales the FACTS, and a §V26 disclosure is not one.
+    """``depth`` scales the FACTS, and a disclosure is not one.
 
     ``summary`` dropped ``warnings`` wholesale, so the reader most likely to take an empty
     analysis at face value was the one told least about it -- an enemy the rules could not
@@ -258,7 +258,7 @@ def test_summary_depth_still_carries_a_warning(conn: sqlite3.Connection) -> None
 
 
 def test_analyze_description_states_field_convention() -> None:
-    # §V67 "convention stated in tool descriptions": analyze_stage omits absent
+    # Convention stated in tool descriptions: analyze_stage omits absent
     # scalars (damage_types / variant_id / recommended_level / max_life_points), so
     # its description carries the same shared convention get_stage/get_enemy state.
     conn = sqlite3.connect(":memory:")
@@ -266,7 +266,7 @@ def test_analyze_description_states_field_convention() -> None:
 
 
 def test_analysis_envelope_names_absent_stage_scalars() -> None:
-    # §V67/B98 (T180): analyze_stage shares the stage shaper with get_stage, so a
+    # analyze_stage shares the stage shaper with get_stage, so a
     # stage whose source omits recommended_level/max_life_points drops the keys AND
     # carries the same sole-signal limitation naming them.
     bare = StageFacts(
@@ -305,14 +305,14 @@ def test_analysis_envelope_names_absent_stage_scalars() -> None:
 def test_detailed_occurrence_omits_variant_id_for_base_enemy(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V67/B90: the 4-4 occurrences are base enemies (no inline useDb:false variant),
+    # the 4-4 occurrences are base enemies (no inline useDb:false variant),
     # so a detailed occurrence omits ``variant_id`` rather than emitting a bare null.
     data = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()["data"]
     for occ in data["occurrences"]:  # type: ignore[index]
         assert "variant_id" not in occ
 
 
-# --- §V6 evidence-backed observations -----------------------------------------
+# --- evidence-backed observations ---------------------------------------------
 
 
 def test_observations_carry_every_v6_field_at_all_depths(conn: sqlite3.Connection) -> None:
@@ -323,16 +323,16 @@ def test_observations_carry_every_v6_field_at_all_depths(conn: sqlite3.Connectio
         observations = data["observations"]  # type: ignore[index]
         assert observations  # 4-4 fields a flyer -> at least the aerial observation
         for obs in observations:
-            # §V6: every mandated field present + well-formed at every depth.
+            # every mandated field present + well-formed at every depth.
             assert obs["rule_id"]
             assert isinstance(obs["evidence"], list) and obs["evidence"]
             assert 0.0 <= obs["confidence"] <= 1.0
             assert isinstance(obs["limitations"], list)
             assert obs["analyzer_version"]
             for ev in obs["evidence"]:
-                # §V101: ref + field + value are the mandatory typed tuple. ``note`` is
-                # prose and ``count`` is §V85 dedup multiplicity, so both are omitted
-                # rather than shipped null (§V67) -- and after T197 most rows carry
+                # ref + field + value are the mandatory typed tuple. ``note`` is
+                # prose and ``count`` is dedup multiplicity, so both are omitted
+                # rather than shipped null -- and most rows now carry
                 # neither, because a number that used to sit in the note is now a row.
                 assert (
                     {"ref", "field", "value"}
@@ -353,14 +353,14 @@ def test_aerial_observation_surfaced_with_evidence(conn: sqlite3.Connection) -> 
     by_tag = {o["tag"]: o for o in data["observations"]}  # type: ignore[index]
     assert "aerial" in by_tag
     aerial = by_tag["aerial"]
-    # Evidence traces to the flying drone only, from the typed motion field (§V6).
+    # Evidence traces to the flying drone only, from the typed motion field.
     refs = {e["ref"] for e in aerial["evidence"]}
     assert refs == {"enemy_1105_drone"}
     assert aerial["confidence"] >= 0.9  # authoritative motion_type=FLY
 
 
 def test_envelope_stamps_analyzer_version(conn: sqlite3.Connection) -> None:
-    # §V6: the analyzer version rides the envelope top-level, matching the per-obs one.
+    # the analyzer version rides the envelope top-level, matching the per-obs one.
     env = _handler(conn)(server="en", stage_code="4-4")
     version = env.to_dict()["analyzer_version"]
     assert version
@@ -368,11 +368,11 @@ def test_envelope_stamps_analyzer_version(conn: sqlite3.Connection) -> None:
     assert all(o["analyzer_version"] == version for o in obs)
 
 
-# --- §V7 facts + observations only, no recommendation ------------------------
+# --- facts + observations only, no recommendation -----------------------------
 
 
 def test_no_recommendation_or_prescriptive_verdict(conn: sqlite3.Connection) -> None:
-    # §V7: the tool emits facts + evidence-backed observations only -- no
+    # the tool emits facts + evidence-backed observations only -- no
     # recommendations key, and nothing labelled mandatory / best-in-slot.
     data = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()["data"]
     assert "recommendations" not in data  # type: ignore[operator]
@@ -381,7 +381,7 @@ def test_no_recommendation_or_prescriptive_verdict(conn: sqlite3.Connection) -> 
         assert banned not in blob
 
 
-# --- §V5 region + provenance --------------------------------------------------
+# --- region + provenance ------------------------------------------------------
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
@@ -400,11 +400,11 @@ def test_lookup_by_game_id_matches_code(conn: sqlite3.Connection) -> None:
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query.
+    # en data is not surfaced under a cn query.
     assert _handler(conn)(server="cn", stage_code="4-4").status == "not_found"
 
 
-# --- §V23 / §V5 typed failures ------------------------------------------------
+# --- typed failures -----------------------------------------------------------
 
 
 def test_not_found_envelope(conn: sqlite3.Connection) -> None:
@@ -413,7 +413,7 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert data["message"] == "no stage matched the given region and selector"
-    # §V24: a not_found never suggests a query-time download/scrape.
+    # a not_found never suggests a query-time download/scrape.
     assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
     assert "scrape" not in data["suggested_action"].lower()  # type: ignore[union-attr]
 
@@ -435,12 +435,12 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_analyze_stage_spec(boom).handler(server="en", stage_code="4-4")
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # the fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18/§V19 model gate -----------------------------------------------------
+# --- model gate ---------------------------------------------------------------
 
 
 def test_bad_depth_rejected_at_gate(conn: sqlite3.Connection) -> None:
@@ -449,7 +449,7 @@ def test_bad_depth_rejected_at_gate(conn: sqlite3.Connection) -> None:
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", stage_code="4-4", include_map=True)
 
@@ -462,11 +462,11 @@ def test_selector_must_be_exactly_one(conn: sqlite3.Connection) -> None:
         handler(server="en", stage_code="4-4", game_id="main_04-04")  # both
 
 
-# --- §V2 read-only / §I.tool wire contract ------------------------------------
+# --- read-only / wire contract ------------------------------------------------
 
 
 def test_service_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # the service only reads -- no writes recorded on the connection.
     before = conn.total_changes
     analyze_stage(conn, server="en", stage_code="4-4")
     assert conn.total_changes == before
@@ -479,7 +479,7 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert spec.read_only is True
     tool = spec.to_mcp_tool()
     assert tool.annotations is not None and tool.annotations.readOnlyHint is True
-    # §V18: unknown params forbidden; §V6 depth enum rides the wire.
+    # unknown params forbidden; the depth enum rides the wire.
     assert tool.inputSchema["additionalProperties"] is False
     depth_schema = tool.inputSchema["properties"]["depth"]
     assert set(depth_schema["enum"]) == {"summary", "standard", "detailed"}
@@ -488,9 +488,9 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
 def test_enum_legend_and_stat_scales_ride_only_the_detailed_depth(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V104 (b)/§V67: only the DETAILED occurrence row carries enemy_class and the
+    # Only the DETAILED occurrence row carries enemy_class and the
     # res/move_speed/weight block, so only that depth ships their domain + scales. A
-    # legend or a scale for a field this depth never emits is noise (§V66).
+    # legend or a scale for a field this depth never emits is noise.
     detailed = _handler(conn)(server="en", stage_code="4-4", depth="detailed").to_dict()
     assert set(detailed["data"]["enum_legend"]) == {  # type: ignore[arg-type,index]
         "enemy_class",
@@ -507,9 +507,9 @@ def test_enum_legend_and_stat_scales_ride_only_the_detailed_depth(
 def test_confidence_scale_rides_every_observation_bearing_depth(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V104/§V6: observations ride EVERY depth (the depth ladder scales the surrounding
+    # observations ride EVERY depth (the depth ladder scales the surrounding
     # facts, not the observations), so the scale their confidence is read on rides every
-    # depth too -- once per envelope (§V66), not once per observation.
+    # depth too -- once per envelope, not once per observation.
     for depth in ("summary", "standard", "detailed"):
         env = _handler(conn)(server="en", stage_code="4-4", depth=depth).to_dict()
         assert env["data"]["observations"], depth  # type: ignore[index]

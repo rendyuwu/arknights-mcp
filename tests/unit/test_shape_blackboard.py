@@ -1,13 +1,13 @@
-"""T138/T148 (§V67/§V37/B63): the shared blackboard-shaping helper omits always-null
+"""The shared blackboard-shaping helper omits always-null
 optional keys (``valueStr``; a change bundle's effect ``description`` template) at emit.
 
-:func:`~arknights_mcp.services.operators.shape_blackboard` is the single §V37 home the
+:func:`~arknights_mcp.services.operators.shape_blackboard` is the single home the
 ``get_operator`` and ``compare_operator_modules`` read services route their decoded
-blackboard structures through before shaping them onto the wire. §V67 omits an
+blackboard structures through before shaping them onto the wire. The helper omits an
 always-null optional scalar (``valueStr`` is ``null`` for ~60 numeric params on a full
 operator) rather than emit ``null`` so a client is not forced to decide "none vs
 unknown"; a real (non-null) ``valueStr`` string param is kept, and every other key/shape
-is preserved (additive/backward-compatible, §V21).
+is preserved (additive/backward-compatible).
 """
 
 from __future__ import annotations
@@ -67,11 +67,11 @@ def test_valuestr_only_dropped_when_null_not_when_falsey() -> None:
     ]
 
 
-# --- T148 (§V67): a null effect ``description`` template is omitted too ---------
+# --- a null effect ``description`` template is omitted too --------------------
 
 
 def test_null_description_key_is_dropped() -> None:
-    # §T148/§V67: a change bundle whose effect template is absent carries description=None
+    # A change bundle whose effect template is absent carries description=None
     # (a module's -1 token-effect talent change hits this); omit the key, never emit null.
     assert shape_blackboard([{"talentIndex": -1, "description": None, "blackboard": []}]) == [
         {"talentIndex": -1, "blackboard": []}
@@ -85,7 +85,7 @@ def test_non_null_description_template_is_kept() -> None:
     ]
 
 
-# --- T146 (§V66.3/§V37): the shared per-level template hoist helper -----------
+# --- the shared per-level template hoist helper -------------------------------
 
 
 def test_hoist_returns_the_single_shared_template() -> None:

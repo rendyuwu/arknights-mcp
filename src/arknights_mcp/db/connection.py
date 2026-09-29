@@ -1,4 +1,4 @@
-"""Read-only SQLite connection factory (§V2; §T20).
+"""Read-only SQLite connection factory.
 
 Every MCP process opens the promoted, immutable build **strictly read-only**: no
 tool may write, run arbitrary SQL, or reach the filesystem/network through the
@@ -12,7 +12,7 @@ database. Enforcement is layered so a write cannot slip through silently:
 Query values are always bound through ``?`` placeholders; the ``db.repositories``
 layer is the only sanctioned SQL surface (never string interpolation). This
 module opens connections; it does not resolve the active build path from the
-``current.json`` manifest -- that promotion logic is §T24.
+``current.json`` manifest -- that promotion logic is separate.
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ from pathlib import Path
 
 
 class DatabaseUnavailable(RuntimeError):
-    """The read-only database could not be opened (maps to §V23 ``database_unavailable``).
+    """The read-only database could not be opened (maps to ``database_unavailable``).
 
     Carries only the file *name*, never a full local path, so the message is safe
-    to surface without leaking the filesystem layout (§V23).
+    to surface without leaking the filesystem layout.
     """
 
 
 def open_read_only(db_path: str | Path) -> sqlite3.Connection:
-    """Open ``db_path`` as a strictly read-only SQLite connection (§V2).
+    """Open ``db_path`` as a strictly read-only SQLite connection.
 
     Fails closed: a missing file raises :class:`DatabaseUnavailable` rather than
     letting SQLite create an empty database. Any subsequent write on the returned

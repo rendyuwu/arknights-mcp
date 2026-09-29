@@ -1,8 +1,8 @@
-"""§V117 arm-liveness contract (B164): the unit that must be counted is the ARM.
+"""Arm-liveness contract: the unit that must be counted is the ARM.
 
-§V113 (b) made every registered rule own a deciding field a real build populates, and
+Every registered rule owns a deciding field a real build populates, and
 ``threat.aerial`` passed it comfortably -- 1030 observations over the promoted corpus.
-It also emitted **zero** limitations, because both of its §V26 refusal arms were dead:
+It also emitted **zero** limitations, because both of its refusal arms were dead:
 ``motion_type`` is NULL on 0/3879 enemies (and the occurrence COALESCEs a variant over
 that never-NULL base), and the "unrecognized motion_type" arm could not fire at all,
 because the motion vocabulary declared ten tokens over a corpus that sends two. Those
@@ -19,17 +19,17 @@ So this module counts branches, not rules, in three layers:
   the thing that drifts once and then agrees with itself forever.
 * **reachability** -- every ``dead_today`` arm is fired on purpose from a synthetic
   occurrence. ``dead_today`` is a statement about the corpus; an arm no input can reach
-  is not dead, it is dishonest, and §T210 (c) is what to do with it instead.
+  is not dead, it is dishonest, and retiring it is what to do with it instead.
 * **build sweep** -- every rule is run over every stage of the promoted build and each
   emitted refusal is mapped back to its declared arm. A ``live`` arm that fires zero
-  times is a new B164; a ``dead_today`` arm that fires is a declaration gone stale; a
-  refusal that maps to no arm is an undeclared branch that the static layer somehow
-  let through.
+  times is the defect returning; a ``dead_today`` arm that fires is a declaration gone
+  stale; a refusal that maps to no arm is an undeclared branch that the static layer
+  somehow let through.
 
-§V118/B165 widened all three layers from the ``limitations`` channel to BOTH channels: a
+All three layers cover BOTH channels: a
 rule that concludes nothing now sends its refusals out as ``warnings``, so a guard that
 reads only limitations would report the arms that fix restored as dead again -- and the
-two §V26 conflict warnings ``ranged_arts`` always emitted turn out to be refusals this
+two conflict warnings ``ranged_arts`` always emitted turn out to be refusals this
 module never counted at all.
 
 Counts in the declaration are @promoted ``2026-07-30T092427Z-en-cn``; the static and
@@ -117,9 +117,9 @@ def _module_constants(tree: ast.Module) -> dict[str, list[ast.expr]]:
 
 
 def _module_returns(tree: ast.Module) -> dict[str, list[ast.expr]]:
-    """Every module-level helper -> the expressions it can return (§V118 b/B165).
+    """Every module-level helper -> the expressions it can return.
 
-    ``ranged_arts`` words its "arts damage but no attack reach" refusal in a §V37 helper
+    ``ranged_arts`` words its "arts damage but no attack reach" refusal in a helper
     and appends the CALL, so the resolver saw a call whose arguments are three variables
     and produced nothing but holes. An arm composed one function away is still an arm, so
     the helper's own returns are resolved instead of its arguments.
@@ -197,8 +197,8 @@ def _arm_sites(module: str) -> list[list[str]]:  # noqa: C901
     handed over as a keyword -- the ways every rule in the package states a refusal.
     Anything new that emits one has to be one of these, or the sweep catches it.
 
-    ``warnings`` joined the set with §V118 (b)/B165: a rule that concludes nothing now
-    routes its refusals there, and the two §V26 conflict warnings ``ranged_arts`` has
+    ``warnings`` joined the set: a rule that concludes nothing now
+    routes its refusals there, and the two conflict warnings ``ranged_arts`` has
     always emitted were refusals this guard never saw, because it only ever read the
     ``limitations`` channel.
 
@@ -263,9 +263,7 @@ def test_declaration_is_well_formed() -> None:
         assert arm.rule_id in registered, f"{arm.rule_id}: arm declared for an unregistered rule"
         assert arm.status in ARM_STATUSES, f"{arm.rule_id}/{arm.name}: bad status {arm.status!r}"
         assert arm.marker.strip(), f"{arm.rule_id}/{arm.name}: empty marker"
-        assert arm.counted.strip(), (
-            f"{arm.rule_id}/{arm.name}: status asserted, not counted (§V117)"
-        )
+        assert arm.counted.strip(), f"{arm.rule_id}/{arm.name}: status asserted, not counted"
         key = (arm.rule_id, arm.name)
         assert key not in seen, f"duplicate arm {key}"
         seen.add(key)
@@ -273,9 +271,9 @@ def test_declaration_is_well_formed() -> None:
 
 @pytest.mark.parametrize("rule_id", sorted(_RULE_MODULES))
 def test_every_arm_site_in_the_module_is_declared(rule_id: str) -> None:
-    """§V117: an arm the code can emit and the declaration does not name.
+    """An arm the code can emit and the declaration does not name.
 
-    This is the direction that would have caught B164 before a build existed. The sites
+    This is the direction that would have caught the defect before a build existed. The sites
     come out of the module's own AST, so adding a refusal without declaring its liveness
     fails here rather than four milestones later on a zero count.
     """
@@ -289,7 +287,7 @@ def test_every_arm_site_in_the_module_is_declared(rule_id: str) -> None:
         for text in candidates:
             assert any(marker in text for marker in markers), (
                 f"{rule_id}: undeclared refusal arm {text!r} -- declare it in "
-                "RULE_LIMITATION_ARMS with the count that makes its status true (§V117)"
+                "RULE_LIMITATION_ARMS with the count that makes its status true"
             )
 
 
@@ -320,7 +318,7 @@ def _stage(*occurrences: EnemyOccurrence) -> StageThreatContext:
 
 
 def _limitations(ctx: StageThreatContext, rule_id: str) -> list[str]:
-    """The rule's refusals through both carriers (§V118 b): observation, then warnings."""
+    """The rule's refusals through both carriers: observation, then warnings."""
     result = analyze_stage(ctx)
     return [
         *(
@@ -362,7 +360,7 @@ def _flyer() -> EnemyOccurrence:
 
 
 def test_aerial_motion_missing_arm_is_reachable() -> None:
-    """§V117: NULL motion really can arrive -- the column is nullable, not empty."""
+    """NULL motion really can arrive -- the column is nullable, not empty."""
     limitations = _limitations(
         _stage(_flyer(), _occurrence("enemy_0002_x", motion_type=None)),
         "threat.aerial",
@@ -371,11 +369,11 @@ def test_aerial_motion_missing_arm_is_reachable() -> None:
 
 
 def test_aerial_unrecognized_motion_arm_is_reachable() -> None:
-    """The arm B164 was about: an unseen token must REFUSE, not resolve.
+    """The arm the defect was about: an unseen token must REFUSE, not resolve.
 
-    ``SWIM`` is one of the eight tokens the vocabulary used to declare, so before §T213
+    ``SWIM`` is one of the eight tokens the vocabulary used to declare, so before the fix
     this input produced a silent ground classification -- no limitation, no evidence, and
-    an enemy quietly reported as not aerial on the strength of a guess (§V26).
+    an enemy quietly reported as not aerial on the strength of a guess.
     """
     limitations = _limitations(
         _stage(_flyer(), _occurrence("enemy_0002_x", motion_type="SWIM")),
@@ -385,7 +383,7 @@ def test_aerial_unrecognized_motion_arm_is_reachable() -> None:
 
 
 def test_motion_vocabulary_carries_no_token_the_corpus_never_sends() -> None:
-    """§V96 on the classifier's own vocabulary: two sets, two tokens, no overlap.
+    """The classifier's own vocabulary: two sets, two tokens, no overlap.
 
     The offline half of the vocabulary check -- the build half compares these against the
     counted domain. A token added here without a count is the defect returning.
@@ -424,11 +422,11 @@ def test_pressure_spike_spawn_timing_missing_arm_is_reachable() -> None:
 
 
 def test_pressure_spike_total_count_missing_arm_is_reachable() -> None:
-    """§V118/B165: an unknown arrival count, which used to read as a small one.
+    """An unknown arrival count, which used to read as a small one.
 
     NULL on 0/28302 rows today, and nullable, so it is declared rather than dropped. The
     stage fields nothing else, which is the point: the refusal has to reach a client with
-    no observation to ride on (§V118 b).
+    no observation to ride on.
     """
     limitations = _limitations(_stage(_occurrence("enemy_0006_x")), "threat.pressure_spike")
     assert any("total_count missing; spawn pressure not assessed" in text for text in limitations)
@@ -453,7 +451,7 @@ def test_every_dead_arm_has_a_reachability_proof() -> None:
     }
     assert declared_dead == proven, (
         "a dead_today arm without a reachability proof above -- prove it can fire, or "
-        "retire it the way §T210 (c) retired the arms nothing could reach (§V117)"
+        "retire it the way the arms nothing could reach were retired"
     )
 
 
@@ -483,7 +481,7 @@ def _sweep() -> Counter[tuple[str, str]]:
                         continue
                     for arm in matched:
                         fires[(arm.rule_id, arm.name)] += 1
-            # §V118 (b)/B165: a rule that concludes nothing sends its refusals out as
+            # A rule that concludes nothing sends its refusals out as
             # warnings, so counting only the observation channel would report the arms
             # this project just fixed as dead again -- and would let a genuinely new
             # undeclared refusal ride out unmapped. Warnings are stage-scoped, so the
@@ -502,7 +500,7 @@ def _sweep() -> Counter[tuple[str, str]]:
         conn.close()
     assert not unmapped, (
         f"{len(unmapped)} limitation(s) map to no declared arm, e.g. {unmapped[:2]} -- an "
-        "undeclared refusal branch (§V117)"
+        "undeclared refusal branch"
     )
     return fires
 
@@ -519,9 +517,9 @@ def sweep() -> Counter[tuple[str, str]]:
 def test_declared_status_matches_the_build(
     arm: LimitationArm, sweep: Counter[tuple[str, str]]
 ) -> None:
-    """§V117, both ways: ``live`` must fire, ``dead_today`` must not.
+    """Both ways: ``live`` must fire, ``dead_today`` must not.
 
-    The half that would have caught B164 on a promoted corpus, and the half that keeps
+    The half that would have caught the defect on a promoted corpus, and the half that keeps
     the declaration from rotting once upstream starts sending a value it did not before
     -- a ``dead_today`` arm that begins firing is not a failure of the rule, it is the
     prompt to re-count it and move the row.
@@ -530,19 +528,19 @@ def test_declared_status_matches_the_build(
     if arm.status == "live":
         assert fires > 0, (
             f"{arm.rule_id}/{arm.name} is declared live and fired 0 times on the build -- "
-            "this is B164's shape returning; re-count it and declare it dead_today, or fix "
-            "the branch that can no longer be reached (§V117)"
+            "this is the defect's shape returning; re-count it and declare it dead_today, or fix "
+            "the branch that can no longer be reached"
         )
     else:
         assert fires == 0, (
             f"{arm.rule_id}/{arm.name} is declared dead_today and fired {fires} times -- the "
-            "corpus changed; re-count the arm and move the row to live (§V117)"
+            "corpus changed; re-count the arm and move the row to live"
         )
 
 
 @requires_build
 def test_aerial_still_emits_no_limitations_and_says_so(sweep: Counter[tuple[str, str]]) -> None:
-    """B164's headline figure, kept as a figure rather than a memory.
+    """The headline figure, kept as a figure rather than a memory.
 
     1030 observations, zero limitations. The point is not that zero is wrong -- the
     corpus really does type every motion -- but that it must be DECLARED, so nobody
@@ -558,10 +556,10 @@ def test_aerial_still_emits_no_limitations_and_says_so(sweep: Counter[tuple[str,
 
 @requires_build
 def test_the_vocabulary_equals_the_counted_motion_domain() -> None:
-    """§V96/§V117: the classifier's sets are the corpus's tokens, no more, no less.
+    """The classifier's sets are the corpus's tokens, no more, no less.
 
     Fails both ways on purpose. A token added to the code that the build never sends is
-    B164 exactly. A token the build starts sending that the code does not classify is the
+    the defect exactly. A token the build starts sending that the code does not classify is the
     prompt to ground it in a source and count it -- and until that happens the
     unrecognized arm carries it, which is the whole reason that arm was worth saving.
     """
@@ -581,5 +579,5 @@ def test_the_vocabulary_equals_the_counted_motion_domain() -> None:
         conn.close()
     assert stored == FLY_MOTIONS | GROUND_MOTIONS, (
         f"motion vocabulary {sorted(FLY_MOTIONS | GROUND_MOTIONS)} != counted domain "
-        f"{sorted(stored)} (§V117)"
+        f"{sorted(stored)}"
     )

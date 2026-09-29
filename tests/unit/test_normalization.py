@@ -1,7 +1,7 @@
-"""T66: the raw ``arknights_assets_gamedata`` → normalized bridge (§V29, §V30, §V36).
+"""The raw ``arknights_assets_gamedata`` → normalized bridge.
 
 Drives :mod:`arknights_mcp.importers.normalization` directly with the *real*
-upstream shapes B6/§V29 documents, asserting each transform produces the
+upstream shapes the bridge documents, asserting each transform produces the
 normalized shape the parsers consume, and that every transform is idempotent on
 already-normalized (synthetic) input so the minimal fixture path is unaffected.
 """
@@ -16,7 +16,7 @@ from arknights_mcp.importers.normalization import (
     normalize_level_id,
 )
 
-# --- enemy_database + handbook (§V29 (a)/(d)) ---------------------------------
+# --- enemy_database + handbook ------------------------------------------------
 
 REAL_HANDBOOK = {
     "enemyData": {
@@ -71,7 +71,7 @@ REAL_DATABASE = {
 
 
 def test_enemy_database_id_keyed_list_becomes_normalized() -> None:
-    """§V29 (a): id-keyed dict → list with ``m_value`` attrs → ``{"enemies": {...}}``
+    """Id-keyed dict → list with ``m_value`` attrs → ``{"enemies": {...}}``
     with the renamed stat keys the parser reads."""
     _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
     assert set(database) == {"enemies"}
@@ -88,7 +88,7 @@ def test_enemy_database_id_keyed_list_becomes_normalized() -> None:
 
 
 def test_motion_injected_into_handbook_from_database() -> None:
-    """§V29 (d): the handbook has no ``motionType``; motion is sourced from
+    """The handbook has no ``motionType``; motion is sourced from
     ``enemyData.motion.m_value`` and backfilled into the handbook entry."""
     handbook, _ = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
     entries = handbook["enemyData"]
@@ -106,7 +106,7 @@ def test_partial_attributes_only_emit_present_keys() -> None:
     assert "def" not in drone  # absent in the source attributes
 
 
-# --- §V44/B38: level entries are deltas over level 0 --------------------------
+# --- level entries are deltas over level 0 -------------------------------------
 
 # A real multi-level enemy (modelled on ``enemy_1502_crowns``): higher levels
 # redefine only hp/atk/def and leave everything else ``m_defined:false`` (a
@@ -149,9 +149,9 @@ REAL_MULTI_LEVEL_DATABASE = {
 
 
 def test_undefined_higher_level_stats_inherit_base_not_zero() -> None:
-    """§V44/B38: a higher level that leaves a stat ``m_defined:false`` inherits the
+    """A higher level that leaves a stat ``m_defined:false`` inherits the
     level-0 value; the importer must NOT write the sentinel ``m_value`` (0) as a
-    real stat (the B38 bug: a spawned variant reported ``res=0``/``speed=0`` and
+    real stat (the original bug: a spawned variant reported ``res=0``/``speed=0`` and
     fed those false zeros to the threat analyzer)."""
     _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_MULTI_LEVEL_DATABASE)
     levels = database["enemies"]["enemy_x_boss"]["levels"]
@@ -177,9 +177,9 @@ def test_defined_zero_stat_is_kept_not_treated_as_unset() -> None:
     assert slime["res"] == 0  # magicResistance m_defined:true m_value:0 → kept
 
 
-# --- §V114/B161: the sentinel strip keeps the source's ANSWER --------------------
+# --- the sentinel strip keeps the source's ANSWER --------------------------------
 #
-# §V103 keeps upstream's ``rangeRadius: -1.0`` out of ``attackRange`` -- it is a mask
+# The strip keeps upstream's ``rangeRadius: -1.0`` out of ``attackRange`` -- it is a mask
 # meaning "no attack radius", not a distance. But deleting it also deleted the fact that
 # upstream ANSWERED, so the remaining absence meant two things at once: the source said
 # none, and the source said nothing. Counted on the build before this column existed, 29
@@ -221,14 +221,14 @@ def _sentinel_levels(**kwargs: Any) -> list[dict[str, Any]]:
 
 
 def test_no_radius_sentinel_is_stripped_but_its_answer_is_kept() -> None:
-    """§V103 still removes the mask; §V114 keeps the fact that the source answered."""
+    """The mask is still removed; the flag keeps the fact that the source answered."""
     level = _sentinel_levels(base_radius=-1.0)[0]
-    assert "attackRange" not in level  # §V103: -1.0 is not a distance
+    assert "attackRange" not in level  # -1.0 is not a distance
     assert level["attackRangeDeclaredNone"] is True
 
 
 def test_a_real_radius_declares_nothing_about_having_none() -> None:
-    """The flag marks the ANSWER "none", never the presence of a radius (§V99)."""
+    """The flag marks the ANSWER "none", never the presence of a radius."""
     level = _sentinel_levels(base_radius=2.5)[0]
     assert level["attackRange"] == 2.5
     assert "attackRangeDeclaredNone" not in level
@@ -237,8 +237,8 @@ def test_a_real_radius_declares_nothing_about_having_none() -> None:
 def test_a_never_defined_radius_is_not_an_answer() -> None:
     """The class the flag exists to separate: the source stated nothing at all.
 
-    Both this and the sentinel leave ``attackRange`` absent -- that identity is the bug
-    (B161). The flag is what tells them apart, so its ABSENCE here is the assertion.
+    Both this and the sentinel leave ``attackRange`` absent -- that identity is the bug.
+    The flag is what tells them apart, so its ABSENCE here is the assertion.
     """
     _, database = normalize_enemy_sources(REAL_HANDBOOK, REAL_DATABASE)
     level = database["enemies"]["enemy_1007_slime"]["levels"][0]
@@ -247,13 +247,13 @@ def test_a_never_defined_radius_is_not_an_answer() -> None:
 
 
 def test_a_level_inheriting_the_sentinel_inherits_the_answer() -> None:
-    """§V44 + §V114: the strip runs AFTER the delta merge, in both directions.
+    """The strip runs AFTER the delta merge, in both directions.
 
     A level that leaves ``rangeRadius`` ``m_defined:false`` inherits its base's cell. When
     that cell is the sentinel, the level's own answer is "no radius" -- so it must carry
     the flag, not fall back to looking unstated. (Running the strip EARLIER would be worse
     still: the key would be missing at the delta step and the level would inherit a real
-    radius it never had -- the §T210 fabricated-reach case.)
+    radius it never had -- the fabricated-reach case.)
     """
     levels = _sentinel_levels(base_radius=-1.0, level_2_cell={"m_defined": False, "m_value": 0.0})
     assert [lvl["attackRangeDeclaredNone"] for lvl in levels] == [True, True]
@@ -269,14 +269,14 @@ def test_a_level_that_redefines_a_real_radius_over_the_sentinel_carries_no_answe
 
 
 def test_a_non_numeric_radius_is_dropped_without_claiming_an_answer() -> None:
-    """A shape the bridge cannot read is not a statement the source made (§V114 a)."""
+    """A shape the bridge cannot read is not a statement the source made."""
     levels = _sentinel_levels(base_radius="far")  # type: ignore[arg-type]
     assert "attackRange" not in levels[0]
     assert "attackRangeDeclaredNone" not in levels[0]
 
 
 def test_enemy_sources_idempotent_on_normalized_input() -> None:
-    """§V30: already-normalized input passes through unchanged (the synthetic path)."""
+    """Already-normalized input passes through unchanged (the synthetic path)."""
     normalized_db = {
         "enemies": {"e1": {"levels": [{"level": 0, "hp": 10, "res": 1, "attackInterval": 1.0}]}}
     }
@@ -286,7 +286,7 @@ def test_enemy_sources_idempotent_on_normalized_input() -> None:
     assert handbook == normalized_hb
 
 
-# --- levelId → resolvable snapshot path (§V29 (b)/§V36) -----------------------
+# --- levelId → resolvable snapshot path ----------------------------------------
 
 
 def test_level_id_title_case_becomes_snapshot_path() -> None:
@@ -307,12 +307,12 @@ def test_level_id_none_and_blank() -> None:
 
 
 def test_level_id_always_forced_under_levels_tree() -> None:
-    """§V36: the result is always under ``gamedata/levels/`` — a stage can never
+    """The result is always under ``gamedata/levels/`` — a stage can never
     resolve a levelId to an excel table."""
     assert normalize_level_id("gamedata/excel/character_table.json").startswith("gamedata/levels/")
 
 
-# --- level file: grid → tiles, key → enemy, positional indices (§V29 (c)) -----
+# --- level file: grid → tiles, key → enemy, positional indices ---------------
 
 REAL_LEVEL = {
     "mapData": {
@@ -349,7 +349,7 @@ REAL_LEVEL = {
                             "preDelay": 8.0,
                             "routeIndex": 0,
                         },
-                        # B35: real waves interleave non-spawn actions that also
+                        # Real waves interleave non-spawn actions that also
                         # carry a ``key``. A STORY key is a story-asset path (not an
                         # enemy id — the old code leaked it as a spawn and crashed
                         # the cross-ref check); DISPLAY_ENEMY_INFO/PREVIEW_CURSOR
@@ -368,7 +368,7 @@ REAL_LEVEL = {
 
 
 def test_grid_tiles_get_derived_xy_and_passable() -> None:
-    """§V29 (c): grid-indexed tiles (no x/y) → tiles with derived x/y;
+    """Grid-indexed tiles (no x/y) → tiles with derived x/y;
     ``passableMask`` → ``passable``."""
     level = normalize_level(REAL_LEVEL)
     tiles = level["mapData"]["tiles"]
@@ -389,7 +389,7 @@ def test_positional_route_and_wave_indices_injected() -> None:
     assert level["waves"][0]["maxTimeWaiting"] == 10.0  # from maxTimeWaitingForNextWave
 
 
-# --- route positions rebased into the tile frame (§V95, B127) -----------------
+# --- route positions rebased into the tile frame -------------------------------
 
 _FRAME_LEVEL = {
     "mapData": {
@@ -417,7 +417,7 @@ _FRAME_LEVEL = {
 
 
 def test_route_positions_rebased_into_tile_frame() -> None:
-    """§V95/B127: upstream route ``row`` is BOTTOM-origin while tile ``y`` is
+    """Upstream route ``row`` is BOTTOM-origin while tile ``y`` is
     TOP-origin. Storing the raw value puts two opposite frames in one database -- the
     render then draws route markers on the wrong tiles and a client cross-referencing a
     position against ``tile_grid`` reads a mirrored board. Rows are rebased to
@@ -434,7 +434,7 @@ def test_route_positions_rebased_into_tile_frame() -> None:
 
 
 def test_checkpoint_positions_rebased_and_siblings_untouched() -> None:
-    """§V95: a checkpoint's nested ``position`` is rebased like start/end; every other
+    """A checkpoint's nested ``position`` is rebased like start/end; every other
     checkpoint field (``type``, ``time``) rides through unchanged."""
     checkpoints = normalize_level(_FRAME_LEVEL)["routes"][0]["checkpoints"]
     assert [c["position"]["row"] for c in checkpoints] == [1, 3]  # was 2, 0
@@ -444,7 +444,7 @@ def test_checkpoint_positions_rebased_and_siblings_untouched() -> None:
 
 
 def test_malformed_route_position_passes_through_unrebased() -> None:
-    """§V26: a position without an integer ``row`` is preserved as-is, never
+    """A position without an integer ``row`` is preserved as-is, never
     fabricated into a plausible coordinate."""
     level = normalize_level(
         {
@@ -459,7 +459,7 @@ def test_malformed_route_position_passes_through_unrebased() -> None:
 
 
 def test_wave_action_key_resolves_to_enemy_and_variant() -> None:
-    """§V29 (c): a wave action names its enemy under ``key`` (resolved via
+    """A wave action names its enemy under ``key`` (resolved via
     ``enemyDbRefs``), not ``enemyId``; non-spawn actions are dropped."""
     level = normalize_level(REAL_LEVEL)
     actions = level["waves"][0]["fragments"][0]["actions"]
@@ -471,7 +471,7 @@ def test_wave_action_key_resolves_to_enemy_and_variant() -> None:
     assert by_enemy["enemy_1007_slime"]["count"] == 3
 
 
-# --- useDb:false inline enemy variant → base prefab (§V43, B37) ---------------
+# --- useDb:false inline enemy variant → base prefab --------------------------
 
 
 def _inline_variant_level(*, with_prefab: bool) -> dict:
@@ -504,7 +504,7 @@ def _inline_variant_level(*, with_prefab: bool) -> dict:
 
 
 def test_inline_variant_spawn_resolves_to_prefab_base() -> None:
-    """§V43/B37: a ``useDb:false`` inline variant spawn resolves its ``enemyId`` to
+    """A ``useDb:false`` inline variant spawn resolves its ``enemyId`` to
     the ref's base ``prefabKey`` (so the cross-file FK holds) and carries the
     original inline id as ``variantId`` for traceability — it is never left as the
     inline id, which is absent from the enemy tables and would fail the level
@@ -517,10 +517,10 @@ def test_inline_variant_spawn_resolves_to_prefab_base() -> None:
 
 
 def test_inline_variant_without_prefab_stays_unresolved_fail_closed() -> None:
-    """§V43/B37: an inline ref with no ``prefabKey`` cannot resolve to a base, so
+    """An inline ref with no ``prefabKey`` cannot resolve to a base, so
     the spawn keeps the inline id (no fabricated resolution) and carries no
     ``variantId`` — the level importer's cross-reference check still fails closed
-    on it, preserving §V3/§V4 for genuinely-unresolvable refs."""
+    on it, preserving fail-closed for genuinely-unresolvable refs."""
     level = normalize_level(_inline_variant_level(with_prefab=False))
     action = level["waves"][0]["fragments"][0]["actions"][0]
     assert action["enemyId"] == "enemy_1105_tyokai_b"  # unresolved → fails closed downstream
@@ -528,14 +528,14 @@ def test_inline_variant_without_prefab_stays_unresolved_fail_closed() -> None:
 
 
 def test_usedb_true_ref_carries_no_variant_id() -> None:
-    """§V43: a normal ``useDb:true`` spawn resolves directly to the ref id and does
+    """A normal ``useDb:true`` spawn resolves directly to the ref id and does
     not emit a ``variantId`` (so real spawns don't carry a null variant field)."""
     level = normalize_level(REAL_LEVEL)
     actions = level["waves"][0]["fragments"][0]["actions"]
     assert all("variantId" not in a for a in actions)
 
 
-# --- stage-scoped inline variant stat extraction (§T80; §V29/§V44/§V18) --------
+# --- stage-scoped inline variant stat extraction -------------------------------
 
 
 def _variant_ref_level(overwritten: dict) -> dict:
@@ -557,7 +557,7 @@ def _variant_ref_level(overwritten: dict) -> dict:
 
 
 def test_collect_variant_extracts_defined_stats() -> None:
-    """§T80/§V29: a variant carries the base prefab id plus the §V29-verified stat
+    """A variant carries the base prefab id plus the verified stat
     overrides that overwrittenData *defines* (attributes.<stat>.m_value + motion)."""
     level = normalize_level(
         _variant_ref_level(
@@ -577,13 +577,13 @@ def test_collect_variant_extracts_defined_stats() -> None:
     assert variant["variantId"] == "enemy_1105_tyokai_b"
     assert variant["prefabKey"] == "enemy_1105_tyokai"
     assert variant["def"] == 9999
-    assert variant["res"] == 80  # magicResistance -> res (§V29 map reuse)
+    assert variant["res"] == 80  # magicResistance -> res (map reuse)
     assert variant["hp"] == 12345  # maxHp -> hp
     assert variant["motion"] == "FLY"
 
 
 def test_collect_variant_omits_undefined_stat_to_inherit_base() -> None:
-    """§V44: an ``m_defined:false`` cell is a delta sentinel -- it is omitted so the
+    """An ``m_defined:false`` cell is a delta sentinel -- it is omitted so the
     consumer inherits the base value, never written as the sentinel 0."""
     level = normalize_level(
         _variant_ref_level(
@@ -604,7 +604,7 @@ def test_collect_variant_omits_undefined_stat_to_inherit_base() -> None:
 
 
 def test_collect_variant_drops_overwritten_prose() -> None:
-    """§V18/§V16: name/description prose in overwrittenData is stripped by the field
+    """Name/description prose in overwrittenData is stripped by the field
     allowlist and never enters the extracted variant."""
     level = normalize_level(
         _variant_ref_level(
@@ -624,7 +624,7 @@ def test_collect_variant_drops_overwritten_prose() -> None:
 
 
 def test_collect_variants_only_for_inline_refs() -> None:
-    """§V43: a ``useDb:true`` ref yields no variant, and a ``useDb:false`` ref with
+    """A ``useDb:true`` ref yields no variant, and a ``useDb:false`` ref with
     no prefabKey yields none (its spawn stays unresolved + fails closed downstream)."""
     # useDb:true ref only.
     assert normalize_level(REAL_LEVEL)["variants"] == []
@@ -636,11 +636,11 @@ def test_collect_variants_only_for_inline_refs() -> None:
 
 
 def test_collect_variants_reads_enemies_fallback() -> None:
-    """§V46: ``_collect_variants`` must mirror ``_enemy_ref_map``'s ``enemyDbRefs`` ->
+    """``_collect_variants`` must mirror ``_enemy_ref_map``'s ``enemyDbRefs`` ->
     ``enemies`` fallback. A level declaring its refs under ``enemies`` still yields the
     variant row; otherwise the spawn's ``variantId`` (emitted by the ref map, which
     reads the same fallback) would dangle with no variant row -> variant_pk NULL ->
-    def/res/motion overrides silently dropped back to the §V43 limitation."""
+    def/res/motion overrides silently dropped."""
     level_raw = _variant_ref_level(
         {
             "prefabKey": {"m_defined": True, "m_value": "enemy_1105_tyokai"},
@@ -656,7 +656,7 @@ def test_collect_variants_reads_enemies_fallback() -> None:
 
 
 def test_collect_variants_dedups_duplicate_inline_id() -> None:
-    """§V46: a duplicate inline ref id must be collapsed last-wins (as ``_enemy_ref_map``
+    """A duplicate inline ref id must be collapsed last-wins (as ``_enemy_ref_map``
     does), not emitted twice -- two rows with the same id would collide on
     ``UNIQUE(stage_pk, variant_id)`` and abort the candidate build."""
     level_raw = _variant_ref_level(
@@ -683,7 +683,7 @@ def test_collect_variants_dedups_duplicate_inline_id() -> None:
 
 
 def test_level_idempotent_on_synthetic_shape() -> None:
-    """§V30: a synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
+    """A synthetic level (tiles already carry x/y, no ``mapData.map`` grid)
     passes through unchanged."""
     synthetic = {
         "mapData": {"width": 1, "height": 1, "tiles": [{"x": 0, "y": 0, "tileKey": "t"}]},

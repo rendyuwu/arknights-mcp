@@ -1,23 +1,23 @@
-"""T200: `fields_consumed` is a CLAIM about the code, so it must be TRUE (§V98/B132).
+"""`fields_consumed` is a CLAIM about the code, so it must be TRUE.
 
 The primary source's registry entry ships verbatim to every MCP client through
 ``get_data_sources``. It declared ``range_table.json`` for six milestones while no sync
 ever fetched that file and no importer ever opened it -- a client-visible lie about
-scope, and worse, a lie that IMPLIED a resolution ``range_id`` did not have (B132). It
+scope, and worse, a lie that IMPLIED a resolution ``range_id`` did not have. It
 also declared ``uniequip_data.json``, a file that has never existed anywhere: the module
 metadata is the ``equipDict`` key inside ``uniequip_table.json``, which is listed one
 line above it.
 
-§V41 already proves the other direction -- that every path an importer reads by default
-is staged by a real sync. This proves the direction §V98 adds: that nothing is DECLARED
+The introspection guard already proves that every path an importer reads by default
+is staged by a real sync. This proves the other direction: that nothing is DECLARED
 which is not staged and read. Together they pin the set from both sides, so the
-declaration can neither over-promise (B132) nor quietly under-report the files this
-server actually consumes (§V27 completeness).
+declaration can neither over-promise nor quietly under-report the files this
+server actually consumes.
 
 Deliberately an EQUALITY, not a subset check. A subset in one direction is what let
 ``gacha_table``/``skin_table``/``activity_table`` be read for three milestones while
 undeclared: a client reading the registry would have concluded the banner archive and
-the skin gallery came from somewhere else. §V98 does allow a genuinely-planned-but-not-
+the skin gallery came from somewhere else. The rule does allow a genuinely-planned-but-not-
 yet-read entry, but it must be MARKED rather than listed flat; there is no marker
 vocabulary yet precisely because nothing is in that state, and adding one entry without
 a marker fails here.
@@ -58,7 +58,7 @@ def _staged_basenames() -> set[str]:
 
 
 def test_declared_files_are_exactly_the_files_sync_stages() -> None:
-    """§V98: declared == staged. Neither an unread promise nor an undisclosed read."""
+    """Declared == staged. Neither an unread promise nor an undisclosed read."""
     declared = _declared()
     globs = {entry for entry in declared if entry.endswith("/**")}
     files = set(declared) - globs
@@ -68,17 +68,17 @@ def test_declared_files_are_exactly_the_files_sync_stages() -> None:
     under_reported = staged - files
     assert not over_promised, (
         f"{PRIMARY}.fields_consumed declares files no sync stages: {sorted(over_promised)} "
-        "-- either stage+import them or drop the claim (§V98/B132)"
+        "-- either stage+import them or drop the claim"
     )
     assert not under_reported, (
         f"{PRIMARY} reads files it does not declare: {sorted(under_reported)} "
-        "-- the registry must disclose the full consumed set (§V27)"
+        "-- the registry must disclose the full consumed set"
     )
     assert globs == {LEVEL_GLOB}, f"unexpected glob entries: {sorted(globs)}"
 
 
 def test_no_entry_names_a_sub_key_as_a_file() -> None:
-    """B132's second breach: ``uniequip_data.json`` is a KEY, not a file.
+    """The second breach: ``uniequip_data.json`` is a KEY, not a file.
 
     ``equipDict`` lives inside ``uniequip_table.json`` (``importers/modules.py``), so
     declaring it as a sibling file told a client this server fetches a resource that has
@@ -96,11 +96,11 @@ def test_no_entry_names_a_sub_key_as_a_file() -> None:
 
 
 def test_every_importer_default_path_is_declared() -> None:
-    """Ties §V98 to §V41's introspection: a new domain must reach the registry too.
+    """Ties declared == staged to introspection: a new domain must reach the registry too.
 
-    §V41 asserts an importer's default source path is STAGED. Without this, a new
-    importer could be staged and read while the registry stayed silent about it --
-    exactly how gacha/skin/activity went three milestones undeclared.
+    The introspection guard asserts an importer's default source path is STAGED. Without
+    this, a new importer could be staged and read while the registry stayed silent about
+    it -- exactly how gacha/skin/activity went three milestones undeclared.
     """
     import inspect
 
@@ -134,11 +134,11 @@ def test_every_importer_default_path_is_declared() -> None:
 
     assert read, "no importer source paths discovered (introspection broke)"
     undeclared = read - declared
-    assert not undeclared, f"importers read undeclared files: {sorted(undeclared)} (§V98/§V27)"
+    assert not undeclared, f"importers read undeclared files: {sorted(undeclared)}"
 
 
 def test_range_table_is_declared_and_actually_reached() -> None:
-    """B132's own row: the file is declared, staged, AND read -- all three (§V98)."""
+    """The original row: the file is declared, staged, AND read -- all three."""
     from arknights_mcp.importers.ranges import RANGE_TABLE_PATH
 
     assert "range_table.json" in _declared()
@@ -147,5 +147,5 @@ def test_range_table_is_declared_and_actually_reached() -> None:
 
 
 def test_example_registry_matches_the_live_one() -> None:
-    """The shipped example is what an operator copies; a drift here re-opens B132."""
+    """The shipped example is what an operator copies; a drift here re-opens the defect."""
     assert _declared(EXAMPLE_REGISTRY_PATH) == _declared()

@@ -1,15 +1,15 @@
-"""Shared sqlite constraint-error guard (§V37 DRY, §V33 fail-closed).
+"""Shared sqlite constraint-error guard (fail-closed).
 
 A duplicate, absent, or otherwise anomalous source constraint (dup PK, repeated
 variant, missing index) surfaces mid-build as a low-level ``sqlite3.IntegrityError``.
 Left uncaught it tears down the whole multi-region candidate build with a raw
-traceback (§V33 / §V3). Every importer + purge write path guarded against this
+traceback. Every importer + purge write path guarded against this
 with the *same* translate-and-reraise pattern; that pattern now lives here exactly
-once (§V37).
+once.
 
 The variance between the former copies -- which typed error to raise, the message,
 and any cleanup (e.g. a transaction rollback) -- is passed explicitly, never forked
-into silent divergent copies (§V37).
+into silent divergent copies.
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ _SAVEPOINT_NAME = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 @contextmanager
 def savepoint(conn: sqlite3.Connection, name: str) -> Iterator[None]:
-    """Run a block under a SQLite ``SAVEPOINT``, scoping only its writes (§V37).
+    """Run a block under a SQLite ``SAVEPOINT``, scoping only its writes.
 
     The single shared home for the ``SAVEPOINT``/``RELEASE``/``ROLLBACK TO`` dance used
-    by the optional per-region ride-along sources (``cli.sync._ride_along``, §V58) and by
-    the savepoint-isolated banner archive in the main build pipeline (§T116/§V62/B53). On
+    by the optional per-region ride-along sources (``cli.sync._ride_along``) and by
+    the savepoint-isolated banner archive in the main build pipeline. On
     success the savepoint is ``RELEASE``d; on ANY exception its writes are rolled back --
     leaving every row written *before* the block intact -- and the exception re-raises so
     the caller decides whether to fail-open or fail-closed. This helper only scopes the
@@ -60,7 +60,7 @@ def savepoint(conn: sqlite3.Connection, name: str) -> Iterator[None]:
 
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    """True when ``name`` exists as a table (§V37 single home for the probe).
+    """True when ``name`` exists as a table (single home for the probe).
 
     The shared ``sqlite_master`` presence check used wherever a code path must
     tolerate a database built before the migration that adds an optional table
@@ -76,14 +76,14 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 
 def column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    """True when ``table.column`` exists (§V37 single home, column-level sibling).
+    """True when ``table.column`` exists (single home, column-level sibling).
 
     Same job as :func:`table_exists` one level down: a read path must tolerate an
     ACTIVE build made before a migration that only ADDS a column (e.g.
     ``zones.event_name``, migration 0015) -- the server may be serving such a build
-    while the new code is already deployed (§V21). ``PRAGMA table_info`` takes the
+    while the new code is already deployed. ``PRAGMA table_info`` takes the
     table name as an identifier, so it is passed through a bound query on
-    ``pragma_table_info`` rather than interpolated (§V2).
+    ``pragma_table_info`` rather than interpolated.
     """
     row = conn.execute(
         "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",

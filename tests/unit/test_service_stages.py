@@ -1,12 +1,12 @@
-"""T17: the M0 internal ``analyze_stage`` service (§V6, §V14).
+"""The M0 internal ``analyze_stage`` service.
 
 Drives the pinned 4-4 fixture through a candidate DB and calls the service the
-way both transports will (§V14 -- one shared domain function). Verifies:
+way both transports will (one shared domain function). Verifies:
 
-* the result carries region + provenance on the facts (§V5) and the analyzer's
-  evidence-backed observations with every §V6 field intact;
+* the result carries region + provenance on the facts and the analyzer's
+  evidence-backed observations with every mandated field intact;
 * the service is a pure, read-only function of ``(DB, input)`` -- two identical
-  calls compare equal and the connection records no writes (§V2, §V14).
+  calls compare equal and the connection records no writes.
 """
 
 from __future__ import annotations
@@ -72,14 +72,14 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 def test_returns_stage_facts_with_region_and_provenance(conn: sqlite3.Connection) -> None:
     result = analyze_stage(conn, server="en", stage_code="4-4")
     assert result.status == "ok"
-    assert result.server == "en"  # region (§V5)
+    assert result.server == "en"  # region
     assert result.stage is not None
     assert result.stage.server == "en"
     assert result.stage.game_id == "main_04-04"
     assert result.stage.stage_code == "4-4"
     assert result.stage.sanity_cost == 18
     assert result.stage.zone_game_id == "main_4"
-    # §V5: provenance (snapshot_id, imported_at) present on the factual response.
+    # Provenance (snapshot_id, imported_at) present on the factual response.
     assert result.stage.provenance.snapshot_id == SNAPSHOT_ID
     assert result.stage.provenance.imported_at == IMPORTED_AT
 
@@ -94,7 +94,7 @@ def test_occurrences_from_stage_enemies(conn: sqlite3.Connection) -> None:
     assert drone.motion_type == "FLY"
     assert drone.is_elite is True
     assert drone.first_spawn_time == 8.0
-    # §V47: the occurrence carries the per-enemy stat block (level 0 fixture values).
+    # The occurrence carries the per-enemy stat block (level 0 fixture values).
     assert drone.hp == 900
     assert drone.atk == 260
     assert drone.def_ == 0
@@ -112,10 +112,10 @@ def test_occurrences_from_stage_enemies(conn: sqlite3.Connection) -> None:
 
 def test_aerial_observation_carries_v6_fields(conn: sqlite3.Connection) -> None:
     result = analyze_stage(conn, server="en", stage_code="4-4")
-    # The drone is an arts flyer, so the revived ranged-arts rule reports it too (§T210);
+    # The drone is an arts flyer, so the revived ranged-arts rule reports it too;
     # this test is about the aerial observation the service propagates.
     obs = next(o for o in result.observations if o.rule_id == RULE_ID)
-    # §V6: every mandated field present + well-formed, propagated by the service.
+    # Every mandated field present + well-formed, propagated by the service.
     assert obs.rule_id == RULE_ID
     assert obs.analyzer_version == result.analyzer_version
     assert result.analyzer_version is not None
@@ -146,7 +146,7 @@ def test_not_found_returns_typed_status(conn: sqlite3.Connection) -> None:
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query.
+    # A cn query does not surface en data.
     result = analyze_stage(conn, server="cn", stage_code="4-4")
     assert result.status == "not_found"
 
@@ -157,10 +157,10 @@ def test_requires_a_selector(conn: sqlite3.Connection) -> None:
 
 
 def test_shared_core_is_deterministic_and_read_only(conn: sqlite3.Connection) -> None:
-    # §V14: same DB + same input -> identical domain result.
+    # Same DB + same input -> identical domain result.
     changes_before = conn.total_changes
     first = analyze_stage(conn, server="en", stage_code="4-4")
     second = analyze_stage(conn, server="en", stage_code="4-4")
     assert first == second
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # The service only reads -- no writes recorded on the connection.
     assert conn.total_changes == changes_before

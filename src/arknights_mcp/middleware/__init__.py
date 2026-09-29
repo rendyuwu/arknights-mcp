@@ -1,7 +1,7 @@
-"""Remote transport middleware (§V11/§V12; §T54).
+"""Remote transport middleware.
 
 The per-principal + per-request controls that wrap the Streamable HTTP app on the
-auth-requiring remote path (§V40). Composition into the transport stack lives in
+auth-requiring remote path. Composition into the transport stack lives in
 :func:`arknights_mcp.transports.streamable_http.wrap_remote_app`.
 """
 

@@ -1,8 +1,8 @@
-"""Operator read repository (§V2; §T20/§T44).
+"""Operator read repository.
 
 Encapsulates the parameterized ``SELECT``s that back the ``get_operator`` service:
 a single operator keyed by ``(server, game_id)`` -- the unique identity -- with its
-region-scoped provenance joined in (§V5), plus the operator's opt-in heavy sections
+region-scoped provenance joined in, plus the operator's opt-in heavy sections
 (phases, skills + skill levels, talents + talent variants, modules + module levels)
 and cheap section counts for the always-on summary. Rows are returned as flat,
 typed dataclasses that mirror the selected columns 1:1; domain shaping (JSON
@@ -10,7 +10,7 @@ decode, envelope mapping) stays in the service.
 
 The operator join is on NOT NULL foreign keys
 (``operators -> record_provenance -> source_snapshots``), so a found operator always
-carries ``snapshot_id`` + ``imported_at`` (§V5). Every value is bound (§V2); no
+carries ``snapshot_id`` + ``imported_at``. Every value is bound; no
 method accepts caller SQL and nothing is interpolated into a query string.
 """
 
@@ -26,7 +26,7 @@ from arknights_mcp.db.repositories.base import Repository
 
 @dataclass(frozen=True)
 class OperatorRow:
-    """One operator row plus its joined region provenance (§V5)."""
+    """One operator row plus its joined region provenance."""
 
     operator_pk: int
     server: str
@@ -45,7 +45,7 @@ class OperatorRow:
 
 @dataclass(frozen=True)
 class OperatorSectionCounts:
-    """How many rows each heavy section holds -- the always-on summary (§V22)."""
+    """How many rows each heavy section holds -- the always-on summary."""
 
     phases: int
     skills: int
@@ -89,13 +89,13 @@ class OperatorSkillRow:
 class SkillLevelRow:
     """One mastery level of a skill (``skill_levels``).
 
-    ``blackboard_json`` stays a JSON string here (allowlisted + sanitized at import,
-    §V18/§V31) and is decoded in the service; ``gameplay_description`` is the imported
-    in-game effect TEMPLATE (§V65 (a)/ADR 0010) surfaced alongside the blackboard.
+    ``blackboard_json`` stays a JSON string here (allowlisted + sanitized at import)
+    and is decoded in the service; ``gameplay_description`` is the imported
+    in-game effect TEMPLATE (ADR 0010) surfaced alongside the blackboard.
 
     ``display_name`` / ``skill_type`` / ``sp_type`` / ``duration_type`` are the source's
-    PER-LEVEL values (§V112/B159), stored only when the skill's levels disagree; ``None``
-    means the skill row carries the shared value (§V66.3 hoist), exactly as for
+    PER-LEVEL values, stored only when the skill's levels disagree; ``None``
+    means the skill row carries the shared value (the hoist), exactly as for
     ``gameplay_description``.
     """
 
@@ -125,7 +125,7 @@ class TalentRow:
 class TalentLevelRow:
     """One variant of a talent (``talent_levels``); ``blackboard_json`` decoded later.
 
-    ``gameplay_description`` is the imported in-game effect TEMPLATE (§V65 (a)/ADR 0010)
+    ``gameplay_description`` is the imported in-game effect TEMPLATE (ADR 0010)
     surfaced alongside the blackboard.
     """
 
@@ -162,10 +162,10 @@ class ModuleLevelRow:
 
 @dataclass(frozen=True)
 class OperatorSkinRow:
-    """One named skin of an operator (``operator_skins``, §T182/§V88).
+    """One named skin of an operator (``operator_skins``).
 
     ``tmpl_id != char_id`` marks an alt-form skin (Amiya family, ADR 0015);
-    ``portrait_id`` is the stem the §V63 mirror URL derives from at response time.
+    ``portrait_id`` is the stem the mirror URL derives from at response time.
     """
 
     skin_id: str
@@ -189,7 +189,7 @@ _OPERATOR_SQL = (
     "LIMIT 1"
 )
 
-# One round-trip for the four summary counts; every value bound (§V2).
+# One round-trip for the four summary counts; every value bound.
 _COUNTS_SQL = (
     "SELECT "
     "(SELECT COUNT(*) FROM operator_phases WHERE operator_pk = ?), "
@@ -245,7 +245,7 @@ _MODULE_LEVELS_SQL = (
 # digit-leading outfit-series ids ("2020#sale"), then the ILLUST_* default-art
 # groups -- there is deliberately NO defaults-first contract on the wire; clients
 # pick refs by variant/flags, never by position. The ``server`` predicate is
-# belt-and-braces §V5 (operator_pk is globally unique) AND lets the lookup use
+# belt-and-braces (operator_pk is globally unique) AND lets the lookup use
 # ``idx_operator_skins_operator (server, operator_pk)`` instead of a full scan.
 _SKINS_SQL = (
     "SELECT skin_id, char_id, tmpl_id, display_name, skin_group_id, skin_group_name, "
@@ -254,9 +254,9 @@ _SKINS_SQL = (
     "ORDER BY skin_group_id, skin_id"
 )
 
-# Batched item display-name lookup for the module/skill upgrade-cost name pairing
-# (§T132/§V69). The fixed statement prefix is a module-level constant; the caller appends
-# only a ``(?, …)`` placeholder group sized to the id count (§V2: the composed part is
+# Batched item display-name lookup for the module/skill upgrade-cost name pairing.
+# The fixed statement prefix is a module-level constant; the caller appends
+# only a ``(?, …)`` placeholder group sized to the id count (the composed part is
 # structural -- ``?`` placeholders, never a value -- so nothing is interpolated into the
 # query and injection stays impossible). Both the server and every id are bound.
 _ITEM_NAMES_BY_GAME_IDS_SQL_PREFIX = (
@@ -298,7 +298,7 @@ def _to_operator_row(row: Any) -> OperatorRow:
 
 
 class OperatorRepository(Repository):
-    """Read-only access to an operator and its heavy sections (§V2)."""
+    """Read-only access to an operator and its heavy sections."""
 
     def operator_by_game_id(self, server: str, game_id: str) -> OperatorRow | None:
         """Operator for ``(server, game_id)`` -- the unique key -- or ``None``."""
@@ -306,7 +306,7 @@ class OperatorRepository(Repository):
         return _to_operator_row(row) if row is not None else None
 
     def section_counts(self, operator_pk: int) -> OperatorSectionCounts:
-        """The four heavy-section row counts for the always-on summary (§V22)."""
+        """The four heavy-section row counts for the always-on summary."""
         phases, skills, talents, modules = self._one(
             _COUNTS_SQL, (operator_pk, operator_pk, operator_pk, operator_pk)
         )
@@ -416,12 +416,12 @@ class OperatorRepository(Repository):
         ]
 
     def skins(self, server: str, operator_pk: int) -> list[OperatorSkinRow]:
-        """Every named skin soft-resolved to the operator (§T182/§V88), ordered.
+        """Every named skin soft-resolved to the operator, ordered.
 
         Degrades on table absence: an active database built before migration 0014
         has no ``operator_skins`` table, and this read must return an empty list
         (the tool then falls back to the derived base-outfit refs + the partial-gallery
-        limitation, §V21 backward compatibility) rather than surface
+        limitation, backward compatibility) rather than surface
         ``no such table`` as an ``internal_error`` on every ``get_operator`` call.
         The degrade is a catch on the query itself, not a per-call ``sqlite_master``
         probe -- the common (table-present) path pays zero extra queries.
@@ -447,19 +447,19 @@ class OperatorRepository(Repository):
         ]
 
     def item_display_names(self, server: str, game_ids: Collection[str]) -> dict[str, str]:
-        """Map each upgrade-cost item ``game_id`` to its display name for this build (§T132/§V69).
+        """Map each upgrade-cost item ``game_id`` to its display name for this build.
 
         Resolves the item ids carried by a module/skill upgrade cost (``{id, count,
-        type}``) to their region-locale display names (§V59) so the service can pair a
+        type}``) to their region-locale display names so the service can pair a
         name onto each cost entry. Region-scoped -- an ``en`` operator's cost items
-        resolve only against ``en`` items, so en/cn are never mixed (§V5). A single
+        resolve only against ``en`` items, so en/cn are never mixed. A single
         batched lookup: one ``WHERE game_id IN (?, …)`` with every value bound through a
-        ``?`` placeholder (§V2 -- only the placeholder *count* is composed from
+        ``?`` placeholder -- only the placeholder *count* is composed from
         ``len(ids)``; no id is ever interpolated into the SQL, so injection stays
-        impossible), collapsing the former per-id round-trips into one query. Only an item
+        impossible, collapsing the former per-id round-trips into one query. Only an item
         present in this build **with a non-null display name** is included: an id absent
         from the returned map had no imported name, so the caller emits the id as-is plus a
-        limitation and never fabricates a name (§V26/§V69). An empty id set short-circuits
+        limitation and never fabricates a name. An empty id set short-circuits
         to an empty map (no query).
         """
         ids = sorted({g for g in game_ids if g})

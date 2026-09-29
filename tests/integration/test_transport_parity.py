@@ -1,6 +1,6 @@
-"""§T61 M7 local↔remote transport result parity (§V14).
+"""M7 local↔remote transport result parity.
 
-§V14 is the one-core/two-transports invariant: both transports dispatch the *same*
+The one-core/two-transports rule: both transports dispatch the *same*
 ``tool_registry`` + services, so the *same* DB + *same* input must yield an
 *identical* domain result, with no duplicated domain logic across modes. The
 existing smoke tests (``tests/integration/test_serve_stdio_smoke.py``,
@@ -11,7 +11,7 @@ that: it drives both real transports against the *same promoted build* and asser
 the ``initialize`` handshake, the ``tools/list`` enumeration, and every one of the
 ``tools/call`` domain payloads come back byte-identical across modes.
 
-How the two wires share one build (§V37 DRY):
+How the two wires share one build:
 
 * the Streamable HTTP wire is the shared :func:`tests.support.remote_harness.remote_server`
   harness -- it promotes the pinned 4-4 fixture into ``tmp_path/data`` via the real
@@ -29,13 +29,13 @@ tools, calls}`` per wire (dicts compare structurally). The only fields excluded 
 ``get_data_status``'s two call-time-derived fields -- ``data.generated_at`` (the
 response timestamp) and each ``data.snapshots[*].age_days`` (``now - imported_at``):
 both come from the wall clock at call time, so two calls differ *on the same wire
-too*. They are not DB-derived domain data (what §V14 governs), so they are the sole
+too*. They are not DB-derived domain data, so they are the sole
 parity exclusions; the stored ``imported_at``/``snapshot_id`` provenance still must
 match. The two operator tools resolve to ``not_found`` on the 4-4 build (it carries
 no operators) -- a legitimate identical domain result the parity check still covers.
 
-Offline + deterministic: the build is promoted from the pinned fixture (no network,
-§V1); the OIDC keypair + JWKS are local (no provider reached, §V10).
+Offline + deterministic: the build is promoted from the pinned fixture (no network);
+the OIDC keypair + JWKS are local (no provider reached).
 """
 
 from __future__ import annotations
@@ -57,9 +57,9 @@ from tests.support.remote_harness import remote_server as _remote_server
 
 from arknights_mcp.config import ENV_ACCOUNT_DB_URL
 
-#: One representative call per §I.tool tool -- the exact matrix both wires dispatch.
+#: One representative call per tool -- the exact matrix both wires dispatch.
 #: Covers the region + exactly-one-of selectors, the heavy ``get_stage`` include
-#: flags (map/routes/spawns, the §V22 opt-in sections), the depth-defaulted
+#: flags (map/routes/spawns, the opt-in sections), the depth-defaulted
 #: ``analyze_stage`` evidence path, the two free-text searches, and the two
 #: parameterless posture tools. Against the 4-4 build the seven entity/analysis/
 #: posture tools resolve to a rich ``ok`` payload; the two operator tools resolve
@@ -88,10 +88,10 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_stage_drops", {"server": "en", "stage_code": "4-4"}),
     ("get_item_drops", {"server": "en", "game_id": "sugar"}),
     # No announcement feed in the promoted fixture build (the source is disabled by
-    # default, D14/§V56), so this resolves to an empty ``ok`` list -- a legitimate
+    # default, D14), so this resolves to an empty ``ok`` list -- a legitimate
     # identical domain result across both wires, which the parity check still covers.
     ("get_announcements", {"server": "en"}),
-    # No gacha_table in the promoted fixture build (tolerant-absent, §V41/B36), so this
+    # No gacha_table in the promoted fixture build (tolerant-absent), so this
     # resolves to an empty ``ok`` list -- a legitimate identical domain result across
     # both wires, which the parity check still covers.
     ("get_banners", {"server": "en"}),
@@ -114,7 +114,7 @@ async def _drive(session: ClientSession) -> dict[str, Any]:
     comparison is order-independent), and the structured-content envelope of every
     ``tools/call``. A call that surfaces a *protocol* error (rather than a typed
     domain envelope) fails here -- a degraded domain result is carried in the
-    envelope, never as ``isError`` (§V23).
+    envelope, never as ``isError``.
     """
     init = await session.initialize()
     listed = await session.list_tools()
@@ -125,7 +125,7 @@ async def _drive(session: ClientSession) -> dict[str, Any]:
         result = await session.call_tool(name, args)
         assert result.isError is False, f"{name} surfaced a protocol error, not a domain result"
         assert result.structuredContent is not None, f"{name} returned no structuredContent"
-        # §V119 (a)/(c): the content mirror is asserted per wire rather than compared
+        # The content mirror is asserted per wire rather than compared
         # across wires, because ``get_data_status``'s call-time fields live inside the
         # mirror text too. Each wire mirroring its own structured payload + the
         # structured payloads matching (below) is the same guarantee, and it keeps the
@@ -145,7 +145,7 @@ async def _drive(session: ClientSession) -> dict[str, Any]:
 
 
 async def _remote_snapshot(url: str, token: str) -> dict[str, Any]:
-    """Drive the authenticated Streamable HTTP wire (§I.api; §V10 bearer)."""
+    """Drive the authenticated Streamable HTTP wire."""
     http_client = create_mcp_http_client(headers={"Authorization": f"Bearer {token}"})
     with anyio.fail_after(90):
         async with (
@@ -157,7 +157,7 @@ async def _remote_snapshot(url: str, token: str) -> dict[str, Any]:
 
 
 async def _local_snapshot(config: Path, cwd: Path) -> dict[str, Any]:
-    """Drive the local ``stdio`` wire as a real ``serve`` subprocess (§V13)."""
+    """Drive the local ``stdio`` wire as a real ``serve`` subprocess."""
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "arknights_mcp", "--config", str(config), "serve", "--transport", "stdio"],
@@ -176,7 +176,7 @@ def _strip_volatile(snapshot: dict[str, Any]) -> dict[str, Any]:
     ``data.generated_at`` (response timestamp) and each ``data.snapshots[*].age_days``
     (``now - imported_at``) are derived from the wall clock at call time -- two calls
     differ on the *same* transport too, so they are not a cross-transport parity
-    signal and are the only fields excluded (§V14 governs the DB-derived payload).
+    signal and are the only fields excluded.
     Everything else, including the stored ``imported_at``/``snapshot_id`` provenance,
     stays in the comparison.
     """
@@ -191,14 +191,14 @@ def _strip_volatile(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_call_matrix_covers_every_tool() -> None:
-    # Guard: the parity matrix must exercise the full §I.tool set of nine, so a tool
+    # Guard: the parity matrix must exercise the full tool set of nine, so a tool
     # added later without a parity case fails here rather than silently going
     # uncompared. EXPECTED_TOOLS is the one shared source of the registry's names.
     assert {name for name, _ in _CALLS} == EXPECTED_TOOLS
 
 
 def test_local_and_remote_transports_are_result_identical(tmp_path: Path) -> None:
-    # §V14: the two transports dispatch the same registry + services, so the same
+    # The two transports dispatch the same registry + services, so the same
     # promoted build + same inputs must yield identical results. Drive both real
     # wires against the one build the harness promotes and assert the whole snapshot
     # (serverInfo + shared instructions + tools/list + all nine tools/call payloads)

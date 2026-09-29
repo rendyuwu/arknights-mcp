@@ -1,10 +1,10 @@
-"""T121: the M12 acceptance tests (§V63, §V1, §V5, §V27, §V16).
+"""The M12 acceptance tests.
 
 The milestone gate for M12 (image URL references). Where the per-task tests drove the
-pieces in isolation -- T119 proved the derivation is pure + network-free, T120 wired the
-additive ``image_refs`` field into ``get_operator``/``get_enemy``/``get_banners`` -- this
-task asserts the whole story end to end through the SAME shared tool registry both
-transports dispatch from (§V14, :func:`~arknights_mcp.mcp.tools.build_tool_registry`),
+pieces in isolation -- the derivation is pure + network-free, and the additive
+``image_refs`` field is wired into ``get_operator``/``get_enemy``/``get_banners`` -- this
+suite asserts the whole story end to end through the SAME shared tool registry both
+transports dispatch from (:func:`~arknights_mcp.mcp.tools.build_tool_registry`),
 over a real promoted read-only build, driven by the REAL combined emission gate the app
 layer computes (:func:`~arknights_mcp.services.image_refs.refs_enabled` over the config
 posture AND the machine registry, exactly as :func:`~arknights_mcp.app.build_application`
@@ -14,32 +14,32 @@ Two knobs make the acceptance real rather than a re-run of the wiring unit tests
 
 * it goes through ``build_tool_registry(... image_refs_enabled=refs_enabled(...))`` so the
   gate is the production computation, and the ENABLED case uses the SHIPPED registry
-  (source ``enabled=true`` as of §T124) so the default posture is what actually ships,
-  while the DISABLED case models the §V20 kill switch (``source disable``); and
-* it reaches past the served envelope into the built database to prove §V16/§V63
-  store-nothing: no derived URL and no art byte is persisted -- the URL exists only at
+  (source ``enabled=true``) so the default posture is what actually ships,
+  while the DISABLED case models the kill switch (``source disable``); and
+* it reaches past the served envelope into the built database to prove store-nothing:
+  no derived URL and no art byte is persisted -- the URL exists only at
   response-build time.
 
-One test group per cited invariant:
+One test group per behaviour:
 
-* **§V63** -- an enabled image-ref source makes ``get_operator`` carry the exact DERIVED
-  portrait ``_1``/``_2`` + avatar base/``_2`` + skin ``_1b``/``_2b`` URLs and ``get_enemy``
-  the enemy base URL, attributed to ``arknights_game_resource`` by the response-level
-  ``image_refs_source_id`` the §T219 hoist put there (§V66 (4) -- never per ref);
-  the DEFAULT (shipped, source-enabled §T124) posture emits refs, and the §V20 kill switch
+* **derived refs** -- an enabled image-ref source makes ``get_operator`` carry the exact
+  DERIVED portrait ``_1``/``_2`` + avatar base/``_2`` + skin ``_1b``/``_2b`` URLs and
+  ``get_enemy`` the enemy base URL, attributed to ``arknights_game_resource`` by the
+  response-level ``image_refs_source_id`` the hoist put there (never per ref);
+  the DEFAULT (shipped, source-enabled) posture emits refs, and the kill switch
   (``source disable``) suppresses them; and the ``#``/``+`` percent-encode holds through the
   real tool path on a skin-suffix id.
-* **§V1** -- the whole tool path opens no socket: with socket creation booby-trapped the
-  enabled ``get_operator``/``get_enemy`` calls still emit refs, proving the server never
+* **no socket** -- the whole tool path opens no socket: with socket creation booby-trapped
+  the enabled ``get_operator``/``get_enemy`` calls still emit refs, proving the server never
   fetches/HEADs/validates a derived link.
-* **§V5** -- a ref rides the entity's OWN region envelope: the en operator carries en-only
-  provenance + en-derived refs, the cn operator cn-only, and a cross-region lookup is
-  ``not_found`` with no ref leak (en/cn never mixed).
-* **§V27** -- ``get_data_sources`` surfaces the image source's attribution + license /
-  permission posture, and never its internal ``policy_notes`` / secrets.
-* **§V16** -- the built DB stores neither a derived URL nor an art byte: the derived
-  ``raw.githubusercontent.com`` host is absent from every entity/provenance table and the
-  specific derived URLs appear nowhere -- derivation is query-time only.
+* **region scoping** -- a ref rides the entity's OWN region envelope: the en operator
+  carries en-only provenance + en-derived refs, the cn operator cn-only, and a cross-region
+  lookup is ``not_found`` with no ref leak (en/cn never mixed).
+* **source posture** -- ``get_data_sources`` surfaces the image source's attribution +
+  license / permission posture, and never its internal ``policy_notes`` / secrets.
+* **store nothing** -- the built DB stores neither a derived URL nor an art byte: the
+  derived ``raw.githubusercontent.com`` host is absent from every entity/provenance table
+  and the specific derived URLs appear nowhere -- derivation is query-time only.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ OPERATOR_EN = FIXTURES / "operator" / "en"
 OPERATOR_CN = FIXTURES / "operator" / "cn"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The pinned raw-content base (§V63/ADR 0008) every derived URL is built from.
+#: The pinned raw-content base (ADR 0008) every derived URL is built from.
 BASE = "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main"
 
 _SRC = "local_snapshot"
@@ -85,10 +85,10 @@ def _registry(*, image_source_enabled: bool) -> SourceRegistry:
     """The shipped machine registry, with the image-ref source forced on/off.
 
     Loading the real registry (not a hand-built stub) means ``get_data_sources`` surfaces
-    the genuine §V27 attribution/license posture. As of §T124 the shipped registry ships the
+    the genuine attribution/license posture. The shipped registry ships the
     source ENABLED, so this helper forces ``enabled`` to the requested value in BOTH
     directions -- ``image_source_enabled=False`` models the ``arknights-mcp source disable``
-    kill switch (§V20) -- without touching any other field.
+    kill switch -- without touching any other field.
     """
     reg = load_source_registry(REGISTRY)
     reg.entries[SOURCE_ID] = reg.entries[SOURCE_ID].model_copy(
@@ -98,11 +98,11 @@ def _registry(*, image_source_enabled: bool) -> SourceRegistry:
 
 
 def _gate(reg: SourceRegistry) -> bool:
-    """The production combined gate (§T120): private-only config AND source enabled.
+    """The production combined gate: private-only config AND source enabled.
 
     Mirrors :func:`arknights_mcp.app.build_application` exactly -- a local (private) config
     with ``[image_refs].enabled = true`` AND the registry source enabled. So the DISABLED
-    case below fails the gate via the §V20 kill switch (source disabled), not a config
+    case below fails the gate via the kill switch (source disabled), not a config
     toggle.
     """
     cfg = AppConfig.model_validate({"image_refs": {"enabled": True}})
@@ -110,7 +110,7 @@ def _gate(reg: SourceRegistry) -> bool:
 
 
 def _tools(conn: sqlite3.Connection, reg: SourceRegistry) -> ToolRegistry:
-    """The shared registry both transports dispatch from (§V14), with the real gate."""
+    """The shared registry both transports dispatch from, with the real gate."""
     return build_tool_registry(
         lambda: conn, registry=reg, mode="local", image_refs_enabled=_gate(reg)
     )
@@ -120,8 +120,8 @@ def _build(tmp_path: Path) -> Path:
     """Build the multi-region candidate the way a CLI sync would (en + cn).
 
     en carries the 4-4 enemies AND operator Amiya; cn carries operator Chen. So en/cn
-    both hold an operator addressable under their OWN region (the §V5 case) and the enemy
-    surface is exercised too.
+    both hold an operator addressable under their OWN region (the region-scoping case) and
+    the enemy surface is exercised too.
     """
     path = tmp_path / "cand.sqlite"
     build_candidate(
@@ -147,7 +147,7 @@ def _seed_operator_db(tmp_path: Path, game_id: str) -> Path:
 
     Used to drive a ``#``/``+`` skin-suffix id through the real ``get_operator`` path: the
     file fixtures carry only clean ids, so a synthetic row proves the unconditional
-    percent-encode (§V63) survives the full DB -> service -> derivation -> wire path.
+    percent-encode survives the full DB -> service -> derivation -> wire path.
     """
     path = tmp_path / "op.sqlite"
     db = build_database(path)
@@ -183,18 +183,18 @@ def _seed_operator_db(tmp_path: Path, game_id: str) -> Path:
     return path
 
 
-# --- §V63: enabled source -> correct DERIVED urls + hoisted attribution --------
+# --- enabled source -> correct DERIVED urls + hoisted attribution -------------
 
 
 def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) -> None:
-    # §V63: through the shared registry + real gate, get_operator carries the exact
+    # Through the shared registry + real gate, get_operator carries the exact
     # verified shape (portrait _1/_2, avatar base/_2) plus, on this skin-domain build,
-    # the NAMED skin gallery -- one skin/<portraitId>b ref per imported row (§T182/§V88),
+    # the NAMED skin gallery -- one skin/<portraitId>b ref per imported row,
     # attributed once at the response level.
     tools = _tools(conn, _registry(image_source_enabled=True))
     data = tools.get("get_operator").handler(server="en", game_id=_AMIYA).to_dict()["data"]
-    # §T183/§V66 (ADR 0014): the shared base is hoisted once; refs carry relative paths.
-    # §T219/§V66 (4) (ADR 0019): so is the §V27 attribution -- once, never per ref.
+    # The shared base is hoisted once (ADR 0014); refs carry relative paths.
+    # The attribution is hoisted the same way (ADR 0019) -- once, never per ref.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
     assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     op = data["operator"]  # type: ignore[index]
@@ -213,7 +213,7 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
         f"skin/{_AMIYA}_1b.png",
         "skin/char_1001_amiya2_2b.png",
     ]
-    # §V78/B80: the variant label rides through the full shared-registry tool path;
+    # The variant label rides through the full shared-registry tool path;
     # default-art skin rows (ILLUST_0/2) map to e0/e2, the named outfit stays "skin".
     assert [(r["category"], r["variant"]) for r in refs] == [
         ("portrait", "e0"),
@@ -227,8 +227,8 @@ def test_accept_enabled_operator_carries_derived_refs(conn: sqlite3.Connection) 
 
 
 def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> None:
-    # §V63: get_enemy carries the single derived enemy-sprite ref; the shared base AND the
-    # §V27 attribution are both hoisted once at the data level (§T183/§V66, §T219/§V66 (4)).
+    # get_enemy carries the single derived enemy-sprite ref; the shared base AND the
+    # attribution are both hoisted once at the data level (ADRs 0014, 0019).
     tools = _tools(conn, _registry(image_source_enabled=True))
     data = tools.get("get_enemy").handler(server="en", game_id=_SLIME).to_dict()["data"]
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
@@ -246,7 +246,7 @@ def test_accept_enabled_enemy_carries_derived_ref(conn: sqlite3.Connection) -> N
 def test_accept_shipped_default_emits_refs_and_source_disable_suppresses(
     conn: sqlite3.Connection,
 ) -> None:
-    # §T124/§V63: a fresh install emits refs with NO config edit -- the config half (default
+    # A fresh install emits refs with NO config edit -- the config half (default
     # AppConfig) AND the shipped registry source both default ON.
     default_cfg = AppConfig()
     assert default_cfg.image_refs_enabled is True
@@ -258,7 +258,7 @@ def test_accept_shipped_default_emits_refs_and_source_disable_suppresses(
         is True
     )
 
-    # §V20 kill switch: `source disable arknights_game_resource` flips the gate off.
+    # The kill switch: `source disable arknights_game_resource` flips the gate off.
     shipped = _registry(image_source_enabled=True)
     disabled = _registry(image_source_enabled=False)
     assert _gate(shipped) is True
@@ -284,7 +284,7 @@ def test_accept_shipped_default_emits_refs_and_source_disable_suppresses(
 
 
 def test_accept_percent_encode_on_hash_plus_skin_id(tmp_path: Path) -> None:
-    # §V63: the unconditional #->%23 / +->%2B encode holds through the real get_operator
+    # The unconditional #->%23 / +->%2B encode holds through the real get_operator
     # path on a skin-suffix id carrying both characters.
     dirty = "char_x_epoque#4+alt"
     conn = open_read_only(_seed_operator_db(tmp_path, dirty))
@@ -308,18 +308,18 @@ def test_accept_percent_encode_on_hash_plus_skin_id(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- §V1: the whole tool path opens no socket ---------------------------------
+# --- the whole tool path opens no socket -------------------------------------
 
 
 def test_accept_enabled_tools_open_no_socket(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # §V1: the server never fetches -- with socket creation booby-trapped the enabled
+    # The server never fetches -- with socket creation booby-trapped the enabled
     # get_operator/get_enemy calls still emit refs (pure DB read + string derivation).
     tools = _tools(conn, _registry(image_source_enabled=True))
 
     def _boom(*args: object, **kwargs: object) -> None:
-        raise AssertionError("image-ref tool path must not open a socket (§V1)")
+        raise AssertionError("image-ref tool path must not open a socket")
 
     monkeypatch.setattr(socket, "socket", _boom)
     op = (
@@ -330,7 +330,7 @@ def test_accept_enabled_tools_open_no_socket(
     assert enemy["image_refs"]  # type: ignore[index]
 
 
-# --- §V5: ref rides the entity's OWN region envelope, en/cn never mixed -------
+# --- ref rides the entity's OWN region envelope, en/cn never mixed ------------
 
 
 def test_accept_refs_scoped_to_region_never_mixed(conn: sqlite3.Connection) -> None:
@@ -355,13 +355,13 @@ def test_accept_refs_scoped_to_region_never_mixed(conn: sqlite3.Connection) -> N
     assert "operator" not in miss_en.to_dict()["data"]  # type: ignore[operator]
 
 
-# --- §V27: get_data_sources shows attribution + license/permission ------------
+# --- get_data_sources shows attribution + license/permission ------------------
 
 
 def test_accept_get_data_sources_shows_image_source_posture(conn: sqlite3.Connection) -> None:
-    # §V27: the image source's attribution + license/permission posture is reachable via
+    # The image source's attribution + license/permission posture is reachable via
     # get_data_sources, WITHOUT leaking its internal policy_notes / secrets. Uses the
-    # §V20 kill-switch (source-disabled) state -- the posture stays visible even when the
+    # kill-switch (source-disabled) state -- the posture stays visible even when the
     # source is disabled.
     tools = _tools(conn, _registry(image_source_enabled=False))
     sources = {
@@ -378,15 +378,15 @@ def test_accept_get_data_sources_shows_image_source_posture(conn: sqlite3.Connec
     assert img["permission_status"]
     assert "removal_on_request" in img["permission_status"]
     assert img["redistribution_status"] == "reference_link_only_never_bytes"
-    # §V27: internal-only fields never reach the client.
+    # internal-only fields never reach the client.
     assert "policy_notes" not in img
 
 
-# --- §V16: the built DB stores no derived URL and no art byte ------------------
+# --- the built DB stores no derived URL and no art byte -----------------------
 
 
 def test_accept_db_stores_no_derived_url_or_bytes(conn: sqlite3.Connection) -> None:
-    # §V16/§V63 store-nothing: the DERIVED url exists only at response-build time. The
+    # Store-nothing: the DERIVED url exists only at response-build time. The
     # raw-content HOST must be absent from every entity/provenance table, and the specific
     # derived urls for the present entities must appear NOWHERE.
     tables = [

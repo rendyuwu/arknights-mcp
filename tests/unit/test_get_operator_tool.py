@@ -1,17 +1,17 @@
-"""§T44 ``get_operator`` tool tests (§V5/§V22/§V23; §I.tool).
+"""``get_operator`` tool tests.
 
 The tool is the model -> service -> envelope bridge for a single operator lookup;
-these drive it end to end against the same production read-only path (§V2) using
+these drive it end to end against the same production read-only path using
 the operator fixture (Amiya: two phases, two skills, one talent, one module). They
 assert:
 
-* the §V5 region + provenance ride every ``ok`` result, and an ``en`` operator is
+* The region + provenance ride every ``ok`` result, and an ``en`` operator is
   never surfaced under a ``cn`` query (en/cn never mixed);
-* the §V22 default response is compact facts + summary + provenance -- the heavy
+* The default response is compact facts + summary + provenance -- the heavy
   phases/skills/talents/modules sections are opt-in include flags;
-* the typed §V23 envelope shape, including fail-closed ``not_found`` /
+* The typed envelope shape, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema.
+* The wire contract: a read-only spec with a bounded input schema.
 """
 
 from __future__ import annotations
@@ -71,13 +71,13 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 #: Amiya's CX-1 module upgrade-cost item ids (per level) + a display name for each, so a
-#: seeded build can resolve them (§T132/§V69). The operator fixture itself ships no items.
+#: seeded build can resolve them. The operator fixture itself ships no items.
 _MODULE_COST_NAMES = {"mat_1": "Orirock Cube", "mat_2": "Sugar", "mat_3": "Polyester Pack"}
 
 
 @pytest.fixture
 def conn_named_costs(tmp_path: Path) -> sqlite3.Connection:
-    """Fixture build with the module upgrade-cost item names seeded (§T132/§V69)."""
+    """Fixture build with the module upgrade-cost item names seeded."""
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
     build_candidate(
@@ -93,7 +93,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_operator_spec(lambda: conn).handler
 
 
-# --- §V22 default = compact facts + summary + provenance ----------------------
+# --- default = compact facts + summary + provenance ---------------------------
 
 
 def test_default_returns_summary_not_heavy_sections(conn: sqlite3.Connection) -> None:
@@ -105,7 +105,7 @@ def test_default_returns_summary_not_heavy_sections(conn: sqlite3.Connection) ->
     op = data["operator"]
     assert op["game_id"] == _AMIYA  # type: ignore[index]
     assert op["display_name"] == "Amiya"  # type: ignore[index]
-    # §V22: heavy sections are opt-in -- absent by default. §V66/B64: the in-data
+    # Heavy sections are opt-in -- absent by default. The in-data
     # provenance echo is opt-in too (default off), so a default response carries no
     # data.operator.provenance -- the snapshot rides the envelope once.
     assert set(op) == {"server", "game_id", "display_name", "summary"}  # type: ignore[arg-type]
@@ -131,9 +131,9 @@ def test_include_flags_add_bounded_sections(conn: sqlite3.Connection) -> None:
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     assert [p["phase"] for p in op["phases"]] == [0, 1]
     assert {s["game_id"] for s in op["skills"]} == {"skchr_amiya_1", "skchr_amiya_2"}
-    # Skill levels + their decoded blackboard ride along (structural JSON vetted §V18).
+    # Skill levels + their decoded blackboard ride along (structural JSON vetted).
     lv = op["skills"][0]["levels"][0]
-    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    # The always-null ``valueStr`` key is omitted at emit.
     assert lv["level"] == 1 and lv["blackboard"] == [{"key": "charge", "value": 1.0}]
     assert op["talents"][0]["display_name"] == "Nervous Impulse"
     mod = op["modules"][0]
@@ -147,11 +147,11 @@ def test_summary_can_be_dropped(conn: sqlite3.Connection) -> None:
     assert "summary" not in op
 
 
-# --- §V67 null discipline: omit the always-optional range_id scalar -----------
+# --- null discipline: omit the always-optional range_id scalar ----------------
 
 
 def test_phase_range_id_omitted_when_absent() -> None:
-    # §V67: ``range_id`` is an always-optional scalar -- omitted when the source carried
+    # ``range_id`` is an always-optional scalar -- omitted when the source carried
     # none, emitted when present (never an ambiguous null).
     phase = OperatorPhaseFacts(
         phase=0,
@@ -188,29 +188,29 @@ def test_skill_level_range_id_omitted_when_absent() -> None:
     assert _skill_level_to_dict(replace(level, range_id="x-1"))["range_id"] == "x-1"
 
 
-# --- §V65/T126: blackboard grounding FLOOR ------------------------------------
+# --- blackboard grounding FLOOR -----------------------------------------------
 
 
 def test_blackboard_sections_carry_grounding_limitation(conn: sqlite3.Connection) -> None:
-    # §V65 (b): skills/talents/modules emit raw blackboard key-value data with no
+    # Skills/talents/modules emit raw blackboard key-value data with no
     # effect text, so any response that carries one of them attaches the standing
     # grounding limitation (client must not infer mechanics from key names).
     for flag in ("include_skills", "include_talents", "include_modules"):
         env = _handler(conn)(server="en", game_id=_AMIYA, **{flag: True})
         assert env.status == "ok"
         assert BLACKBOARD_LIMITATION in env.limitations, flag
-        # §V26: the caveat is the executable "absent field -> say so" form.
+        # The caveat is the executable "absent field -> say so" form.
         assert "do not infer" in BLACKBOARD_LIMITATION.lower()
 
 
 def test_summary_only_response_has_no_blackboard_limitation(conn: sqlite3.Connection) -> None:
-    # §V65: a summary-only response emits no blackboard, so it carries no such caveat.
+    # A summary-only response emits no blackboard, so it carries no such caveat.
     env = _handler(conn)(server="en", game_id=_AMIYA)
     assert BLACKBOARD_LIMITATION not in env.limitations
 
 
 def test_blackboard_limitation_emitted_once_across_all_sections(conn: sqlite3.Connection) -> None:
-    # §V66/§V72 (T149): the grounding disclaimer is ONE shared block per envelope. A
+    # The grounding disclaimer is ONE shared block per envelope. A
     # response carrying ALL THREE blackboard sections (skills + talents + modules) still
     # attaches it exactly once, never a per-section repeat -- presence stays mandatory.
     env = _handler(conn)(
@@ -226,8 +226,8 @@ def test_blackboard_limitation_emitted_once_across_all_sections(conn: sqlite3.Co
 
 
 def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) -> None:
-    # §T127/§V65 (a)/ADR 0010: skill + talent + module effects emit the in-game effect
-    # description template alongside the raw blackboard (additive/optional, §V21) so a
+    # Skill + talent + module effects emit the in-game effect
+    # description template alongside the raw blackboard (additive/optional) so a
     # client can ground the key meanings instead of guessing.
     env = _handler(conn)(
         server="en",
@@ -240,22 +240,22 @@ def test_effect_templates_ride_alongside_blackboard(conn: sqlite3.Connection) ->
     skills = {s["game_id"]: s for s in op["skills"]}
     skill2 = skills["skchr_amiya_2"]
     lv = skill2["levels"][0]
-    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    # The always-null ``valueStr`` key is omitted at emit.
     assert lv["blackboard"] == [{"key": "atk", "value": 1.5}]
-    # §T146/§V66.3: skchr_amiya_2 has one level, so its template is byte-identical across
+    # skchr_amiya_2 has one level, so its template is byte-identical across
     # "all" levels and is hoisted once to the skill; the level no longer carries it.
     assert "{atk:0%}" in skill2["description"]  # template references the blackboard key
     assert "description" not in lv
     tvar = op["talents"][0]["variants"][0]
     assert "{atk_scale:0%}" in tvar["description"] and tvar["blackboard"]
-    # get_operator modules are unchanged by §T146: the trait change still carries its
+    # get_operator modules are unchanged: the trait change still carries its
     # template inline alongside its blackboard (level 1).
     trait = op["modules"][0]["levels"][0]["trait_changes"]
     assert trait and "{atk_scale:0%}" in trait[0]["description"]
 
 
 def test_skill_template_kept_per_level_when_levels_differ(conn: sqlite3.Connection) -> None:
-    # §T146/§V66.3: the hoist is byte-lossless. skchr_amiya_1's two levels carry DIFFERENT
+    # The hoist is byte-lossless. skchr_amiya_1's two levels carry DIFFERENT
     # templates (level 1 has a {charge} placeholder, level 2 does not), so nothing is
     # hoisted to the skill and each level keeps its own text -- no wording is lost.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_skills=True)
@@ -269,21 +269,21 @@ def test_skill_template_kept_per_level_when_levels_differ(conn: sqlite3.Connecti
 
 
 def test_description_points_to_blackboard_glossary(conn: sqlite3.Connection) -> None:
-    # §V84/§T169 (B89): the ~1.5KB glossary lives once in the server instructions; the
+    # The ~1.5KB glossary lives once in the server instructions; the
     # description carries only a pointer, not the glossary itself (no double-billing).
     desc = build_get_operator_spec(lambda: conn).description
     assert BLACKBOARD_GLOSSARY_POINTER in desc
     assert BLACKBOARD_KEY_GLOSSARY not in desc
-    # §V65 (c) grounding floor: the glossary is still reachable, now in one home.
+    # The grounding floor: the glossary is still reachable, now in one home.
     assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
     for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
         assert key in BLACKBOARD_KEY_GLOSSARY, key
 
 
 def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection) -> None:
-    # §V83/B88: the module trait/talent change dedup + the applies_to "token" label + the
-    # level-hoist semantics are part of the client contract. §T207/§V111 (a) moved the
-    # home from the description to a standing limitation: the note describes what the
+    # The module trait/talent change dedup + the applies_to "token" label + the
+    # level-hoist semantics are part of the client contract. The home moved
+    # from the description to a standing limitation: the note describes what the
     # emitted bundles OMITTED, which is read against the payload, and as description text
     # it billed 366 chars to BOTH module-emitting tools every session. Moved, not deleted.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_modules=True)
@@ -294,26 +294,25 @@ def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection)
 
 
 def test_change_dedup_note_rides_only_a_module_response(conn: sqlite3.Connection) -> None:
-    # §V66/§V67: no modules emitted, no deduped bundles to explain -- the note stays off,
+    # No modules emitted, no deduped bundles to explain -- the note stays off,
     # exactly like the blackboard caveat it sits beside.
     env = _handler(conn)(server="en", game_id=_AMIYA)
     assert MODULE_CHANGE_DEDUP_NOTE not in env.to_dict()["limitations"]
 
 
-def test_client_facing_blackboard_text_has_no_internal_cites() -> None:
-    # §V71 (b): published client-facing text carries no internal spec cites or jargon;
-    # the behavioral sentence stays, the cites live only in code/docs.
+def test_client_facing_blackboard_text_has_no_internal_jargon() -> None:
+    # Published client-facing text carries no internal jargon; the behavioral
+    # sentence stays.
     for text in (BLACKBOARD_LIMITATION, BLACKBOARD_KEY_GLOSSARY):
-        assert "§V" not in text and "§T" not in text
         assert "degenerate" not in text and "asymmetric-broken" not in text
 
 
-# --- §T132/§V69 module upgrade-cost item name pairing -------------------------
+# --- module upgrade-cost item name pairing -------------------------------------
 
 
 def test_module_cost_items_paired_with_display_name(conn_named_costs: sqlite3.Connection) -> None:
-    # §V69: each {id,count,type} upgrade-cost entry gains its item display_name when the
-    # name is present in this build (additive, §V21).
+    # Each {id,count,type} upgrade-cost entry gains its item display_name when the
+    # name is present in this build (additive).
     env = _handler(conn_named_costs)(server="en", game_id=_AMIYA, include_modules=True)
     assert env.status == "ok"
     module = env.to_dict()["data"]["operator"]["modules"][0]  # type: ignore[index]
@@ -323,12 +322,12 @@ def test_module_cost_items_paired_with_display_name(conn_named_costs: sqlite3.Co
     ]
     assert cost_by_level[2][0]["display_name"] == "Sugar"
     assert cost_by_level[3][0]["display_name"] == "Polyester Pack"
-    # §V69: every cost item resolved, so no cost-name limitation rides the response.
+    # Every cost item resolved, so no cost-name limitation rides the response.
     assert COST_ITEM_NAME_LIMITATION not in env.limitations
 
 
 def test_module_cost_absent_name_keeps_id_and_emits_limitation(conn: sqlite3.Connection) -> None:
-    # §V69/§V26: the fixture ships no items, so the cost item ids have no imported name ->
+    # The fixture ships no items, so the cost item ids have no imported name ->
     # the id is emitted exactly as stored (never a fabricated name) + the standing
     # cost-name limitation rides the response.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_modules=True)
@@ -336,12 +335,12 @@ def test_module_cost_absent_name_keeps_id_and_emits_limitation(conn: sqlite3.Con
     for lv in module["levels"]:
         for entry in lv["cost"]:
             assert entry["id"]  # the bare id is preserved
-            assert "display_name" not in entry  # never fabricated (§V26)
+            assert "display_name" not in entry  # never fabricated
     assert COST_ITEM_NAME_LIMITATION in env.limitations
 
 
 def test_cost_name_pairing_is_additive(conn_named_costs: sqlite3.Connection) -> None:
-    # §V21: pairing preserves the original id/count/type keys (adds display_name only).
+    # Pairing preserves the original id/count/type keys (adds display_name only).
     env = _handler(conn_named_costs)(server="en", game_id=_AMIYA, include_modules=True)
     entry = env.to_dict()["data"]["operator"]["modules"][0]["levels"][0]["cost"][0]  # type: ignore[index]
     assert {"id", "count", "type"} <= set(entry)
@@ -349,22 +348,17 @@ def test_cost_name_pairing_is_additive(conn_named_costs: sqlite3.Connection) -> 
 
 
 def test_no_cost_name_limitation_without_modules(conn: sqlite3.Connection) -> None:
-    # §V69: a response that does not include the modules section emits no cost at all, so
+    # A response that does not include the modules section emits no cost at all, so
     # it carries no cost-name caveat.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_skills=True)
     assert COST_ITEM_NAME_LIMITATION not in env.limitations
 
 
-def test_cost_name_limitation_has_no_internal_cites() -> None:
-    # §V71 (b): the client-facing limitation carries no internal spec cites or jargon.
-    assert "§V" not in COST_ITEM_NAME_LIMITATION and "§T" not in COST_ITEM_NAME_LIMITATION
-
-
-# --- §V5 region + provenance --------------------------------------------------
+# --- region + provenance -------------------------------------------------------
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
-    # §V5: every factual response carries region + provenance on the envelope.
+    # Every factual response carries region + provenance on the envelope.
     env = _handler(conn)(server="en", game_id=_AMIYA)
     prov = env.to_dict()["provenance"]
     assert isinstance(prov, list) and len(prov) == 1
@@ -374,7 +368,7 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
 
 
 def test_default_response_carries_provenance_exactly_once(conn: sqlite3.Connection) -> None:
-    # §V66/B64: the envelope is the SOLE default provenance carrier -- the in-data echo
+    # The envelope is the SOLE default provenance carrier -- the in-data echo
     # is opt-in (default off), so a default response carries the snapshot exactly once
     # (on the envelope) rather than duplicating it inside data.operator.
     out = _handler(conn)(server="en", game_id=_AMIYA).to_dict()
@@ -383,15 +377,15 @@ def test_default_response_carries_provenance_exactly_once(conn: sqlite3.Connecti
 
 
 def test_include_provenance_true_adds_the_in_data_echo(conn: sqlite3.Connection) -> None:
-    # §V21: the echo stays available as an opt-in extra; when requested it mirrors the
-    # envelope snapshot inside data.operator (the flag is now fully effective, B64).
+    # The echo stays available as an opt-in extra; when requested it mirrors the
+    # envelope snapshot inside data.operator (the flag is now fully effective).
     out = _handler(conn)(server="en", game_id=_AMIYA, include_provenance=True).to_dict()
     op = out["data"]["operator"]  # type: ignore[index]
     assert op["provenance"]["snapshot_id"] == out["provenance"][0]["snapshot_id"]  # type: ignore[index]
 
 
 def test_include_provenance_false_keeps_envelope_provenance(conn: sqlite3.Connection) -> None:
-    # §V5 is unconditional: the envelope keeps its provenance even when the in-data
+    # The envelope keeps its provenance unconditionally, even when the in-data
     # echo is turned off; the flag only drops the redundant data.operator.provenance.
     env = _handler(conn)(server="en", game_id=_AMIYA, include_provenance=False)
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
@@ -400,11 +394,11 @@ def test_include_provenance_false_keeps_envelope_provenance(conn: sqlite3.Connec
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query -- en/cn never mixed.
+    # En data is not surfaced under a cn query -- en/cn never mixed.
     assert _handler(conn)(server="cn", game_id=_AMIYA).status == "not_found"
 
 
-# --- §V23 typed failures ------------------------------------------------------
+# --- typed failures -----------------------------------------------------------
 
 
 def test_not_found_envelope(conn: sqlite3.Connection) -> None:
@@ -413,7 +407,7 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert data["message"] == "no operator matched the given region and game_id"
-    # §V24: a not_found never suggests a query-time download/scrape.
+    # A not_found never suggests a query-time download/scrape.
     assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
     assert "scrape" not in data["suggested_action"].lower()  # type: ignore[union-attr]
 
@@ -425,7 +419,7 @@ def test_database_unavailable_envelope() -> None:
     env = build_get_operator_spec(boom).handler(server="en", game_id=_AMIYA)
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
-    # §V23: no local path / file name leaks into the client-facing message.
+    # No local path / file name leaks into the client-facing message.
     assert data["message"] == "the active database is unavailable"  # type: ignore[index]
     assert "cand.sqlite" not in str(data)
 
@@ -436,16 +430,16 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_get_operator_spec(boom).handler(server="en", game_id=_AMIYA)
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # The fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18 input gate ----------------------------------------------------------
+# --- input gate ---------------------------------------------------------------
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id=_AMIYA, include_everything=True)
 
@@ -456,22 +450,22 @@ def test_missing_game_id_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_bad_region_rejected(conn: sqlite3.Connection) -> None:
-    # §V5: server is constrained to en|cn.
+    # Server is constrained to en|cn.
     with pytest.raises(ValidationError):
         _handler(conn)(server="jp", game_id=_AMIYA)
 
 
 def test_over_length_game_id_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: an over-length id cannot carry an oversized blob.
+    # An over-length id cannot carry an oversized blob.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id="x" * (MAX_ID_LEN + 1))
 
 
-# --- §V2 read-only / §I.tool wire contract ------------------------------------
+# --- read-only / wire contract -------------------------------------------------
 
 
 def test_service_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # The service only reads -- no writes recorded on the connection.
     before = conn.total_changes
     get_operator(conn, server="en", game_id=_AMIYA, include_modules=True)
     assert conn.total_changes == before
@@ -484,20 +478,20 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert spec.read_only is True
     tool = spec.to_mcp_tool()
     assert tool.annotations is not None and tool.annotations.readOnlyHint is True
-    # §V18: unknown params forbidden + the game_id length cap rides the wire (§V5
-    # requires server).
+    # Unknown params forbidden + the game_id length cap rides the wire (server
+    # is required).
     assert tool.inputSchema["additionalProperties"] is False
     assert set(tool.inputSchema["required"]) == {"server", "game_id"}
     assert tool.inputSchema["properties"]["game_id"]["maxLength"] == MAX_ID_LEN
 
 
-# --- §V69/B150: the subclass id ships with its name, or says why not ------------
+# --- the subclass id ships with its name, or says why not ----------------------
 
 
 def test_subclass_id_ships_paired_with_its_name(conn: sqlite3.Connection) -> None:
-    """§V69 pairing arm: the fixture's uniequip carries subProfDict, so the name resolves.
+    """The pairing arm: the fixture's uniequip carries subProfDict, so the name resolves.
 
-    The entry is transcribed from the pinned upstream rather than invented (B107 class):
+    The entry is transcribed from the pinned upstream rather than invented:
     ``corecaster`` -> "Core Caster" is what the real table ships for the subclass this
     fixture's operator actually has.
     """
@@ -509,13 +503,12 @@ def test_subclass_id_ships_paired_with_its_name(conn: sqlite3.Connection) -> Non
 
 
 def test_subclass_name_absent_yields_the_limitation_not_a_null(tmp_path: Path) -> None:
-    """§V69's other arm, on a snapshot with no ``uniequip_table.json`` at all.
+    """The other arm, on a snapshot with no ``uniequip_table.json`` at all.
 
     The promoted build resolves every operator, so this arm has no real-corpus witness --
     which is exactly why it needs a fixture. A combat-only snapshot imports operators
     without any module data, and then the id is all there is: the key is OMITTED rather
-    than emitted null (§V67), and the limitation is the sole signal (§V26 -- never a
-    fabricated name).
+    than emitted null, and the limitation is the sole signal (never a fabricated name).
     """
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT.parent / "cn", "cn", "local_snapshot")
@@ -535,16 +528,16 @@ def test_subclass_name_absent_yields_the_limitation_not_a_null(tmp_path: Path) -
         conn.close()
 
 
-# --- §T200/§V69: the emitted range_id resolves, or says why not (B132) ----------
+# --- the emitted range_id resolves, or says why not ----------------------------
 
 
 def test_range_ids_resolve_to_grids_on_the_wire(conn: sqlite3.Connection) -> None:
-    """§V69 pairing arm: every emitted ``range_id`` is decodable from the response.
+    """The pairing arm: every emitted ``range_id`` is decodable from the response.
 
     The id itself keeps shipping -- it is the joinable key, and dropping it would be a
-    breaking change, not a fix (§V21). What is new is that the response now carries the
+    breaking change, not a fix. What is new is that the response now carries the
     grid it names, so "what is this skill's range" is answerable without a second call
-    and without game knowledge (B132/§V73).
+    and without game knowledge.
     """
     body = _handler(conn)(
         server="en", game_id=_AMIYA, include_phases=True, include_skills=True
@@ -571,7 +564,7 @@ def test_range_ids_resolve_to_grids_on_the_wire(conn: sqlite3.Connection) -> Non
 
 
 def test_range_symbols_ride_the_response_once(conn: sqlite3.Connection) -> None:
-    """§V66: the alphabet is hoisted onto the container, not repeated per entry."""
+    """The alphabet is hoisted onto the container, not repeated per entry."""
     body = _handler(conn)(server="en", game_id=_AMIYA, include_phases=True).to_dict()
     ranges = body["data"]["operator"]["ranges"]  # type: ignore[index]
     assert set(ranges["symbols"]) == {
@@ -587,7 +580,7 @@ def test_range_symbols_ride_the_response_once(conn: sqlite3.Connection) -> None:
 
 
 def test_no_section_loaded_emits_no_range_map(conn: sqlite3.Connection) -> None:
-    """§V22/§V67: a summary-only response names no range_id, so it carries no grids."""
+    """A summary-only response names no range_id, so it carries no grids."""
     body = _handler(conn)(server="en", game_id=_AMIYA).to_dict()
     assert "ranges" not in body["data"]["operator"]  # type: ignore[operator]
     assert not any("attack-range grid unavailable" in t for t in body["limitations"])
@@ -596,13 +589,13 @@ def test_no_section_loaded_emits_no_range_map(conn: sqlite3.Connection) -> None:
 def test_unresolved_range_id_yields_the_limitation_not_a_fabricated_grid(
     tmp_path: Path,
 ) -> None:
-    """§V69's other arm, on a snapshot with no ``range_table.json`` at all.
+    """The other arm, on a snapshot with no ``range_table.json`` at all.
 
     Same reasoning as the subclass fallback above: the promoted build resolves every
     emitted id, so this arm has no real-corpus witness and needs a fixture. The CN
     operator fixture ships no range table, so the id must still ship, the ``ranges`` key
-    must be ABSENT rather than an empty map claiming no grids exist (§V67), and the
-    limitation must NAME the unresolved id (§V26 -- never a guessed grid).
+    must be ABSENT rather than an empty map claiming no grids exist, and the
+    limitation must NAME the unresolved id (never a guessed grid).
     """
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT.parent / "cn", "cn", "local_snapshot")

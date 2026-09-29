@@ -1,24 +1,24 @@
-"""T201 since/until bound-RELATION guard (§V105/B143; §V23/§V50).
+"""Since/until bound-RELATION guard.
 
-B49/B48 typed the bound SHAPE (a non-ISO ``since`` is rejected at the model gate); this
-task types the RELATION between the pair, the other half of the same one-check-not-both
-defect. Verified live on the promoted build before the fix: ``since=2026-07-01,
-until=2026-06-01`` returned ``ok`` + an empty collection on BOTH windowed tools -- with a
-"widen or drop the bounds" limitation on ``get_announcements`` (false advice: widening
-cannot help an inverted pair) and with NO limitation at all on ``get_banners``, i.e.
-indistinguishable from an empty archive.
+The bound SHAPE was already typed (a non-ISO ``since`` is rejected at the model gate);
+this guard types the RELATION between the pair, the other half of the same
+one-check-not-both defect. Verified live on the promoted build before the fix: the pair
+``since=2026-07-01, until=2026-06-01`` returned ``ok`` + an empty collection on BOTH tools
+-- with a "widen or drop the bounds" limitation on ``get_announcements`` (false advice:
+widening cannot help an inverted pair) and with NO limitation at all on ``get_banners``,
+i.e. indistinguishable from an empty archive.
 
 These drive the three enforcement points:
 
 * the predicate itself -- the comparison the window really performs, because both
   repositories filter a TEXT column with ``>= :since`` / ``<= :until || '~'``, so string
   order IS the window's order. A test pins the predicate to that comparison, sentinel
-  included: T212/§V116 later showed both halves of that mirroring matter, since a bare
-  ``since > until`` rejected intra-day windows the SQL answers (B163 arm 3);
+  included: later work showed both halves of that mirroring matter, since a bare
+  ``since > until`` rejected intra-day windows the SQL answers;
 * the model gate on both windowed inputs -> a typed ``invalid_input`` envelope through the
-  shared dispatch home (§V71 (c)/B60), never a leaked pydantic error;
+  shared dispatch home, never a leaked pydantic error;
 * the service mirror -- rejected at BOTH the model and the service, one contract in both
-  places, exactly as the §V19 page bounds are.
+  places, exactly as the page bounds are.
 
 An equal pair is a legitimate single-day window and a one-sided bound is legitimate too,
 so both must survive: a guard that over-rejects would withhold real rows, which is the
@@ -54,22 +54,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The two windowed tool inputs (§V37: one validator, every windowed surface).
+#: The two windowed tool inputs (one validator, every windowed surface).
 WINDOWED_MODELS = (GetAnnouncementsInput, GetBannersInput)
 
 #: The two windowed tools, and the services behind them.
 WINDOWED_TOOLS = ("get_announcements", "get_banners")
 WINDOWED_SERVICES = (get_announcements, get_banners)
 
-#: B143's own filed pair.
+#: The originally filed pair.
 INVERTED = ("2026-07-01", "2026-06-01")
 
-#: Chronologically ASCENDING, yet inverted in the TEXT order T201 compared in:
-#: ``fromisoformat`` accepts ISO basic format, so this passes the B48 shape gate while
-#: ``"20260801" > "2026-09-01"`` (``-`` sorts below a digit). T201 rejected it, naming the
-#: notation. T212/§V116 renders both bounds instead, so the pair now ANSWERS -- its
-#: instants were never contradictory, and a rejection that withholds a real answer is the
-#: thing §V105's rejection arm may not do. It stays here as exactly that control.
+#: Chronologically ASCENDING, yet inverted in the TEXT order the old guard compared in:
+#: ``fromisoformat`` accepts ISO basic format, so this passes the shape gate while
+#: ``"20260801" > "2026-09-01"`` (``-`` sorts below a digit). The old guard rejected it,
+#: naming the notation. The render handles both bounds instead, so the pair now ANSWERS --
+#: its instants were never contradictory, and a rejection that withholds a real answer is
+#: the thing the rejection arm may not do. It stays here as exactly that control.
 MIXED_FORM = ("20260801", "2026-09-01")
 
 #: Windows that must SURVIVE: a single-day window, each one-sided bound, an ascending
@@ -107,7 +107,7 @@ def registry(conn: sqlite3.Connection) -> ToolRegistry:
     return build_tool_registry(lambda: conn, registry=load_source_registry(REGISTRY), mode="local")
 
 
-# --- the predicate (§V37 single home) -----------------------------------------
+# --- the predicate -------------------------------------------------------------
 
 
 @pytest.mark.parametrize(("since", "until"), VALID_WINDOWS)
@@ -124,7 +124,7 @@ def test_inverted_pair_reason_names_both_bounds_and_the_swap() -> None:
 
 
 def test_mixed_iso_forms_are_normalized_and_answered_not_rejected() -> None:
-    # T212/§V116 supersedes T201's second message: the pair is chronologically ASCENDING,
+    # The old message is superseded: the pair is chronologically ASCENDING,
     # so both bounds are rendered to one notation and the window is answered. Rejecting it
     # would have withheld an answer the caller was entitled to; "since is later than until"
     # would have been false about the input either way.
@@ -147,9 +147,9 @@ def test_predicate_is_the_comparison_the_window_performs(
     since: str | None, until: str | None
 ) -> None:
     # The repositories filter a TEXT column (``>= :since`` / ``<= :until || '~'``) over
-    # CANONICAL bound text (§V116), so the rejection must fire on exactly the pairs whose
+    # CANONICAL bound text, so the rejection must fire on exactly the pairs whose
     # order in that comparison makes a match impossible -- no wider (that withholds rows,
-    # B163 arm 3) and no narrower (that re-admits B143).
+    # the first arm) and no narrower (that re-admits the inversion).
     impossible = (
         since is not None
         and until is not None
@@ -159,10 +159,10 @@ def test_predicate_is_the_comparison_the_window_performs(
 
 
 def test_reason_carries_no_internal_cite_or_jargon() -> None:
-    # §V71 (b): the reason reaches a client verbatim inside the invalid_input envelope.
+    # The reason reaches a client verbatim inside the invalid_input envelope.
     reason = inverted_window_reason(*INVERTED)
     assert reason is not None
-    for token in ("§V", "§T", "B143", "B48", "lexicograph", "degenerate"):
+    for token in ("lexicograph", "degenerate"):
         assert token not in reason
 
 
@@ -191,7 +191,7 @@ def test_model_gate_accepts_a_window_that_can_match(
     assert (parsed.since, parsed.until) == (since, until)
 
 
-# --- the service mirror (§V19's one-contract-both-places shape) ----------------
+# --- the service mirror --------------------------------------------------------
 
 
 @pytest.mark.parametrize("service", WINDOWED_SERVICES)
@@ -200,7 +200,7 @@ def test_service_rejects_an_impossible_window(
     conn: sqlite3.Connection, service: object, since: str, until: str
 ) -> None:
     # A caller reaching the service directly (bypassing the model gate) gets the same
-    # rejection, never a silent empty -- exactly how the §V19 page bounds behave.
+    # rejection, never a silent empty -- exactly how the page bounds behave.
     with pytest.raises(ValueError, match="can match nothing"):
         service(conn, server="en", since=since, until=until)  # type: ignore[operator]
 
@@ -232,7 +232,6 @@ def test_dispatch_delivers_a_typed_invalid_input(registry: ToolRegistry, tool: s
     serialized = str(env.to_dict())
     assert "errors.pydantic.dev" not in serialized
     assert "validation error" not in serialized.lower()
-    assert "§V" not in serialized
 
 
 @pytest.mark.parametrize("tool", WINDOWED_TOOLS)
@@ -245,7 +244,7 @@ def test_dispatch_still_answers_a_single_day_window(registry: ToolRegistry, tool
     assert env.status == "ok"
 
 
-# --- §V47 the description states the constraint, §V71 (f) within budget --------
+# --- the description states the constraint, within budget -----------------------
 
 
 @pytest.mark.parametrize(

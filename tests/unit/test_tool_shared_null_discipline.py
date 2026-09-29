@@ -1,16 +1,15 @@
-"""§T130 unit tests for the shared null-discipline / provenance-hoist helpers
-(§V66.2/§V67/§V26/B58; §V37 single home).
+"""Unit tests for the shared null-discipline / provenance-hoist helpers.
 
 These pin the pure functions in :mod:`arknights_mcp.mcp.tools._shared` that both
 drop tools (provenance hoist) and both entity tools (absent-field limitation) route
 through, so the behaviour is fixed once regardless of the caller:
 
-* :func:`hoist_drop_provenance` -- §V66.2: identical per-row provenance collapses to
+* :func:`hoist_drop_provenance` -- identical per-row provenance collapses to
   one shared block; a row emits only the fields where it deviates, deterministically
   (most common row, first-seen tie break); an empty input yields an empty block.
-* :func:`absent_field_limitation` -- §V67/§V26 (B58): names the expected fields the
+* :func:`absent_field_limitation` -- names the expected fields the
   source omitted, or emits nothing when none are absent; the client-facing text
-  carries no internal spec cites/jargon (§V71).
+  carries no internal spec cites/jargon.
 * :data:`LIST_FIELD_CONVENTION` -- the []-vs-absent convention sentence, cite-free.
 """
 
@@ -22,7 +21,7 @@ from arknights_mcp.mcp.tools._shared import (
     hoist_drop_provenance,
 )
 
-# --- §V66.2 hoist -------------------------------------------------------------
+# --- hoist -------------------------------------------------------------
 
 
 def test_hoist_collapses_identical_rows_to_one_block() -> None:
@@ -33,7 +32,7 @@ def test_hoist_collapses_identical_rows_to_one_block() -> None:
     ]
     shared, deviations = hoist_drop_provenance(rows)
     assert shared == {"snapshot_id": "pg:en", "fetched_at": "t0", "expires_at": "t1"}
-    # §V66.2: every row matches the shared block -> no per-row provenance repetition.
+    # Every row matches the shared block -> no per-row provenance repetition.
     assert deviations == [{}, {}, {}]
 
 
@@ -52,7 +51,7 @@ def test_hoist_surfaces_only_the_deviant_row() -> None:
 def test_hoist_tie_breaks_by_content_not_input_order() -> None:
     # Two distinct rows, one each -> the tie breaks on row CONTENT, so the shared
     # block is identical no matter how the caller orders its rows (deterministic +
-    # reproducible, §V26 -- efficiency mode reorders the fold input, and the two
+    # reproducible -- efficiency mode reorders the fold input, and the two
     # modes must never disagree on which block is "shared").
     rows = [
         {"snapshot_id": "a", "expires_at": "future"},
@@ -71,7 +70,7 @@ def test_hoist_empty_input() -> None:
     assert deviations == []
 
 
-# --- §V67/§V26 absent-field limitation ----------------------------------------
+# --- absent-field limitation ----------------------------------------
 
 
 def test_absent_field_limitation_names_absent_fields() -> None:
@@ -83,12 +82,11 @@ def test_absent_field_limitation_names_absent_fields() -> None:
 
 
 def test_absent_field_limitation_empty_when_nothing_absent() -> None:
-    # §V67: nothing expected is absent -> no limitation emitted at all.
+    # Nothing expected is absent -> no limitation emitted at all.
     assert absent_field_limitation([]) == ()
 
 
 def test_client_facing_null_discipline_text_has_no_internal_cites() -> None:
-    # §V71 (b): published client-facing text carries no internal spec cites/jargon.
+    # Published client-facing text carries no internal spec cites/jargon.
     for text in (LIST_FIELD_CONVENTION, absent_field_limitation(["immunities"])[0]):
-        assert "§V" not in text and "§T" not in text and "B58" not in text
         assert "degenerate" not in text

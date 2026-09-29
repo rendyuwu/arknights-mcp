@@ -1,16 +1,16 @@
 """Shared test helper: seed a penguin drop-rate cache into a candidate build.
 
-Both the ``get_stage_drops`` tool tests (§T91), the ``get_item_drops`` read layer
-(§T103), and the MCP Inspector contract need a penguin ``stage_drops`` row so the
-drop tools have a live target; the seed logic lives here once (§V37) rather than
-being copy-pasted into each. It writes the shape the T89 importer produces: a penguin
-``source_snapshots`` row (its OWN provenance chain, distinct from the game-data fact,
-§V54) + an ``items`` row + ``stage_drops`` rows stamped with ``fetched_at`` /
-``expires_at`` (§V53), so the caller controls the fresh/stale verdict deterministically.
+Both the ``get_stage_drops`` tool tests, the ``get_item_drops`` read layer,
+and the MCP Inspector contract need a penguin ``stage_drops`` row so the
+drop tools have a live target; the seed logic lives here once rather than
+being copy-pasted into each. It writes the shape the penguin importer produces: a penguin
+``source_snapshots`` row (its OWN provenance chain, distinct from the game-data fact)
++ an ``items`` row + ``stage_drops`` rows stamped with ``fetched_at`` /
+``expires_at``, so the caller controls the fresh/stale verdict deterministically.
 
-:func:`seed_stage_drop` seeds one item onto an existing fixture stage (the stage view,
-§T91); :func:`seed_item_across_stages` creates several stages that all drop one item
-(the reverse item->stage comparison, §T103/§V60), each with its own sanity cost / drop
+:func:`seed_stage_drop` seeds one item onto an existing fixture stage (the stage view);
+:func:`seed_item_across_stages` creates several stages that all drop one item
+(the reverse item->stage comparison), each with its own sanity cost / drop
 rate / expiry so a ranking + a per-stage stale verdict are both testable.
 """
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 #: Deterministic expiry stamps: 2099 is always in the future, 2020 always past, so
-#: a §V53 fresh/stale verdict holds regardless of the real clock at test time.
+#: a fresh/stale verdict holds regardless of the real clock at test time.
 FUTURE_EXPIRY = "2099-01-01T00:00:00+00:00"
 PAST_EXPIRY = "2020-01-01T00:00:00+00:00"
 
@@ -42,8 +42,8 @@ def seed_stage_drop(
 
     Inserts a penguin snapshot + item + ``stage_drops`` row for the stage keyed by
     ``(region, stage_code)``, stamped with ``expires_at`` so the caller controls the
-    §V53 fresh/stale verdict. Opens a read-write handle (the candidate is written
-    before it is promoted + reopened read-only), mirroring the T89 importer's shape;
+    fresh/stale verdict. Opens a read-write handle (the candidate is written
+    before it is promoted + reopened read-only), mirroring the penguin importer's shape;
     ``penguin_statistics`` is already seeded into ``data_sources`` by
     ``build_candidate`` (the full registry, so the snapshot FK holds). Callable more
     than once per region to seed several items onto one stage (the snapshot insert
@@ -105,8 +105,8 @@ def seed_item_without_drops(
 ) -> None:
     """Seed one ``items`` row with NO ``stage_drops`` -- a craft/synthesis-only material.
 
-    The §T103/§V60 reverse comparison resolves the item but finds zero drop cache, the
-    not_found reason DISTINCT from an unknown game_id (§V60/B91): a Workshop-synthesis or
+    The reverse comparison resolves the item but finds zero drop cache, the
+    not_found reason DISTINCT from an unknown game_id: a Workshop-synthesis or
     otherwise non-farmed material has no penguin drop row to fetch. Mirrors the penguin
     snapshot + provenance shape the other seeders write so the item FK holds; opens a
     read-write handle (the candidate is written before it is promoted + reopened
@@ -141,11 +141,11 @@ def seed_item_without_drops(
 
 @dataclass(frozen=True)
 class StageDropSeed:
-    """One synthetic stage that drops the compared item (item->stage seed; §T103).
+    """One synthetic stage that drops the compared item (item->stage seed).
 
-    ``sanity_cost`` / ``drop_rate`` / ``times`` drive the §V55 efficiency figure and
-    ranking; ``expires_at`` controls this stage's own §V53 fresh/stale verdict; a
-    ``None`` on ``sanity_cost`` or ``drop_rate`` exercises the §V26 exclude-with-warning
+    ``sanity_cost`` / ``drop_rate`` / ``times`` drive the efficiency figure and
+    ranking; ``expires_at`` controls this stage's own fresh/stale verdict; a
+    ``None`` on ``sanity_cost`` or ``drop_rate`` exercises the exclude-with-warning
     path.
     """
 
@@ -155,7 +155,7 @@ class StageDropSeed:
     expires_at: str = FUTURE_EXPIRY
     times: int | None = 5000
     region: str = "en"
-    #: The stage's game_id (§V68: the unambiguous id a drop ranking joins on). Defaults
+    #: The stage's game_id (the unambiguous id a drop ranking joins on). Defaults
     #: to a synthetic per-seed id; set it explicitly to give two seeds the SAME
     #: ``stage_code`` (e.g. a normal + tough pair sharing "14-18") but DISTINCT game_ids.
     stage_game_id: str | None = None
@@ -168,13 +168,13 @@ def seed_item_across_stages(
     item_game_id: str = "sugar",
     item_display_name: str | None = "Sugar",
 ) -> None:
-    """Seed ONE item dropped by several synthetic stages (the §T103/§V60 reverse view).
+    """Seed ONE item dropped by several synthetic stages (the reverse view).
 
     Creates one ``items`` row per region present in ``seeds`` and, for each seed, a
     synthetic ``stages`` row (with its own ``sanity_cost``) plus a ``stage_drops`` row
     stamped with the seed's ``expires_at`` / ``drop_rate`` / ``times``. This lets a test
     rank the item across ≥2 stages, mix a per-stage fresh/stale verdict, and (by
-    passing a ``cn`` seed) assert the comparison is region-scoped (§V5). Opens a
+    passing a ``cn`` seed) assert the comparison is region-scoped. Opens a
     read-write handle (the candidate is written before it is promoted + reopened
     read-only); ``penguin_statistics`` is already in ``data_sources`` from
     ``build_candidate`` so the snapshot FK holds.
@@ -207,7 +207,7 @@ def seed_item_across_stages(
                     (seed.region, item_game_id, item_display_name, prov),
                 ).lastrowid
             # A synthetic stage keyed by (region, game_id); game_id kept unique per seed
-            # unless the seed pins one explicitly (§V68: two seeds may share a
+            # unless the seed pins one explicitly (two seeds may share a
             # stage_code but MUST differ on game_id).
             stage_game_id = seed.stage_game_id or f"synthetic_{seed.region}_{i}"
             stage_prov = conn.execute(

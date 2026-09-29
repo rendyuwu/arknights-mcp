@@ -1,22 +1,22 @@
-"""Banner-archive read repository (§V2; §T114).
+"""Banner-archive read repository.
 
 Encapsulates the parameterized ``SELECT`` that backs :func:`get_banners`: every
 ``banners`` row for a region, LEFT-joined to its typed ``banner_featured_ops`` (and,
 per featured op, LEFT-joined to ``operators`` for a resolved operator name) and to its
 ``record_provenance`` -> ``source_snapshots`` chain so each banner carries its OWN
-provenance (§V5/§V17). An optional ``since``/``until`` window narrows the set by the
-banner's ISO ``open_time`` at the SQL layer (parameterized, §V2).
+provenance. An optional ``since``/``until`` window narrows the set by the
+banner's ISO ``open_time`` at the SQL layer (parameterized).
 
-The scope is METADATA-ONLY (§V62, extends §V16/§V56): the row shape is exactly the
+The scope is METADATA-ONLY: the row shape is exactly the
 schedule/identity columns the 0013 schema can hold (``game_id``/``display_name``/
 ``open_time``/``end_time``/``rule_type``) plus the typed featured-op ids -- there is no
 gacha summary/detail/html/image column to select, so a prose leak is impossible at this
-layer. ``region`` is carried explicitly so a banner stands alone (§V5); en and cn are
+layer. ``region`` is carried explicitly so a banner stands alone; en and cn are
 never mixed (the WHERE gates on the requested region).
 
 Rows are returned flat (one row per featured op, or one row with NULL op fields for a
 banner with no typed featured-op via the LEFT JOIN); the service groups them into
-banners, pages, and derives provenance. Every value is bound (§V2).
+banners, pages, and derives provenance. Every value is bound.
 """
 
 from __future__ import annotations
@@ -30,14 +30,14 @@ from arknights_mcp.util.iso_bounds import UNTIL_UPPER_SENTINEL
 
 @dataclass(frozen=True)
 class BannerFeaturedOpRow:
-    """One typed featured operator on a banner (§V62), or a sentinel for none.
+    """One typed featured operator on a banner, or a sentinel for none.
 
     A banner with no typed featured-op (a NORMAL/SINGLE/DOUBLE/LINKAGE standard banner)
     yields a single row whose ``char_id`` is ``None`` (the LEFT JOIN produced no featured
     op). ``operator_name`` is the SOFT-resolved operator's display name when the featured
     char id matched an operator present in the same snapshot (``resolved = 1``), else
-    ``None`` with the raw ``char_id`` surfaced (§V62 -- an unresolvable featured-op is
-    never fabricated).
+    ``None`` with the raw ``char_id`` surfaced -- an unresolvable featured-op is
+    never fabricated.
     """
 
     char_id: str | None
@@ -50,9 +50,9 @@ class BannerRow:
     """One ``banners`` row + one featured-op leaf + the banner's provenance stamps.
 
     ``display_name``/``open_time``/``end_time``/``rule_type`` are nullable metadata (a
-    raw pool entry may omit any, §V62). ``snapshot_id`` + ``imported_at`` are the
-    banner's own provenance chain (§V5/§V17). There is deliberately no gacha prose field
-    -- the 0013 schema cannot hold one (§V16/§V62). The featured-op columns are flattened
+    raw pool entry may omit any). ``snapshot_id`` + ``imported_at`` are the
+    banner's own provenance chain. There is deliberately no gacha prose field
+    -- the 0013 schema cannot hold one. The featured-op columns are flattened
     onto the row by the LEFT JOIN; the service regroups the leaves per banner.
     """
 
@@ -69,7 +69,7 @@ class BannerRow:
 
 
 # Every banner for a region, LEFT-joined to its typed featured ops (+ the resolved
-# operator name) and its own provenance chain (§V5/§V17). Gated on b.server (== b.region,
+# operator name) and its own provenance chain. Gated on b.server (== b.region,
 # kept in step at import) so the (server, open_time) index actually serves the read --
 # the UNIQUE(server, game_id) + idx_banners_server_open both key on server, so the
 # per-region schedule read scopes on the same column rather than on the redundant region
@@ -80,14 +80,14 @@ class BannerRow:
 # bound may be a bare date ("YYYY-MM-DD") or a lower-precision datetime, so a plain
 # "open_time <= until" would drop EVERY banner opening on the until date (the timestamp
 # sorts AFTER its own date prefix). The upper bound is therefore compared against
-# "until || '~'" (UNTIL_UPPER_SENTINEL, the §V37/§V116 home shared with the window guard,
+# "until || '~'" (UNTIL_UPPER_SENTINEL, the home shared with the window guard,
 # which must predict THIS comparison -- a guard using a bare "since > until" rejected
-# intra-day windows this SQL answers, B163 arm 3): '~' (0x7e) sorts after every char an
+# intra-day windows this SQL answers): '~' (0x7e) sorts after every char an
 # ISO-8601 timestamp can carry ('T','+','Z',':','-','.',digits), so a same-day/second
 # banner is included (inclusive until) while a strictly-later one is still excluded. The
 # lower bound needs no such sentinel -- ">=" already includes every timestamp whose
 # date/prefix matches the bound. The bound TEXT itself arrives canonical from the service
-# (§V116), so the comparison is against the stored notation and not the caller's.
+# so the comparison is against the stored notation and not the caller's.
 # A banner with a NULL open_time is excluded once EITHER bound is set (it cannot be placed
 # in the window), but kept when the window is fully open. The optional display-name filter
 # uses the same NULL-passes idiom on a bound LIKE pattern: a NULL query leaves that side
@@ -99,7 +99,7 @@ class BannerRow:
 # standard banner (no featured op) in the result with NULL op columns; the further LEFT
 # JOIN to operators resolves the featured op's display name when it is present. Ordered by
 # open_time DESC (newest first), then game_id, then char_id so every banner's leaves are
-# contiguous + the payload is deterministic (§V26); NULL open_time sorts last under DESC.
+# contiguous + the payload is deterministic; NULL open_time sorts last under DESC.
 _BANNERS_SQL = (
     "SELECT b.banner_pk, b.game_id, b.display_name, b.open_time, b.end_time, "
     "b.rule_type, b.region, p.snapshot_id, ss.imported_at, "
@@ -119,14 +119,14 @@ _BANNERS_SQL = (
 
 
 def _like_contains(term: str) -> str:
-    """A LIKE pattern matching any display_name CONTAINING ``term`` literally (§V2/§V18).
+    """A LIKE pattern matching any display_name CONTAINING ``term`` literally.
 
     The client's free text is untrusted, so the LIKE metacharacters it may carry ('%',
     '_', and the escape char '\\' itself) are escaped and the whole is wrapped in '%...%'
     for a substring match under ``ESCAPE '\\'``. This makes a '%' in the query match a
     literal '%' rather than "any run of characters", so the filter cannot be widened into
     a match-everything wildcard by crafted input. The value is still passed as a bound
-    parameter (§V2 -- nothing is interpolated into the SQL string)."""
+    parameter -- nothing is interpolated into the SQL string."""
     escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -165,7 +165,7 @@ def _to_banner_row(row: Any) -> BannerRow:
 
 
 class BannerRepository(Repository):
-    """Read-only access to the banner archive (§V2)."""
+    """Read-only access to the banner archive."""
 
     def banners_for_region(
         self,
@@ -177,8 +177,8 @@ class BannerRepository(Repository):
     ) -> list[BannerRow]:
         """Every banner for ``region`` within the optional ``since``/``until`` open-time
         window and optional ``query`` display-name substring, newest first, one row per
-        featured-op leaf (§V26). Region-scoped so en/cn are never mixed (§V5); the date
-        bounds and the pre-escaped LIKE pattern are all parameterized (§V2)."""
+        featured-op leaf. Region-scoped so en/cn are never mixed; the date
+        bounds and the pre-escaped LIKE pattern are all parameterized."""
         pattern = _like_contains(query) if query is not None else None
         return [
             _to_banner_row(r)

@@ -1,11 +1,10 @@
-"""Raw ``arknights_assets_gamedata`` LEVEL shapes → normalized importer shapes
-(§V29, §V30; T66).
+"""Raw ``arknights_assets_gamedata`` LEVEL shapes → normalized importer shapes.
 
-The stage/level half of the §V30 bridge; the enemy handbook + database half lives in
-:mod:`~arknights_mcp.importers.enemy_normalization` (split at the §V38 hard cap).
-This module reshapes raw level JSON so the parsers stay stable and unit-testable, and
-it performs **no** database or network I/O — pure JSON→JSON. B6 records the concrete
-divergences this bridges:
+The stage/level half of the normalization bridge; the enemy handbook + database half
+lives in :mod:`~arknights_mcp.importers.enemy_normalization` (split at the file-size
+hard cap). This module reshapes raw level JSON so the parsers stay stable and
+unit-testable, and it performs **no** database or network I/O — pure JSON→JSON. The
+concrete divergences it bridges:
 
 * ``stage_table.levelId`` is a Title-case, extension-less reference
   (``Obt/Main/level_main_04-04``) that must be lowercased and rewritten to the
@@ -19,14 +18,14 @@ Every transform is **shape-gated and idempotent**: given data already in the
 normalized shape (the minimal synthetic fixture, or inline parser tests) it
 returns the input unchanged, so only genuinely-real snapshots take the transform
 branch. Prose/unknown fields are dropped here and re-checked by the parsers'
-allowlist + sanitize step (§V18) — normalization never widens the field policy.
+allowlist + sanitize step — normalization never widens the field policy.
 
 The field mappings below (``preDelay``→``spawnTime``,
 ``maxTimeWaitingForNextWave``→``maxTimeWaiting``, and the positional route/wave
 index fallbacks) are **verified against live upstream**, not merely inferred from
-the fixture: the CI-only ``tests/contract/test_live_upstream.py`` (§T68) imports a
+the fixture: the CI-only ``tests/contract/test_live_upstream.py`` imports a
 pinned ``arknights_assets_gamedata`` commit and asserts real 4-4 yields non-empty
-tiles/spawns/``stage_enemies`` (§V29, §V30).
+tiles/spawns/``stage_enemies``.
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ _LEVEL_SUFFIX = ".json"
 
 
 def normalize_level_id(level_id: str | None) -> str | None:
-    """Real Title-case ``levelId`` → the actual snapshot file path (§V29; B6 (b)).
+    """Real Title-case ``levelId`` → the actual snapshot file path.
 
     ``Obt/Main/level_main_04-04`` → ``gamedata/levels/obt/main/level_main_04-04.json``
     (lowercase + ``gamedata/levels/`` prefix + ``.json``). A path already in the
@@ -67,7 +66,7 @@ def normalize_level_id(level_id: str | None) -> str | None:
 
 
 def is_clean_level_path(path: str) -> bool:
-    """Whether a *normalized* levelId path is a safe level-file reference (§V36).
+    """Whether a *normalized* levelId path is a safe level-file reference.
 
     ``normalize_level_id`` always forces the ``gamedata/levels/`` prefix, so after
     normalization a crafted ``levelId`` can neither point at an excel table nor
@@ -78,7 +77,7 @@ def is_clean_level_path(path: str) -> bool:
     ``gamedata``/``excel`` segment. Shared by the network discovery gate
     (:mod:`~arknights_mcp.sources.arknights_assets`) and the local import path
     (:func:`~arknights_mcp.importers.stages.import_stages`) so both confine the
-    levels tree identically (§V37, §V36; B17).
+    levels tree identically.
     """
     if not path.startswith(_LEVEL_PREFIX) or not path.endswith(_LEVEL_SUFFIX):
         return False
@@ -100,7 +99,7 @@ _MASK_IMPASSABLE: frozenset[str] = frozenset({"NONE", ""})
 
 
 def _passable_from_mask(mask: Any) -> bool | None:
-    """Map real ``passableMask`` → the normalized ``passable`` bool (§V29; B6 (c)).
+    """Map real ``passableMask`` → the normalized ``passable`` bool.
 
     ``passable`` here means "traversable by at least one movement mode"; the
     single boolean cannot express fly-only vs walk-only, which is recorded as a
@@ -132,7 +131,7 @@ def _inline_prefab_key(ref: dict[str, Any]) -> str | None:
     """A ``useDb:false`` ref's base enemy id from ``overwrittenData.prefabKey.m_value``.
 
     ``None`` when the ref carries no prefab base (leaves the spawn to fail closed at
-    the level importer's cross-reference check — B37).
+    the level importer's cross-reference check).
     """
     overwritten = ref.get("overwrittenData")
     if not isinstance(overwritten, dict):
@@ -149,10 +148,10 @@ def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
     A wave action names its enemy under ``key``; the level declares which enemies
     (and their DB level variant) it uses in ``enemyDbRefs`` (or ``enemies``). Refs
-    split two ways on the ``useDb`` flag (§V43, B37) — resolution keys on that flag
+    split two ways on the ``useDb`` flag — resolution keys on that flag
     per-ref, never on id-membership (the same id may be db-backed in one stage and
     inline in another; the same inline id may resolve to a different base across
-    levels ∴ no global inline→enemy map exists):
+    levels, so no global inline→enemy map exists):
 
     * ``useDb: true`` — the ref's ``id`` is a real ``enemy_database``/handbook
       enemy; the spawn resolves straight to it (``key`` normally equals that id).
@@ -163,7 +162,7 @@ def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
       to that base ``prefabKey`` so the cross-file FK holds; the original inline id
       is carried as ``variant_id`` for traceability (persisted via ``variantId`` in
       the allowlisted spawn ``source_fragment``). The inline ``overwrittenData``
-      stats themselves are not modeled here (§V43 limitation; T80).
+      stats themselves are not modeled here.
     """
     refs = level_raw.get("enemyDbRefs")
     if not isinstance(refs, list):
@@ -194,23 +193,23 @@ def _enemy_ref_map(level_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
-    """Stage-scoped inline enemy variants from ``useDb:false`` refs (§T80; §V43).
+    """Stage-scoped inline enemy variants from ``useDb:false`` refs.
 
     Each ``useDb:false`` ref carrying an ``overwrittenData.prefabKey`` is a
-    level-inline enemy variant whose real stats differ from the base prefab (B37).
+    level-inline enemy variant whose real stats differ from the base prefab.
     Emit one variant per such ref: its inline id (``variantId``), the base enemy id
-    (``prefabKey``), and the §V29-verified stat overrides that ``overwrittenData``
+    (``prefabKey``), and the verified stat overrides that ``overwrittenData``
     actually *defines* (an undefined stat is omitted so the base is inherited at
     read). Only the :data:`OVERWRITTEN_DATA_ALLOWLIST` structural keys are read via
-    the shared stat extractor, so prose (``name``/``description``) never enters
-    (§V18/§V16). A ref without a ``prefabKey`` yields no variant — the spawn keeps
-    the unresolved inline id and fails closed downstream (§V43, no fabricated base).
+    the shared stat extractor, so prose (``name``/``description``) never enters.
+    A ref without a ``prefabKey`` yields no variant — the spawn keeps
+    the unresolved inline id and fails closed downstream (no fabricated base).
 
     The ref *source* (``enemyDbRefs`` falling back to ``enemies``) and the per-id
-    last-wins dedup MUST mirror :func:`_enemy_ref_map` exactly (§V46). A spawn the
+    last-wins dedup MUST mirror :func:`_enemy_ref_map` exactly. A spawn the
     ref map resolves to a ``variantId`` with no matching variant row here would
     dangle — ``variant_pk`` NULL, def/res/motion overrides silently dropped back to
-    the §V43 limitation with no error. A duplicate inline id emitted twice would
+    the limitation with no error. A duplicate inline id emitted twice would
     collide on ``UNIQUE(stage_pk, variant_id)`` and abort the whole candidate build;
     the ref map already collapses duplicates last-wins, so this must too.
     """
@@ -233,8 +232,8 @@ def _collect_variants(level_raw: dict[str, Any]) -> list[dict[str, Any]]:
         overwritten = overwritten if isinstance(overwritten, dict) else {}
         # Drop prose (name/description) via the field allowlist before extracting
         # stats: only the OVERWRITTEN_DATA_ALLOWLIST structural keys survive, and
-        # their nested string leaves are sanitized (§V18/§V31). Stats then come from
-        # the §V29-verified maps over the kept subset.
+        # their nested string leaves are sanitized. Stats then come from
+        # the verified maps over the kept subset.
         kept = apply_allowlist(overwritten, OVERWRITTEN_DATA_ALLOWLIST).kept
         variant: dict[str, Any] = {"variantId": rid, "prefabKey": prefab}
         variant.update(_normalize_enemy_data_stats(kept))
@@ -250,7 +249,7 @@ def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], in
 
     ``y`` is the ``map`` ROW INDEX, and ``map[0]`` is the board's TOP row on screen,
     so the derived frame is y-DOWN: ``y == 0`` is the top, ``y == height - 1`` the
-    bottom (§V95). This is the canonical grid frame every consumer reads -- no
+    bottom. This is the canonical grid frame every consumer reads -- no
     consumer may re-flip it, and the route frame is converted INTO it below."""
     grid = map_data.get("map")
     tile_defs = map_data.get("tiles")
@@ -284,7 +283,7 @@ def _normalize_tiles(map_data: dict[str, Any]) -> tuple[list[dict[str, Any]], in
 
 
 def _to_grid_frame(position: Any, height: int) -> Any:
-    """Convert one raw route ``{row, col}`` into the canonical tile frame (§V95/B127).
+    """Convert one raw route ``{row, col}`` into the canonical tile frame.
 
     Upstream route positions count ``row`` from the BOTTOM of the board while the
     tile ``y`` derived by :func:`_normalize_tiles` counts from the TOP, so storing the
@@ -295,7 +294,7 @@ def _to_grid_frame(position: Any, height: int) -> Any:
 
     ``col`` is untouched (columns share an origin). A non-dict, a missing/non-int
     ``row``, or a non-positive ``height`` passes through unchanged -- a malformed
-    position is preserved as-is rather than fabricated into a plausible one (§V26)."""
+    position is preserved as-is rather than fabricated into a plausible one."""
     if height <= 0 or not isinstance(position, dict):
         return position
     row = position.get("row")
@@ -305,10 +304,10 @@ def _to_grid_frame(position: Any, height: int) -> Any:
 
 
 def _normalize_checkpoint(checkpoint: Any, height: int) -> Any:
-    """One raw checkpoint with its nested ``position`` rebased to the tile frame (§V95).
+    """One raw checkpoint with its nested ``position`` rebased to the tile frame.
 
     Only ``position`` is a grid coordinate. ``reachOffset`` is a sub-tile world offset,
-    not a board position, so it is left untouched (§V95) -- rebasing it would invent a
+    not a board position, so it is left untouched -- rebasing it would invent a
     meaning the source does not carry."""
     if not isinstance(checkpoint, dict) or "position" not in checkpoint:
         return _to_grid_frame(checkpoint, height)  # bare {row, col} fallback shape
@@ -319,7 +318,7 @@ def _normalize_routes(level_raw: dict[str, Any], height: int) -> list[dict[str, 
     """Real routes (no ``routeIndex``) → normalized routes with a positional index.
 
     Positions are rebased from the upstream bottom-origin ``row`` into the canonical
-    top-origin tile frame (:func:`_to_grid_frame`, §V95/B127) so routes and tiles index
+    top-origin tile frame (:func:`_to_grid_frame`) so routes and tiles index
     one board."""
     routes: list[dict[str, Any]] = []
     raw_routes = level_raw.get("routes")
@@ -352,19 +351,19 @@ def _normalize_action(
 
     Only ``actionType == "SPAWN"`` actions describe an enemy entering the map. A
     level's waves interleave spawns with UI/scripting actions that *also* carry a
-    ``key`` (B35): ``DISPLAY_ENEMY_INFO``/``PREVIEW_CURSOR`` name a real enemy (a
+    ``key``: ``DISPLAY_ENEMY_INFO``/``PREVIEW_CURSOR`` name a real enemy (a
     codex/preview cue, not a spawn) and ``STORY``'s ``key`` is a story-asset path
     (e.g. ``activities/a001/tutorial_a001_01_a``), not an enemy id. Gating on the
     presence of ``key`` alone both fabricated phantom spawns from the enemy-info
     cues and leaked a ``STORY`` path as an enemy id that then failed the downstream
     cross-reference check. Verified against live upstream @``413a81a3``: ``SPAWN``
-    is the sole enemy-spawning ``actionType`` (§V29).
+    is the sole enemy-spawning ``actionType``.
 
     The enemy id comes from ``key`` (resolved via ``enemyDbRefs``; a spawn ``key``
     normally equals the enemy id); a spawn's level variant defaults to the ref's
     declared level. For a ``useDb:false`` inline variant the resolved ``enemyId`` is
     the ref's base ``prefabKey`` and the original inline id is emitted as
-    ``variantId`` for traceability (§V43, B37).
+    ``variantId`` for traceability.
     """
     if action.get("actionType") != "SPAWN":
         return None
@@ -434,8 +433,8 @@ def normalize_level(level_raw: Any) -> Any:
     is returned unchanged. A real level (grid ``map``) is fully transformed —
     tiles gain derived x/y, ``passableMask``→``passable``, routes/waves gain
     positional indices, route positions are rebased from the upstream bottom-origin
-    ``row`` into the tiles' top-origin frame (§V95/B127), and wave ``key`` actions
-    resolve to enemy ids (§V29; B6 (c)).
+    ``row`` into the tiles' top-origin frame, and wave ``key`` actions
+    resolve to enemy ids.
     """
     if not _level_is_grid(level_raw):
         return level_raw

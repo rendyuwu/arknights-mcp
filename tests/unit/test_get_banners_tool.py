@@ -1,31 +1,31 @@
-"""§T114 ``get_banners`` tool tests (§V5/§V19/§V22/§V23/§V26/§V62; §I.tool).
+"""``get_banners`` tool tests.
 
 The tool is the model -> service -> envelope bridge for the banner archive; these drive
-it end to end against the same production read-only path (§V2). Banners are seeded
-through the REAL T113 ``insert_banners`` writer (soft-resolve + provenance + DB insert),
+it end to end against the same production read-only path. Banners are seeded
+through the REAL ``insert_banners`` writer (soft-resolve + provenance + DB insert),
 so the whole metadata-only read path (writer -> repo -> service -> tool) is exercised.
 They assert:
 
-* the §V5 region + provenance ride every delivered result, and en banners are never
+* the region + provenance ride every delivered result, and en banners are never
   surfaced under a cn query (en/cn never mixed);
-* the §V62/§V16 metadata-only contract: only the schedule/identity fields + the TYPED
+* the metadata-only contract: only the schedule/identity fields + the TYPED
   featured ops reach the wire -- no gacha summary/detail/html/image;
-* the §V62/§V26 caveats: a LIMITED banner resolves its featured op to an operator name; a
+* the caveats: a LIMITED banner resolves its featured op to an operator name; a
   standard (NORMAL) banner carries no featured op and surfaces the standard-banner
   limitation; an unresolved featured op surfaces its raw char id + the unresolved caveat;
-* §V67/§T199 (B138): a pool with no typed featured op OMITS ``featured_ops`` instead of
+* A pool with no typed featured op OMITS ``featured_ops`` instead of
   sending ``[]``, and the reason splits by rule type -- an expected CARRIER with no array
-  (FESCLASSIC), or a rule type §V62 never classified (BACKFLOW), names itself in its own
+  (FESCLASSIC), or a rule type never classified (BACKFLOW), names itself in its own
   caveat rather than borrowing the standard banner's prose-only explanation;
 * the optional since/until ISO open-time window narrows the list, newest-first;
-* the §V19/§V22 bounded pagination: out-of-range page rejected at BOTH the model and the
+* the bounded pagination: out-of-range page rejected at BOTH the model and the
   service (never a silent clamp), and the page descriptor reports total + has_more;
 * a region with no banners is a legitimate empty ``ok`` list (gacha_table is tolerant-
-  absent, §V41/B36), never a ``not_found``;
-* the typed §V23 envelope shape, including fail-closed ``database_unavailable`` /
+  absent), never a ``not_found``;
+* the typed envelope shape, including fail-closed ``database_unavailable`` /
   ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema, present in the
-  single shared registry both transports dispatch (§V14).
+* the wire contract: a read-only spec with a bounded input schema, present in the
+  single shared registry both transports dispatch.
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 _SOURCE_ID = "local_snapshot"
 
-#: The metadata keys a banner row may carry on the wire (§V62); never gacha prose.
-#: §V77/§V66 (B79): no per-row ``region`` -- it rides the parent ``server`` field once.
+#: The metadata keys a banner row may carry on the wire; never gacha prose.
+#: No per-row ``region`` -- it rides the parent ``server`` field once.
 _ALLOWED_KEYS = {
     "game_id",
     "display_name",
@@ -101,8 +101,8 @@ _EN_BANNERS = [
     ),
 ]
 
-#: Two cn banners so a cn query returns cn-only data (en/cn never mixed, §V5): a LIMITED
-#: pool with a featured op, and the §T199/B138 case -- a FESCLASSIC pool, a rule type §V62
+#: Two cn banners so a cn query returns cn-only data (en/cn never mixed): a LIMITED
+#: pool with a featured op, and the FESCLASSIC case -- a rule type that
 #: declares a typed CARRIER, whose featured-op array the source does not actually have.
 #: That pool is why the cn listing is the one that proves the two absence caveats are
 #: DISTINCT: it must take the absent-array arm without ever taking the standard-banner arm.
@@ -169,11 +169,11 @@ def _candidate(
 ) -> Path:
     """Build a bare candidate DB, seed the registry, and import the banner archive.
 
-    Uses the real T113 ``insert_banners`` writer so soft-resolve + provenance + region
+    Uses the real ``insert_banners`` writer so soft-resolve + provenance + region
     stamping are exercised, then closes so the tool reopens the file read-only.
     ``extra_en``/``extra_cn`` seed a pool ON TOP of the shared listing for a test that
     needs one rule type the default fixtures do not carry -- they must be passed here,
-    because the connection every test reads through is read-only (§V2) and cannot be
+    because the connection every test reads through is read-only and cannot be
     written mid-test.
     """
     path = tmp_path / "cand.sqlite"
@@ -218,7 +218,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_banners_spec(lambda: conn).handler
 
 
-# --- metadata facts + §V5 region + provenance ---------------------------------
+# --- metadata facts + region + provenance -------------------------------------
 
 
 def test_ok_returns_banner_metadata(conn: sqlite3.Connection) -> None:
@@ -228,11 +228,11 @@ def test_ok_returns_banner_metadata(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert set(data) == {"server", "banners", "page", "enum_legend"}
-    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    # Region stated ONCE on the parent server, never per row.
     assert data["server"] == "en"
     banners = data["banners"]
     assert isinstance(banners, list) and len(banners) == 3
-    # §V26: newest first (open_time DESC).
+    # Newest first (open_time DESC).
     assert [b["game_id"] for b in banners] == ["LIMITED_1", "CLASSIC_1", "NORMAL_1"]
     for b in banners:
         assert "region" not in b
@@ -246,7 +246,7 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
 
 
 def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
-    # §V5/§V62: a cn query returns cn-only data; en banners are not surfaced.
+    # A cn query returns cn-only data; en banners are not surfaced.
     env = _handler(conn)(server="cn")
     assert env.status == "ok"
     data = env.to_dict()["data"]
@@ -256,7 +256,7 @@ def test_en_and_cn_never_mixed(conn: sqlite3.Connection) -> None:
     assert all("region" not in b for b in banners)
 
 
-# --- typed featured ops + §V62/§V26 limitations -------------------------------
+# --- typed featured ops + limitations -----------------------------------------
 
 
 def _by_id(env, game_id: str) -> dict:  # type: ignore[no-untyped-def]
@@ -265,7 +265,7 @@ def _by_id(env, game_id: str) -> dict:  # type: ignore[no-untyped-def]
 
 
 def test_limited_featured_op_resolves_to_operator(conn: sqlite3.Connection) -> None:
-    # §V62: a LIMITED banner's featured char id resolves to the present operator's name.
+    # A LIMITED banner's featured char id resolves to the present operator's name.
     banner = _by_id(_handler(conn)(server="en"), "LIMITED_1")
     assert banner["featured_ops"] == [
         {"char_id": "char_002_amiya", "resolved": True, "operator_name": "Amiya"}
@@ -273,7 +273,7 @@ def test_limited_featured_op_resolves_to_operator(conn: sqlite3.Connection) -> N
 
 
 def test_classic_family_partial_resolve(conn: sqlite3.Connection) -> None:
-    # §V62: a CLASSIC banner names an array; the absent operator stays a raw char id.
+    # A CLASSIC banner names an array; the absent operator stays a raw char id.
     ops = _by_id(_handler(conn)(server="en"), "CLASSIC_1")["featured_ops"]
     assert {o["char_id"] for o in ops} == {"char_002_amiya", "char_999_ghost"}
     resolved = {o["char_id"]: o for o in ops}
@@ -282,25 +282,25 @@ def test_classic_family_partial_resolve(conn: sqlite3.Connection) -> None:
         "resolved": True,
         "operator_name": "Amiya",
     }
-    # §V67/§V69 (B135/T196): the unresolved op keeps its raw id and drops the name key
+    # The unresolved op keeps its raw id and drops the name key
     # rather than carrying ``operator_name: null``. ``resolved: False`` is the typed
     # signal that the id had no name in this build -- a null beside it said the same
-    # thing a second, weaker way (B98: never null AND a flag for one absence).
+    # thing a second, weaker way (never null AND a flag for one absence).
     assert resolved["char_999_ghost"] == {"char_id": "char_999_ghost", "resolved": False}
 
 
 def test_standard_banner_omits_featured_ops_and_notes_the_caveat(conn: sqlite3.Connection) -> None:
-    # §V62/§V26/§V67 (§T199/B138): NORMAL carries no typed featured-op, so the key is
-    # ABSENT rather than ``[]``. An empty list is §V67's CONFIRMED-none, and the pool has
+    # NORMAL carries no typed featured-op, so the key is
+    # ABSENT rather than ``[]``. An empty list is the CONFIRMED-none, and the pool has
     # a rate-up -- it just lives in prose the field policy excludes. The caveat is the
-    # sole signal (§V67: never a placeholder value AND a limitation for one absence).
+    # sole signal (never a placeholder value AND a limitation for one absence).
     env = _handler(conn)(server="en")
     assert "featured_ops" not in _by_id(env, "NORMAL_1")
     assert STANDARD_BANNER_LIMITATION in env.limitations
 
 
 def test_expected_carrier_without_the_array_names_its_rule_type(conn: sqlite3.Connection) -> None:
-    # §T199/B138, the client harm: FESCLASSIC is one of the six rule types §V62 declares a
+    # The client harm: FESCLASSIC is one of the six rule types declared a
     # typed carrier, and on the real corpus it carries the array on ZERO pools. The old wire
     # said ``featured_ops: []`` -- a CONFIRMED-none asserting a celebration banner has no
     # rate-up operator. Now the key is absent and the caveat NAMES the rule type, so the
@@ -310,13 +310,13 @@ def test_expected_carrier_without_the_array_names_its_rule_type(conn: sqlite3.Co
     caveat = absent_featured_op_array_limitation(("FESCLASSIC",))
     assert caveat in env.limitations
     # ... and it is NOT described as a standard banner whose rate-up lives in prose: that
-    # mislabel is exactly what B138 flagged, since the description's standard set
+    # mislabel is exactly the original defect, since the description's standard set
     # (NORMAL/SINGLE/DOUBLE/LINKAGE) never covered FESCLASSIC.
     assert STANDARD_BANNER_LIMITATION not in env.limitations
 
 
 def test_both_absence_caveats_ride_a_mixed_page(tmp_path: Path) -> None:
-    # §V26/§T199: a page mixing a standard pool with an expected-carrier pool carries BOTH
+    # A page mixing a standard pool with an expected-carrier pool carries BOTH
     # caveats, because the two absences have different causes and one caveat cannot stand
     # in for the other.
     path = _candidate(
@@ -339,8 +339,8 @@ def test_both_absence_caveats_ride_a_mixed_page(tmp_path: Path) -> None:
 
 
 def test_unclassified_rule_type_takes_the_conservative_arm(tmp_path: Path) -> None:
-    # §V96 (unknown token -> conservative side + limitation): BACKFLOW is a real cn rule
-    # type §V62's list never named, and a token upstream adds tomorrow behaves the same.
+    # Unknown token -> conservative side + limitation: BACKFLOW is a real cn rule
+    # type the list never named, and a token upstream adds tomorrow behaves the same.
     # It must surface as a NAMED source gap, never be read as a prose-only standard banner
     # -- a silent bucket is how a new pool type would inherit a claim nobody checked.
     path = _candidate(
@@ -366,7 +366,7 @@ def test_unclassified_rule_type_takes_the_conservative_arm(tmp_path: Path) -> No
 
 
 def test_unresolved_featured_op_limitation(conn: sqlite3.Connection) -> None:
-    # §V62: an unresolved featured op is surfaced + noted as a caveat.
+    # An unresolved featured op is surfaced + noted as a caveat.
     env = _handler(conn)(server="en")
     assert UNRESOLVED_FEATURED_OP_LIMITATION in env.limitations
 
@@ -374,20 +374,20 @@ def test_unresolved_featured_op_limitation(conn: sqlite3.Connection) -> None:
 def test_no_standard_limitation_when_no_standard_pool_is_listed(conn: sqlite3.Connection) -> None:
     # The cn listing carries no NORMAL/SINGLE/DOUBLE/LINKAGE pool at all, so the
     # standard-banner caveat is absent -- the limitation is data-driven, not always-on, and
-    # (§T199) the FESCLASSIC pool it does carry takes the other arm instead.
+    # the FESCLASSIC pool it does carry takes the other arm instead.
     env = _handler(conn)(server="cn")
     assert STANDARD_BANNER_LIMITATION not in env.limitations
 
 
 def test_no_absence_caveat_when_every_listed_pool_is_featured(conn: sqlite3.Connection) -> None:
-    # §V26/§T199: both absence caveats stay off a page where every pool carries a typed
+    # Both absence caveats stay off a page where every pool carries a typed
     # featured op -- the cn LIMITED pool alone, reached through the query filter.
     env = _handler(conn)(server="cn", query="限定")
     assert STANDARD_BANNER_LIMITATION not in env.limitations
     assert absent_featured_op_array_limitation(("FESCLASSIC",)) not in env.limitations
 
 
-# --- metadata-only: no gacha prose surfaces (§V62/§V16) -----------------------
+# --- metadata-only: no gacha prose surfaces ----------------------------------
 
 
 def test_no_prose_fields_surface(conn: sqlite3.Connection) -> None:
@@ -436,7 +436,7 @@ def test_date_only_until_is_inclusive_of_that_day(conn: sqlite3.Connection) -> N
     assert [b["game_id"] for b in older] == ["CLASSIC_1", "NORMAL_1"]
 
 
-# --- optional query display-name filter (additive, §V21/§V19) -----------------
+# --- optional query display-name filter (additive) ---------------------------
 
 
 def test_query_narrows_by_display_name_substring(conn: sqlite3.Connection) -> None:
@@ -468,7 +468,7 @@ def test_query_no_match_is_ok_empty_list(conn: sqlite3.Connection) -> None:
 
 
 def test_query_wildcard_chars_are_literal(conn: sqlite3.Connection) -> None:
-    # §V2/§V18: a '%'/'_' in the query is escaped, so it matches a LITERAL char rather
+    # A '%'/'_' in the query is escaped, so it matches a LITERAL char rather
     # than widening the filter to match-everything -- no display_name carries them.
     for wildcard in ("%", "_"):
         banners = _handler(conn)(server="en", query=wildcard).to_dict()["data"]["banners"]  # type: ignore[index]
@@ -490,7 +490,7 @@ def test_query_composes_with_window_and_paging(conn: sqlite3.Connection) -> None
 
 
 def test_query_stays_within_region(conn: sqlite3.Connection) -> None:
-    # §V5: a cn query matches only cn banners; an en-only name returns nothing on cn.
+    # A cn query matches only cn banners; an en-only name returns nothing on cn.
     cn = _handler(conn)(server="cn", query="限定").to_dict()["data"]["banners"]  # type: ignore[index]
     assert [b["game_id"] for b in cn] == ["CN_1"]
     en_name_on_cn = _handler(conn)(server="cn", query="Headhunting").to_dict()["data"]["banners"]  # type: ignore[index]
@@ -511,7 +511,7 @@ def test_empty_query_rejected(conn: sqlite3.Connection) -> None:
         _handler(conn)(server="en", query="   ")
 
 
-# --- §V19/§V22 bounded pagination ---------------------------------------------
+# --- bounded pagination -------------------------------------------------------
 
 
 def test_pagination_slices_and_reports_total(conn: sqlite3.Connection) -> None:
@@ -529,7 +529,7 @@ def test_pagination_slices_and_reports_total(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_page_rejected_at_model(conn: sqlite3.Connection) -> None:
-    # §V19: rejected at the model gate, never silently widened into a dump.
+    # Rejected at the model gate, never silently widened into a dump.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", page={"page": 1, "page_size": 101})
     with pytest.raises(ValidationError):
@@ -537,19 +537,19 @@ def test_out_of_range_page_rejected_at_model(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_page_rejected_at_service(conn: sqlite3.Connection) -> None:
-    # §V19: a caller reaching the service directly (bypassing the model) gets the SAME
+    # A caller reaching the service directly (bypassing the model) gets the SAME
     # rejection, not a silent clamp -- one contract, both places.
-    with pytest.raises(ValueError, match="§V19"):
+    with pytest.raises(ValueError, match="outside the"):
         get_banners(conn, server="en", page_size=101)
-    with pytest.raises(ValueError, match="§V19"):
+    with pytest.raises(ValueError, match="must be >= 1"):
         get_banners(conn, server="en", page=0)
 
 
-# --- empty domain: ok empty list, never not_found (§V62/§V23) -----------------
+# --- empty domain: ok empty list, never not_found -----------------------------
 
 
 def test_empty_region_is_ok_empty_list(bare_conn: sqlite3.Connection) -> None:
-    # §V41/B36: gacha_table is tolerant-absent, so a region with no banners is a
+    # gacha_table is tolerant-absent, so a region with no banners is a
     # legitimate empty ``ok`` list, not a ``not_found``.
     env = _handler(bare_conn)(server="en")
     assert env.status == "ok"
@@ -560,7 +560,7 @@ def test_empty_region_is_ok_empty_list(bare_conn: sqlite3.Connection) -> None:
     assert env.limitations == ()
 
 
-# --- §V23 fail-closed ---------------------------------------------------------
+# --- fail-closed --------------------------------------------------------------
 
 
 def test_database_unavailable_fails_closed() -> None:
@@ -599,7 +599,7 @@ def test_bad_region_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -- a crafted request cannot smuggle a field.
+    # extra="forbid" -- a crafted request cannot smuggle a field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", bogus=1)
 
@@ -610,13 +610,13 @@ def test_oversized_since_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_non_iso_since_rejected(conn: sqlite3.Connection) -> None:
-    # §V19/B48: a non-date bound is rejected at the model gate, never silently emptying
+    # A non-date bound is rejected at the model gate, never silently emptying
     # the windowed query lexicographically.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", since="july")
 
 
-# --- §V14 shared registry + §I.tool wire contract -----------------------------
+# --- shared registry + wire contract ------------------------------------------
 
 
 def test_registered_in_shared_registry(conn: sqlite3.Connection) -> None:

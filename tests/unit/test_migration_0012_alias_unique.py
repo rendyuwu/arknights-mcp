@@ -1,9 +1,9 @@
-"""T109: migration 0012 alias uniqueness for idempotent locale-alias re-import (§V57).
+"""Migration 0012 alias uniqueness for idempotent locale-alias re-import.
 
 Adds a ``UNIQUE(entity_pk, alias, locale)`` index to each of the two alias tables so
-the extra-locale ride-along's ``INSERT OR IGNORE`` (T109) is idempotent: a re-run /
+the extra-locale ride-along's ``INSERT OR IGNORE`` is idempotent: a re-run /
 backfill of the same jp/kr NAME must not double-insert a row (which would then surface
-twice in the FTS ``GROUP_CONCAT``, §V37/B22). These tests assert the indexes exist,
+twice in the FTS ``GROUP_CONCAT``). These tests assert the indexes exist,
 that ``integrity_check`` + ``foreign_key_check`` still pass, that a duplicate
 ``(pk, alias, locale)`` collides on a plain INSERT but is silently suppressed by
 ``INSERT OR IGNORE``, and that the uniqueness key is (pk, alias, locale) -- so the SAME
@@ -113,7 +113,7 @@ def test_duplicate_alias_row_collides_on_plain_insert(tmp_path: Path) -> None:
 
 
 def test_insert_or_ignore_suppresses_duplicate_alias_row(tmp_path: Path) -> None:
-    # §T109 idempotency: re-inserting the same (enemy_pk, alias, locale) via OR IGNORE is
+    # Idempotency: re-inserting the same (enemy_pk, alias, locale) via OR IGNORE is
     # a no-op -- exactly one row survives, so a re-run/backfill never doubles the FTS token.
     conn = build_database(tmp_path / "cand.sqlite")
     try:

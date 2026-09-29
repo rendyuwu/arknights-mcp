@@ -1,9 +1,9 @@
-"""T23: the candidate validation gate (§V4) + the ``validate`` CLI command.
+"""The candidate validation gate + the ``validate`` CLI command.
 
 Covers each gate check -- ``integrity_check``, ``foreign_key_check``,
 critical-table presence, row-count sanity, cross-region orphan detection, the
-FTS smoke + integrity check (§T31), and golden domain invariants -- plus the
-CLI's exit code. A candidate is promotable only if every check passes (§V4).
+FTS smoke + integrity check, and golden domain invariants -- plus the
+CLI's exit code. A candidate is promotable only if every check passes.
 """
 
 from __future__ import annotations
@@ -54,13 +54,13 @@ def test_valid_candidate_passes_all_checks(tmp_path: Path) -> None:
     )
     assert report.passed
     assert all(c.passed for c in report.checks)
-    # §T31: the FTS index now exists; the check queries it and runs FTS5's own
+    # The FTS index now exists; the check queries it and runs FTS5's own
     # integrity-check (no longer a no-op pass).
     assert "consistent" in _check(report, "fts_smoke").detail
 
 
 def test_corrupt_fts_index_detected(tmp_path: Path) -> None:
-    # §V4: PRAGMA integrity_check does not verify FTS5 shadow tables, so the gate
+    # PRAGMA integrity_check does not verify FTS5 shadow tables, so the gate
     # runs FTS5's own integrity-check. Corrupt the index's shadow data and the
     # fts_smoke check must fail the candidate (a stale/corrupt index never promotes).
     path = _valid_candidate(tmp_path)
@@ -126,7 +126,7 @@ def test_foreign_key_violation_detected(tmp_path: Path) -> None:
 
 def test_row_counts_min_snapshots_knob(tmp_path: Path) -> None:
     """A seeded-but-empty build fails with the default gate, passes when the
-    caller allows an empty rebuild (§V20 purge-to-empty)."""
+    caller allows an empty rebuild (purge-to-empty)."""
     path = tmp_path / "empty.sqlite"
     conn = build_database(path)
     seed_data_sources(conn, load_source_registry(REGISTRY))
@@ -139,7 +139,7 @@ def test_row_counts_min_snapshots_knob(tmp_path: Path) -> None:
     assert _check(empty_ok, "row_counts").passed
 
 
-# --- cross-region orphans (§V5) -----------------------------------------------
+# --- cross-region orphans -----------------------------------------------------
 
 
 def test_cross_region_reference_detected(tmp_path: Path) -> None:
@@ -157,7 +157,7 @@ def test_cross_region_reference_detected(tmp_path: Path) -> None:
 
 
 def test_cross_region_skin_resolution_detected(tmp_path: Path) -> None:
-    # §V5/§T182: a skin row soft-resolved to an operator of ANOTHER region must fail
+    # A skin row soft-resolved to an operator of ANOTHER region must fail
     # the orphans gate -- the nullable operator_pk FK cannot express same-region, so
     # the gate does (the importer resolves per server; this catches a regression).
     path = _valid_candidate(tmp_path)
@@ -183,7 +183,7 @@ def test_cross_region_skin_resolution_detected(tmp_path: Path) -> None:
 
 
 def test_cross_region_banner_featured_op_detected(tmp_path: Path) -> None:
-    # §V5/§V62, B124 (B116 class, sibling domain): banner_featured_ops carries no server
+    # banner_featured_ops carries no server
     # column, so its nullable operator_pk soft-resolve is only region-checkable through
     # the parent banner. A cn banner featuring an en operator must fail the orphans gate.
     path = _valid_candidate(tmp_path)

@@ -1,6 +1,6 @@
-"""T2 scaffold smoke test: the ``arknights_mcp`` package imports and its layout
+"""Scaffold smoke test: the ``arknights_mcp`` package imports and its layout
 matches PRD Section 20. This is a structural guard, not a behavioural one --
-the leaf modules are stubs until their owning §T tasks fill them in.
+the leaf modules are stubs until their owning tasks fill them in.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ EXPECTED_SUBPACKAGES = [
 ]
 
 # A representative slice of the PRD Section 20 module tree (relative to the package root).
-# ``cli`` is a package (one module per command group) after the §V38 split (T75).
+# ``cli`` is a package (one module per command group) after the split.
 EXPECTED_MODULE_FILES = [
     "cli/__init__.py",
     "config.py",

@@ -1,7 +1,7 @@
-"""T200: range_table.json -> the `ranges` dimension (§V98/§V69/§V18/§V31; B132).
+"""range_table.json -> the `ranges` dimension.
 
 Every grid asserted here is TRANSCRIBED from the real ``range_table.json`` at the
-pinned upstream commit, never invented (B107/§V29: a fixture that makes up the shape it
+pinned upstream commit, never invented (a fixture that makes up the shape it
 then asserts proves only that it is self-consistent). ``1-1``/``1-2``/``x-1`` are the
 grids the operator fixture's own ``character_table``/``skill_table`` reference; ``2-7``
 is a real ORIGIN-UNCOVERED grid, the case that makes the board frame load-bearing.
@@ -35,7 +35,7 @@ def _real_table() -> dict[str, Any]:
 
 
 def test_parses_the_real_shape() -> None:
-    """§V29: the upstream entry is ``{id, direction, grids: [{row, col}]}``."""
+    """The upstream entry is ``{id, direction, grids: [{row, col}]}``."""
     parsed = {r.range_id: r for r in parse_ranges(_real_table())}
     assert set(parsed) == {"1-1", "1-2", "2-7", "x-1"}
     # Transcribed from upstream: 1-1 is the deploy tile plus the tile in front of it.
@@ -47,7 +47,7 @@ def test_parses_the_real_shape() -> None:
 
 
 def test_direction_is_dropped_by_the_allowlist() -> None:
-    """§V94/§V113: an unread field must not become a stored column.
+    """An unread field must not become a stored column.
 
     The raw entries DO carry ``direction`` (this asserts the fixture is really the
     upstream shape, so the drop is exercised rather than vacuous), and no parsed record
@@ -61,7 +61,7 @@ def test_direction_is_dropped_by_the_allowlist() -> None:
 
 
 def test_grid_cells_are_deduplicated_and_ordered() -> None:
-    """Deterministic stored bytes: two snapshots with the same grid hash the same (§V92)."""
+    """Deterministic stored bytes: two snapshots with the same grid hash the same."""
     parsed = parse_ranges(
         {
             "t-1": {
@@ -75,7 +75,7 @@ def test_grid_cells_are_deduplicated_and_ordered() -> None:
 
 
 def test_cell_missing_a_coordinate_is_dropped_not_defaulted() -> None:
-    """§V26: a fabricated (0, 0) would claim coverage the source never stated."""
+    """A fabricated (0, 0) would claim coverage the source never stated."""
     parsed = parse_ranges(
         {
             "t-1": {
@@ -88,7 +88,7 @@ def test_cell_missing_a_coordinate_is_dropped_not_defaulted() -> None:
 
 
 def test_entry_with_no_usable_cell_is_skipped() -> None:
-    """An empty grid would ship as a positive "covers nothing" claim (§V26/§V67)."""
+    """An empty grid would ship as a positive "covers nothing" claim."""
     assert parse_ranges({"t-1": {"id": "t-1", "grids": []}}) == []
     assert parse_ranges({"t-1": {"id": "t-1"}}) == []
 
@@ -133,7 +133,7 @@ def _candidate(tmp_path: Path) -> sqlite3.Connection:
 
 
 def test_insert_stores_compact_pairs_with_provenance(tmp_path: Path) -> None:
-    """§V17: every row carries its provenance chain; the grid stores as [[r, c], ...]."""
+    """Every row carries its provenance chain; the grid stores as [[r, c], ...]."""
     conn = _candidate(tmp_path)
     result = insert_ranges(
         conn,
@@ -151,7 +151,7 @@ def test_insert_stores_compact_pairs_with_provenance(tmp_path: Path) -> None:
 
 
 def test_duplicate_range_id_is_a_typed_error_not_an_integrity_error(tmp_path: Path) -> None:
-    """§V33: an anomaly must not tear down the multi-region build uncaught."""
+    """An anomaly must not tear down the multi-region build uncaught."""
     conn = _candidate(tmp_path)
     parsed = parse_ranges({"1-1": {"id": "1-1", "grids": [{"row": 0, "col": 0}]}})
     kwargs = {"server": "en", "snapshot_id": "en:test", "source_path": RANGE_TABLE_PATH}
@@ -168,10 +168,10 @@ def test_import_reads_the_snapshot_through_the_adapter(tmp_path: Path) -> None:
 
 
 def test_absent_range_table_imports_zero_rather_than_failing(tmp_path: Path) -> None:
-    """§V41/B36: a combat-only snapshot legitimately lacks the file.
+    """A combat-only snapshot legitimately lacks the file.
 
     The CN operator fixture ships no ``range_table.json``, so this is also the fixture
-    that gives §V69's limitation arm a real execution path -- the promoted build
+    that gives the limitation arm a real execution path -- the promoted build
     resolves everything, so a build-only test would leave that arm unrun.
     """
     conn = _candidate(tmp_path)
@@ -181,7 +181,7 @@ def test_absent_range_table_imports_zero_rather_than_failing(tmp_path: Path) -> 
 
 
 def test_non_empty_source_yielding_zero_rows_fails_closed(tmp_path: Path) -> None:
-    """§V30: a shape mismatch must never promote as a silently empty domain."""
+    """A shape mismatch must never promote as a silently empty domain."""
     root = tmp_path / "snap"
     (root / "gamedata" / "excel").mkdir(parents=True)
     (root / RANGE_TABLE_PATH).write_text(

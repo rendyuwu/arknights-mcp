@@ -1,6 +1,6 @@
--- 0001 core metadata tables (SPEC §T12; PRD §12.2).
+-- 0001 core metadata tables (PRD Section 12.2).
 -- schema_migrations, data_sources, source_snapshots, record_provenance,
--- source_policy_events. All foreign keys are declared and enforced (§12.1).
+-- source_policy_events. All foreign keys are declared and enforced (PRD Section 12.1).
 
 CREATE TABLE schema_migrations (
     version    TEXT PRIMARY KEY,

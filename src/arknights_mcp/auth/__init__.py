@@ -1,12 +1,12 @@
-"""OAuth/OIDC resource-server validation (remote transport only; §T52; §V9/§V10/§V40).
+"""OAuth/OIDC resource-server validation (remote transport only).
 
-Three collaborating homes, each with one responsibility (§C separated layers):
+Three collaborating homes, each with one responsibility:
 
 * :mod:`~arknights_mcp.auth.oidc` -- validate a bearer token → :class:`Principal`;
 * :mod:`~arknights_mcp.auth.principal` -- the immutable validated identity;
 * :mod:`~arknights_mcp.auth.scopes` -- the ``scope``∪``permissions`` union + AND match.
 
-The startup gate (§V9/§V40) lives in :mod:`arknights_mcp.config`; the wire-level
+The startup gate lives in :mod:`arknights_mcp.config`; the wire-level
 bearer enforcement (401/403 challenges) lives in the Streamable HTTP transport.
 """
 

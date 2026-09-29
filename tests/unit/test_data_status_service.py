@@ -1,9 +1,9 @@
-"""T27: the ``get_data_status`` + ``get_data_sources`` services (§V27; §V2/§V14).
+"""The ``get_data_status`` + ``get_data_sources`` services.
 
 Both are shared domain entry points that read the active database read-only and
 return serializable, public-safe results. ``get_data_sources`` must never leak
-secrets, local paths, OAuth config, or policy notes (§V27), while still carrying
-the PRD §13.10 fields (private-hosting + redistribution posture) and the active
+secrets, local paths, OAuth config, or policy notes, while still carrying
+the PRD Section 13.10 fields (private-hosting + redistribution posture) and the active
 snapshot commit/version.
 """
 
@@ -73,19 +73,19 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
     # serializable for the tool envelope / CLI --json
     json.dumps(status.to_dict())
 
-    # §V66/B78 (T157): the extras view drops imported_at -- carried by the envelope
+    # The extras view drops imported_at -- carried by the envelope
     # provenance -- and keeps the rest, INCLUDING snapshot_id: one region can hold
-    # several active snapshots, so snapshot_id is the §V87 inline join key that ties
-    # a row to its provenance entry without a positional contract. §V67 (B96/T177):
-    # the local-import fixture has no commit/version, so those keys are OMITTED,
-    # never emitted null. §V87 (B96): include_server additionally inlines the region
-    # key for the multi-region tool; the region-scoped resource keeps the server-less
-    # view (§V77). to_dict stays full for the CLI, which has no envelope provenance.
+    # several active snapshots, so snapshot_id is the inline join key that ties
+    # a row to its provenance entry without a positional contract. The local-import
+    # fixture has no commit/version, so those keys are OMITTED, never emitted null.
+    # include_server additionally inlines the region key for the multi-region tool; the
+    # region-scoped resource keeps the server-less view. to_dict stays full for the CLI,
+    # which has no envelope provenance.
     assert snap.commit_sha is None and snap.upstream_version is None
     extras = snap.to_provenance_extras()
-    # §V99 (T198): the lifecycle state is keyed ``import_status``. Bare ``status`` is the
-    # envelope's §V23 result status, and one name for two unrelated axes in one response
-    # is the collision B148 caught on ``schema_version`` a few keys away.
+    # The lifecycle state is keyed ``import_status``. Bare ``status`` is the
+    # envelope's result status, and one name for two unrelated axes in one response
+    # is the collision caught on ``schema_version`` a few keys away.
     assert extras.keys() == {"source_id", "snapshot_id", "age_days", "import_status"}
     assert "status" not in extras
     with_server = snap.to_provenance_extras(include_server=True)
@@ -102,7 +102,7 @@ def test_data_status_reports_active_snapshot(tmp_path: Path) -> None:
 
 
 def test_snapshot_extras_keep_known_commit_and_version() -> None:
-    # §V67 (B96/T177): omission is a null scrub, not a field drop -- a synced build
+    # Omission is a null scrub, not a field drop -- a synced build
     # that stamped a commit/version still emits both keys.
     snap = SnapshotStatus(
         server="en",
@@ -118,7 +118,7 @@ def test_snapshot_extras_keep_known_commit_and_version() -> None:
     assert extras["commit_sha"] == "413a81a3ff3e"
     assert extras["upstream_version"] == "v1"
     assert extras["server"] == "en"
-    # snapshot_id stays on the row as the §V87 join key; imported_at is provenance-only.
+    # snapshot_id stays on the row as the inline join key; imported_at is provenance-only.
     assert extras["snapshot_id"] == "snap-1"
     assert "imported_at" not in extras
 
@@ -160,8 +160,8 @@ def test_data_sources_public_view_with_active_snapshot(tmp_path: Path) -> None:
 
 
 def test_data_sources_is_public_safe(tmp_path: Path) -> None:
-    """§V27: no secrets, no local filesystem paths, no policy notes -- but the
-    PRD §13.10 private-hosting/redistribution posture is present."""
+    """No secrets, no local filesystem paths, no policy notes -- but the
+    PRD Section 13.10 private-hosting/redistribution posture is present."""
     registry = load_source_registry(REGISTRY)
     with read_only_connection(_active_db(tmp_path)) as conn:
         dumped = json.dumps(get_data_sources(registry, conn).to_dict())
@@ -170,7 +170,7 @@ def test_data_sources_is_public_safe(tmp_path: Path) -> None:
     # No local filesystem path from the machine registry / staging leaks out.
     assert str(REPO_ROOT) not in dumped
     assert str(tmp_path) not in dumped
-    # PRD §13.10 posture fields are present.
+    # PRD Section 13.10 posture fields are present.
     assert "private_hosting_status" in dumped
     assert "redistribution_status" in dumped
 

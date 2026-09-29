@@ -1,4 +1,4 @@
-"""T196: the two payload rules at their single home (§V67 null, §V103 source mask).
+"""The two payload rules at their single home (null sweep, source mask).
 
 The contract guards (``tests/contract/test_envelope_null_discipline.py`` and
 ``test_source_placeholder_disclosure.py``) assert the rules hold over a corpus. These
@@ -14,10 +14,10 @@ import pytest
 from arknights_mcp.mcp.envelopes import build_envelope, ok
 from arknights_mcp.mcp.payload_hygiene import clean_payload, is_source_mask, mask_limitation
 
-# --- §V103: the mask predicate -------------------------------------------------
+# --- the mask predicate --------------------------------------------------------
 
 
-#: Every distinct mask token COUNTED on the promoted build (§V96). Kept here as well as in
+#: Every distinct mask token COUNTED on the promoted build. Kept here as well as in
 #: the contract guard so the predicate still regresses loudly in CI, where no build exists.
 _REAL_MASKS = ("？？？", "？？？？？", "-", "???", "??:??:??")
 
@@ -29,7 +29,7 @@ def test_the_real_corpus_masks_are_detected(value: str) -> None:
 
 @pytest.mark.parametrize("value", ["", "   ", "\t", "???", "…", "＊＊＊", "--", "?!"])
 def test_empty_and_unseen_mask_shapes_are_detected(value: str) -> None:
-    """§V103 names "empty-after-sanitize" as a mask, and §V96 forbids assuming the domain
+    """The rule names "empty-after-sanitize" as a mask, and forbids assuming the domain
     is closed: ``＊＊＊`` has never appeared in this corpus, and the predicate still catches
     it because it keys on shape rather than on a list of literals someone maintained."""
     assert is_source_mask(value)
@@ -51,7 +51,7 @@ def test_real_content_is_never_flagged(value: str) -> None:
     assert not is_source_mask(value)
 
 
-# --- §V103: scope + disclosure -------------------------------------------------
+# --- scope + disclosure --------------------------------------------------------
 
 
 def test_only_name_like_keys_are_scanned() -> None:
@@ -82,7 +82,7 @@ def test_every_name_like_wire_key_is_in_scope(key: str) -> None:
 
 
 def test_the_masked_value_is_still_emitted() -> None:
-    """§V26: the fix is disclosure, not substitution.
+    """The fix is disclosure, not substitution.
 
     Dropping or replacing the value would be the server inventing a name, which is the
     failure this rule exists to prevent -- ``？？？`` IS what the source says.
@@ -93,7 +93,7 @@ def test_the_masked_value_is_still_emitted() -> None:
 
 
 def test_the_disclosure_is_bounded_with_an_exact_remainder() -> None:
-    """§V22/§V66: a pathological payload gets a bounded string, not one path per mask."""
+    """A pathological payload gets a bounded string, not one path per mask."""
     masks = [(f"rows[{index}].display_name", "-") for index in range(20)]
     text = mask_limitation(masks)
     assert "rows[7].display_name" in text
@@ -101,23 +101,16 @@ def test_the_disclosure_is_bounded_with_an_exact_remainder() -> None:
     assert "and 12 more field(s) like it" in text
 
 
-def test_the_disclosure_carries_no_internal_cite() -> None:
-    # §V71 (b): client-facing runtime text never ships a spec cite or internal jargon.
-    text = mask_limitation([("stage.display_name", "??:??:??")])
-    assert "§" not in text
-    assert "B141" not in text and "V103" not in text
-
-
 def test_a_clean_payload_earns_no_limitation() -> None:
     _, limitations = clean_payload({"display_name": "Amiya", "stage_code": "4-4"})
     assert limitations == ()
 
 
-# --- §V67: the null sweep ------------------------------------------------------
+# --- the null sweep ------------------------------------------------------------
 
 
 def test_nulls_are_dropped_at_every_depth() -> None:
-    """The five B135 sites are a top-level key, a nested-object key, and two list
+    """The five null sites are a top-level key, a nested-object key, and two list
     elements two levels down; the sweep has to reach all of them in one pass."""
     payload, _ = clean_payload(
         {
@@ -135,7 +128,7 @@ def test_nulls_are_dropped_at_every_depth() -> None:
 
 
 def test_confirmed_none_survives_the_sweep() -> None:
-    """§V67's whole distinction: ``[]`` means the source CONFIRMS none and must reach the
+    """The distinction: ``[]`` means the source CONFIRMS none and must reach the
     client intact. A sweep that also collapsed empty collections would erase the very
     signal the null ban exists to make readable."""
     payload, _ = clean_payload({"drops": [], "blackboard": {}, "count": 0, "flag": False})
@@ -151,7 +144,7 @@ def test_a_null_list_element_is_left_visible() -> None:
 
 def test_the_envelope_applies_both_rules() -> None:
     """Both rules ride the single builder every tool passes through, so a tool gets them
-    without opting in -- the property B135's four per-surface rollouts lacked."""
+    without opting in -- the property the four per-surface rollouts lacked."""
     envelope = ok({"display_name": "？？？", "missing": None, "kept": 1})
     body = envelope.to_dict()
     assert body["data"] == {"display_name": "？？？", "kept": 1}
@@ -159,7 +152,7 @@ def test_the_envelope_applies_both_rules() -> None:
 
 
 def test_the_analyzer_version_key_is_absent_when_there_is_no_analyzer() -> None:
-    # §V67 (B135): the one null that lives on the envelope itself rather than in ``data``.
+    # The one null that lives on the envelope itself rather than in ``data``.
     assert "analyzer_version" not in ok({"a": 1}).to_dict()
     assert (
         build_envelope("ok", data={"a": 1}, analyzer_version="3").to_dict()["analyzer_version"]

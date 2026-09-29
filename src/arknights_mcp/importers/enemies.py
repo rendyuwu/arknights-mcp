@@ -1,7 +1,7 @@
 """Enemy importer: enemy_handbook + enemy_database -> enemies + enemy_levels.
 
-Applies the field allowlist and string sanitization (§V18) and attaches record
-provenance (§V17). Pure parsing (:func:`parse_enemies`) is separated from
+Applies the field allowlist and string sanitization and attaches record
+provenance. Pure parsing (:func:`parse_enemies`) is separated from
 insertion so it is unit-testable without a database.
 """
 
@@ -36,9 +36,9 @@ class ParsedEnemyLevel:
     res: int | None
     attack_interval: float | None
     attack_range: float | None
-    #: The ANSWER behind an absent ``attack_range`` (§V114/B161): ``True`` = upstream
-    #: DECLARED no attack radius (its ``-1.0`` sentinel, which §V103 keeps out of the
-    #: distance column), ``False`` = it did not -- either it gave a radius, which
+    #: The ANSWER behind an absent ``attack_range``: ``True`` = upstream
+    #: DECLARED no attack radius (its ``-1.0`` sentinel, which the no-radius strip
+    #: keeps out of the distance column), ``False`` = it did not -- either it gave a radius, which
     #: ``attack_range`` carries, or it said nothing at all. So the decidable state is the
     #: PAIR; ``attack_range is not None`` and this being ``True`` is unreachable, because
     #: the bridge sets the flag exactly where it deletes the radius.
@@ -48,9 +48,9 @@ class ParsedEnemyLevel:
     life_point_reduction: int | None
     block_behavior: str | None
     #: ``applyWay``: ONE token (MELEE/RANGED/ALL/NONE), so a scalar column, not JSON
-    #: (§V99 -- the ``_json`` suffix it used to carry claimed a shape it never had).
+    #: (the ``_json`` suffix it used to carry claimed a shape it never had).
     targeting: str | None
-    #: The nine typed ``<x>Immune`` flags folded into one list (§V67): ``[]`` = the
+    #: The nine typed ``<x>Immune`` flags folded into one list: ``[]`` = the
     #: source defined the flags and none is set, ``None`` = it defined none of them.
     immunities: Any
     abilities: Any
@@ -63,11 +63,11 @@ class ParsedEnemy:
     enemy_class: str | None
     is_boss: bool
     is_elite: bool
-    #: The RETIRED handbook scalar (§V113): still allowlisted, still recorded in
+    #: The RETIRED handbook scalar: still allowlisted, still recorded in
     #: provenance, and ``None`` on every real entry -- the live fact is ``damage_types``.
     attack_type: str | None
     #: ``damageType``: a LIST upstream because 42 enemies deal PHYSIC *and* MAGIC.
-    #: ``None`` = the handbook entry carried no such key (§V67 key-absent).
+    #: ``None`` = the handbook entry carried no such key.
     damage_types: Any
     motion_type: str | None
     levels: list[ParsedEnemyLevel]
@@ -93,7 +93,7 @@ def parse_enemies(handbook_raw: Any, database_raw: Any) -> list[ParsedEnemy]:
 
     # Drive from the union of both key sets so an enemy present only in the stats
     # database (no handbook entry) is still imported with its levels; otherwise a
-    # stage spawn referencing it fails closed with "unknown enemy" (§21.2).
+    # stage spawn referencing it fails closed with "unknown enemy" (section 21.2).
     for game_id in sorted(set(handbook) | set(database)):
         entry = handbook.get(game_id, {})
         if not isinstance(entry, dict):
@@ -155,7 +155,7 @@ def insert_enemies(
     snapshot_id: str,
     handbook_source_path: str,
 ) -> EnemyImportResult:
-    """Insert parsed enemies + levels, attaching per-record provenance (§V17)."""
+    """Insert parsed enemies + levels, attaching per-record provenance."""
     enemies_inserted = 0
     levels_inserted = 0
     for enemy in parsed:
@@ -189,7 +189,7 @@ def insert_enemies(
         for level in enemy.levels:
             # A repeated or absent level index collides on UNIQUE(enemy_pk,
             # level_variant); fail closed with a clear message instead of an
-            # uncaught traceback that tears down the whole build (§V33 / §V3).
+            # uncaught traceback that tears down the whole build.
             with integrity_guard(
                 f"enemy {enemy.game_id!r} has a duplicate level_variant {level.level_variant}",
                 ImporterError,
@@ -236,7 +236,7 @@ def import_enemies(
     handbook_raw = adapter.read_json(handbook_path)
     database_raw = adapter.read_json(database_path)
     # Bridge the real arknights_assets_gamedata shapes to the normalized shapes the
-    # parser consumes (§V29/§V30); a no-op on already-normalized fixtures.
+    # parser consumes; a no-op on already-normalized fixtures.
     handbook_raw, database_raw = normalize_enemy_sources(handbook_raw, database_raw)
     parsed = parse_enemies(handbook_raw, database_raw)
     return insert_enemies(

@@ -1,11 +1,10 @@
 # ADR 0008: Art asset URL references — derive, link out, never bundle
 
-- **Status:** Accepted (amended by [ADR 0009](0009-image-refs-authenticated-emit.md) — image_refs may emit on an authenticated deployment, not loopback-only; §T124 (founder 2026-07-22) flipped it ON by default)
+- **Status:** Accepted (amended by [ADR 0009](0009-image-refs-authenticated-emit.md) — image_refs may emit on an authenticated deployment, not loopback-only; ON by default since 2026-07-22)
 - **Date:** 2026-07-22
 - **Founder decision(s):** D5 (MVP domain scope — reverses "no redistributed map
   images" *for URL references only*; image bytes stay excluded). Touches D4
   (code-only distribution) and D13 (no permission by assumption).
-- **Invariants:** §V63 (new), §V16, §V1, §V24, §V5, §V19, §V27, §V21, §V28
 
 ## Context
 
@@ -41,7 +40,7 @@ The repository owner (this is a personal, **private, non-commercial** project;
 2026-07-22 under the standing takedown posture (ADR 0005 / `TAKEDOWN_POLICY.md`):
 on any request from Yostar/Hypergryph or the mirror owner, references are removed
 immediately. This is the D5 reversal — **for URL references only**. Image bytes
-remain excluded from every release artifact and the database (§V16 unchanged).
+remain excluded from every release artifact and the database.
 Whether to ever host publicly stays a separate, still-blocked decision (D4
 posture): if that day comes, it needs its own founder decision + legal review.
 
@@ -55,12 +54,12 @@ intact by construction:
    pure service-layer function derives the URL from a game-data key we already
    hold — `operators.game_id` (a charId like `char_002_amiya`) and
    `enemies.game_id` (an enemyId like `enemy_10001_trslim`) — at response-build
-   time. So §V16 stays airtight (release *and* DB remain art-free) and takedown
-   is a config flip with **nothing to purge** (§V28/§V20 trivially met).
+   time. So the release *and* the DB remain art-free and takedown
+   is a config flip with **nothing to purge**.
 2. **Never fetch.** The server treats the derived URL as an opaque string it
    emits. It performs **no** HEAD/GET/existence check/validation — not at import,
    not at query time. A dead link is the client's to discover. Any server-side
-   fetch would break §V1/§V24 and is prohibited (§V63).
+   fetch is prohibited.
 
 Concrete shape (verified against the live repo tree, branch `main`,
 2026-07-22):
@@ -82,28 +81,28 @@ Concrete shape (verified against the live repo tree, branch `main`,
 
 Guardrails:
 
-- **New source ⇒ full registry entry (§V27).** `arknights_game_resource`
+- **New source: full registry entry.** `arknights_game_resource`
   (owner `yuanyan3060`, canonical URL, purpose = image references, regions,
   license/permission = *AGPL-3.0 code; assets Yostar-copyright, learning-only,
   removal-on-request*, redistribution = *reference-link only, no bytes*,
-  attribution, `last_reviewed`, enabled). It rides the kill switch (§V28,
-  ADR 0005): `disable` stops emitting refs. This does break the "no new source"
+  attribution, `last_reviewed`, enabled). It rides the kill switch (ADR 0005):
+  `disable` stops emitting refs. This does break the "no new source"
   economy ADR 0007 kept — an accepted cost. Note it stores no snapshot (nothing
   is imported), so `snapshot commit` is N/A for this entry.
-- **Additive, optional (§V21).** An `image_refs` list of `{category, url,
+- **Additive, optional.** An `image_refs` list of `{category, url,
   source_id}` on `get_operator` (categories `portrait`/`avatar`/`skin`) and
   `get_enemy` (`enemy`) responses (and the banner featured-op portrait where an
   `operator_pk` resolved). No breaking change.
-- **No bulk surface (§V19).** Refs attach to a single already-fetched entity.
+- **No bulk surface.** Refs attach to a single already-fetched entity.
   No tool enumerates, lists, pages, or searches the art catalog.
 - **Access-controlled, private+non-commercial.** As of ADR 0009 the surface emits on
-  any startable (authenticated OIDC/bearer, or loopback dev) deployment, and as of §T124
-  (founder 2026-07-22) it is **ON by default** — all existing user features are
-  default-enabled. §V9 still fails startup closed on any anonymous non-loopback surface,
+  any startable (authenticated OIDC/bearer, or loopback dev) deployment, and the
+  2026-07-22 founder decision made it **ON by default** — all existing user features are
+  default-enabled. Startup still fails closed on any anonymous non-loopback surface,
   so no single flag can expose it to an anonymous public deployment (inherits D4).
-  Consistent with §C private+non-commercial. Kill switch (§V20): the `[image_refs].enabled`
+  Consistent with the private+non-commercial posture. Kill switch: the `[image_refs].enabled`
   flag or the `arknights_game_resource` source enable/disable.
-- **Region integrity (§V5).** The ref is emitted inside the entity's own region
+- **Region integrity.** The ref is emitted inside the entity's own region
   envelope; the game_id is already region-scoped, so en/cn never mix.
 - **Zero code intake.** We reference images by URL only and copy **none** of the
   mirror's AGPL-3.0 code, so the copyleft never reaches our Apache-2.0 tree.
@@ -124,7 +123,7 @@ Guardrails:
 
 - Vision clients get operator portraits/avatars/skins and enemy sprites via
   links; no bytes or art-code ever enter our releases or DB; server-side network
-  stays zero (§V1 preserved).
+  stays zero.
 - The mirror is a registered, kill-switchable source; takedown = flip the flag,
   no rebuild.
 - **Residual risks:** (a) underlying Yostar rights are *not* granted by the

@@ -1,24 +1,24 @@
-"""§T91 ``get_stage_drops`` tool tests (§V5/§V53/§V54/§V55/§V23; §I.tool).
+"""``get_stage_drops`` tool tests.
 
 The tool is the model -> service -> envelope bridge for one stage's penguin
 drop-rate cache; these drive it end to end against the same production read-only
-path (§V2) using the pinned 4-4 fixture (which imports the ``main_04-04`` stage
+path using the pinned 4-4 fixture (which imports the ``main_04-04`` stage
 at ``sanity_cost=18``) plus a directly-seeded penguin drop cache with an explicit
 ``expires_at`` so the fresh/stale split is deterministic (no wall-clock coupling).
 They assert:
 
-* the §V5 region + provenance ride every delivered result, and en data is never
+* The region + provenance ride every delivered result, and en data is never
   surfaced under a cn query (en/cn never mixed);
-* the §V53/§V54 penguin provenance chain (snapshot + fetched/expires) rides every
+* The penguin provenance chain (snapshot + fetched/expires) rides every
   drop, and a drop past its expiry flips the status to ``data_stale`` + adds a
   staleness limitation while still returning the drop (flagged, not withheld);
-* ``include_efficiency`` surfaces the §T90 farming observations with every §V6
-  field and no prescriptive verdict (§V55), and an expired cache downgrades the
-  figure below the §V8 recommendation threshold;
-* the typed §V23 envelope shape, including fail-closed ``not_found`` /
+* ``include_efficiency`` surfaces the farming observations with every
+  mandatory field and no prescriptive verdict, and an expired cache downgrades the
+  figure below the recommendation threshold;
+* The typed envelope shape, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema, present
-  in the single shared registry both transports dispatch (§V14).
+* The wire contract: a read-only spec with a bounded input schema, present
+  in the single shared registry both transports dispatch.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_stage_drops_spec(lambda: conn).handler
 
 
-# --- drop facts + §V5 region + §V54 penguin provenance ------------------------
+# --- drop facts + region + penguin provenance ---------------------------------
 
 
 def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Connection) -> None:
@@ -97,13 +97,13 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V66.2: the penguin provenance shared by every drop is hoisted to one block; no
+    # The penguin provenance shared by every drop is hoisted to one block; no
     # per-drop provenance repetition, no efficiency block without the flag.
     assert set(data) == {"stage", "drop_provenance", "drops", "enum_legend"}
     assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
-    # §V77/§V66 (B79): region stated ONCE on the parent stage, never per drop row.
+    # Region stated ONCE on the parent stage, never per drop row.
     assert data["stage"]["server"] == "en"  # type: ignore[index]
-    # §V54/§V66.2: the shared penguin provenance chain (snapshot + stamps) rides once.
+    # The shared penguin provenance chain (snapshot + stamps) rides once.
     prov = data["drop_provenance"]
     assert prov == {  # type: ignore[comparison-overlap]
         "snapshot_id": "pg:en",
@@ -116,9 +116,9 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
     assert drop["item_game_id"] == "sugar"
     assert drop["drop_rate"] == 0.25
     assert drop["times"] == 5000
-    # §V77/§V66 (B79): no per-drop region -- it rides the parent stage once.
+    # No per-drop region -- it rides the parent stage once.
     assert "region" not in drop
-    # §V66.2: the shared provenance is NOT repeated on the row; §V67: a fresh drop
+    # The shared provenance is NOT repeated on the row; a fresh drop
     # omits ``expired`` (its absence = not expired), so the deviant row stays visible.
     for hoisted in ("snapshot_id", "fetched_at", "expires_at"):
         assert hoisted not in drop
@@ -126,7 +126,7 @@ def test_ok_returns_drop_facts_with_penguin_provenance(fresh_conn: sqlite3.Conne
 
 
 def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
-    # §V76: a penguin ``quantity / times`` sample statistic (here 1/3) is emitted
+    # A penguin ``quantity / times`` sample statistic (here 1/3) is emitted
     # rounded to 4dp -- never the raw 17-digit ``repr`` float, whose digits over-state
     # the sample's real significance.
     path = _candidate(tmp_path)
@@ -139,7 +139,7 @@ def test_drop_rate_rounded_to_4dp_on_wire(tmp_path: Path) -> None:
 
 
 def test_ok_carries_region_and_provenance(fresh_conn: sqlite3.Connection) -> None:
-    # §V5: every delivered fact carries region + provenance.
+    # Every delivered fact carries region + provenance.
     prov = _handler(fresh_conn)(server="en", stage_code="4-4").to_dict()["provenance"]
     assert isinstance(prov, list) and len(prov) == 1
     assert prov[0]["server"] == "en"
@@ -147,16 +147,16 @@ def test_ok_carries_region_and_provenance(fresh_conn: sqlite3.Connection) -> Non
 
 
 def test_wrong_region_is_not_found(fresh_conn: sqlite3.Connection) -> None:
-    # §V5: en drops are not surfaced under a cn query -- en/cn never mixed.
+    # En drops are not surfaced under a cn query -- en/cn never mixed.
     assert _handler(fresh_conn)(server="cn", stage_code="4-4").status == "not_found"
 
 
 def test_stage_without_drops_is_an_empty_ok(bare_conn: sqlite3.Connection) -> None:
-    # §V106 (b)/B147: the stage RESOLVED and only the drop set is empty, so this is a
-    # delivered answer -- ``ok`` with ``drops: []`` (a CONFIRMED none, §V67) and the why
+    # The stage RESOLVED and only the drop set is empty, so this is a
+    # delivered answer -- ``ok`` with ``drops: []`` (a CONFIRMED none) and the why
     # on a limitation. It used to be ``not_found``, which reported a well-formed question
-    # as a failed request. §V106 (a) is asserted alongside so the two cannot collapse into
-    # one status again: an ABSENT stage is still a lookup miss.
+    # as a failed request. The absent-stage arm is asserted alongside so they cannot
+    # collapse into one status again: an ABSENT stage is still a lookup miss.
     env = _handler(bare_conn)(server="en", stage_code="4-4")
     assert env.status == "ok"
     data = env.to_dict()["data"]
@@ -166,74 +166,74 @@ def test_stage_without_drops_is_an_empty_ok(bare_conn: sqlite3.Connection) -> No
     limitation = next(lim for lim in env.limitations if "lists no drops" in lim)
     # The wording must not read as a claim about the game, only about the cache.
     assert "not a claim that the stage drops nothing" in limitation
-    # §V24: never a query-time download/scrape fallback.
+    # Never a query-time download/scrape fallback.
     assert "download" not in limitation.lower() and "scrape" not in limitation.lower()
-    # §V106 (a): an absent stage is a real lookup miss and stays typed as one.
+    # An absent stage is a real lookup miss and stays typed as one.
     assert _handler(bare_conn)(server="en", stage_code="99-99").status == "not_found"
 
 
-# --- §V53 expiry -> data_stale ------------------------------------------------
+# --- expiry -> data_stale -----------------------------------------------------
 
 
 def test_expired_drop_is_data_stale_but_still_returned(stale_conn: sqlite3.Connection) -> None:
     env = _handler(stale_conn)(server="en", stage_code="4-4")
     assert env.status == "data_stale"
-    # The drop is flagged, not withheld (§V53): the data payload still carries it.
+    # The drop is flagged, not withheld: the data payload still carries it.
     data = env.to_dict()["data"]
-    # §V66.2: the (past) expiry rides the hoisted shared block; §V67: the expired drop
+    # The (past) expiry rides the hoisted shared block; the expired drop
     # carries ``expired:true`` so it stays visible, never presented as fresh.
     assert data["drop_provenance"]["expires_at"] == PAST_EXPIRY  # type: ignore[index]
     assert data["drops"][0]["expired"] is True  # type: ignore[index]
     # A staleness limitation names the refresh action; never presented as fresh.
     assert any("expiry" in lim or "stale" in lim for lim in env.limitations)
-    # §V5: provenance still rides a stale-but-delivered fact.
+    # Provenance still rides a stale-but-delivered fact.
     assert env.to_dict()["provenance"][0]["server"] == "en"  # type: ignore[index]
 
 
-# --- §V55 include_efficiency --------------------------------------------------
+# --- include_efficiency -------------------------------------------------------
 
 
 def test_include_efficiency_emits_single_ranked_observation(fresh_conn: sqlite3.Connection) -> None:
     env = _handler(fresh_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "ok"
     data = env.to_dict()["data"]
-    # §T176/B95: the ranking SUBSUMES the drops rows -- no separate ``drops`` list, so
-    # the same items are never listed twice (§V66/§V22).
+    # The ranking SUBSUMES the drops rows -- no separate ``drops`` list, so
+    # the same items are never listed twice.
     assert set(data) == {"stage", "drop_provenance", "efficiency", "enum_legend"}
-    # §V66.1: ONE ranked observation, not a list of per-drop observations.
+    # ONE ranked observation, not a list of per-drop observations.
     ob = data["efficiency"]["observation"]  # type: ignore[index]
     assert isinstance(ob, dict)
-    # §V6: the identity fields are stated once at the observation level.
+    # The identity fields are stated once at the observation level.
     assert set(ob) >= {"rule_id", "ranking", "confidence", "limitations", "analyzer_version"}
     assert ob["rule_id"] == "farming.sanity_per_item"
     assert ob["confidence"] >= 0.5  # fresh + well-sampled -> stable baseline
-    # §T176/B95: each ranking row FOLDS the raw drop facts + the derived figure.
+    # Each ranking row FOLDS the raw drop facts + the derived figure.
     ranking = ob["ranking"]
     assert isinstance(ranking, list) and len(ranking) == 1
     row = ranking[0]
-    # §V100/B134: entity-PREFIXED keys, so the referent is readable from the key alone.
+    # Entity-PREFIXED keys, so the referent is readable from the key alone.
     # A generic ``id``/``name`` here is what let the sibling get_item_drops put a STAGE id
     # and a stage CODE under the same two names.
-    assert row["item_game_id"] == "sugar"  # §V68: the unambiguous item game_id
-    assert row["item_display_name"] == "Sugar"  # §V69: display name paired with the id
+    assert row["item_game_id"] == "sugar"  # the unambiguous item game_id
+    assert row["item_display_name"] == "Sugar"  # display name paired with the id
     assert "id" not in row and "name" not in row
     assert row["sanity_per_item"] == 72.0  # 18 / 0.25
     assert row["quantity"] == 1250 and row["times"] == 5000
-    assert row["drop_rate"] == 0.25  # §V76: 4dp on the wire
-    # §V66/§V77: the stage-level sanity_cost rides the parent stage block once, never
+    assert row["drop_rate"] == 0.25  # 4dp on the wire
+    # The stage-level sanity_cost rides the parent stage block once, never
     # repeated per row (unlike the item view, where it varies per stage).
     assert "sanity_cost" not in row
     assert data["stage"]["sanity_cost"] == 18  # type: ignore[index]
-    # §V66.2: the shared penguin provenance is hoisted, not repeated on the row.
+    # The shared penguin provenance is hoisted, not repeated on the row.
     for hoisted in ("snapshot_id", "fetched_at", "expires_at"):
         assert hoisted not in row
-    # §V66.1/§V85: a non-deviating (fresh + well-sampled) row omits its own confidence
+    # A non-deviating (fresh + well-sampled) row omits its own confidence
     # and deviation markers.
     assert "confidence" not in row and "limitations" not in row
     assert "flags" not in row and "expired" not in row
-    # §V6: the analyzer version rides the envelope too.
+    # The analyzer version rides the envelope too.
     assert env.analyzer_version is not None
-    # §V7/§V55: facts + observation only, never a prescriptive verdict.
+    # Facts + observation only, never a prescriptive verdict.
     assert not any(word in str(data["efficiency"]).lower() for word in _PROSCRIBED)
 
 
@@ -241,14 +241,14 @@ def test_efficiency_omitted_without_the_flag(fresh_conn: sqlite3.Connection) -> 
     env = _handler(fresh_conn)(server="en", stage_code="4-4")
     data = env.to_dict()["data"]
     assert "efficiency" not in data
-    # §T176/B95: without the flag the raw drops list is returned unchanged.
+    # Without the flag the raw drops list is returned unchanged.
     assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
     assert env.analyzer_version is None
 
 
 def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
-    # §T176/B95 fallback: a drop with no drop_rate is unrankable -> no observation to
-    # subsume the drops, so the raw drops list stays visible and the §V26 warnings name
+    # Fallback: a drop with no drop_rate is unrankable -> no observation to
+    # subsume the drops, so the raw drops list stays visible and the warnings name
     # the exclusion (never a silently emptied payload).
     path = _candidate(tmp_path)
     seed_stage_drop(path, expires_at=FUTURE_EXPIRY, drop_rate=None, times=None)
@@ -258,8 +258,8 @@ def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
     data = env.to_dict()["data"]
     assert set(data) == {"stage", "drop_provenance", "drops", "efficiency", "enum_legend"}
     assert isinstance(data["drops"], list) and len(data["drops"]) == 1  # type: ignore[index, arg-type]
-    # §V67: the absent quantity/times/drop_rate are OMITTED, never emitted null --
-    # the §V26 warning naming the missing rate is the sole absence signal.
+    # The absent quantity/times/drop_rate are OMITTED, never emitted null --
+    # the warning naming the missing rate is the sole absence signal.
     raw = data["drops"][0]  # type: ignore[index]
     assert "drop_rate" not in raw and "times" not in raw and "quantity" not in raw
     eff = data["efficiency"]
@@ -268,10 +268,10 @@ def test_nothing_rankable_keeps_raw_drops_visible(tmp_path: Path) -> None:
 
 
 def test_partial_ranking_keeps_unrankable_drop_raw(tmp_path: Path) -> None:
-    # B95 residual rule: when a ranking exists, a drop the analyzer could NOT rank
+    # Residual rule: when a ranking exists, a drop the analyzer could NOT rank
     # (absent drop_rate) keeps its raw facts -- identity, sample, expired flag,
-    # provenance -- in the ``drops`` list next to the §V26 warning that names it.
-    # Turning ON the additive efficiency flag never deletes a fact (§V53/§V47), and
+    # provenance -- in the ``drops`` list next to the warning that names it.
+    # Turning ON the additive efficiency flag never deletes a fact, and
     # no item appears in both lists.
     path = _candidate(tmp_path)
     seed_stage_drop(path, expires_at=FUTURE_EXPIRY)
@@ -296,14 +296,14 @@ def test_partial_ranking_keeps_unrankable_drop_raw(tmp_path: Path) -> None:
     assert isinstance(drops, list)
     assert [d["item_game_id"] for d in drops] == ["zerodrop"]
     residual = drops[0]
-    assert residual["expired"] is True  # the stale signal stays visible (§V53)
+    assert residual["expired"] is True  # the stale signal stays visible
     assert residual["times"] == 5000
-    assert "drop_rate" not in residual and "quantity" not in residual  # §V67
+    assert "drop_rate" not in residual and "quantity" not in residual
     assert any("zerodrop" in w for w in data["efficiency"]["warnings"])  # type: ignore[index]
 
 
 def test_tiny_positive_drop_rate_never_rounds_to_zero(tmp_path: Path) -> None:
-    # §V76 underflow guard: a positive rate below the 4dp step keeps 4 significant
+    # Underflow guard: a positive rate below the 4dp step keeps 4 significant
     # figures on the wire -- a ranked row must never claim drop_rate 0.0 (the value
     # the analyzer excludes as "does not drop") beside a finite sanity_per_item.
     path = _candidate(tmp_path)
@@ -319,10 +319,10 @@ def test_tiny_positive_drop_rate_never_rounds_to_zero(tmp_path: Path) -> None:
 def test_expired_efficiency_downgraded_below_recommendation(
     stale_conn: sqlite3.Connection,
 ) -> None:
-    # §V53/§V55: an expired cache downgrades the figure below the §V8 threshold, so
-    # the row reads as a limitation, never a fresh recommendation. §V85/B93: the row
+    # An expired cache downgrades the figure below the recommendation threshold, so
+    # the row reads as a limitation, never a fresh recommendation. The row
     # carries the typed marker + its confidence; the sentence is hoisted ONCE onto the
-    # observation-level limitations, never repeated per row. §T176/B95: the deviation
+    # observation-level limitations, never repeated per row. The deviation
     # markers stay visible on the FOLDED row.
     env = _handler(stale_conn)(server="en", stage_code="4-4", include_efficiency=True)
     assert env.status == "data_stale"
@@ -334,7 +334,7 @@ def test_expired_efficiency_downgraded_below_recommendation(
     assert any("expired" in lim.lower() for lim in ob["limitations"])
 
 
-# --- §V23 typed failures ------------------------------------------------------
+# --- typed failures -----------------------------------------------------------
 
 
 def test_database_unavailable_envelope() -> None:
@@ -345,7 +345,7 @@ def test_database_unavailable_envelope() -> None:
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
     assert data["message"] == "the active database is unavailable"  # type: ignore[index]
-    assert "cand.sqlite" not in str(data)  # §V23: no local path / file name leak
+    assert "cand.sqlite" not in str(data)  # no local path / file name leak
 
 
 def test_unexpected_error_fails_closed_to_internal_error() -> None:
@@ -358,7 +358,7 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18 input gate ----------------------------------------------------------
+# --- input gate ---------------------------------------------------------------
 
 
 def test_unknown_parameter_rejected(fresh_conn: sqlite3.Connection) -> None:
@@ -386,7 +386,7 @@ def test_over_length_selector_rejected(fresh_conn: sqlite3.Connection) -> None:
         _handler(fresh_conn)(server="en", game_id="x" * (MAX_ID_LEN + 1))
 
 
-# --- §V2 read-only / §I.tool wire contract / §V14 shared registry -------------
+# --- read-only / wire contract / shared registry ------------------------------
 
 
 def test_service_is_read_only(fresh_conn: sqlite3.Connection) -> None:
@@ -405,8 +405,8 @@ def test_spec_registers_read_only_with_bounded_schema(fresh_conn: sqlite3.Connec
     assert tool.inputSchema["additionalProperties"] is False
     assert "server" in tool.inputSchema["required"]
     props = tool.inputSchema["properties"]
-    # §V5: both selectors are on the wire (the model enforces exactly-one); the
-    # §V18 id cap rides each (game_id is optional -> an anyOf(str<=cap, null)).
+    # Both selectors are on the wire (the model enforces exactly-one); the
+    # id cap rides each (game_id is optional -> an anyOf(str<=cap, null)).
     assert {"stage_code", "game_id"} <= set(props)
     assert "include_efficiency" in props
     game_id_cap = next(
@@ -416,7 +416,7 @@ def test_spec_registers_read_only_with_bounded_schema(fresh_conn: sqlite3.Connec
 
 
 def test_tool_registered_in_shared_registry(fresh_conn: sqlite3.Connection) -> None:
-    # §V14: both transports dispatch this one registry; the tool must be in it.
+    # Both transports dispatch this one registry; the tool must be in it.
     reg = build_tool_registry(
         lambda: fresh_conn, registry=load_source_registry(REGISTRY), mode="stdio"
     )
@@ -426,9 +426,9 @@ def test_tool_registered_in_shared_registry(fresh_conn: sqlite3.Connection) -> N
 def test_item_type_domain_and_openness_ride_the_response(
     fresh_conn: sqlite3.Connection,
 ) -> None:
-    # §V104 (b)/(c) (§T207): every drop row carries item_type, so the STATIC 9-token
+    # Every drop row carries item_type, so the STATIC 9-token
     # domain rides ``enum_legend`` and the source-defined "may grow" caveat rides a
-    # limitation -- the two homes §V104 names, neither of them the description. A legend
+    # limitation -- the two homes, neither of them the description. A legend
     # WITHOUT the caveat would read as an exhaustive partition and turn the next upstream
     # token into an apparent error, so they are one predicate, attached together.
     env = _handler(fresh_conn)(server="en", stage_code="4-4")
@@ -442,7 +442,7 @@ def test_item_type_domain_and_openness_ride_the_response(
 def test_confidence_scale_rides_only_the_efficiency_response(
     fresh_conn: sqlite3.Connection,
 ) -> None:
-    # §V104/§V6: the scale is stated ONCE per response that carries a confidence (§V66).
+    # The scale is stated ONCE per response that carries a confidence.
     # Without include_efficiency there is no observation, so no scale -- and it is no
     # longer paid for in the description by every caller who never asks for one.
     with_eff = _handler(fresh_conn)(server="en", stage_code="4-4", include_efficiency=True)

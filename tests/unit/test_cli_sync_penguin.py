@@ -1,18 +1,18 @@
-"""T102: the penguin drop ride-along wired into ``sync`` (§V58, §V52, §V3, §V54).
+"""The penguin drop ride-along wired into ``sync``.
 
-Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network, §V1/§V52)
+Drives ``arknights-mcp sync`` with an in-memory fetcher (no live network)
 that serves both the pinned 4-4 game-data snapshot and a penguin drop payload, and
-asserts the §V58 ride-along contract end to end:
+asserts the ride-along contract end to end:
 
 * enabled penguin (in ``enabled_sources`` + registry-enabled) -> drops land in the
-  PROMOTED db and ``get_stage_drops`` returns facts + efficiency (§V58/I.tool);
+  PROMOTED db and ``get_stage_drops`` returns facts + efficiency;
 * a penguin outage -> the game-data build STILL promotes, drops empty, no fail
-  (fail-open, §V58/§V3);
+  (fail-open);
 * ``--server all`` with one region's penguin failing -> that region's savepoint
   rolls back while the other region's drops survive; both game-data builds promote
-  (per-server all-or-nothing, §V58);
-* disabled penguin -> never fetched (the fetcher records no penguin URL, §V58 opt-in);
-* the region -> penguin-server map is the exact inverse of §V54 (en->US, cn->CN).
+  (per-server all-or-nothing);
+* disabled penguin -> never fetched (the fetcher records no penguin URL);
+* the region -> penguin-server map is the exact inverse of the forward map (en->US, cn->CN).
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 BASE_URL = "https://example.test/repo/{server}"
 
 #: A US (Global -> en) penguin payload keyed to the 4-4 fixture stage ``main_04-04``.
-#: The prose blurb rides a non-allowlisted item key so a correct pipeline drops it
-#: (§V16/§V18). ``absent_stage`` is skipped fail-closed (§V30) -> drops_inserted=1.
+#: The prose blurb rides a non-allowlisted item key so a correct pipeline drops it.
+#: ``absent_stage`` is skipped fail-closed -> drops_inserted=1.
 _PENGUIN_US = {
     "items": [
         {
@@ -48,7 +48,7 @@ _PENGUIN_US = {
             "name": "Sugar",
             "rarity": 3,
             "itemType": "MATERIAL",
-            "description": "PENGUINPROSE that must never ship to a client (§V16).",
+            "description": "PENGUINPROSE that must never ship to a client.",
         },
     ],
     "result/matrix": {
@@ -73,7 +73,7 @@ class _RecordingFetcher(DictFetcher):
 
 
 def _game_files(servers: tuple[str, ...]) -> dict[str, bytes]:
-    """Map ``BASE_URL``/<rel> to the 4-4 fixture bytes for each region tree (§V5)."""
+    """Map ``BASE_URL``/<rel> to the 4-4 fixture bytes for each region tree."""
     files: dict[str, bytes] = {}
     for server in servers:
         base = BASE_URL.replace("{server}", server).rstrip("/")
@@ -137,21 +137,21 @@ def _active_db(data_dir: Path) -> Path:
     return db
 
 
-# --- the region -> penguin-server map is the exact inverse of §V54 (unit) ----------
+# --- the region -> penguin-server map is the exact inverse (unit) ------------------
 
 
 def test_region_to_penguin_server_inverts_v54() -> None:
     assert penguin_server_for_region("en") == "US"
     assert penguin_server_for_region("cn") == "CN"
     assert penguin_server_for_region("jp") is None
-    # Round-trips against the forward §V54 map for every en/cn region.
+    # Round-trips against the forward map for every en/cn region.
     for region in ("en", "cn"):
         server = penguin_server_for_region(region)
         assert server is not None
         assert region_for_penguin_server(server) == region
 
 
-# --- enabled -> drops in the promoted db + get_stage_drops returns facts (§V58) ----
+# --- enabled -> drops in the promoted db + get_stage_drops returns facts ----------
 
 
 def test_sync_enabled_penguin_promotes_drops(tmp_path: Path) -> None:
@@ -174,13 +174,13 @@ def test_sync_enabled_penguin_promotes_drops(tmp_path: Path) -> None:
     assert "sugar" in drops
     assert drops["sugar"].drop_rate == 0.25
     assert drops["sugar"].region == "en"
-    # include_efficiency ran the farming analyzer over the fresh drop (§V55/§V66.1).
+    # include_efficiency ran the farming analyzer over the fresh drop.
     assert result.observation is not None
-    # §V16/§V18: the item prose never rode into the served result.
+    # The item prose never rode into the served result.
     assert "PENGUINPROSE" not in json.dumps(result, default=lambda o: o.__dict__)
 
 
-# --- outage -> game-data-only build still promotes, drops empty (§V58/§V3) ----------
+# --- outage -> game-data-only build still promotes, drops empty --------------------
 
 
 def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
@@ -192,7 +192,7 @@ def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
         servers=["en"],
     )
     # Game data is served; the penguin endpoints are NOT mapped -> the adapter's
-    # fetch raises SourceNotFoundError, which the ride-along catches (§V58).
+    # fetch raises SourceNotFoundError, which the ride-along catches.
     fetcher = DictFetcher(_game_files(("en",)))
     rc = main(["--config", str(config), "sync", "--server", "en"], fetcher=fetcher)
     assert rc == 0
@@ -202,7 +202,7 @@ def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
         assert conn.execute("SELECT COUNT(*) FROM stages WHERE server='en'").fetchone()[0] >= 1
         assert conn.execute("SELECT COUNT(*) FROM stage_drops").fetchone()[0] == 0
         # get_stage_drops reports the stage has no drop cache, never fresh figures.
-        # §V106 (b): the stage itself imported fine, so the empty drop set is an ``ok``
+        # The stage itself imported fine, so the empty drop set is an ``ok``
         # with no drops -- the tool layer attaches the limitation that says why.
         result = get_stage_drops(conn, server="en", stage_code="4-4")
     assert result.status == "ok"
@@ -210,13 +210,13 @@ def test_sync_penguin_outage_still_promotes_game_data(tmp_path: Path) -> None:
     assert result.stage is not None
 
 
-# --- a non-adapter/non-importer error in the penguin path still fails open (§V58) ---
+# --- a non-adapter/non-importer error in the penguin path still fails open ---------
 
 
 def test_sync_penguin_unexpected_error_still_promotes(tmp_path: Path) -> None:
     """A penguin payload that raises outside the (adapter, importer, sqlite) error set
     -- here ``times: 1e999`` parses to ``inf`` and ``as_int(inf)`` raises
-    ``OverflowError`` -- must still be caught so the game-data build promotes (§V58/§V3).
+    ``OverflowError`` -- must still be caught so the game-data build promotes.
     A narrow ``except`` tuple would let it escape ``post_build`` and sink the whole sync.
     """
     registry = _enabled_registry(tmp_path)
@@ -243,7 +243,7 @@ def test_sync_penguin_unexpected_error_still_promotes(tmp_path: Path) -> None:
         assert conn.execute("SELECT COUNT(*) FROM items WHERE server='en'").fetchone()[0] == 0
 
 
-# --- --server all: one region's penguin fails, the other's drops survive (§V58) ----
+# --- --server all: one region's penguin fails, the other's drops survive -----------
 
 
 def test_sync_all_rolls_back_only_failing_region(tmp_path: Path) -> None:
@@ -271,14 +271,14 @@ def test_sync_all_rolls_back_only_failing_region(tmp_path: Path) -> None:
         cn = get_stage_drops(conn, server="cn", stage_code="4-4")
     assert en.status == "ok"
     assert en.drops != ()
-    # cn's drop import rolled back, so cn has the stage but no drops (§V106 b: ``ok`` with
+    # cn's drop import rolled back, so cn has the stage but no drops (``ok`` with
     # an empty set). The en/cn asymmetry -- which is what this test is about -- is read
     # from the drops, not from the status.
     assert cn.status == "ok"
     assert cn.drops == ()
 
 
-# --- disabled penguin is never fetched (§V58 opt-in) --------------------------------
+# --- disabled penguin is never fetched (opt-in) ------------------------------------
 
 
 def test_sync_disabled_penguin_not_fetched(tmp_path: Path) -> None:

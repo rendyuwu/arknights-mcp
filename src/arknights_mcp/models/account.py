@@ -1,8 +1,8 @@
-"""Bounded input models for the account roster tools (ADR 0020; §V5/§V19).
+"""Bounded input models for the account roster tools (ADR 0020).
 
-``server`` is required on every call (§V5); account sync covers ``en`` only, and the
+``server`` is required on every call; account sync covers ``en`` only, and the
 service answers ``unsupported_server`` for ``cn``. Both lists page through the
-bounded :class:`~arknights_mcp.models.common.PageParams` (§V19/§V22).
+bounded :class:`~arknights_mcp.models.common.PageParams`.
 """
 
 from __future__ import annotations

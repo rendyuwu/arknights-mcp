@@ -1,4 +1,4 @@
-"""``validate`` command: run the validation gate against a database (§T23)."""
+"""``validate`` command: run the validation gate against a database."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Content and record hashing helpers (SPEC §V17).
+"""Content and record hashing helpers.
 
 Deterministic hashes for provenance: file content hashes for the snapshot
 manifest, and canonical-JSON record hashes for per-record provenance.
@@ -18,7 +18,7 @@ def sha256_hex(data: bytes) -> str:
 
 
 def sha256_file(path: str | Path, *, chunk_size: int = 1 << 20) -> str:
-    """Streaming hex SHA-256 of a file's bytes (§V4 build ``database_hash``)."""
+    """Streaming hex SHA-256 of a file's bytes (build ``database_hash``)."""
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
         for chunk in iter(lambda: handle.read(chunk_size), b""):
@@ -34,5 +34,5 @@ def canonical_json(obj: Any) -> bytes:
 
 
 def record_hash(obj: Any) -> str:
-    """Stable SHA-256 over a record's canonical JSON (§V17 ``record_hash``)."""
+    """Stable SHA-256 over a record's canonical JSON (``record_hash``)."""
     return sha256_hex(canonical_json(obj))

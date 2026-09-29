@@ -1,34 +1,34 @@
-"""Banner-archive importer: gacha_table.json -> banners + banner_featured_ops (§T113).
+"""Banner-archive importer: gacha_table.json -> banners + banner_featured_ops.
 
 Parses the primary ``gacha_table.json`` ``gachaPoolClient`` (the SAME
-``arknights_assets_gamedata`` snapshot as enemy/stage/operator, §V62 -- NOT a new
+``arknights_assets_gamedata`` snapshot as enemy/stage/operator -- NOT a new
 source) into the metadata-only banner archive:
 
-* the field allowlist + recursive sanitize on every kept pool entry (§V18/§V31),
+* the field allowlist + recursive sanitize on every kept pool entry,
   routed through :mod:`arknights_mcp.importers.field_policy` -- only the structural
   schedule/identity fields (``gachaPoolId``/``gachaPoolName``/``openTime``/``endTime``/
   ``gachaRuleType``) survive, so gacha prose (``gachaPoolSummary``/``gachaPoolDetail``/
-  ``dynMeta`` html/image) is never stored (§V16/§V62 metadata-only ceiling);
-* the typed featured operator ids, extracted per rule type (§V62): a ``LIMITED``
+  ``dynMeta`` html/image) is never stored (metadata-only ceiling);
+* the typed featured operator ids, extracted per rule type: a ``LIMITED``
   banner names one featured op under ``limitParam.limitedCharId``; a CLASSIC-family
   banner an array under ``dynMeta.attainRare6CharList``; ``NORMAL``/``SINGLE``/
   ``DOUBLE``/``LINKAGE`` carry no typed featured-op (rate-up lives only in prose, which
-  is §V18-forbidden) -> none emitted;
+  is forbidden) -> none emitted;
 * a SOFT-resolve of each featured char id to an ``operator_pk`` when that operator is
   present in the same snapshot, else the raw char id with ``resolved = 0`` -- an
   unresolvable featured-op never fails the build (the archive is a standalone FACT,
-  §V3/§V62; operators are optional-zero per B36 so a combat-only snapshot yields raw
+  operators are optional-zero so a combat-only snapshot yields raw
   char ids);
-* per-record provenance so a banner carries its provenance chain (§V17); region on
-  every row (§V5), en and cn never mixed.
+* per-record provenance so a banner carries its provenance chain; region on
+  every row, en and cn never mixed.
 
 Unix-epoch ``openTime``/``endTime`` are normalized to ISO here (CLEAN integer epochs,
-unlike the year-less announcement feed §V61). Pure parsing (:func:`parse_banners`) is
+unlike the year-less announcement feed). Pure parsing (:func:`parse_banners`) is
 separated from the DB write so it is unit-testable without a database. A pool entry
 missing a ``gachaPoolId`` is skipped (fail-closed, no fabricated row). A non-empty
-``gachaPoolClient`` that resolves to zero banners fails closed (§V30); an absent or
+``gachaPoolClient`` that resolves to zero banners fails closed; an absent or
 empty ``gacha_table`` is a legitimate empty build (``banners`` is not a CRITICAL_TABLE
--- the table is fetched tolerant-absent per §V41/B36).
+-- the table is fetched tolerant-absent).
 """
 
 from __future__ import annotations
@@ -59,10 +59,10 @@ _LOG = logging.getLogger(__name__)
 _LIMITED_RULE_TYPE = "LIMITED"
 
 #: Rule types whose featured 6-star ops live in the ``dynMeta.attainRare6CharList``
-#: array (§V62, verified vs live EN+CN 2026-07-21). Any other rule type
+#: array (verified vs live EN+CN 2026-07-21). Any other rule type
 #: (``NORMAL``/``SINGLE``/``DOUBLE``/``LINKAGE``) carries no typed featured-op -- its
-#: rate-up is prose only (§V18-forbidden), so none is emitted + a limitation is surfaced
-#: by the read tool (§V26/§V62).
+#: rate-up is prose only and forbidden, so none is emitted + a limitation is surfaced
+#: by the read tool.
 _CLASSIC_FAMILY_RULE_TYPES: frozenset[str] = frozenset(
     {"ATTAIN", "CLASSIC", "CLASSIC_ATTAIN", "CLASSIC_DOUBLE", "FESCLASSIC", "SPECIAL"}
 )
@@ -90,10 +90,10 @@ class BannerImportResult:
 
 
 def _epoch_to_iso(value: Any) -> str | None:
-    """Normalize a unix-epoch int to an ISO UTC timestamp, or ``None`` (§V62).
+    """Normalize a unix-epoch int to an ISO UTC timestamp, or ``None``.
 
     ``openTime``/``endTime`` are clean integer epochs; a non-int or an out-of-range
-    epoch yields ``None`` rather than a fabricated timestamp (§V26).
+    epoch yields ``None`` rather than a fabricated timestamp.
     """
     epoch = as_int(value)
     if epoch is None:
@@ -107,13 +107,13 @@ def _epoch_to_iso(value: Any) -> str | None:
 def _featured_char_ids(
     rule_type: str | None, entry: dict[str, Any]
 ) -> tuple[list[str], dict[str, Any]]:
-    """Extract the typed featured char ids for a pool entry, per rule type (§V62).
+    """Extract the typed featured char ids for a pool entry, per rule type.
 
     Returns the char ids plus the sub-allowlisted parent block (for provenance): a
     ``LIMITED`` banner reads ``limitParam.limitedCharId`` (single), a CLASSIC-family
     banner ``dynMeta.attainRare6CharList`` (array). ``dynMeta``/``limitParam`` are NOT
     kept whole (``dynMeta`` also carries prose/html), only their typed featured-op leaf
-    survives its own sub-allowlist (§V18/§V31/§V62). Any other rule type carries no typed
+    survives its own sub-allowlist. Any other rule type carries no typed
     featured-op -> empty.
     """
     if rule_type == _LIMITED_RULE_TYPE:
@@ -132,10 +132,10 @@ def _featured_char_ids(
 
 
 def parse_banners(gacha_raw: Any) -> list[ParsedBanner]:
-    """Transform a raw ``gacha_table`` into typed, allowlisted banners (§V18/§V62).
+    """Transform a raw ``gacha_table`` into typed, allowlisted banners.
 
-    Reads the ``gachaPoolClient`` list; only the §V62 metadata allowlist survives, so
-    gacha prose/summary/detail/html/image is dropped (§V16). A pool entry with a missing
+    Reads the ``gachaPoolClient`` list; only the metadata allowlist survives, so
+    gacha prose/summary/detail/html/image is dropped. A pool entry with a missing
     OR blank ``gachaPoolId`` is skipped so no row is fabricated without its stable id
     (fail-closed). ``openTime``/``endTime`` unix epochs are normalized to ISO, and the
     typed featured ops are extracted per rule type.
@@ -182,15 +182,15 @@ def insert_banners(
     snapshot_id: str,
     source_path: str,
 ) -> BannerImportResult:
-    """Insert banners + banner_featured_ops (§V17/§V33/§V62).
+    """Insert banners + banner_featured_ops.
 
     Each featured char id SOFT-resolves to an ``operator_pk`` when that operator is
-    present for ``server`` (via the shared :func:`operator_pk_by_game_id`, §V37), else
+    present for ``server`` (via the shared :func:`operator_pk_by_game_id`), else
     the row keeps the raw char id with ``resolved = 0`` -- an unresolvable featured-op
-    never fails the build (§V3/§V62). A duplicate ``gachaPoolId`` (UNIQUE(server,
+    never fails the build. A duplicate ``gachaPoolId`` (UNIQUE(server,
     game_id)) or a repeated featured char id on one banner (UNIQUE(banner_pk, char_id))
     collides on a constraint; that anomaly maps to a typed :class:`ImporterError`
-    rather than an uncaught ``IntegrityError`` tearing down the multi-region build (§V33).
+    rather than an uncaught ``IntegrityError`` tearing down the multi-region build.
     """
     operator_pk_map = operator_pk_by_game_id(conn, server)
     banners_inserted = 0
@@ -220,7 +220,7 @@ def insert_banners(
                     banner.open_time,
                     banner.end_time,
                     banner.rule_type,
-                    server,  # region == the fact region (§V5); server and region kept in step
+                    server,  # region == the fact region; server and region kept in step
                     provenance_id,
                 ),
             )
@@ -244,7 +244,7 @@ def insert_banners(
 
 
 def _pool_entry_count(gacha_raw: Any) -> int:
-    """Count candidate (dict) entries in ``gachaPoolClient`` for the §V30 guard."""
+    """Count candidate (dict) entries in ``gachaPoolClient`` for the guard."""
     if not isinstance(gacha_raw, dict):
         return 0
     pools = gacha_raw.get("gachaPoolClient")
@@ -263,12 +263,11 @@ def import_banners(
     """Read ``gacha_table.json`` via the adapter and import the banner archive.
 
     A snapshot without ``gacha_table.json`` (e.g. a combat-only fixture) yields an
-    empty result rather than failing, so the banner domain is optional per snapshot
-    (B36/§V41). Must run AFTER operators so featured char ids soft-resolve to a real
-    ``operator_pk`` (§V62). A non-empty ``gachaPoolClient`` that resolves to zero
-    banners fails closed (§V30) so a shape/id mismatch is never promoted as a silent
-    empty banner build; the candidate is discarded and the active DB stays untouched
-    (§V3).
+    empty result rather than failing, so the banner domain is optional per snapshot.
+    Must run AFTER operators so featured char ids soft-resolve to a real
+    ``operator_pk``. A non-empty ``gachaPoolClient`` that resolves to zero
+    banners fails closed so a shape/id mismatch is never promoted as a silent
+    empty banner build; the candidate is discarded and the active DB stays untouched.
     """
     if not adapter.exists(gacha_table_path):
         return BannerImportResult()

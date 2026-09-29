@@ -27,42 +27,40 @@ fixes.
 ## Runtime security posture
 
 The project is designed to fail closed and to minimize attack surface
-(PRD Section 17; [`SPEC.md`](SPEC.md) §V):
+(PRD Section 17):
 
 - **Read-only data plane.** SQLite is opened read-only in every MCP process.
   Queries are parameterized only. There is no arbitrary SQL, filesystem, shell,
-  or source-download tool (§V2). The personal account roster database
+  or source-download tool. The personal account roster database
   (ADR 0020) is read through a SELECT-only role whose transactions default to
   read-only.
 - **No query-time network.** User-facing MCP tools never reach an upstream
   source; only explicit CLI `sync` / `import` and `account login` /
-  `account sync` commands touch allowlisted endpoints (§V1).
+  `account sync` commands touch allowlisted endpoints.
 - **Bounded outputs.** No bulk-dump endpoint, no database download, no
   unbounded pagination or entity enumeration; search and page-size limits and a
-  response-size cap are enforced (§V19, §V22).
+  response-size cap are enforced.
 - **Admin is CLI-only.** `sync`, `import`, `validate`, `purge`, and source
-  management are never exposed as MCP tools (§V28).
+  management are never exposed as MCP tools.
 - **Untrusted imported data.** Imported strings are treated as data — never
   concatenated into instructions or tool descriptions; control characters are
-  stripped and lengths capped (§V18, PRD Section 17.6).
+  stripped and lengths capped (PRD Section 17.6).
 - **Remote authentication.** Non-loopback remote access requires HTTPS and
   valid OAuth/OIDC (issuer, audience, expiry, JWKS signature, required scope).
   Authless non-loopback access is prohibited; username/password storage is
-  never implemented; startup fails closed if these are misconfigured (§V9,
-  §V10).
+  never implemented; startup fails closed if these are misconfigured.
 - **Rate & resource limits.** The remote transport enforces per-principal rate
-  limits, concurrency limits, request timeouts, and request/response caps
-  (§V11).
+  limits, concurrency limits, request timeouts, and request/response caps.
 - **Redacted logging.** Default logs never contain full prompts, full tool
   arguments, response bodies, authorization headers, bearer tokens, raw source
-  records, or roster/account data (§V12). Errors never expose stack traces or
-  local paths (§V23).
+  records, or roster/account data. Errors never expose stack traces or
+  local paths.
 - **Account session handling.** `account login` / `account sync` are the only
   CLI-only exception to the no-credentials rule (ADR 0020): the email and
   one-time code are used once and never stored; the resulting Yostar session
   token is stored only in a mode-600 file on the machine that ran the
   command, is never read by any MCP process, and is sent only to the
-  allowlisted account endpoints (§V15).
+  allowlisted account endpoints.
 
 ## Synchronization security
 

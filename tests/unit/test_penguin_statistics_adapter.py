@@ -1,10 +1,10 @@
-"""T87: the Penguin Statistics network adapter (§V52/§V1 CLI-only fetch, caps).
+"""The Penguin Statistics network adapter (CLI-only fetch, caps).
 
 Exercises the safety machinery of :class:`PenguinStatsAdapter` with an in-memory
 fetcher (no live network): HTTPS enforcement, the endpoint + server allowlists, and
 the per-file / total-size / JSON-depth / JSON-node caps shared via
-:mod:`arknights_mcp.sources.http_fetch` (§V37). The adapter is transport only — it
-never touches the network at query time (§V52); the drop importer (T89) consumes
+:mod:`arknights_mcp.sources.http_fetch`. The adapter is transport only — it
+never touches the network at query time; the drop importer consumes
 what it returns.
 """
 
@@ -40,15 +40,15 @@ def _fetcher(extra: dict[str, bytes] | None = None) -> DictFetcher:
     return DictFetcher(files)
 
 
-# --- CLI-only network posture (§V52/§V1) --------------------------------------
+# --- CLI-only network posture --------------------------------------------------
 
 
 def test_adapter_touches_network_is_true() -> None:
-    # §V1/§V52: this is a network adapter — flagged so it is only ever run from CLI.
+    # This is a network adapter — flagged so it is only ever run from CLI.
     assert PenguinStatsAdapter(fetcher=_fetcher()).touches_network is True
 
 
-# --- HTTPS enforcement (§V1) --------------------------------------------------
+# --- HTTPS enforcement --------------------------------------------------------
 
 
 def test_base_url_must_be_https() -> None:
@@ -56,7 +56,7 @@ def test_base_url_must_be_https() -> None:
         PenguinStatsAdapter("http://penguin-stats.io/api", fetcher=_fetcher())
 
 
-# --- endpoint allowlist (§V18) ------------------------------------------------
+# --- endpoint allowlist --------------------------------------------------------
 
 
 def test_non_allowlisted_endpoint_rejected() -> None:
@@ -96,7 +96,7 @@ def test_fetch_server_less_endpoint() -> None:
     assert adapter.fetch("stages") == [{"stageId": "main_04-04"}]
 
 
-# --- resource caps (PRD §11.2; shared with the primary adapter, §V37) ---------
+# --- resource caps (PRD section 11.2; shared with the primary adapter) --------
 
 
 def test_per_file_size_cap() -> None:
@@ -116,7 +116,7 @@ def test_total_size_cap() -> None:
 
 
 def test_shared_budget_bounds_multiple_fetches() -> None:
-    # §V42/§V37: an injected DownloadBudget spans several fetches so the total cap
+    # An injected DownloadBudget spans several fetches so the total cap
     # is a run-level bound, not per-request.
     budget = DownloadBudget(max_total_bytes=40)
     adapter = PenguinStatsAdapter(fetcher=_fetcher(), budget=budget)

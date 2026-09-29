@@ -1,21 +1,22 @@
-"""Lane/route threat rule (§V6, §V26, §V49): flags stages whose enemies advance
+"""Lane/route threat rule: flags stages whose enemies advance
 along several route records, so threats plausibly approach from more than one path
 and a single defensive line may not cover every approach.
 
 Reads the typed stage-level ``route_count`` (the number of raw enemy-route RECORDS)
 and, as reinforcing evidence, each enemy's own ``route_count`` (how many route
 records it splits across). No route data loaded -> the rule skips rather than
-concluding from absent data (§V26).
+concluding from absent data.
 
-§V49/B43: the raw ``route_count`` is a count of route RECORDS, which often share
+The raw ``route_count`` is a count of route RECORDS, which often share
 start/end/checkpoint geometry (4-4: 26 records, far fewer distinct lanes). It is
 therefore NOT a player-facing lane tally. The context carries only the scalar count
-(no route geometry to cluster into effective lanes), so this rule takes §V49 pick
-(b): it labels the evidence "raw route records", records the limitation that the
+(no route geometry to cluster into effective lanes), so this rule labels the evidence
+"raw route records", records the limitation that the
 raw count is not the distinct-lane count, and reports at reduced confidence -- never
-headlining "N lanes". Same raw-field-not-a-semantic-claim class as §V39 (preDelay)
-/ §V44 (m_defined). The headline is the stage-level record count -- a stage
-property, not an enemy tally -- so §V35 does not conflate it with the evidence rows.
+headlining "N lanes". Same raw-field-not-a-semantic-claim class as the spawn-time window
+or the map-defined flag. The headline is the stage-level record count -- a stage
+property, not an enemy tally -- so the distinct-ref tally does not conflate it with
+the evidence rows.
 """
 
 from __future__ import annotations
@@ -33,21 +34,21 @@ RULE_ID = "threat.lane_route"
 #: At least this many raw route records makes a stage plausibly multi-lane.
 _MULTI_LANE = 2
 
-#: §V49/B43: the raw route-record count overstates distinct lanes (records share
+#: The raw route-record count overstates distinct lanes (records share
 #: geometry) and the context carries no geometry to cluster -> the conclusion is a
 #: plausible multi-path signal, not an authoritative lane measure, so confidence is
 #: reduced from the old authoritative 0.85.
 _CONFIDENCE = 0.5
 
-#: §V49/B43: stamped on every firing so the client knows the raw record count is not
+#: Stamped on every firing so the client knows the raw record count is not
 #: the distinct-lane count and the geometry was not clustered into effective lanes.
 #:
-#: §V108/B153: it used to stop at "geometry not clustered", naming no next call. A live
+#: It used to stop at "geometry not clustered", naming no next call. A live
 #: client read that as the SERVER having no route geometry, said so, and offered the
 #: Arknights Wiki instead -- while ``get_stage(include_routes)`` returns the clustered
 #: geometries with start, end and checkpoints for every one of the 2453 EN / 2484 CN
 #: stages this rule fires on. The limitation was true of this view and false about the
-#: server, so it now routes (§V37 shared wording).
+#: server, so it now routes.
 _RAW_ROUTE_LIMITATION = fuller_view_note(
     this_view=(
         "The raw route-record count is not the number of distinct lanes, because "
@@ -59,7 +60,7 @@ _RAW_ROUTE_LIMITATION = fuller_view_note(
 
 
 class LaneRouteRule:
-    """Flags stages fielding enemies across multiple route records (§V6, §V26, §V49)."""
+    """Flags stages fielding enemies across multiple route records."""
 
     rule_id = RULE_ID
 
@@ -68,12 +69,12 @@ class LaneRouteRule:
         if route_count is None or route_count < _MULTI_LANE:
             return RuleResult()
 
-        # §V68/B136: the stage-level row refs the stage's game_id, never its stage_code --
+        # The stage-level row refs the stage's game_id, never its stage_code --
         # normal/tough/challenge variants share one code, so a "14-18" ref is undecidable
-        # and un-joinable to the stage block, which is keyed on game_id (B57 fixed the
-        # same defect on get_item_drops; this surface kept it).
+        # and un-joinable to the stage block, which is keyed on game_id (the item-drops
+        # view fixed this; this surface kept the defect).
         evidence: list[EvidenceItem] = [
-            # §V101: the number was duplicated into the note ("22 raw route records") --
+            # The number was duplicated into the note ("22 raw route records") --
             # the value already carries it, and "records, not lanes" is what the field
             # name and the standing limitation say, so the note holds no number at all.
             EvidenceItem(
@@ -88,7 +89,7 @@ class LaneRouteRule:
                 evidence.append(
                     EvidenceItem(ref=occ.game_id, field="route_count", value=occ.route_count)
                 )
-                # §V101: the spawn count is a separate fact -> a separate row.
+                # The spawn count is a separate fact -> a separate row.
                 count_row = count_evidence(occ)
                 if count_row is not None:
                     evidence.append(count_row)
@@ -99,11 +100,11 @@ class LaneRouteRule:
                 category="threat",
                 tag="lane_route",
                 title="Multiple approach routes",
-                # §V66/§V37: the "records may share geometry, so this is not a lane tally"
+                # The "records may share geometry, so this is not a lane tally"
                 # clause used to close this summary AND now opens the routing limitation
                 # below, word for word. One fact, one home -- and the limitation is the
-                # better one, because that is where the next call is named (§V108).
-                # "raw enemy-route records" stays here: §V49 wants the headline LABELLED
+                # better one, because that is where the next call is named.
+                # "raw enemy-route records" stays here: the headline must be LABELLED
                 # as records, never as N lanes.
                 summary=(
                     f"Stage carries {route_count} raw enemy-route records; enemies advance along "

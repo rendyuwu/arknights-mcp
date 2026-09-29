@@ -1,4 +1,4 @@
-"""ADR 0020: a full 100-row ``get_my_roster`` page of real operator ids fits the §V22 cap.
+"""ADR 0020: a full 100-row ``get_my_roster`` page of real operator ids fits the frame cap.
 
 The ``FRAME_PRESSURE`` row for ``get_my_roster`` is counted on the two-operator synthetic
 fixture, because a real roster is personal and never part of the basis. This guard

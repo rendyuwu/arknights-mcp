@@ -2,10 +2,10 @@
 
 The roster comes from the account database (:class:`~arknights_mcp.db.account.AccountStore`,
 read per call through a SELECT-only role); names, rarity, profession, module types and
-skins are enriched from the promoted game build. No network (§V1), no write (§V2).
-Both transports call these functions (§V14).
+skins are enriched from the promoted game build. No network, no write.
+Both transports call these functions.
 
-Provenance (§V5/§V17): the account row (``snapshot_id`` + ``synced_at``) always comes
+Provenance: the account row (``snapshot_id`` + ``synced_at``) always comes
 first, then the build snapshots whose rows enriched the answer.
 """
 

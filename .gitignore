@@ -1,4 +1,4 @@
-# --- Data & build artifacts (V16: no raw snapshots / prebuilt DB in releases) ---
+# --- Data & build artifacts (no raw snapshots / prebuilt DB in releases) ---
 # Never commit built or promoted databases.
 *.sqlite
 *.sqlite3

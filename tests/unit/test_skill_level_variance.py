@@ -1,28 +1,28 @@
-"""§T209: a skill fact the source scopes PER LEVEL survives to the wire (§V112, B159).
+"""A skill fact the source scopes PER LEVEL survives to the wire.
 
 ``skill_table`` gives every skill LEVEL its own ``name``, ``skillType``, ``durationType``
 and ``spData.spType``. The importer read level 1's and stored it as the skill's, so for a
 skill whose levels disagree three facts were dropped and a fourth was asserted for levels
 it does not describe. It is not hypothetical: at the pinned upstream ``sktok_mjcsdw``
-stores ``sp_type`` = ``8`` -- the bare code §V104 (c) declares undecidable -- while its own
+stores ``sp_type`` = ``8`` -- the bare code the domain rule declares undecidable -- while its own
 level 2 sends the NAMED ``INCREASE_WITH_TIME``, and ``skill_type`` PASSIVE while level 2 is
 AUTO. Nothing on the wire showed it: the flattened ``8`` reads exactly like the
-open-domain case B157 documented.
+open-domain case an earlier bug documented.
 
 These drive the whole path (snapshot -> import -> repository -> service -> envelope)
 because the flattening happened at import and the wire is where it had to be visible:
 
 * a skill whose levels agree is UNCHANGED -- the value rides the skill, no level repeats
-  it (§V112 a/§V66.3), which is what keeps this fix additive for 1597 of 1598 EN skills;
-* a skill whose levels disagree omits the key on the skill (§V67 -- never a null, never
-  level 1's value passed off as the skill's) and each level carries its own;
+  it, which is what keeps this fix additive for 1597 of 1598 EN skills;
+* a skill whose levels disagree omits the key on the skill (never a null, never level 1's
+  value passed off as the skill's) and each level carries its own;
 * the response says where those values went, since an absent key alone reads as "the
-  source has none" (§V108/§V26).
+  source has none".
 
 The fixture skills are uniform, so the varying case is built by editing a COPY of the real
 fixture tree: the shape is transcribed from the real ``sktok_mjcsdw`` / ``sktok_sunmao``
-rows rather than invented (B107's lesson -- a test that seeds its own invention proves
-nothing). The corpus-side counts live in ``tests/contract/test_skill_enum_encoding.py``.
+rows rather than invented (a test that seeds its own invention proves nothing). The
+corpus-side counts live in ``tests/contract/test_skill_enum_encoding.py``.
 """
 
 from __future__ import annotations
@@ -113,8 +113,8 @@ def varying(tmp_path: Path) -> sqlite3.Connection:
 def test_uniform_skill_states_its_four_fields_once_on_the_skill(
     uniform: sqlite3.Connection,
 ) -> None:
-    # §V112 (a)/§V66.3: every level agrees, so the value rides the skill and no level
-    # repeats it. This is the shape 1597 of 1598 EN skills have -- unchanged by §T209.
+    # Every level agrees, so the value rides the skill and no level
+    # repeats it. This is the shape 1597 of 1598 EN skills have.
     skill = _skills(uniform)[_VARYING_SKILL]
     assert skill["display_name"] == "Arts Charge"
     assert skill["skill_type"] == "PASSIVE"
@@ -127,7 +127,7 @@ def test_uniform_skill_states_its_four_fields_once_on_the_skill(
 
 
 def test_uniform_response_carries_no_variance_note(uniform: sqlite3.Connection) -> None:
-    # §V66/§V26: a caveat about a shape this response does not have is noise.
+    # A caveat about a shape this response does not have is noise.
     env = build_get_operator_spec(lambda: uniform).handler(
         server="en", game_id=_AMIYA, include_skills=True
     )
@@ -137,7 +137,7 @@ def test_uniform_response_carries_no_variance_note(uniform: sqlite3.Connection) 
 def test_varying_skill_omits_the_key_and_gives_every_level_its_own(
     varying: sqlite3.Connection,
 ) -> None:
-    # §V112 (b)/§V67: the skill claims nothing it cannot claim for all its levels, and the
+    # The skill claims nothing it cannot claim for all its levels, and the
     # value the old flatten discarded is on the wire. The named sp_type its level 2 carries
     # is exactly what a level-1 read threw away in favour of the undecidable code.
     skill = _skills(varying)[_VARYING_SKILL]
@@ -155,7 +155,7 @@ def test_varying_skill_omits_the_key_and_gives_every_level_its_own(
 
 
 def test_varying_response_routes_the_client_to_the_levels(varying: sqlite3.Connection) -> None:
-    # §V108/§V26: an omitted key alone would read as "the source has none". The note says
+    # An omitted key alone would read as "the source has none". The note says
     # the values moved, and rides the response exactly once.
     env = build_get_operator_spec(lambda: varying).handler(
         server="en", game_id=_AMIYA, include_skills=True
@@ -172,7 +172,7 @@ def test_variance_note_stays_off_a_response_without_skills(varying: sqlite3.Conn
 
 
 def test_the_flattened_scalar_is_gone_from_storage_too(varying: sqlite3.Connection) -> None:
-    # The stored row is where B159 lived: `skills.sp_type` asserted level 1's value for the
+    # The stored row is where the defect lived: `skills.sp_type` asserted level 1's value for the
     # whole skill. It now holds only what every level shares, and the per-level values are
     # stored where the source scopes them.
     stored = varying.execute(

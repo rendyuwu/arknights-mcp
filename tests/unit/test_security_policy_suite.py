@@ -1,42 +1,41 @@
-"""T64 (M7): consolidated adversarial security/policy suite (§V2, §V18, §V19, §V31, §V36).
+"""M7: consolidated adversarial security/policy suite.
 
 The per-invariant unit tests each pin one control in isolation
 (``test_local_snapshot`` for adapter path safety, ``test_field_policy`` for the
 allowlist + nested sanitize, ``test_search_service`` for FTS metacharacter safety,
 ``test_normalization`` for the ``levelId`` fold, ``test_arknights_assets_adapter``
 for the network JSON caps, ``test_instructions`` for the static instructions).
-This suite is the *consolidated* M7 view: it drives the five attack classes T64
-enumerates end-to-end through the real interfaces (import pipeline, search/get
+This suite is the *consolidated* M7 view: it drives the five attack classes
+enumerated here end-to-end through the real interfaces (import pipeline, search/get
 services, tool registry) and ties them to their invariants, rather than
-re-testing a single control in a vacuum (§V37 DRY -- it reuses those homes, it
+re-testing a single control in a vacuum (DRY -- it reuses those homes, it
 does not re-fork them).
 
 Five attack classes:
 
 1. PATH TRAVERSAL -- a crafted ``levelId`` / source path cannot escape the
-   snapshot root, and (§V36/B17) the stage ``levelId`` must be confined to the
+   snapshot root, and the stage ``levelId`` must be confined to the
    levels tree so it can never pull an excel table into the combat substrate.
 2. OVERSIZED / DEEPLY NESTED JSON -- a pathological source document is rejected
-   gracefully, never an uncaught ``RecursionError`` (B5, §V22).
+   gracefully, never an uncaught ``RecursionError``.
 3. SQL INJECTION -- classic payloads fed to the search/get tools cannot break out
-   of the parameterized queries: a typed not_found/ok, no error/leak, DB unchanged
-   (§V2).
+   of the parameterized queries: a typed not_found/ok, no error/leak, DB unchanged.
 4. CONTROL / BIDI CHARS -- control/format chars in imported strings (including
    *nested* string leaves and the spawn fragment) are stripped and length-capped
-   before storage/exposure (§V18/§V31, B8/B9).
+   before storage/exposure.
 5. PROMPT INJECTION -- an imported string containing instruction-like text is
    surfaced only as structured data; it never reaches the server instructions or a
-   tool description (§V18).
+   tool description.
 
 Two of these expose a REAL gap on the *local import path* and are recorded here as
 strict-xfail tripwires (they assert the secure behaviour, fail today, and flip the
 suite red the moment the shared source is fixed so the marker gets removed):
 
-* ``test_local_import_confines_levelid_to_levels_tree`` -- §V36/B17 is enforced on
-  the network adapter (``_is_clean_level_path``) but NOT on the local import path,
+* ``test_local_import_confines_levelid_to_levels_tree`` -- the levels-tree confinement
+  is enforced on the network adapter (``_is_clean_level_path``) but NOT on the local import path,
   so a traversing ``levelId`` reads an excel table as level data.
 * ``test_local_adapter_rejects_deeply_nested_json`` -- the network adapter catches
-  the deep-JSON ``RecursionError`` (B5) but ``LocalSnapshotAdapter.read_json`` does
+  the deep-JSON ``RecursionError`` but ``LocalSnapshotAdapter.read_json`` does
   not, so ``arknights-mcp import`` on a hostile snapshot dies with a raw traceback.
 """
 
@@ -70,7 +69,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: A control char (Cc) + an RTL bidi override (Cf); both must be stripped (§V18).
+#: A control char (Cc) + an RTL bidi override (Cf); both must be stripped.
 _NUL = "\x00"
 _RTL = "‮"
 
@@ -100,7 +99,7 @@ def _seed_snapshot(conn: sqlite3.Connection, snapshot_id: str = "en:testsnap0000
     """Seed the ``data_sources`` + ``source_snapshots`` rows a provenance FK needs.
 
     ``get_enemy`` joins ``enemies -> record_provenance -> source_snapshots`` on NOT
-    NULL FKs (§V5), so an enemy inserted for ``snapshot_id`` needs the matching
+    NULL FKs, so an enemy inserted for ``snapshot_id`` needs the matching
     snapshot row to be resolvable read-side.
     """
     conn.execute(
@@ -224,7 +223,7 @@ def _write_minimal_snapshot(tmp_path: Path, *, stage_level_id: str) -> Path:
 
 
 # =============================================================================
-# 1. PATH TRAVERSAL (§V2 root confinement, §V36/B17 levels-tree confinement)
+# 1. PATH TRAVERSAL (root confinement, levels-tree confinement)
 # =============================================================================
 
 
@@ -233,7 +232,7 @@ def test_local_import_blocks_root_escape(tmp_path: Path) -> None:
 
     ``LocalSnapshotAdapter._safe_path`` rejects any resolved path outside the root;
     ``import_stages`` sees the level file as absent and imports the stage with no
-    map/tiles/spawns rather than reading an arbitrary host file (§V2 fs boundary).
+    map/tiles/spawns rather than reading an arbitrary host file (fs boundary).
     """
     root = _write_minimal_snapshot(tmp_path, stage_level_id="gamedata/levels/../../../secret.json")
     (tmp_path / "secret.json").write_text('{"top":"secret"}', encoding="utf-8")
@@ -250,12 +249,12 @@ def test_local_import_blocks_root_escape(tmp_path: Path) -> None:
 
 
 def test_local_import_confines_levelid_to_levels_tree(tmp_path: Path) -> None:
-    """§V36/B17: a traversing ``levelId`` must not pull an excel table into the build.
+    """A traversing ``levelId`` must not pull an excel table into the build.
 
     The crafted ``levelId`` stays within the snapshot root (so ``_safe_path`` passes)
     but folds back into ``gamedata/excel/`` via ``..`` -- exactly the nested-excel /
-    traversal case §V36 forbids. ``import_stages`` routes the normalized path through
-    the shared ``is_clean_level_path`` guard (§V37 home) before reading it, so the
+    traversal case to forbid. ``import_stages`` routes the normalized path through
+    the shared ``is_clean_level_path`` guard before reading it, so the
     excel-table read is refused and no tiles are imported from it.
     """
     root = _write_minimal_snapshot(
@@ -289,7 +288,7 @@ def test_local_import_confines_levelid_to_levels_tree(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# 2. OVERSIZED / DEEPLY NESTED JSON (B5, §V22)
+# 2. OVERSIZED / DEEPLY NESTED JSON
 # =============================================================================
 
 
@@ -297,8 +296,8 @@ def test_local_adapter_rejects_deeply_nested_json(tmp_path: Path) -> None:
     """Pathologically deep JSON must be a graceful ``SourceAdapterError``, not a crash.
 
     ``LocalSnapshotAdapter.read_json`` catches the ``RecursionError`` and routes the
-    parsed document through the shared ``json_within_limits`` caps (§V37 home),
-    matching the network stager (B5/§V22).
+    parsed document through the shared ``json_within_limits`` caps,
+    matching the network stager.
     """
     root = tmp_path / "en"
     root.mkdir()
@@ -310,7 +309,7 @@ def test_local_adapter_rejects_deeply_nested_json(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# 3. SQL INJECTION (§V2 -- parameterized SQL only)
+# 3. SQL INJECTION (parameterized SQL only)
 # =============================================================================
 
 
@@ -321,7 +320,7 @@ def test_sql_injection_payloads_are_parameterized_and_db_intact(
 
     If any query interpolated the argument, a ``DROP``/``DELETE`` would error or a
     ``UNION SELECT ... FROM sqlite_master`` would surface schema names. Every value
-    is bound (§V2), so each payload is an inert search term / lookup key: the tools
+    is bound, so each payload is an inert search term / lookup key: the tools
     return a typed ``not_found``/``ok``, never a raised ``OperationalError`` or a
     leaked table name, and the read-only connection records no writes.
     """
@@ -359,7 +358,7 @@ def test_sql_injection_payloads_are_parameterized_and_db_intact(
 
 
 # =============================================================================
-# 4. CONTROL / BIDI CHARS (§V18/§V31, B8/B9 -- stripped at every depth)
+# 4. CONTROL / BIDI CHARS (stripped at every depth)
 # =============================================================================
 
 
@@ -368,7 +367,7 @@ def test_control_chars_stripped_in_enemy_import_end_to_end(
 ) -> None:
     """Control/bidi chars in an enemy's name AND nested level fields never reach a client.
 
-    The enemy is imported through the real allowlist + recursive sanitize (§V18/§V31)
+    The enemy is imported through the real allowlist + recursive sanitize
     and read back through ``get_enemy``: the display name, the nested ``immunities``
     dict keys/values, and the ``abilities`` list leaves are all free of control and
     bidi-override characters, while the benign text survives.
@@ -380,14 +379,14 @@ def test_control_chars_stripped_in_enemy_import_end_to_end(
 
     name = facts.display_name or ""
     assert _NUL not in name and _RTL not in name  # control + bidi stripped
-    # §V97/B130: the control char leaves a SPACE (it stood between two words), the
+    # The control char leaves a SPACE (it stood between two words), the
     # zero-width bidi override just goes. Benign text survives either way; what does
     # NOT survive is the old weld, which stored this name as "ReconDrone".
     assert "Recon Drone" in name
     assert "ReconDrone" not in name
 
     level_blob = repr((facts.levels[0].immunities, facts.levels[0].abilities))
-    assert _NUL not in level_blob  # nested dict/list string leaves sanitized (§V31/B8)
+    assert _NUL not in level_blob  # nested dict/list string leaves sanitized
     assert _RTL not in level_blob
 
     # A control-char search term matches nothing pathological; the sanitized doc is
@@ -398,13 +397,13 @@ def test_control_chars_stripped_in_enemy_import_end_to_end(
 
 
 def test_control_chars_and_prose_stripped_in_level_import(tmp_path: Path) -> None:
-    """§V18/§V31 + B9: level tiles/routes/env are sanitized and the spawn fragment is allowlisted.
+    """Level tiles/routes/env are sanitized and the spawn fragment is allowlisted.
 
     ``parse_level`` runs the real transform: every string leaf (map version,
     environment dict, tile keys, nested ``specialProperties``, route ``checkpoints``)
     is stripped of control/bidi chars, and a spawn action's ``source_fragment`` keeps
     only the allowlisted structural keys -- an attacker's extra prose key (carrying an
-    injection marker) is dropped, never JSON-dumped into the fragment (B9).
+    injection marker) is dropped, never JSON-dumped into the fragment.
     """
     poisoned_level: dict[str, Any] = {
         "mapData": {
@@ -448,7 +447,7 @@ def test_control_chars_and_prose_stripped_in_level_import(tmp_path: Path) -> Non
     assert _NUL not in blob
     assert _RTL not in blob
 
-    # B9: the stored spawn fragment carries only allowlisted structural keys; the
+    # The stored spawn fragment carries only allowlisted structural keys; the
     # attacker's prose key is gone and its injection marker never made it in.
     spawn = level.waves[0].spawns[0]
     assert set(spawn.source_fragment) <= SPAWN_ACTION_ALLOWLIST
@@ -457,14 +456,14 @@ def test_control_chars_and_prose_stripped_in_level_import(tmp_path: Path) -> Non
 
 
 # =============================================================================
-# 5. PROMPT INJECTION (§V18 -- imported prose never reaches instructions/descriptions)
+# 5. PROMPT INJECTION (imported prose never reaches instructions/descriptions)
 # =============================================================================
 
 
 def test_imported_injection_never_reaches_instructions_or_tool_descriptions(
     poisoned_enemy_conn: sqlite3.Connection,
 ) -> None:
-    """An imported instruction-like string is confined to structured data (§V18).
+    """An imported instruction-like string is confined to structured data.
 
     The poisoned enemy's name carries :data:`INJECTION_MARKER`. It surfaces only
     inside the ``get_enemy`` facts payload; the static server instructions and every
@@ -477,11 +476,11 @@ def test_imported_injection_never_reaches_instructions_or_tool_descriptions(
     assert facts.enemy is not None
     assert INJECTION_MARKER in (facts.enemy.display_name or "")
 
-    # ...but absent from the server instructions (static prose, §V18).
+    # ...but absent from the server instructions (static prose).
     assert INJECTION_MARKER not in server_instructions()
 
     # ...and absent from every tool description in the shared registry both
-    # transports dispatch (§V14). Descriptions are static module constants; no
+    # transports dispatch. Descriptions are static module constants; no
     # imported string can select or rewrite them.
     registry = build_tool_registry(
         lambda: poisoned_enemy_conn,

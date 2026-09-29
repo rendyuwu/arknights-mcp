@@ -1,28 +1,28 @@
-"""Server instructions surfaced to the MCP host model (§T36; PRD §13.1; §V6/§V7).
+"""Server instructions surfaced to the MCP host model (PRD section 13.1).
 
 The MCP ``initialize`` response carries an ``instructions`` string that tells the
-host model how to treat this server's output. Both transports pass the same text
-(§V14). PRD §13.1 is binding: because some clients truncate long instructions,
+host model how to treat this server's output. Both transports pass the same text.
+PRD section 13.1 is binding: because some clients truncate long instructions,
 the first :data:`FIRST_SEGMENT_CHARS` characters must stand alone -- they carry
 the core facts/observations/recommendations distinction plus the prohibition
 against inventing missing data.
 
-The three tiers map to invariants:
+The three tiers:
 
-* **facts** -- source-backed data; every fact carries region + provenance (§V5).
+* **facts** -- source-backed data; every fact carries region + provenance.
 * **observations** -- deterministic system inference; every observation carries
-  ``rule_id`` + evidence + confidence + limitations + ``analyzer_version`` (§V6).
+  ``rule_id`` + evidence + confidence + limitations + ``analyzer_version``.
 * **recommendations** -- optional, capability-based suggestions; never labelled
-  mandatory or universal-best (§V7).
+  mandatory or universal-best.
 
 This text is static project prose, authored here -- never assembled from imported
-source strings (§V18/§V31). Imported data is only ever returned as structured
-facts, never concatenated into these instructions.
+source strings. Imported data is only ever returned as structured facts, never
+concatenated into these instructions.
 """
 
 from __future__ import annotations
 
-#: PRD §13.1 truncation budget. Clients may truncate long instructions, so the
+#: PRD section 13.1 truncation budget. Clients may truncate long instructions, so the
 #: leading segment (this many characters) must stand alone: it carries the
 #: facts/observations/recommendations distinction + the never-invent rule. This
 #: is a distinct concept from ``util.text.DEFAULT_MAX_TEXT_LENGTH`` (max length of
@@ -30,7 +30,7 @@ from __future__ import annotations
 FIRST_SEGMENT_CHARS = 512
 
 #: Leading segment -- kept under FIRST_SEGMENT_CHARS so it survives client
-#: truncation with the three-tier distinction + never-invent rule intact (§13.1).
+#: truncation with the three-tier distinction + never-invent rule intact (section 13.1).
 #: Built from short source lines (E501) then newline-joined into 5 logical lines.
 _LEAD = "\n".join(
     (
@@ -45,7 +45,7 @@ _LEAD = "\n".join(
     )
 )
 
-#: Remaining host-model guidance (PRD §13.1). A client may truncate this, so it
+#: Remaining host-model guidance (PRD section 13.1). A client may truncate this, so it
 #: only elaborates -- nothing here is required for the core distinction above. One
 #: logical paragraph, assembled from short source pieces (E501).
 _DETAIL = (
@@ -57,18 +57,18 @@ _DETAIL = (
     "limitations whenever a source field is unavailable or low-confidence."
 )
 
-#: §V65 grounding FLOOR path (c) + §V84/§T169: the ONE home for the common
+#: Grounding FLOOR path (c) and the ONE home for the common
 #: blackboard-key glossary, as TYPED entries -- ``(keys, meaning)``, where ``keys`` is
 #: the one-or-more blackboard keys that share a meaning. It used to be folded into BOTH
 #: the ``get_operator`` and ``compare_operator_modules`` tool descriptions, so a client
-#: paid the ~1.5KB text twice every session (B89). Both readers project from THIS tuple
-#: (§V37 one home): the server-instructions prose below, and the
-#: ``arknights://glossary/blackboard`` resource (§T194/B144) that a client which drops
+#: paid the ~1.5KB text twice every session. Both readers project from THIS tuple
+#: (one home): the server-instructions prose below, and the
+#: ``arknights://glossary/blackboard`` resource that a client which drops
 #: the optional ``instructions`` init field can still fetch. These are common
 #: interpretations only -- the exact meaning of a key is set by the specific effect,
 #: hence the standing per-emit limitation still rides every response that carries
-#: blackboard data (§V65 b). Client-facing text, so no internal cites/jargon (§V71 b);
-#: the cites live in this comment, never the emitted strings.
+#: blackboard data. Client-facing text, so no internal cites/jargon;
+#: the cites live in comments, never the emitted strings.
 BLACKBOARD_KEY_ENTRIES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("atk", "atk_scale"), "ATK modifier or multiplier"),
     (("def", "def_scale"), "DEF modifier"),
@@ -103,8 +103,8 @@ BLACKBOARD_KEY_ENTRIES: tuple[tuple[tuple[str, ...], str], ...] = (
 #: The glossary lead-in, shared by both projections of :data:`BLACKBOARD_KEY_ENTRIES`.
 BLACKBOARD_GLOSSARY_LEAD = "Common blackboard keys (interpretation depends on the specific effect)"
 
-#: The prose projection carried in the server ``instructions`` (§V65 c). Rendered from
-#: the entries above so the resource and the instructions can never disagree (§V37).
+#: The prose projection carried in the server ``instructions``. Rendered from
+#: the entries above so the resource and the instructions can never disagree.
 BLACKBOARD_KEY_GLOSSARY = (
     BLACKBOARD_GLOSSARY_LEAD
     + ": "
@@ -112,7 +112,7 @@ BLACKBOARD_KEY_GLOSSARY = (
     + "."
 )
 
-#: The full server ``instructions`` string (§I). Lead first so a truncating
+#: The full server ``instructions`` string. Lead first so a truncating
 #: client keeps the core contract; detail then the glossary follow (both only
 #: elaborate, so a truncating client still keeps the core distinction).
 SERVER_INSTRUCTIONS = f"{_LEAD}\n\n{_DETAIL}\n\n{BLACKBOARD_KEY_GLOSSARY}"
@@ -121,13 +121,13 @@ SERVER_INSTRUCTIONS = f"{_LEAD}\n\n{_DETAIL}\n\n{BLACKBOARD_KEY_GLOSSARY}"
 def server_instructions() -> str:
     """Return the server ``instructions`` string for the MCP ``initialize`` reply.
 
-    Identical for both transports (§V14); deterministic + side-effect free.
+    Identical for both transports; deterministic + side-effect free.
     """
     return SERVER_INSTRUCTIONS
 
 
 def core_segment() -> str:
-    """The leading :data:`FIRST_SEGMENT_CHARS` characters (PRD §13.1).
+    """The leading :data:`FIRST_SEGMENT_CHARS` characters (PRD section 13.1).
 
     This is what a truncating client is guaranteed to see; it must stand alone
     with the facts/observations/recommendations distinction + never-invent rule.

@@ -1,4 +1,4 @@
-"""§T47 fresh-process install smoke: ``serve --transport stdio`` end-to-end.
+"""Fresh-process install smoke: ``serve --transport stdio`` end-to-end.
 
 Drives the packaged server exactly as an MCP host would: spawn the installed
 package as a subprocess (``python -m arknights_mcp ... serve --transport stdio``,
@@ -9,15 +9,15 @@ handshake over a *real* stdio pipe -- ``initialize`` then ``tools/list`` then
 This is the milestone's runnable proof, covering what an in-process registry test
 (``tests/contract``) cannot:
 
-* the ``serve`` command wires the shared core to the stdio transport (§V14) and
+* the ``serve`` command wires the shared core to the stdio transport and
   the process actually starts from locked deps;
-* stdout carries *only* the framed MCP protocol (§V13) -- the client's JSON-RPC
+* stdout carries *only* the framed MCP protocol -- the client's JSON-RPC
   parse would fail on any stray print, so a successful handshake is the check;
-* a factual call returns a typed ``ok`` envelope with region provenance (§V5/§V23)
+* a factual call returns a typed ``ok`` envelope with region provenance
   as structured content.
 
 Offline + deterministic: the active build is promoted from the pinned 4-4 fixture
-via the real ``import`` path, so no network is touched (§V1).
+via the real ``import`` path, so no network is touched.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The read-only tool set the shared registry exposes (§V14) -- the stdio server
+#: The read-only tool set the shared registry exposes -- the stdio server
 #: must enumerate exactly this over the wire.
 _EXPECTED_TOOLS = frozenset(
     {
@@ -93,20 +93,20 @@ async def _drive(config: Path, cwd: Path) -> None:
         cwd=str(cwd),
         env=dict(os.environ),
     )
-    # A stray stdout write (a §V13 violation) corrupts the JSON-RPC stream, so any
+    # A stray stdout write corrupts the JSON-RPC stream, so any
     # step below raises rather than passing -- the handshake is the stdout check.
     with anyio.fail_after(60):
         async with stdio_client(params) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 init = await session.initialize()
-                # serverInfo + the shared instructions string (§V14; PRD §13.1).
+                # serverInfo + the shared instructions string (PRD section 13.1).
                 assert init.serverInfo.name == "arknights-mcp"
                 assert init.instructions == SERVER_INSTRUCTIONS
 
                 listed = await session.list_tools()
                 assert {t.name for t in listed.tools} == _EXPECTED_TOOLS
                 for tool in listed.tools:
-                    # §V2/§V28: every exposed tool is read-only over the wire.
+                    # Every exposed tool is read-only over the wire.
                     assert tool.annotations is not None
                     assert tool.annotations.readOnlyHint is True
 
@@ -119,11 +119,11 @@ async def _drive(config: Path, cwd: Path) -> None:
                 assert envelope is not None
                 assert envelope["status"] == "ok"
                 assert envelope["schema_version"] == "0.4"
-                # §V5: a factual result carries region provenance; en is not mixed.
+                # A factual result carries region provenance; en is not mixed.
                 provenance = envelope["provenance"]
                 assert provenance and provenance[0]["server"] == "en"
-                # §V119 (a)/B166: what a CONTENT-ONLY client reads off this same real
-                # pipe. The pre-T216 server answered every call with ``content: []``,
+                # What a CONTENT-ONLY client reads off this same real
+                # pipe. The earlier server answered every call with ``content: []``,
                 # and this smoke passed anyway because it only ever read the structured
                 # half -- so the mirror is asserted here, on the wire, not just in the
                 # in-process contract test.
@@ -159,7 +159,7 @@ async def _drive_no_db(config: Path, cwd: Path) -> str:
 
 
 def test_serve_starts_without_a_promoted_build(tmp_path: Path) -> None:
-    # §V23: the server starts even with nothing promoted; tools fail closed to a
+    # The server starts even with nothing promoted; tools fail closed to a
     # typed database_unavailable result rather than the process refusing to boot.
     config, _ = _write_config(tmp_path)
     status = anyio.run(_drive_no_db, config, tmp_path)

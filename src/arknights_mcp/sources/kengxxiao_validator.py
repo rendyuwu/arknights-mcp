@@ -1,4 +1,4 @@
-"""CN cross-validator (§T69, CI only): kengxxiao CN vs primary CN enemy stats.
+"""CN cross-validator (CI only): kengxxiao CN vs primary CN enemy stats.
 
 Kengxxiao's CN ``enemy_database.json`` is an *independent* dump of the same
 underlying CN game data as the primary ``arknights_assets_gamedata`` source, but
@@ -6,10 +6,10 @@ in a different top-level shape (a ``{"enemies": [{"Key", "Value"}]}`` KV list,
 bridged by :func:`~arknights_mcp.importers.normalization.normalize_kengxxiao_enemy_database`).
 Cross-checking that the two sources agree on shared enemy stats
 (``maxHp``/``baseAttackTime``/``massLevel``/``motion``) gives confidence the
-normalized field mappings (§V29) pull *real* values, not artifacts of one
+normalized field mappings pull *real* values, not artifacts of one
 source's serialization.
 
-This module is validation-only (§C): it performs **no** network or database I/O
+This module is validation-only: it performs **no** network or database I/O
 (the CI-only contract test does the fetching), kengxxiao is never a runtime
 dependency, its values never override the primary source, and its data is never
 committed — fetch → compare → discard. The comparison here is pure, so it is
@@ -26,8 +26,8 @@ from arknights_mcp.importers.enemy_normalization import (
     normalize_kengxxiao_enemy_database,
 )
 
-#: The normalized level stats we cross-check (§T69). These are the renamed images
-#: of the real ``maxHp``/``baseAttackTime``/``massLevel`` keys (§V29); comparing the
+#: The normalized level stats we cross-check. These are the renamed images
+#: of the real ``maxHp``/``baseAttackTime``/``massLevel`` keys; comparing the
 #: *normalized* values is exactly what proves the mapping pulls the same real value
 #: from each source. ``motion`` is compared separately (it lives per-enemy, not
 #: per-level, in both dumps).
@@ -124,7 +124,7 @@ def cross_check_normalized(
     primary_motion: dict[str, str],
     kengxxiao_motion: dict[str, str],
 ) -> CrossCheckReport:
-    """Compare two already-normalized CN enemy databases + motion maps (§V29).
+    """Compare two already-normalized CN enemy databases + motion maps.
 
     Only cells where *both* sources carry a non-``None`` value are compared: a stat
     present in one dump but absent in the other (schema/version drift) is skipped,
@@ -171,11 +171,11 @@ def cross_check_raw_enemy_databases(
     primary_raw: Any,
     kengxxiao_raw: Any,
 ) -> CrossCheckReport:
-    """Normalize both raw CN enemy databases, then cross-check them (§T69, §V29, §V30).
+    """Normalize both raw CN enemy databases, then cross-check them.
 
     ``primary_raw`` is the ``arknights_assets_gamedata`` id-keyed dict; ``kengxxiao_raw``
     is the kengxxiao ``{"enemies": [{"Key", "Value"}]}`` KV list. Each is bridged
-    through :mod:`arknights_mcp.importers.normalization` (§V30) so the comparison
+    through :mod:`arknights_mcp.importers.normalization` so the comparison
     runs on the shared normalized shape.
     """
     primary_norm, primary_motion = normalize_enemy_database(primary_raw)

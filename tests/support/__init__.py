@@ -2,11 +2,11 @@
 
 Holds in-memory / filesystem-backed fakes used by unit tests so they never live
 in the production safety module (``arknights_mcp.sources.arknights_assets``), per
-L13 of the T1-T27 review.
+L13 of the task review.
 
 Also home to the one build-the-distribution helper shared by the packaging test
-(§T47) and the release audit (§T49) -- so the ``python -m build`` invocation and
-artifact-reading logic live in exactly one place (§V37), and to the one pinned
+and the release audit -- so the ``python -m build`` invocation and
+artifact-reading logic live in exactly one place, and to the one pinned
 upstream commit + env gate shared by the CI-only live-upstream contract tests.
 """
 
@@ -26,9 +26,9 @@ from arknights_mcp.sources.http_fetch import HttpsFetcher
 #: Repo root (this file is ``<root>/tests/support/__init__.py``).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: Policy / legal files a source release must carry (§V16 code-license scope,
-#: §V27 registry mirror). Canonical list -- both ``test_policy_files`` (files on
-#: disk) and ``test_release_audit`` (files inside the sdist) read it (§V37).
+#: Policy / legal files a source release must carry (code-license scope,
+#: registry mirror). Canonical list -- both ``test_policy_files`` (files on
+#: disk) and ``test_release_audit`` (files inside the sdist) read it.
 REQUIRED_POLICY_FILES: tuple[str, ...] = (
     "LICENSE",
     "NOTICE",
@@ -42,19 +42,19 @@ REQUIRED_POLICY_FILES: tuple[str, ...] = (
 
 #: A minimal test fixture is a few KB; a raw upstream dump (``character_table``,
 #: ``enemy_database``) is multiple MB. This cap cleanly separates the two so a
-#: full-dump snapshot cannot ride into a release artifact as a "fixture" (§V16;
-#: §T15 "no full dump"). Headroom over the largest real fixture (~6 KB).
+#: full-dump snapshot cannot ride into a release artifact as a "fixture"
+#: ("no full dump"). Headroom over the largest real fixture (~6 KB).
 MAX_DATA_JSON_BYTES = 64 * 1024
 
-# --- CI-only live-upstream contract tests (§V29 class) ------------------------
+# --- CI-only live-upstream contract tests -------------------------------------
 # The pin, the URL shape, the env gate and the byte cap are shared by every
-# contract module that reads real upstream (T68 real-shape 4-4, T193 §V97 weld
-# guard), so they live in exactly one home (§V37): a re-pin is one edit, and two
+# contract module that reads real upstream (the real-shape 4-4 and weld-guard
+# modules), so they live in exactly one home: a re-pin is one edit, and two
 # modules can never drift onto different upstream trees.
 
-#: Pinned ``ArknightsAssets/ArknightsGamedata`` commit (B6 verified the real schema
+#: Pinned ``ArknightsAssets/ArknightsGamedata`` commit (verified the real schema
 #: against this tree). Pinning keeps every live-upstream assertion deterministic;
-#: bump only alongside a re-review of §V29.
+#: bump only alongside a re-review of the live-upstream contract.
 ARKNIGHTS_ASSETS_COMMIT = "413a81a3ff3e968089b1d6d302473f7b38c36dda"
 
 #: ``stage_table.json`` is ~23 MiB and ``character_table.json`` ~18 MiB at the pinned
@@ -62,7 +62,7 @@ ARKNIGHTS_ASSETS_COMMIT = "413a81a3ff3e968089b1d6d302473f7b38c36dda"
 MAX_UPSTREAM_FILE_BYTES = 64 * 1024 * 1024
 
 #: Env flag the dedicated CI jobs set; the default offline ``pytest -q`` leaves it
-#: unset so every live-upstream module skips itself (§C: no network in the gate).
+#: unset so every live-upstream module skips itself (no network in the gate).
 LIVE_UPSTREAM_ENV = "ARKMCP_LIVE_UPSTREAM"
 
 #: Why a live-upstream module skipped -- shared so both read identically.
@@ -87,7 +87,7 @@ def live_upstream_disabled() -> bool:
 def fetch_upstream_bytes(url: str) -> bytes:
     """Fetch ``url`` through the production HTTPS fetcher (the real network adapter).
 
-    Nothing fetched is ever persisted in the repo (§V16, code-only distribution):
+    Nothing fetched is ever persisted in the repo (code-only distribution):
     callers keep the bytes in memory or under pytest's ``tmp_path``.
     """
     return HttpsFetcher().fetch(url, max_bytes=MAX_UPSTREAM_FILE_BYTES)
@@ -112,7 +112,7 @@ def build_distributions(outdir: Path) -> BuiltDistributions:
     """Build the wheel + sdist offline into ``outdir`` and read their members.
 
     Offline + no build isolation (uses the locked dev-env hatchling) so it runs
-    in the default gate with no network (§V16 fetch-free).
+    in the default gate with no network (fetch-free).
     """
     subprocess.run(
         [
@@ -169,7 +169,7 @@ class DictFetcher:
         if url not in self._files:
             # An unmapped URL is a 404: raise the typed not-found (a
             # SourceAdapterError subclass, so existing handlers still catch it) so
-            # tests can exercise the sync stager's skip-pruned-level path (B34).
+            # tests can exercise the sync stager's skip-pruned-level path.
             raise SourceNotFoundError(f"not found: {url!r}")
         data = self._files[url]
         if len(data) > max_bytes:

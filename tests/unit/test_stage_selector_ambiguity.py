@@ -1,34 +1,33 @@
-"""§T195 stage-selector contract + shared-``stage_code`` disclosure (§V102; B139).
+"""Stage-selector contract + shared-``stage_code`` disclosure.
 
 A ``stage_code`` selects one stage but NAMES several: ``get_stage(stage_code="4-4")``
 answered with ``main_04-04`` while ``search_stages("4-4")`` listed that AND
 ``main_04-04#f#``, with no note, no limitation, and no ``ambiguous`` status -- so the
 four-star variant was reachable only through a game_id nothing pointed at, and the client
-believed it had asked about "4-4" and been told about "4-4" (B139). §V70/§V80 had already
-made a variant truthful on OUTPUT; the INPUT axis was never closed.
+believed it had asked about "4-4" and been told about "4-4". The variant was already
+truthful on OUTPUT; the INPUT axis was never closed.
 
 These drive the three stage tools (``get_stage`` / ``analyze_stage`` /
-``get_stage_drops``) end to end over the production read-only path (§V2) and assert:
+``get_stage_drops``) end to end over the production read-only path and assert:
 
-* a shared code discloses WHICH stage answered (with its §V80-truthful ``difficulty``)
+* a shared code discloses WHICH stage answered (with its truthful ``difficulty``)
   and names the alternates' game_ids -- the only handle that selects one of them;
 * the pick is deterministic (lowest ``stage_pk``) and UNCHANGED by this task -- only the
-  disclosure is added, so the change stays additive (§V21);
+  disclosure is added, so the change stays additive;
 * a ``game_id`` lookup, and a code matching one stage, carry no such limitation (no noise
   on an unambiguous call);
-* a long alternates list is bounded (§V22/§V66) yet its COUNT stays exact;
+* a long alternates list is bounded yet its COUNT stays exact;
 * ``get_stage_drops``'s ``not_found`` -- which fires for a resolved stage that merely has
-  no drop cache -- names the alternates in its suggested action (§V24), because a shared
+  no drop cache -- names the alternates in its suggested action, because a shared
   code can make the absence an artefact of the pick rather than of the data;
-* the selector contract is stated PRE-call in every stage tool description (§V102 a),
+* the selector contract is stated PRE-call in every stage tool description,
   the one surface that reaches the client -- the published schema strips descriptions
-  (§V71 b) and can only carry the structural half.
+  and can only carry the structural half.
 
 The ambiguous fixture is the pinned 4-4 snapshot with the REAL ``main_04-04#f#`` variant
 added: every field is transcribed from the shipped ``2026-07-28T170428Z`` build (same
 ``code`` "4-4", same ``levelId``, same ``apCost`` 18, same ``stageType`` MAIN, difficulty
-FOUR_STAR), never invented -- a fixture that seeds the answer it asserts proves nothing
-(B107).
+FOUR_STAR), never invented -- a fixture that seeds the answer it asserts proves nothing.
 """
 
 from __future__ import annotations
@@ -121,7 +120,7 @@ def test_fixture_imports_both_variants_under_one_code(
     shared_code_conn: sqlite3.Connection,
 ) -> None:
     # Guard the guard: if the variant stopped importing, every assertion below would
-    # pass vacuously against a one-stage build (the B107 class -- a fixture that cannot
+    # pass vacuously against a one-stage build (a fixture that cannot
     # exhibit the bug cannot catch it).
     matches = StageRepository(shared_code_conn).stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)
     assert [row.game_id for row in matches] == ["main_04-04", VARIANT_GAME_ID]
@@ -129,7 +128,7 @@ def test_fixture_imports_both_variants_under_one_code(
 
 
 def test_pick_is_the_lowest_stage_pk_and_unchanged(shared_code_conn: sqlite3.Connection) -> None:
-    # §V21/§V91: the disclosure is ADDITIVE -- the stage a shared code resolves to is the
+    # The disclosure is ADDITIVE -- the stage a shared code resolves to is the
     # same one this lookup always returned (first by stage_pk), deterministically.
     stage, ambiguity = _resolve_stage(
         StageRepository(shared_code_conn), "en", stage_code="4-4", game_id=None
@@ -152,7 +151,7 @@ def test_game_id_selector_is_never_ambiguous(shared_code_conn: sqlite3.Connectio
     assert ambiguity is None
 
 
-# --- §V102 (b): the disclosure on all three stage tools -------------------------
+# --- the disclosure on all three stage tools -------------------------
 
 
 def test_get_stage_names_the_chosen_stage_and_the_alternate(
@@ -161,12 +160,12 @@ def test_get_stage_names_the_chosen_stage_and_the_alternate(
     env = build_get_stage_spec(lambda: shared_code_conn).handler(server="en", stage_code="4-4")
     assert env.status == "ok"
     (disclosure,) = _disclosures(env)
-    # The chosen stage, its §V80-truthful difficulty, and the alternate's game_id -- the
-    # only handle that reaches the four-star variant (B139's exact complaint).
+    # The chosen stage, its truthful difficulty, and the alternate's game_id -- the
+    # only handle that reaches the four-star variant (the exact complaint).
     assert "2 stages" in disclosure
     assert "main_04-04, difficulty NORMAL" in disclosure
     assert VARIANT_GAME_ID in disclosure
-    # §V71 (a): the next step is an MCP-callable tool, never a CLI command.
+    # The next step is an MCP-callable tool, never a CLI command.
     assert "search_stages" in disclosure
 
 
@@ -209,7 +208,7 @@ def test_game_id_lookup_carries_no_disclosure(shared_code_conn: sqlite3.Connecti
     assert env.to_dict()["data"]["stage"]["difficulty"] == "FOUR_STAR"  # type: ignore[index]
 
 
-# --- §V24/§V102: the drops dead end names a retryable handle --------------------
+# --- the drops dead end names a retryable handle --------------------
 
 
 def test_drops_empty_answer_names_the_alternates(tmp_path: Path) -> None:
@@ -217,10 +216,10 @@ def test_drops_empty_answer_names_the_alternates(tmp_path: Path) -> None:
     # while a sibling under the SAME code HAS them, so "no drop data" was an artefact of
     # the silent pick. Seed exactly that: the picked stage has no cache, the sibling does.
     #
-    # §V106 (b) moved this answer from ``not_found`` to ``ok`` + an empty ``drops``, which
+    # The status moved this answer from ``not_found`` to ``ok`` + an empty ``drops``, which
     # leaves no ``suggested_action`` field to carry the alternates -- so they MOVED to the
-    # limitation surface (§V111 b: move a mandated fact, never delete it). The retry this
-    # discloses is the entire point of T195 and must survive the status change.
+    # limitation surface (move a mandated fact, never delete it). The retry this
+    # discloses is the entire point of the change and must survive the status change.
     path = _candidate(tmp_path, ambiguous=True)
     seed_item_across_stages(
         path, [StageDropSeed(stage_code="4-4", stage_game_id="zz_sibling_4-4", sanity_cost=18)]
@@ -248,7 +247,7 @@ def test_drops_empty_answer_adds_no_alternates_when_the_code_is_unique(
     assert any("lists no drops" in lim for lim in env.limitations)
 
 
-# --- §V22/§V66: the alternates list is bounded, the count stays exact -----------
+# --- the alternates list is bounded, the count stays exact -----------
 
 
 def _ambiguity(count: int, *, truncated: bool = False) -> StageAmbiguity:
@@ -262,8 +261,8 @@ def _ambiguity(count: int, *, truncated: bool = False) -> StageAmbiguity:
 
 
 def test_long_alternate_list_is_summarised_but_counted_exactly() -> None:
-    # The real ``LT-1`` group is 36 stages; naming all 35 alternates in one sentence is a
-    # §V66 economy breach, and silently listing 8 would UNDER-state the ambiguity.
+    # The real ``LT-1`` group is 36 stages; naming all 35 alternates in one sentence is an
+    # economy breach, and silently listing 8 would UNDER-state the ambiguity.
     (text,) = stage_ambiguity_limitation(_ambiguity(35))
     assert "36 stages" in text
     assert text.count("lt_") == MAX_LISTED_ALTERNATES + 1  # + the chosen stage
@@ -271,7 +270,7 @@ def test_long_alternate_list_is_summarised_but_counted_exactly() -> None:
 
 
 def test_capped_read_is_reported_as_open_ended() -> None:
-    # §V26: a matching set that hit the service's bounded read must not present its
+    # A matching set that hit the service's bounded read must not present its
     # alternates (or its count) as complete.
     (text,) = stage_ambiguity_limitation(_ambiguity(MAX_STAGE_CODE_MATCHES - 1, truncated=True))
     assert f"at least {MAX_STAGE_CODE_MATCHES} stages" in text
@@ -287,7 +286,7 @@ def test_no_ambiguity_emits_nothing() -> None:
 
 
 def test_difficulty_is_omitted_when_the_stage_has_none() -> None:
-    # §V67: an absent difficulty is not spelled as "difficulty None" on the wire.
+    # An absent difficulty is not spelled as "difficulty None" on the wire.
     ambiguity = StageAmbiguity(
         stage_code="4-4",
         chosen_game_id="main_04-04",
@@ -300,7 +299,7 @@ def test_difficulty_is_omitted_when_the_stage_has_none() -> None:
     assert "main_04-04, the first of them" in text
 
 
-# --- §V102 (a)/§V107: the contract is stated PRE-call ---------------------------
+# --- the contract is stated PRE-call ---------------------------
 
 
 def test_every_stage_tool_description_states_the_selector_contract() -> None:
@@ -315,7 +314,7 @@ def test_every_stage_tool_description_states_the_selector_contract() -> None:
 def test_moved_level_variant_note_still_reaches_the_client(
     unique_code_conn: sqlite3.Connection,
 ) -> None:
-    # §V111 (b): the selector contract was paid for by MOVING the level_variant join-key
+    # The selector contract was paid for by MOVING the level_variant join-key
     # gloss out of get_stage's description, never by deleting it -- so it must arrive at
     # its new home: a limitation on the responses that emit the key it decodes. A move
     # that drops the text is a deletion with extra steps.
@@ -324,7 +323,7 @@ def test_moved_level_variant_note_still_reaches_the_client(
     assert LEVEL_VARIANT_NOTE in with_spawns["limitations"]
     assert with_spawns["data"]["spawns"]  # type: ignore[index]
     # ...and only there: a response with no spawn rows does not pay for a gloss about a
-    # key it never emits (§V66 economy).
+    # key it never emits.
     assert LEVEL_VARIANT_NOTE not in handler(server="en", stage_code="4-4").to_dict()["limitations"]
 
 
@@ -332,7 +331,7 @@ def test_moved_level_variant_note_still_reaches_the_client(
 def test_published_schema_offers_both_selectors_and_no_leaked_prose(model: type) -> None:
     # The schema's half of the contract is STRUCTURAL: both selectors are present and
     # optional (either may be given), which is what makes "exactly one" a rule the
-    # description has to state -- a schema cannot express it here. §V71 (b): every
+    # description has to state -- a schema cannot express it here. Every
     # ``description`` keyword is stripped from the published schema, so the selector
     # prose lives in the tool description, never here (a Field description would be
     # silently dropped and the contract would ship nowhere).

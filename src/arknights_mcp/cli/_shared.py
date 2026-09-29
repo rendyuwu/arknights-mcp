@@ -1,4 +1,4 @@
-"""Shared helpers for the ``arknights-mcp`` CLI command modules (§V38/§V37).
+"""Shared helpers for the ``arknights-mcp`` CLI command modules.
 
 Cross-cutting glue used by more than one command group lives here in exactly one
 home: config/registry loading, the candidate build->validate->promote pipeline
@@ -36,7 +36,7 @@ _PRIMARY_SOURCE_ID = "arknights_assets_gamedata"
 _LOCAL_SOURCE_ID = "local_snapshot"
 
 # Errors that map to a clean CLI failure (exit 1) rather than a traceback; the
-# text never includes secrets or full local paths (§V12/§V23).
+# text never includes secrets or full local paths.
 _HANDLED_ERRORS = (
     ConfigError,
     RegistryError,
@@ -67,7 +67,7 @@ def _out(message: str) -> None:
 
 
 def _load(args: argparse.Namespace) -> tuple[AppConfig, SourceRegistry]:
-    # Overlay the non-secret OIDC descriptors from the environment (§I env): they
+    # Overlay the non-secret OIDC descriptors from the environment: they
     # are designed to come from env, so remote-safety / auth reporting in doctor
     # must see them, not TOML alone (L1).
     config = load_config(args.config, env=os.environ)
@@ -95,14 +95,14 @@ def _build_validate_promote(
 ) -> int:
     """Build a candidate from ``imports``, validate it, and promote iff it passes.
 
-    Fail-closed (§V3/§V4): on a validation failure the candidate is discarded and
+    Fail-closed: on a validation failure the candidate is discarded and
     ``current.json`` is left untouched, so the active database stays active.
 
-    ``post_build`` (used by ``sync`` for the penguin drop ride-along, §V58) runs on
+    ``post_build`` (used by ``sync`` for the penguin drop ride-along) runs on
     the still-writable candidate after the game-data import and before validation, so
-    any drops it imports join the SAME candidate in one atomic build (§V4). It must
-    itself be fail-open (§V58): a penguin failure is caught + warned inside the hook,
-    never re-raised, so the game-data build still promotes (§V3).
+    any drops it imports join the SAME candidate in one atomic build. It must
+    itself be fail-open: a penguin failure is caught + warned inside the hook,
+    never re-raised, so the game-data build still promotes.
     """
     data_dir = config.database.data_dir
     policy_events = read_events(data_dir)
@@ -121,7 +121,7 @@ def _build_validate_promote(
                 f"  imported {snap.server}: {snap.enemies} enemies, "
                 f"{snap.stages} stages, {snap.zones} zones ({snap.snapshot_id})"
             )
-            # Per-stage combat import counts (§V30): make a silent empty build
+            # Per-stage combat import counts: make a silent empty build
             # visible even when it would still pass validation.
             _out(
                 f"    levels {snap.levels_imported}, tiles {snap.tiles}, "
@@ -133,7 +133,7 @@ def _build_validate_promote(
             min_snapshots=min_snapshots,
         )
         if not report.passed:
-            _err("candidate failed validation; active database left unchanged (§V3/§V4)")
+            _err("candidate failed validation; active database left unchanged")
             print(format_report(report), file=sys.stderr)
             return 1
         promotion = promote_candidate(

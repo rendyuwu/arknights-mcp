@@ -1,8 +1,8 @@
-"""Deterministic evidence-backed analyzers (§V6, §V26).
+"""Deterministic evidence-backed analyzers.
 
 Every observation carries ``rule_id`` + evidence + confidence + limitations +
-``analyzer_version`` (§V6); rules match on typed fields only, never on prose
-(§V26). Public entry point: :func:`analyze_stage`.
+``analyzer_version``; rules match on typed fields only, never on prose.
+Public entry point: :func:`analyze_stage`.
 """
 
 from __future__ import annotations

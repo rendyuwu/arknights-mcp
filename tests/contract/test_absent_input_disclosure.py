@@ -1,6 +1,6 @@
-"""§V118 absent-input contract (B165): a rule may not decline in SILENCE.
+"""Absent-input contract: a rule may not decline in SILENCE.
 
-§V117 made every refusal arm declare its liveness, and the guard that enforces it reads
+Every refusal arm declares its liveness, and the guard that enforces it reads
 the arm sites out of each rule module's AST -- which means it can only see branches that
 EMIT something. A branch that emits nothing has no site, so the registry read complete at
 eleven arms while three refusals did not exist at all:
@@ -131,7 +131,7 @@ def test_every_gate_arm_name_is_declared() -> None:
 
 
 def test_every_rule_with_a_gate_has_gate_arms() -> None:
-    """A per-occurrence gate with no arm to refuse through is the B165 shape itself."""
+    """A per-occurrence gate with no arm to refuse through is the silence shape itself."""
     for rule_id, gate in RULE_GATE_FIELDS.items():
         arms = sorted(_GATE_ARMS.get(rule_id, frozenset()))
         assert bool(gate) == bool(arms), f"{rule_id}: gate fields {sorted(gate)} but arms {arms}"
@@ -151,9 +151,9 @@ def _occurrence(game_id: str, **fields: object) -> EnemyOccurrence:
 
 
 def _texts(ctx: StageThreatContext, rule_id: str) -> list[str]:
-    """Every refusal the rule got out, through EITHER carrier (§V118 b).
+    """Every refusal the rule got out, through EITHER carrier.
 
-    The channel is what B165 was half about: a limitation rides the observation when the
+    The channel is half the point: a limitation rides the observation when the
     rule concluded something and rides ``warnings`` when it did not, and a guard that
     only reads one of them re-creates the hole it is here to close. Warnings are
     stage-scoped, so they are matched by marker rather than attributed by rule.
@@ -174,7 +174,7 @@ def _texts(ctx: StageThreatContext, rule_id: str) -> list[str]:
 def test_a_gate_absent_occurrence_is_named_even_when_nothing_concludes(rule_id: str) -> None:
     """The whole defect in one stage: one enemy, nothing known, nothing else to carry it.
 
-    Before §T214 this produced an empty analysis for every rule -- no observation, so no
+    This used to produce an empty analysis for every rule -- no observation, so no
     limitations, so a client that asked about this stage was told nothing was wrong with
     it. Each rule's gate fields are left at their absent default here, so the occurrence
     trips every gate at once and each rule must still name it.
@@ -189,11 +189,11 @@ def test_a_gate_absent_occurrence_is_named_even_when_nothing_concludes(rule_id: 
     markers = _gate_markers(rule_id)
     assert any(
         marker in text and "enemy_0000_unknown" in text for text in texts for marker in markers
-    ), f"{rule_id}: declined a gate-absent occurrence in silence (§V118 a) -- got {texts}"
+    ), f"{rule_id}: declined a gate-absent occurrence in silence -- got {texts}"
 
 
 def test_def_res_skew_names_the_both_missing_case() -> None:
-    """B165's filed arm: 64 occurrences that used to hit a bare ``continue``."""
+    """The filed arm: 64 occurrences that used to hit a bare ``continue``."""
     ctx = StageThreatContext(
         server="en",
         stage_game_id="main_04-04",
@@ -246,7 +246,7 @@ def test_a_present_gate_is_not_refused() -> None:
 
 
 def test_substrate_absence_is_stated_once() -> None:
-    """§V118 (c): an unimported stage says so, and says it one time (§V66)."""
+    """An unimported stage says so, and says it one time."""
     empty = StageThreatContext(
         server="en", stage_game_id="act10d5_01", stage_code="SV-1", occurrences=()
     )
@@ -299,7 +299,7 @@ def sweep() -> tuple[Counter[str], Counter[str], int, int]:
                     if occ.game_id in text and any(marker in text for marker in markers)
                 }
                 # Grouped by game_id, not per row: one enemy at several level variants is
-                # one enemy (§V35), and its stats come off the variant, so one variant may
+                # one enemy, and its stats come off the variant, so one variant may
                 # carry a stat the next one lacks. The rule refuses per occurrence and the
                 # client reads the enemy, so the question is whether the ENEMY was named.
                 absent_ids = {
@@ -324,11 +324,11 @@ def sweep() -> tuple[Counter[str], Counter[str], int, int]:
 def test_no_gate_absent_occurrence_is_declined_in_silence(
     sweep: tuple[Counter[str], Counter[str], int, int],
 ) -> None:
-    """§V118 (a), forward: the direction that fails on the code B165 was filed against."""
+    """Forward: the direction that fails on the code the defect was filed against."""
     _, missed, _, _ = sweep
     assert not missed, (
         f"occurrences declined without a word: {dict(missed)} -- a rule that cannot judge an "
-        "enemy must say so; absence is not a negative (§V118 a)"
+        "enemy must say so; absence is not a negative"
     )
 
 
@@ -336,7 +336,7 @@ def test_no_gate_absent_occurrence_is_declined_in_silence(
 def test_the_counted_gate_refusals_are_still_there(
     sweep: tuple[Counter[str], Counter[str], int, int],
 ) -> None:
-    """The figures B165 was filed on, kept as figures rather than as memory.
+    """The filed figures, kept as figures rather than as memory.
 
     ``def_res_skew`` names every enemy missing either stat -- 198 stage-enemy pairs over
     64 both-missing + 136 res-only-missing occurrences -- and ``ranged_arts`` names the
@@ -354,7 +354,7 @@ def test_the_counted_gate_refusals_are_still_there(
 def test_every_unimported_stage_says_so(
     sweep: tuple[Counter[str], Counter[str], int, int],
 ) -> None:
-    """§V118 (c): 1749 stages returned ``ok`` + nothing at all before §T214."""
+    """1749 stages returned ``ok`` + nothing at all before the guard."""
     _, _, stages, said = sweep
-    assert stages == said, f"{stages - said} stage(s) with no enemy data stayed silent (§V118 c)"
+    assert stages == said, f"{stages - said} stage(s) with no enemy data stayed silent"
     assert stages == 1765, stages

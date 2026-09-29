@@ -1,4 +1,4 @@
-"""T193: §V97 token-boundary guard against the REAL corpus (B130).
+"""Token-boundary guard against the REAL corpus.
 
 ``sanitize_text`` used to delete control characters in place. Upstream EN game text
 uses ``\\n`` as a real clause separator, so the deletion **welded** the two words
@@ -7,30 +7,30 @@ either side into a junk token that survived into the DB, the wire, and FTS::
     raw    "...each attack hits 1 additional target\\nUnlimited duration"
     stored "...each attack hits 1 additional targetUnlimited duration"
 
-That string is the §V65 (a) effect TEMPLATE -- the one grounding path that closes
-B56's fabrication hole, and exactly the text the server instructions tell a client to
+That string is the effect TEMPLATE -- the one grounding path that closes
+the fabrication hole, and exactly the text the server instructions tell a client to
 trust over the raw blackboard key names. A welded template is misread, or fuses two
-independent mechanics into one false claim. The same sanitize home (§V37) mangles
-§V56 announcement titles ("Displayed Operators\\nRate Up !!!").
+independent mechanics into one false claim. The same sanitize home mangles
+announcement titles ("Displayed Operators\\nRate Up !!!").
 
-§V97 demands the guard be a **real-corpus** contract test, never a synthetic fixture:
+The guard must be a **real-corpus** contract test, never a synthetic fixture:
 a hand-written fixture proves only that the fixture matches the parser. So this module
 drives the production parse path (``parse_skills`` / ``parse_operators`` /
 ``parse_announcements``) over real upstream bytes and asserts the *word sequence*
 survives. At the pinned commit that is 9967 skill templates (2932 carrying a control
 char) and 1799 talent variants.
 
-**Oracle: token-sequence preservation, not a weld regex.** §V97 words the guard as
+**Oracle: token-sequence preservation, not a weld regex.** The rule words the guard as
 "no lowercase->uppercase weld", but run against the real corpus that pattern reports
 162 upstream-NATIVE false positives -- ``AoE``, ``SilverAsh``, ``1SP``. Splitting on
 whitespace instead is both stricter and false-positive free: ``str.split()`` is an
 independent tokenizer (it splits on ``\\n`` too), so a deleted control char fuses two
-tokens and the sequence diverges. Verified: with the pre-T193 deleting sanitize this
+tokens and the sequence diverges. Verified: with the earlier deleting sanitize this
 module reports 2753 bad skill rows; with the fix, 0.
 
-CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like §T68, so the
+CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM``, so the
 default offline ``pytest -q`` skips the whole module. Nothing fetched is persisted --
-the JSON is parsed in memory and discarded (§V16, code-only distribution).
+the JSON is parsed in memory and discarded (code-only distribution).
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ pytestmark = pytest.mark.skipif(live_upstream_disabled(), reason=LIVE_UPSTREAM_S
 
 BASE_URL = arknights_assets_base_url("en")
 
-#: Env-supplied official announcement feed (§V56/§V61). There is deliberately NO
+#: Env-supplied official announcement feed. There is deliberately NO
 #: shipped default feed URL, so the announcement leg opts in via CI env rather than
 #: hard-coding an endpoint in test code; absent -> that test skips.
 ANNOUNCE_FEED_ENV = "ARKMCP_ANNOUNCE_FEED_URL"
@@ -71,7 +71,7 @@ MIN_TALENT_TEXTS_WITH_CONTROL = 5
 
 
 def _fetch_table(relative_path: str) -> Any:
-    """Fetch + parse one pinned upstream table; never written to disk (§V16)."""
+    """Fetch + parse one pinned upstream table; never written to disk."""
     return json.loads(fetch_upstream_bytes(f"{BASE_URL}/{relative_path}").decode("utf-8"))
 
 
@@ -82,21 +82,21 @@ def _has_control_char(value: str) -> bool:
 def _assert_boundary_preserved(
     raw: str, actual: str | None, where: str, *, cap: int | None = None
 ) -> None:
-    """The imported text must carry the same WORD SEQUENCE as the source (§V97).
+    """The imported text must carry the same WORD SEQUENCE as the source.
 
     ``strip_richtext_tags`` is applied to the raw side because the importer strips
-    those cosmetic tags too (§V18/T136) and a tag can legitimately join or separate
+    those cosmetic tags too and a tag can legitimately join or separate
     tokens; the whitespace tokenization itself is ``str.split()``, which is
     independent of anything under test and splits on ``\\n``/``\\r``/``\\t``.
 
-    ``cap=None`` (templates, §V109) compares the WHOLE sequence: a template must never
+    ``cap=None`` (templates) compares the WHOLE sequence: a template must never
     be truncated at all. The earlier version of this helper branched on
     ``len(sanitize_text(raw)) >= DEFAULT_MAX_TEXT_LENGTH`` and compared a prefix with
     the last token dropped -- it looked straight at all 349 real mid-sentence
-    truncations and normalized them (B154). A guard that excuses its own bug class is
+    truncations and normalized them. A guard that excuses its own bug class is
     not a guard. The prefix comparison survives only for the announcement-title leg,
     which passes ``cap`` explicitly: titles are capped at the name-class 512 by design
-    and are not a §V65 (a) grounding surface.
+    and are not a grounding surface.
     """
     expected = strip_richtext_tags(raw).split()
     got = (actual or "").split()
@@ -104,14 +104,14 @@ def _assert_boundary_preserved(
         got = got[:-1]
         expected = expected[: len(got)]
     assert got == expected, (
-        f"{where}: imported text lost the source word boundary (§V97/B130)\n"
+        f"{where}: imported text lost the source word boundary\n"
         f"  raw      {raw!r}\n"
         f"  imported {actual!r}"
     )
 
 
 def test_real_skill_templates_preserve_token_boundary() -> None:
-    """§V97: every real EN skill-level TEMPLATE keeps its source word sequence."""
+    """Every real EN skill-level TEMPLATE keeps its source word sequence."""
     skill_raw = _fetch_table("gamedata/excel/skill_table.json")
     parsed = {skill.game_id: skill for skill in parse_skills(skill_raw)}
     assert parsed, "pinned skill_table produced no parsed skills"
@@ -136,12 +136,12 @@ def test_real_skill_templates_preserve_token_boundary() -> None:
     assert with_control >= MIN_SKILL_TEXTS_WITH_CONTROL, (
         f"only {with_control} of {checked} real skill templates carry a control char "
         f"(expected >= {MIN_SKILL_TEXTS_WITH_CONTROL}); the corpus no longer exercises "
-        "§V97 -- re-pin ARKNIGHTS_ASSETS_COMMIT or re-derive the floor"
+        "the token boundary -- re-pin ARKNIGHTS_ASSETS_COMMIT or re-derive the floor"
     )
 
 
 def test_real_talent_templates_preserve_token_boundary() -> None:
-    """§V97: every real EN talent-variant TEMPLATE keeps its source word sequence."""
+    """Every real EN talent-variant TEMPLATE keeps its source word sequence."""
     character_raw = _fetch_table("gamedata/excel/character_table.json")
     parsed = {op.game_id: op for op in parse_operators(character_raw)}
     assert parsed, "pinned character_table produced no parsed operators"
@@ -178,14 +178,14 @@ def test_real_talent_templates_preserve_token_boundary() -> None:
     assert with_control >= MIN_TALENT_TEXTS_WITH_CONTROL, (
         f"only {with_control} of {checked} real talent templates carry a control char "
         f"(expected >= {MIN_TALENT_TEXTS_WITH_CONTROL}); the corpus no longer exercises "
-        "§V97 -- re-pin ARKNIGHTS_ASSETS_COMMIT or re-derive the floor"
+        "the token boundary -- re-pin ARKNIGHTS_ASSETS_COMMIT or re-derive the floor"
     )
 
 
 def test_real_announcement_titles_preserve_token_boundary() -> None:
-    """§V97/§V56: real EN announcement TITLES keep their source word sequence.
+    """Real EN announcement TITLES keep their source word sequence.
 
-    The second domain B130 verified live. Unlike the gamedata tables the official feed
+    The second domain the earlier sweep verified live. Unlike the gamedata tables the official feed
     is not pinnable -- it is whatever is published today -- so this asserts the
     invariant relative to whatever the feed returns and does not require a control
     char to be present on any given day. The pinned template legs above carry the

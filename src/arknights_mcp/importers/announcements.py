@@ -1,21 +1,21 @@
-"""Official-announcement importer: feed -> announcements (metadata-ONLY, §T95).
+"""Official-announcement importer: feed -> announcements (metadata-ONLY).
 
 Consumes what the CLI-only :class:`~arknights_mcp.sources.announcements.AnnouncementsAdapter`
-returns (never a query-time fetch, §V1) and writes the announcement-metadata cache:
+returns (never a query-time fetch) and writes the announcement-metadata cache:
 
-* the field allowlist + recursive sanitize on every kept feed entry (§V18/§V56),
+* the field allowlist + recursive sanitize on every kept feed entry,
   routed through :mod:`arknights_mcp.importers.field_policy` -- only ``announceId``/
   ``title``/``date``/``url``/``category`` survive, so the article body / html / prose /
-  image is never stored (§V16);
+  image is never stored;
 * an announcement ``source_snapshots`` row + per-record provenance so an announcement
-  carries its OWN provenance chain, distinct from the game-data / drop facts (§V17);
-* the region on every row (§V5), en and cn never mixed (§V56).
+  carries its OWN provenance chain, distinct from the game-data / drop facts;
+* the region on every row, en and cn never mixed.
 
 Pure parsing (:func:`parse_announcements`) is separated from the DB write so it is
 unit-testable without a database. A feed entry missing an ``announceId`` is skipped
 (fail-closed, no fabricated row). A non-empty feed that resolves to zero stored rows
-fails closed (§V30); an empty feed is a legitimate empty build (``announcements`` is
-not a CRITICAL_TABLE -- the adapter is disabled by default, D14/§V56).
+fails closed; an empty feed is a legitimate empty build (``announcements`` is
+not a CRITICAL_TABLE -- the adapter is disabled by default, D14).
 """
 
 from __future__ import annotations
@@ -42,12 +42,12 @@ from arknights_mcp.util.sqlite import integrity_guard
 
 _LOG = logging.getLogger(__name__)
 
-#: Allowed fact regions for an announcement (§V56/§V5): en/cn only, never mixed.
+#: Allowed fact regions for an announcement: en/cn only, never mixed.
 _ALLOWED_REGIONS: frozenset[str] = frozenset({"en", "cn"})
 
 
 class AnnouncementFetcher(Protocol):
-    """The read surface the importer needs from the announcement adapter (§V37).
+    """The read surface the importer needs from the announcement adapter.
 
     Matches :meth:`AnnouncementsAdapter.fetch`; typed as a Protocol so the importer
     is unit-testable with an in-memory fake and never depends on the network class.
@@ -78,7 +78,7 @@ class AnnouncementImportResult:
 
 
 def _feed_entries(feed_raw: Any) -> list[Any]:
-    """Extract the list of entries from a feed payload (§V56 tolerant shape).
+    """Extract the list of entries from a feed payload (tolerant shape).
 
     Accepts either a top-level JSON array or an object wrapping the list under a
     common key (``announceList``/``announcements``/``list``/``data``). Anything else
@@ -98,24 +98,24 @@ def _feed_entries(feed_raw: Any) -> list[Any]:
 
 
 def _normalize_date(kept: dict[str, Any], *, fetched_at: datetime) -> str | None:
-    """Resolve an ISO ``YYYY-MM-DD`` publication date from a feed entry (§V61).
+    """Resolve an ISO ``YYYY-MM-DD`` publication date from a feed entry.
 
-    Prefers an explicit ISO ``date`` when the feed carries one (the T95 shape); the
-    real official feed instead carries ``day``+``month`` ints and NO year (§V61). The
+    Prefers an explicit ISO ``date`` when the feed carries one (the canonical shape); the
+    real official feed instead carries ``day``+``month`` ints and NO year. The
     year is inferred by choosing whichever of the prior/current/next year places the
     ``month``+``day`` CLOSEST to ``fetched_at``: a near-future month is a pre-announcement
     kept in the current year, an entry just past the Dec->Jan boundary rolls back a year,
     and the UTC-vs-server date skew near New Year resolves to the nearest real date --
     not a blind "future month => prior year" that mislabels every pre-announced
-    maintenance a year early and flips the year on the UTC boundary (B47). Constructing
+    maintenance a year early and flips the year on the UTC boundary. Constructing
     via :class:`datetime.date` also rejects a calendar-invalid ``day``/``month`` (e.g.
     2/31, 4/31, or 2/29 off a leap year) so an impossible date becomes ``None`` rather
-    than a fabricated string (§V26); a non-int day/month is likewise absent, never faked.
+    than a fabricated string; a non-int day/month is likewise absent, never faked.
 
-    An explicit ``date`` is RENDERED to its calendar day, not stored as written (§V116):
+    An explicit ``date`` is RENDERED to its calendar day, not stored as written:
     the ``since``/``until`` window compares this column as TEXT and the service renders its
     bounds to a ``YYYY-MM-DD`` day, so a feed shipping ``2026-07-10T00:00:00+00:00`` in the
-    same column would sort outside every bound naming its own day (B163's defect, on the
+    same column would sort outside every bound naming its own day (the original defect, on the
     stored side). A day is all this column claims to hold, and now all it can hold; an
     explicit value in no ISO notation at all falls through to the ``day``+``month`` path
     rather than being stored as unplaceable text.
@@ -145,13 +145,13 @@ def _normalize_date(kept: dict[str, Any], *, fetched_at: datetime) -> str | None
 
 
 def _normalize_url(kept: dict[str, Any]) -> str | None:
-    """Prefer a canonical ``url``; fall back to the real feed's ``webUrl`` (§V61)."""
+    """Prefer a canonical ``url``; fall back to the real feed's ``webUrl``."""
     explicit = as_str(kept.get("url"))
     return explicit if explicit is not None else as_str(kept.get("webUrl"))
 
 
 def _normalize_category(kept: dict[str, Any]) -> str | None:
-    """Prefer a canonical ``category``; fall back to the real feed's ``group`` (§V61).
+    """Prefer a canonical ``category``; fall back to the real feed's ``group``.
 
     ``group`` is an enum/name string in the real feed but may arrive as a numeric enum;
     a ``bool`` (an ``int`` subclass) is rejected so a stray flag never reads as ``"1"``.
@@ -170,15 +170,15 @@ def _normalize_category(kept: dict[str, Any]) -> str | None:
 
 
 def parse_announcements(feed_raw: Any, *, fetched_at: datetime) -> list[ParsedAnnouncement]:
-    """Transform an announcement feed into allowlisted metadata rows (§V18/§V56/§V61).
+    """Transform an announcement feed into allowlisted metadata rows.
 
-    Only the §V56 metadata keys survive the allowlist; the article body / html /
+    Only the metadata keys survive the allowlist; the article body / html /
     prose / image is dropped. An entry missing an ``announceId`` is skipped so no
     row is fabricated without its stable id (fail-closed). The real official feed names
-    three fields differently (verified 2026-07-21, §V61), so they are field-mapped to
+    three fields differently (verified 2026-07-21), so they are field-mapped to
     the canonical shape: ``day``+``month``->ISO ``date`` (year inferred from
     ``fetched_at``), ``webUrl``->``url``, ``group``->``category``; an explicit canonical
-    key still wins when present (the T95 shape).
+    key still wins when present (the canonical shape).
     """
     out: list[ParsedAnnouncement] = []
     for entry in _feed_entries(feed_raw):
@@ -209,19 +209,19 @@ def _insert_snapshot(
     feed_raw: Any,
     fetched_at: str,
 ) -> str:
-    """Insert the announcement ``source_snapshots`` row (its own provenance chain, §V17).
+    """Insert the announcement ``source_snapshots`` row (its own provenance chain).
 
     The ``manifest_hash`` is derived from the fetched feed so an unchanged fetch
-    yields a stable ``snapshot_id`` (like the game-data / drop snapshots, §V37).
+    yields a stable ``snapshot_id`` (like the game-data / drop snapshots).
     """
     manifest_hash = sha256_hex(canonical_json(feed_raw))
     snapshot_id = make_snapshot_id(region, manifest_hash)
     imported_at = datetime.now(tz=UTC).isoformat()
     # A byte-identical re-fetch for the same region yields the same deterministic
-    # snapshot_id (§V37); on one connection that collides the source_snapshots PK. Map
-    # it to a typed ImporterError like the row insert below (§V33), not an uncaught
+    # snapshot_id; on one connection that collides the source_snapshots PK. Map
+    # it to a typed ImporterError like the row insert below, not an uncaught
     # sqlite3.IntegrityError that escapes the typed-error discipline and tears down the
-    # build (§V3) -- the ride-along's fail-open catch then rolls back this region.
+    # build -- the ride-along's fail-open catch then rolls back this region.
     with integrity_guard(
         f"announcement snapshot {snapshot_id!r} duplicates (region={region}, "
         "byte-identical feed re-import)",
@@ -255,31 +255,31 @@ def import_announcements(
 ) -> AnnouncementImportResult:
     """Fetch + import one region's announcement metadata into ``announcements``.
 
-    ``region`` must be en or cn (§V56/§V5); every row is stamped with that region and
-    a provenance row pointing at the announcement snapshot (§V17). Only the §V56
-    metadata allowlist is stored (§V16). A non-empty feed that resolves to zero rows
-    fails closed (§V30); an empty feed imports zero rows without error (the domain is
-    legitimately empty -- the adapter is disabled by default, D14/§V56).
+    ``region`` must be en or cn; every row is stamped with that region and
+    a provenance row pointing at the announcement snapshot. Only the
+    metadata allowlist is stored. A non-empty feed that resolves to zero rows
+    fails closed; an empty feed imports zero rows without error (the domain is
+    legitimately empty -- the adapter is disabled by default, D14).
     """
     if region not in _ALLOWED_REGIONS:
-        raise ImporterError(f"announcement region must be en|cn, got {region!r} (§V56)")
+        raise ImporterError(f"announcement region must be en|cn, got {region!r}")
     resolved_source_id = source_id if source_id is not None else source_id_for_region(region)
     if resolved_source_id is None:  # pragma: no cover - guarded by _ALLOWED_REGIONS above
-        raise ImporterError(f"no announcement source for region {region!r} (§V56)")
+        raise ImporterError(f"no announcement source for region {region!r}")
 
     # Resolve the fetch timestamp BEFORE parsing: the year-less real feed infers each
-    # entry's year from it (§V61 day+month->date), and the snapshot row stamps it (§V17).
+    # entry's year from it (day+month->date), and the snapshot row stamps it.
     fetched_dt = fetched_at if fetched_at is not None else datetime.now(tz=UTC)
     feed_raw = adapter.fetch()
     parsed = parse_announcements(feed_raw, fetched_at=fetched_dt)
     skipped = _skipped_count(feed_raw, parsed)
 
-    # §V30: a feed that carried candidate entries but produced zero rows is a
+    # A feed that carried candidate entries but produced zero rows is a
     # silent-empty regression -- a shape mismatch (e.g. the id field is not
     # ``announceId``) leaves every entry skipped. Fail closed BEFORE writing a snapshot
-    # so the candidate is discarded and the active DB stays untouched (§V3). A
+    # so the candidate is discarded and the active DB stays untouched. A
     # genuinely empty feed (no dict entries) imports zero rows without error --
-    # ``announcements`` is not a CRITICAL_TABLE (disabled by default, D14/§V56).
+    # ``announcements`` is not a CRITICAL_TABLE (disabled by default, D14).
     guard_not_silently_empty(
         candidates=skipped,
         produced=len(parsed),
@@ -294,17 +294,17 @@ def import_announcements(
             "announcements %s: %d feed entr(y|ies) skipped (missing announceId)", region, skipped
         )
 
-    # §V30/§V61: rows survived the allowlist (carry an announceId) yet EVERY one has a
+    # Rows survived the allowlist (carry an announceId) yet EVERY one has a
     # NULL ``date`` -- the day/month (or explicit date) map found none of its keys, so
-    # the feed shape drifted from what the importer normalizes. This is the §V61
+    # the feed shape drifted from what the importer normalizes. This is the
     # degradation trap: the rows would insert, the missing-announceId guard would NOT
-    # trip, yet the since/until filter (§T96) keys on ``date`` ALONE, so every windowed
+    # trip, yet the since/until filter keys on ``date`` ALONE, so every windowed
     # query silently returns empty -- worse than inert. The original guard tripped only
     # when date=url=category were ALL null together, so a break that nulled just ``date``
-    # (while url/category still mapped) slipped through (B47). Guarding ``date`` on its
+    # (while url/category still mapped) slipped through. Guarding ``date`` on its
     # own is strictly stronger (an all-three-null set already has date all-null) and
     # closes that gap. Fail closed BEFORE the snapshot write so the degraded build is
-    # discarded and the active DB stays untouched (§V3). A feed whose entries genuinely
+    # discarded and the active DB stays untouched. A feed whose entries genuinely
     # carry no readable date is indistinguishable from a broken date-map, so both are
     # refused rather than promoted as a silently degraded build. (url/category are not
     # filter keys, so their absence degrades visibly, not silently -- not a trip.)
@@ -316,7 +316,6 @@ def import_announcements(
         unit="entr(y|ies)",
         resolution="carried a mapped date",
         outcome="degraded announcement build",
-        cite="§V30/§V61",
         detail=" -- the feed field-map matched no known date shape",
     )
 
@@ -339,8 +338,8 @@ def import_announcements(
             record=ann.provenance_record,
         )
         # A repeated announceId collides on UNIQUE(region, announce_id); map the
-        # anomaly to a typed error (§V33), not an uncaught IntegrityError tearing
-        # down the whole multi-region build (§V3).
+        # anomaly to a typed error, not an uncaught IntegrityError tearing
+        # down the whole multi-region build.
         with integrity_guard(
             f"announcement {ann.announce_id!r} duplicates (region={region}, announce_id)",
             ImporterError,
@@ -361,9 +360,9 @@ def import_announcements(
         inserted += 1
 
     # Every parsed row inserts or raises via ``integrity_guard`` above, so ``inserted``
-    # equals ``len(parsed)`` here -- the §V30 silent-empty case (a non-empty feed that
+    # equals ``len(parsed)`` here -- the silent-empty case (a non-empty feed that
     # stored nothing) is already caught upstream by the missing-announceId guard (skipped
-    # and not parsed) and the §V61 all-NULL-date guard, both BEFORE the snapshot write.
+    # and not parsed) and the all-NULL-date guard, both BEFORE the snapshot write.
     # ``skipped`` was computed + warned once at the top; reuse it rather than re-walk the
     # feed and re-log the same warning.
     return AnnouncementImportResult(

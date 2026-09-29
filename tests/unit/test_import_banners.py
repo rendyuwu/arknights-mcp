@@ -1,13 +1,13 @@
-"""T113: banner-archive importer (gacha_table.json -> banners + banner_featured_ops).
+"""Banner-archive importer (gacha_table.json -> banners + banner_featured_ops).
 
 Parses the primary ``gacha_table`` ``gachaPoolClient`` into the metadata-only banner
-archive (§V62): typed schedule/identity fields only (no gacha prose, §V16/§V18), unix
+archive: typed schedule/identity fields only (no gacha prose), unix
 epochs normalized to ISO, typed featured ops per rule type (LIMITED single /
 CLASSIC-family array / NORMAL-family none), soft-resolved to an ``operator_pk`` when the
-operator is present else the raw char id with ``resolved = 0`` (§V62 — an unresolvable
-featured-op never fails the build, §V3). A non-empty pool list yielding zero banners
-fails closed (§V30); an absent gacha_table is a legitimate empty build (B36). A duplicate
-pool id maps to a typed ImporterError (§V33). Purge cascades the banner rows (§V32).
+operator is present else the raw char id with ``resolved = 0`` (an unresolvable
+featured-op never fails the build). A non-empty pool list yielding zero banners
+fails closed; an absent gacha_table is a legitimate empty build. A duplicate
+pool id maps to a typed ImporterError. Purge cascades the banner rows.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 _SOURCE_ID = "local_snapshot"
 
-# Prose that must never survive the metadata-only allowlist (§V16/§V62).
+# Prose that must never survive the metadata-only allowlist.
 _PROSE = "gacha promotional copy that must never be imported into the database"
 
 _LIMITED = {
@@ -72,7 +72,7 @@ def _gacha(*pools: dict) -> dict:
 
 
 def test_limited_reads_limited_char_id() -> None:
-    # §V62: a LIMITED banner names one featured op under limitParam.limitedCharId.
+    # A LIMITED banner names one featured op under limitParam.limitedCharId.
     [banner] = parse_banners(_gacha(_LIMITED))
     assert banner.game_id == "LIMITED_1"
     assert banner.rule_type == "LIMITED"
@@ -80,7 +80,7 @@ def test_limited_reads_limited_char_id() -> None:
 
 
 def test_classic_family_reads_attain_rare6_list() -> None:
-    # §V62: a CLASSIC-family banner names an array under dynMeta.attainRare6CharList.
+    # A CLASSIC-family banner names an array under dynMeta.attainRare6CharList.
     [banner] = parse_banners(_gacha(_CLASSIC))
     assert banner.featured_char_ids == ["char_002_amiya", "char_999_ghost"]
 
@@ -89,7 +89,7 @@ def test_classic_family_reads_attain_rare6_list() -> None:
     "rule_type", ["ATTAIN", "CLASSIC", "CLASSIC_ATTAIN", "CLASSIC_DOUBLE", "FESCLASSIC", "SPECIAL"]
 )
 def test_every_classic_family_rule_type_reads_the_array(rule_type: str) -> None:
-    # §V62: the full CLASSIC-family set resolves featured ops from dynMeta.
+    # The full CLASSIC-family set resolves featured ops from dynMeta.
     pool = {**_CLASSIC, "gachaRuleType": rule_type}
     [banner] = parse_banners(_gacha(pool))
     assert banner.featured_char_ids == ["char_002_amiya", "char_999_ghost"]
@@ -97,22 +97,22 @@ def test_every_classic_family_rule_type_reads_the_array(rule_type: str) -> None:
 
 @pytest.mark.parametrize("rule_type", ["NORMAL", "SINGLE", "DOUBLE", "LINKAGE"])
 def test_standard_banner_carries_no_typed_featured_op(rule_type: str) -> None:
-    # §V62: NORMAL/SINGLE/DOUBLE/LINKAGE carry no typed featured-op (rate-up is prose
-    # only, §V18-forbidden); the read tool surfaces that as a limitation (§V26/T114).
+    # NORMAL/SINGLE/DOUBLE/LINKAGE carry no typed featured-op (rate-up is prose
+    # only, forbidden); the read tool surfaces that as a limitation.
     pool = {**_CLASSIC, "gachaRuleType": rule_type}
     [banner] = parse_banners(_gacha(pool))
     assert banner.featured_char_ids == []
 
 
 def test_epoch_times_normalized_to_iso() -> None:
-    # §V62: unix-epoch openTime/endTime are normalized to ISO UTC timestamps.
+    # Unix-epoch openTime/endTime are normalized to ISO UTC timestamps.
     [banner] = parse_banners(_gacha(_LIMITED))
     assert banner.open_time == "2023-11-14T22:13:20+00:00"
     assert banner.end_time == "2023-11-28T22:13:20+00:00"  # +14 days exactly
 
 
 def test_prose_is_never_kept() -> None:
-    # §V16/§V18: gacha summary/detail/html prose never survives the allowlist, so it
+    # Gacha summary/detail/html prose never survives the allowlist, so it
     # appears in no provenance record (the only place a raw fragment could ride in).
     all_blob = _json.dumps([b.provenance_record for b in parse_banners(_gacha(_LIMITED, _CLASSIC))])
     assert _PROSE not in all_blob
@@ -136,7 +136,7 @@ def test_entry_with_blank_pool_id_is_skipped() -> None:
 
 
 def test_invalid_epoch_yields_none_not_fabricated() -> None:
-    # §V26: a non-int / out-of-range epoch yields None, never a fabricated timestamp.
+    # A non-int / out-of-range epoch yields None, never a fabricated timestamp.
     pool = {**_NORMAL, "openTime": "not-an-epoch", "endTime": None}
     [banner] = parse_banners(_gacha(pool))
     assert banner.open_time is None
@@ -194,7 +194,7 @@ def _conn_with_operator(tmp_path: Path, *, seed_operator: bool) -> tuple[sqlite3
 
 
 def test_featured_op_soft_resolves_present_operator(tmp_path: Path) -> None:
-    # §V62: a featured char present as an operator resolves to operator_pk, resolved=1.
+    # A featured char present as an operator resolves to operator_pk, resolved=1.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         result = insert_banners(
@@ -215,8 +215,8 @@ def test_featured_op_soft_resolves_present_operator(tmp_path: Path) -> None:
 
 
 def test_featured_op_stays_raw_when_operator_absent(tmp_path: Path) -> None:
-    # §V62/B36: a combat-only snapshot (no operators) keeps the raw char id, resolved=0;
-    # the unresolvable featured-op never fails the build (§V3).
+    # A combat-only snapshot (no operators) keeps the raw char id, resolved=0;
+    # the unresolvable featured-op never fails the build.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=False)
     try:
         result = insert_banners(
@@ -237,7 +237,7 @@ def test_featured_op_stays_raw_when_operator_absent(tmp_path: Path) -> None:
 
 
 def test_region_equals_server(tmp_path: Path) -> None:
-    # §V5: region is the fact region; en and cn are never mixed.
+    # Region is the fact region; en and cn are never mixed.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         insert_banners(
@@ -253,7 +253,7 @@ def test_region_equals_server(tmp_path: Path) -> None:
 
 
 def test_duplicate_pool_id_fails_closed(tmp_path: Path) -> None:
-    # §V33: a duplicate gachaPoolId collides on UNIQUE(server, game_id); the anomaly
+    # A duplicate gachaPoolId collides on UNIQUE(server, game_id); the anomaly
     # maps to a typed ImporterError, not an uncaught IntegrityError.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
@@ -264,7 +264,7 @@ def test_duplicate_pool_id_fails_closed(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- adapter-driven import (tolerant-absent + §V30 guard) --------------------
+# --- adapter-driven import (tolerant-absent + fail-closed guard) -------------
 
 
 def _adapter_with_gacha(tmp_path: Path, payload: object | None) -> LocalSnapshotAdapter:
@@ -277,7 +277,7 @@ def _adapter_with_gacha(tmp_path: Path, payload: object | None) -> LocalSnapshot
 
 
 def test_import_tolerates_absent_gacha_table(tmp_path: Path) -> None:
-    # B36/§V41: a snapshot without gacha_table.json imports zero banners, not a failure.
+    # A snapshot without gacha_table.json imports zero banners, not a failure.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         adapter = _adapter_with_gacha(tmp_path, None)
@@ -301,7 +301,7 @@ def test_import_end_to_end(tmp_path: Path) -> None:
 
 
 def test_non_empty_pool_yielding_zero_banners_fails_closed(tmp_path: Path) -> None:
-    # §V30: a non-empty gachaPoolClient whose entries all lack a gachaPoolId resolves to
+    # A non-empty gachaPoolClient whose entries all lack a gachaPoolId resolves to
     # zero banners -> fail closed (a shape/id mismatch is never a silent empty build).
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
@@ -327,7 +327,7 @@ def test_empty_pool_list_is_legitimate(tmp_path: Path) -> None:
 
 
 def test_purge_cascades_banner_rows(tmp_path: Path) -> None:
-    # §V32: purging the source removes its banners + banner_featured_ops, leaving no
+    # Purging the source removes its banners + banner_featured_ops, leaving no
     # dangling foreign key (children-before-parents).
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:

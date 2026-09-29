@@ -1,13 +1,13 @@
-"""Data-sources service (§T27; §V27; PRD §13.10): the shared ``get_data_sources``
+"""Data-sources service (PRD Section 13.10): the shared ``get_data_sources``
 domain entry point that returns the public-safe source registry.
 
-For each registered source it returns the PRD §13.10 fields (id, display name,
+For each registered source it returns the PRD Section 13.10 fields (id, display name,
 owner, canonical URL, purpose + consumed fields, region coverage, license /
 permission status, private-hosting + redistribution posture, attribution text,
 enabled state + last-reviewed date) plus the active snapshot version/commit when
 a promoted build carries one. It **never** returns secrets, local filesystem
-paths, OAuth configuration, internal policy notes, or takedown correspondence
-(§V27): the projection is built from an explicit allowlist of registry fields,
+paths, OAuth configuration, internal policy notes, or takedown correspondence:
+the projection is built from an explicit allowlist of registry fields,
 not by dumping the row.
 """
 
@@ -31,11 +31,11 @@ class ActiveSnapshotInfo:
     imported_at: str
 
     def to_dict(self) -> dict[str, object]:
-        # §V67 (B135): a local-snapshot import has no upstream commit or version, so
+        # A local-snapshot import has no upstream commit or version, so
         # those keys are absent rather than null -- the same shape the sibling
         # ``SnapshotStatus`` (services/status.py) already emits for get_data_status.
         # The envelope sweep would drop them anyway; doing it here keeps the DOMAIN
-        # result identical to the wire, which is what lets the §V34 "resource == service"
+        # result identical to the wire, which is what lets the "resource == service"
         # equality hold as a plain comparison.
         out: dict[str, object] = {"server": self.server, "snapshot_id": self.snapshot_id}
         if self.commit_sha is not None:
@@ -48,14 +48,14 @@ class ActiveSnapshotInfo:
 
 @dataclass(frozen=True)
 class SourceInfo:
-    """Public-safe registry projection for one source (§V27; PRD §13.10).
+    """Public-safe registry projection for one source (PRD Section 13.10).
 
     The public field set is defined solely by
-    :meth:`SourceRegistryEntry.public_view` (§V34): this wrapper adds only the
+    :meth:`SourceRegistryEntry.public_view`: this wrapper adds only the
     DB-derived ``active_snapshots`` enrichment and never re-enumerates the
     registry allowlist. Routing both this service and the CLI ``source list
     --json`` view through the single ``public_view`` projection is what keeps the
-    two surfaces from diverging (B18).
+    two surfaces from diverging.
     """
 
     entry: SourceRegistryEntry
@@ -70,7 +70,7 @@ class SourceInfo:
         return self.entry.enabled
 
     def to_dict(self) -> dict[str, object]:
-        # public_view() is the sole allowlist; active_snapshots is DB-only (§V34).
+        # public_view() is the sole allowlist; active_snapshots is DB-only.
         return {
             **self.entry.public_view(),
             "active_snapshots": [s.to_dict() for s in self.active_snapshots],
@@ -110,12 +110,12 @@ def get_data_sources(
     registry: SourceRegistry,
     conn: sqlite3.Connection | None = None,
 ) -> DataSourcesResult:
-    """Return the public-safe source registry (§V27; PRD §13.10).
+    """Return the public-safe source registry (PRD Section 13.10).
 
     ``registry`` is the authoritative live posture (enabled/disabled reflects the
     machine registry). When ``conn`` is a read-only connection to the active build,
     each source is annotated with its latest snapshot per region. Excludes secrets,
-    local paths, OAuth config, policy notes, and takedown correspondence (§V27).
+    local paths, OAuth config, policy notes, and takedown correspondence.
     """
     snapshots_by_source: dict[str, list[SnapshotRow]] = {}
     if conn is not None:

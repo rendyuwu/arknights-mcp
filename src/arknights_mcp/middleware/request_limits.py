@@ -1,7 +1,7 @@
-"""Per-request size + timeout limits for the remote transport (§V11).
+"""Per-request size + timeout limits for the remote transport.
 
-Two more of the five §V11 remote controls (rate + concurrency live in
-:mod:`.rate_limit`; the response cap is the §V22 envelope builder's job -- see below):
+Two more of the five remote controls (rate + concurrency live in
+:mod:`.rate_limit`; the response cap is the envelope builder's job -- see below):
 
 * **Request cap** -- a declared ``Content-Length`` over ``max_request_bytes`` is
   refused ``413`` up front, before the inner app runs. A request that omits (or lies
@@ -20,12 +20,12 @@ Two more of the five §V11 remote controls (rate + concurrency live in
   ``GET`` (SDK ``handle_request``), which is meant to stay open.
 
 Response cap: NOT re-buffered here. Every tool result is measured against the
-200 KB cap at the §V22 envelope builder (worst-case ``ensure_ascii=True`` bytes over
-the whole result frame -- both payload copies a ``tools/call`` carries, §V119 e; the
-B21 fix, with B166's second copy accounted for rather than deleted), so the bound
+200 KB cap at the envelope builder (worst-case ``ensure_ascii=True`` bytes over
+the whole result frame -- both payload copies a ``tools/call`` carries; the
+fix, with the second copy accounted for rather than deleted), so the bound
 already holds on the remote wire. Buffering the response body in this middleware to
 re-check it would break the SSE stream and duplicate a guarantee the one home already
-provides (§V37).
+provides.
 
 The timeout uses :func:`anyio.move_on_after`; if it fires *after* the inner app has
 already started its response (``http.response.start`` sent), we can no longer inject a
@@ -44,7 +44,7 @@ from arknights_mcp.middleware._shared import send_error
 
 
 class RequestLimitsMiddleware:
-    """ASGI middleware enforcing per-request body-size + timeout limits (§V11).
+    """ASGI middleware enforcing per-request body-size + timeout limits.
 
     :param app: the wrapped ASGI app (the next layer inward).
     :param max_request_bytes: max request body size; larger → ``413``.

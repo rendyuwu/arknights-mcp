@@ -1,14 +1,14 @@
-"""T20: the stage read repository (§V2, §V5).
+"""The stage read repository.
 
 Drives :class:`StageRepository` against the pinned 4-4 fixture through a database
 **opened read-only** (the production path). Verifies the repository:
 
 * returns the stage keyed by ``stage_code`` and by ``game_id`` identically, with
-  its joined region provenance (§V5);
+  its joined region provenance;
 * keeps ``en`` and ``cn`` separate -- a ``cn`` lookup of an ``en`` stage is
-  ``None`` (§V5, never silently mixed);
+  ``None`` (never silently mixed);
 * returns the stage's typed enemy occurrences from ``stage_enemies``;
-* only reads -- the connection records no writes (§V2).
+* only reads -- the connection records no writes.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _seed_snapshot(conn: sqlite3.Connection) -> None:
 
 @pytest.fixture
 def conn(tmp_path: Path) -> sqlite3.Connection:
-    """Build + import the 4-4 fixture, then reopen the file read-only (§V2)."""
+    """Build + import the 4-4 fixture, then reopen the file read-only."""
     db_path = tmp_path / "cand.sqlite"
     writer = build_database(db_path)
     _seed_snapshot(writer)
@@ -77,7 +77,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 def test_stages_by_code_carries_provenance(conn: sqlite3.Connection) -> None:
     repo = StageRepository(conn)
-    # §V102 (§T195): a stage_code is not unique, so the read returns the whole matching
+    # A stage_code is not unique, so the read returns the whole matching
     # set (bounded) in pick order and the service discloses; the fixture holds one.
     (stage,) = repo.stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)
     assert stage.server == "en"
@@ -85,7 +85,7 @@ def test_stages_by_code_carries_provenance(conn: sqlite3.Connection) -> None:
     assert stage.stage_code == "4-4"
     assert stage.sanity_cost == 18
     assert stage.zone_game_id == "main_4"
-    # §V5: region provenance joined onto the factual row.
+    # Region provenance joined onto the factual row.
     assert stage.snapshot_id == SNAPSHOT_ID
     assert stage.imported_at == IMPORTED_AT
 
@@ -98,7 +98,7 @@ def test_stage_by_game_id_matches_by_code(conn: sqlite3.Connection) -> None:
 
 
 def test_wrong_region_returns_none(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn lookup.
+    # A cn lookup does not surface en data.
     repo = StageRepository(conn)
     assert repo.stages_by_code("cn", "4-4", MAX_STAGE_CODE_MATCHES) == []
     assert repo.stage_by_game_id("cn", "main_04-04") is None
@@ -127,7 +127,7 @@ def test_stage_enemies_typed_occurrences(conn: sqlite3.Connection) -> None:
 
 
 def test_repository_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: repository queries never write.
+    # Repository queries never write.
     before = conn.total_changes
     repo = StageRepository(conn)
     (stage,) = repo.stages_by_code("en", "4-4", MAX_STAGE_CODE_MATCHES)

@@ -1,12 +1,12 @@
-"""The single home for "every registered tool, and how to drive it" (§V37).
+"""The single home for "every registered tool, and how to drive it".
 
 Several contract guards sweep the whole tool surface for a wire-shape property -- no null
-leaf (§V67), no generic ranking key (§V100), no camelCase key (§V71 d). Each needs the
+leaf, no generic ranking key, no camelCase key. Each needs the
 same two things: a registry over a corpus, and one call per tool that produces a
 representative payload.
 
 Those call sets live here rather than in whichever guard was written first, because of
-what they are FOR. B135's null discipline was rolled out four times and each pass swept
+what they are FOR. The null discipline was rolled out four times and each pass swept
 the surfaces then under review, so a fifth hand pass would have authored the fifth
 recurrence; the fix was a guard that enumerates :meth:`ToolRegistry.names` and FAILS when
 a registered tool has no call set. That clause is only as good as the call sets it checks
@@ -15,7 +15,7 @@ drift, and the drifted copy would be the one covering the tool nobody looked at.
 
 :func:`assert_every_tool_is_covered` is that clause, shared by every sweep that uses these
 calls. Include flags are ON wherever a tool has them: an opt-in section that is off emits
-nothing, and B135's own ``map.map_version`` lived behind ``include_map``.
+nothing, and ``map.map_version`` itself lived behind ``include_map``.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ FIXTURE_CALLS: dict[str, tuple[dict[str, object], ...]] = {
 #: The promoted-build arm. Same tools, pointed at rows carrying the shapes a hand-built
 #: fixture does not have: ``guide_01`` (no display name), ``st_07-04``, ``char_4162_cathy``
 #: (talents with no name), Amiya (a talent variant with no blackboard), and the real
-#: penguin cache behind ``30012`` (Orirock Cube -- a T2 material, so the §V99 rarity scale
+#: penguin cache behind ``30012`` (Orirock Cube -- a T2 material, so the rarity scale
 #: is exercised on a value that is not its own 0-indexed original).
 BUILD_CALLS: dict[str, tuple[dict[str, object], ...]] = {
     **FIXTURE_CALLS,
@@ -146,7 +146,7 @@ def registry_for(conn: sqlite3.Connection) -> ToolRegistry:
 
 
 def assert_every_tool_is_covered(registry: ToolRegistry) -> None:
-    """A tool cannot be registered without entering the sweeps (the anti-B135 clause).
+    """A tool cannot be registered without entering the sweeps.
 
     The failure mode this prevents is not "a bad value slipped through a covered tool" but
     "a whole tool was never swept", which is how four null-discipline rollouts left five
@@ -166,7 +166,7 @@ def call_over_wire(
 
     The registry-level sweeps above see the envelope; this sees the RESULT a client
     receives -- both payload copies, the SDK's ``outputSchema`` validation, and the
-    content-block scaffolding (§V119). B166 lived entirely in that gap: every sweep read
+    content-block scaffolding. The defect lived entirely in that gap: every sweep read
     ``structuredContent`` and the half a content-only client reads was empty.
     """
     core = dataclasses.replace(build_application(AppConfig()), registry=registry)
@@ -183,7 +183,7 @@ def call_over_wire(
 def wire_results(
     registry: ToolRegistry, calls: dict[str, tuple[dict[str, object], ...]]
 ) -> list[tuple[str, types.CallToolResult]]:
-    """Every ``(tool_name, tools/call result)`` the call sets produce (§V119 f)."""
+    """Every ``(tool_name, tools/call result)`` the call sets produce."""
     return [
         (name, call_over_wire(registry, name, params))
         for name in registry.names()

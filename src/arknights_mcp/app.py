@@ -1,15 +1,15 @@
-"""Application core / service container shared by both transports (§V14; §T47).
+"""Application core / service container shared by both transports.
 
 Single home for wiring the read-only data path to the shared MCP tool registry.
-Both transports (local ``stdio`` §T47, Streamable HTTP §T51) call
+Both transports (local ``stdio``, Streamable HTTP) call
 :func:`build_application`, so they dispatch the identical tool set over the
-identical connection policy (§V14) -- there is no per-transport core to drift.
+identical connection policy -- there is no per-transport core to drift.
 
-The active database is the promoted, immutable build selected by ``current.json``
-(§T24). It is opened strictly read-only (§V2) and *lazily*: the connection is
+The active database is the promoted, immutable build selected by ``current.json``.
+It is opened strictly read-only and *lazily*: the connection is
 created on first tool call and reused for the process lifetime, so a server that
 starts before any build is promoted still runs -- its tools fail closed to a typed
-``database_unavailable`` result (§V23) until a build exists, rather than refusing
+``database_unavailable`` result until a build exists, rather than refusing
 to start.
 """
 
@@ -29,14 +29,14 @@ from arknights_mcp.sources.registry import load_source_registry
 
 
 class ActiveDatabaseProvider:
-    """Lazily open + cache the process-wide read-only connection (§V2/§V14).
+    """Lazily open + cache the process-wide read-only connection.
 
     A :data:`~arknights_mcp.mcp.tools._shared.ConnectionProvider`: every tool
     handler calls it to obtain the one shared connection. The promoted build is
     resolved from ``current.json`` on first use; when nothing is promoted (or the
     referenced build file is missing) it raises
     :class:`~arknights_mcp.db.connection.DatabaseUnavailable`, which the shared
-    tool guard maps to a typed ``database_unavailable`` envelope (§V23) instead of
+    tool guard maps to a typed ``database_unavailable`` envelope instead of
     a startup failure.
 
     The connection is created on first use and reused; the local ``stdio`` loop
@@ -71,7 +71,7 @@ class ActiveDatabaseProvider:
 
 @dataclass(frozen=True)
 class ApplicationCore:
-    """The shared read-only core both transports serve from (§V14)."""
+    """The shared read-only core both transports serve from."""
 
     config: AppConfig
     registry: ToolRegistry
@@ -83,15 +83,15 @@ def build_application(
 ) -> ApplicationCore:
     """Assemble the shared core: read-only connection provider + tool registry.
 
-    One home for the core wiring (§V14/§V37): both transports call this so they
+    One home for the core wiring: both transports call this so they
     dispatch the same registry over the same connection policy. No network, no
-    write handle (§V1/§V2). The machine source registry is loaded here *once* and
+    write handle. The machine source registry is loaded here *once* and
     held in the tool closure for the process lifetime, so the enabled/disabled
     posture ``get_data_sources`` reports is captured at startup: a ``source
-    enable``/``disable`` run against a live server (§V20 kill switch) is picked up
+    enable``/``disable`` run against a live server (kill switch) is picked up
     only on restart, mirroring the active-build refresh policy on
     :class:`ActiveDatabaseProvider`. The deployment mode is threaded to
-    ``get_data_status`` (§T77). ``account_store`` is the optional owner account roster
+    ``get_data_status``. ``account_store`` is the optional owner account roster
     database (ADR 0020); it is passed in, never read from the environment here, so a
     caller that omits it gets no account database whatever the shell holds.
     """
@@ -100,10 +100,10 @@ def build_application(
         config.database.current_manifest,
     )
     source_registry = load_source_registry(config.source_registry.machine_registry)
-    # §T120/§V63: the additive image_refs surface is emitted only when BOTH the
+    # The additive image_refs surface is emitted only when BOTH the
     # private-only config posture (config.image_refs_enabled) AND the
     # arknights_game_resource source are enabled. Compute the combined gate once here
-    # (single §V37 home in services.image_refs) and thread it into the shared registry.
+    # (single home in services.image_refs) and thread it into the shared registry.
     image_refs_enabled = refs_enabled(
         config_enabled=config.image_refs_enabled, registry=source_registry
     )

@@ -1,13 +1,13 @@
-"""T196: §V103's real-corpus guard -- a source mask never ships bare (B141).
+"""Real-corpus guard -- a source mask never ships bare.
 
-B141 is fabrication-by-passthrough: Amiya's talent 0 is ``display_name: "？？？"`` with
+The defect is fabrication-by-passthrough: Amiya's talent 0 is ``display_name: "？？？"`` with
 variant 0 ``description: "？？？？？"`` -- a genuine locked-until-E2 mask in the source -- and
 the server emitted both with zero disclosure, so a client LLM answers "her talent is
-？？？" or, worse, fills the blank itself. §V26 makes an ABSENT field say so; a PRESENT
+？？？" or, worse, fills the blank itself. Absence is disclosed; a PRESENT
 placeholder slipped underneath it.
 
-The detection rule is a SHAPE (no word character survives stripping), and §V103 requires
-it be keyed on the REAL token set rather than a guessed literal (§V96). So the first test
+The detection rule is a SHAPE (no word character survives stripping); it must be keyed
+on the REAL token set rather than a guessed literal. So the first test
 here does the counting: it runs the production predicate across every text column of the
 promoted build and pins the partition it produces. That pin is the non-degeneracy
 evidence -- it proves the rule selects something real (six sites, five distinct tokens),
@@ -15,7 +15,7 @@ that it selects nothing else (no CN or EN name is caught), and it fails on the d
 upstream introduces a sixth token, which is when someone has to look at it.
 
 The rest drive the actual tools, because a predicate that is right about the database and
-a response that carries the disclosure are two different claims. B107 is the standing
+a response that carries the disclosure are two different claims. The standing
 lesson: a guard built on an invented fixture asserts its own invention. Every entity here
 is transcribed from the shipped build.
 """
@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_PATH = REPO_ROOT / "config" / "data_sources.toml"
 MANIFEST = REPO_ROOT / "data" / "current.json"
 
-#: The §V103 scope as STORED column names (the wire keys are their snake_case selves:
+#: The placeholder rule's scope as STORED column names (the wire keys are their snake_case selves:
 #: ``gameplay_description`` reaches the client as ``description``). Same shape rule the
 #: production scan uses on wire keys.
 _NAME_LIKE_COLUMN = ("name", "description", "title", "code")
@@ -118,7 +118,7 @@ def registry(conn: sqlite3.Connection) -> ToolRegistry:
 
 
 def _disclosure(registry: ToolRegistry, name: str, **params: object) -> str | None:
-    """The §V103 limitation on one tool call, or ``None`` when it carries none."""
+    """The placeholder disclosure on one tool call, or ``None`` when it carries none."""
     envelope = registry.get(name).handler(**params)
     assert envelope.status == "ok", (name, params, envelope.status)
     found = [text for text in envelope.limitations if text.startswith("placeholder text")]
@@ -127,7 +127,7 @@ def _disclosure(registry: ToolRegistry, name: str, **params: object) -> str | No
 
 
 def test_the_mask_token_set_is_counted_over_the_whole_build(conn: sqlite3.Connection) -> None:
-    """§V96: the detection domain is measured on the corpus, never guessed.
+    """The detection domain is measured on the corpus, never guessed.
 
     Scanning every text column (not just the ones a tool emits today) is deliberate: a
     column that starts reaching the wire tomorrow brings its masks with it, and this is
@@ -184,7 +184,7 @@ def test_no_real_operator_or_stage_name_is_caught(conn: sqlite3.Connection) -> N
 
 
 def test_b141_own_row_is_disclosed(registry: ToolRegistry) -> None:
-    """The exact response B141 was filed on, through the tool a client calls."""
+    """The exact response the defect was filed on, through the tool a client calls."""
     text = _disclosure(
         registry, "get_operator", server="en", game_id="char_002_amiya", include_talents=True
     )
@@ -194,7 +194,7 @@ def test_b141_own_row_is_disclosed(registry: ToolRegistry) -> None:
     assert "operator.talents[0].display_name is '？？？'" in text
     assert "operator.talents[0].variants[0].description is '？？？？？'" in text
     # The passthrough itself is still there: the server states the source value, never
-    # substitutes one (§V26).
+    # substitutes one.
     envelope = registry.get("get_operator").handler(
         server="en", game_id="char_002_amiya", include_talents=True
     )
@@ -203,9 +203,9 @@ def test_b141_own_row_is_disclosed(registry: ToolRegistry) -> None:
 
 
 def test_a_masked_effect_template_is_disclosed(registry: ToolRegistry) -> None:
-    """The §V65 (a) grounding path is where a mask does the most damage.
+    """The grounding path is where a mask does the most damage.
 
-    §V65 tells the client to trust the effect TEMPLATE over the raw blackboard key names,
+    The rule tells the client to trust the effect TEMPLATE over the raw blackboard key names,
     so a template of ``-`` is an instruction to trust nothing, delivered as content.
     """
     text = _disclosure(

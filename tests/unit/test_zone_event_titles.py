@@ -1,17 +1,18 @@
-"""T205: the event TITLE is imported and searchable (§V110, B155).
+"""The event TITLE is imported and searchable.
 
-B107 read "search_stages('Lone Trail') -> not_found" as a key-name error and moved the
-zone name read from ``zoneName`` to ``zoneNameSecond``. That could never have fixed it:
+The original report read "search_stages('Lone Trail') -> not_found" as a key-name error
+and moved the zone name read from ``zoneName`` to ``zoneNameSecond``. That could never
+have fixed it:
 ``zoneNameSecond`` is the sub-zone SUBTITLE, and the Lone Trail zones ARE named -- "The
 Coming of The Future" / "The Lingering of the Past" / "The Pursuing of the Present". The
 string "Lone Trail" occurs nowhere in ``zone_table``. It lives in ``activity_table``
 (``basicInfo[<actId>].name``), reached through that file's ``zoneToActivity`` map, and
-that file was never fetched. B107's regression test passed because its fixture invented
+that file was never fetched. The regression test passed because its fixture invented
 a zone literally named "Lone Trail" and then asserted its own invention.
 
 So every value below is TRANSCRIBED from the pinned upstream snapshot (413a81a3, en) --
 never invented -- and the assertions run through the same service the MCP tool calls.
-The real-corpus round trip over the WHOLE table is the §V110 guard proper and lives in
+The real-corpus round trip over the WHOLE table is the guard proper and lives in
 ``tests/contract/test_zone_event_search.py``; this module pins the wiring.
 """
 
@@ -188,9 +189,9 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 def test_zone_name_is_the_subtitle_not_the_event_title() -> None:
-    """B155/B107: the zone IS named -- just not the name a client types.
+    """The zone IS named -- just not the name a client types.
 
-    This is the assertion B107 needed and never made. Its test checked that *some*
+    This is the assertion the earlier fix needed and never made. Its test checked that *some*
     non-null name arrived, which is true of 373 of 429 real zones, so it passed while
     the searched-for string was absent from the entire corpus.
     """
@@ -210,23 +211,23 @@ def test_activity_table_supplies_the_event_title() -> None:
 
 
 def test_activity_allowlist_keeps_id_and_name_only() -> None:
-    """§V18: the schedule / shop / medal fields ride the same record and stay out."""
+    """The schedule / shop / medal fields ride the same record and stay out."""
     record = parse_activity_titles(ACTIVITY_TABLE)["act25sre_zone1"].provenance_record
     assert set(record) == {"id", "name"}
 
 
 def test_zone_with_no_activity_has_no_title() -> None:
-    """§V26: 44 real en zones (annihilation / tower / IS / guide) have no event."""
+    """44 real en zones (annihilation / tower / IS / guide) have no event."""
     assert "tower_n_01" not in parse_activity_titles(ACTIVITY_TABLE)
 
 
 def test_silent_empty_title_map_fails_closed() -> None:
-    """§V30/§V110: an activity table that resolves NO zone is the B155 state itself.
+    """An activity table that resolves NO zone is the failure state itself.
 
     Nothing downstream looks wrong when it happens -- every zone still has its
     subtitle -- so the importer refuses the snapshot instead of shipping a search
-    index that silently cannot answer an event name. Routed through the shared §V30
-    guard since T189/B125; the §V110/B155 cite rides in its message.
+    index that silently cannot answer an event name. Routed through the shared
+    guard.
     """
     broken = {
         "basicInfo": ACTIVITY_TABLE["basicInfo"],
@@ -245,21 +246,21 @@ def test_missing_top_level_keys_fail_closed() -> None:
 
 
 def test_event_title_finds_that_events_stages(conn: sqlite3.Connection) -> None:
-    """The query B155 filed: an event title returns the stages of that event."""
+    """The originally filed query: an event title returns the stages of that event."""
     result = search_stages(conn, query="Lone Trail", server="en")
     assert result.status == "ok"
     assert {hit.game_id for hit in result.hits} == {"act25side_01", "act25side_02"}
 
 
 def test_alias_driven_hit_carries_both_names(conn: sqlite3.Connection) -> None:
-    """§V90: the hit says WHY it came back, and the two names stay distinct."""
+    """The hit says WHY it came back, and the two names stay distinct."""
     hit = next(h for h in search_stages(conn, query="Lone Trail", server="en").hits)
     assert hit.event_name == "Lone Trail - Rerun"
     assert hit.zone_display_name == "The Coming of The Future"
 
 
 def test_zone_subtitle_still_matches(conn: sqlite3.Connection) -> None:
-    """T179 is not traded away for §V110: the subtitle remains a stage alias."""
+    """The subtitle remains a stage alias."""
     hits = search_stages(conn, query="The Coming of The Future", server="en").hits
     assert {hit.game_id for hit in hits} == {"act25side_01", "act25side_02"}
 
@@ -278,7 +279,7 @@ def test_get_stage_emits_the_event_title(conn: sqlite3.Connection) -> None:
 
 
 def test_get_stage_omits_the_key_when_the_zone_has_no_event(conn: sqlite3.Connection) -> None:
-    """§V67: omitted, never a bare null -- a title-less zone is a real, common state."""
+    """Omitted, never a bare null -- a title-less zone is a real, common state."""
     result = get_stage(conn, server="en", game_id="lt_01_01")
     assert result.stage is not None
     emitted = _stage_to_dict(result.stage)
@@ -287,11 +288,11 @@ def test_get_stage_omits_the_key_when_the_zone_has_no_event(conn: sqlite3.Connec
 
 
 def test_snapshot_without_activity_table_still_imports(tmp_path: Path) -> None:
-    """§V41/B36: the table is tolerated-absent -- zones simply carry no title."""
+    """The table is tolerated-absent -- zones simply carry no title."""
     conn = open_read_only(_build(tmp_path, with_activity_table=False))
-    # §V106 (b): the search still runs and still finds nothing, but a zero-hit set query
+    # The search still runs and still finds nothing, but a zero-hit set query
     # is an ``ok`` with an empty result -- the typed reason is what proves nothing matched
-    # (rather than the region index being unavailable, which §V50 gates separately).
+    # (rather than the region index being unavailable, gated separately).
     untitled = search_stages(conn, query="Lone Trail", server="en")
     assert untitled.status == "ok"
     assert untitled.hits == ()
@@ -300,7 +301,7 @@ def test_snapshot_without_activity_table_still_imports(tmp_path: Path) -> None:
 
 
 def test_read_path_degrades_on_a_build_predating_migration_0015(tmp_path: Path) -> None:
-    """§V21: an ACTIVE build made before the column must not crash the read path."""
+    """An ACTIVE build made before the column must not crash the read path."""
     db_path = _build(tmp_path)
     writable = sqlite3.connect(db_path)
     writable.execute("ALTER TABLE zones DROP COLUMN event_name")

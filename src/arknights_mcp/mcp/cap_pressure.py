@@ -1,42 +1,42 @@
-"""§V120 (f): which tools can overrun the response cap, counted (T217 c; B167/B169).
+"""Which tools can overrun the response cap, counted.
 
-§V120 (a)-(e) say what an over-cap response *emits*: shed the knob-bounded part instead of
-withholding the whole answer. ``get_banners`` (T217 a) and ``get_stage`` (T217 b) each
+The shed rule says what an over-cap response *emits*: shed the knob-bounded part instead of
+withholding the whole answer. ``get_banners`` and ``get_stage`` each
 declare such a plan now. This module is the clause that says those two fixes are not the
 whole job.
 
-B167 and B169 shipped for the *same* reason, one tool apart: **no test drove a tool at its
+Both bugs shipped for the *same* reason, one tool apart: **no test drove a tool at its
 widest legal request over the real corpus**. Every cap test used defaults, and a payload
 that only overruns at ``page_size=100`` with every include flag on is invisible at
 defaults. So arm (a) fixed one shape, arm (b) fixed another, and nothing noticed the third.
 
 Two halves, both here:
 
-* **the widest legal request, derived rather than remembered.** §V121 (a) defines it as
-  every include flag on and every knob at its maximum. That definition is executable
-  against a tool's own published ``inputSchema``, so a flag or knob added later is picked
-  up without anyone remembering to widen a sweep. :func:`classify_inputs` sorts every
-  published property into exactly one :class:`InputKind` and *raises* on one it cannot
-  place -- a new kind of parameter fails loudly instead of being silently left at its
-  default, which is the failure that produced both bugs.
+* **the widest legal request, derived rather than remembered.** It is every include flag on
+  and every knob at its maximum. That definition is executable against a tool's own
+  published ``inputSchema``, so a flag or knob added later is picked up without anyone
+  remembering to widen a sweep. :func:`classify_inputs` sorts every published property into
+  exactly one :class:`InputKind` and *raises* on one it cannot place -- a new kind of
+  parameter fails loudly instead of being silently left at its default, which is the failure
+  that produced both bugs.
 * **the counted distribution.** :data:`FRAME_PRESSURE` records, per registered tool, the
   peak result-frame size at that request over the whole promoted build, and whether the
   tool therefore needs a shed plan. The figures name their basis
   (:data:`CAP_PRESSURE_BASIS`) because a bare number is not re-checkable and a later
-  widening of the request space invalidates it silently (§V121 c).
+  widening of the request space invalidates it silently.
 
-The §V92 cite in §V120 (f) is why the basis is the *promoted build's* identity rather than
-the upstream snapshot's: a ``FIELD_POLICY_VERSION``/``TRANSFORM_VERSION`` bump reshapes the
-payload over byte-identical upstream input, so a distribution pinned to the snapshot would
-read valid across exactly the change most likely to move it.
+The basis is the *promoted build's* identity rather than the upstream snapshot's: a
+``FIELD_POLICY_VERSION``/``TRANSFORM_VERSION`` bump reshapes the payload over byte-identical
+upstream input, so a distribution pinned to the snapshot would read valid across exactly the
+change most likely to move it.
 
 What this module deliberately does NOT hold is a list of tools. The guard
 (``tests/contract/test_frame_pressure.py``) enumerates
 :meth:`~arknights_mcp.mcp.tool_registry.ToolRegistry.names` and fails when a registered
-tool has no row here and when a row here names no registered tool -- §V120 (f)'s "⊥ a
+tool has no row here and when a row here names no registered tool -- "never a
 remembered list of tools", and the same anti-drift shape as
-:func:`tests.support.tool_calls.assert_every_tool_is_covered` (B135) and
-:data:`~arknights_mcp.analyzers.rules.RULE_LIMITATION_ARMS` (§V117/B164).
+:func:`tests.support.tool_calls.assert_every_tool_is_covered` and
+:data:`~arknights_mcp.analyzers.rules.RULE_LIMITATION_ARMS`.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-#: §V121 (c): the promoted build every figure in :data:`FRAME_PRESSURE` was counted on,
+#: The promoted build every figure in :data:`FRAME_PRESSURE` was counted on,
 #: except the three account-tool rows, which name their own counting build.
 #: The guard re-derives the *classification* from whatever build is promoted, so this is
 #: the basis of the numbers, not a gate on running.
@@ -60,42 +60,42 @@ CAP_PRESSURE_BASIS = "2026-08-13T220624Z-en-cn"
 CREEP_CEILING = 1.10
 
 #: How far *below* its declared peak a re-measured tool may sit. A declaration parked well
-#: above the real peak is not a pin -- it is a guard that cannot fail (§V117), and it would
+#: above the real peak is not a pin -- it is a guard that cannot fail, and it would
 #: let the ceiling above absorb real growth in silence. Fails the other way, on purpose.
 STALE_FLOOR = 0.80
 
 
 class CapPressureError(ValueError):
-    """Raised when a published input property cannot be classified (§V121 a).
+    """Raised when a published input property cannot be classified.
 
     Loud rather than lenient. The lenient version of this -- treat an unrecognised property
     as "leave at its default" -- is exactly how a new knob would keep the sweep narrower
-    than the request space a client can actually reach, which is the shape of both B167 and
-    B169.
+    than the request space a client can actually reach, which is the shape of both shipped
+    bugs.
     """
 
 
 class ShedStatus(Enum):
-    """Whether a tool declares a §V120 shed plan, and whether a build still exercises it.
+    """Whether a tool declares a shed plan, and whether a build still exercises it.
 
-    §T219 forced this open. It replaced a boolean that conflated two questions, and the
-    conflation only stayed invisible while both answers happened to agree: ``get_banners``
-    declared a plan AND overran the cap, so one flag served. Hoisting the per-ref
-    ``source_id`` took its peak to 86.5% of the cap without retiring the plan, and a boolean
-    then had no honest value -- ``True`` fails §V120 (f)'s "the shedder set is exactly the
+    This distinction was forced open. It replaced a boolean that conflated two questions,
+    and the conflation only stayed invisible while both answers happened to agree:
+    ``get_banners`` declared a plan AND overran the cap, so one flag served. Hoisting the
+    per-ref ``source_id`` took its peak to 86.5% of the cap without retiring the plan, and a
+    boolean then had no honest value -- ``True`` fails "the shedder set is exactly the
     over-cap set", ``False`` says the code carries no plan when it does.
 
-    So the three states are separated, in §V117's own vocabulary (``live`` / ``dead_today``):
+    So the three states are separated, using the liveness vocabulary (``live`` / ``dead_today``):
 
-    * :attr:`NONE` -- no plan; over the cap this tool takes the §V22 fail-closed withhold.
+    * :attr:`NONE` -- no plan; over the cap this tool takes the fail-closed withhold.
     * :attr:`LIVE` -- a plan, and the promoted build reaches it.
     * :attr:`DEAD_TODAY` -- a plan the promoted build does not reach, kept because it is
-      reachable BY CONSTRUCTION. §V117 is what makes this a declaration rather than an
-      excuse: a ``dead_today`` arm must stay reachable and be PROVEN so synthetically, and
-      an arm that is unreachable is retired instead. The alternative -- delete a plan the
-      moment a build stops needing it -- trades §V120's guarantee for an economy, which is
-      exactly the swap B168 warned against ("economy buys margin, the rule buys the
-      guarantee -- ship both").
+      reachable BY CONSTRUCTION. Keeping this a declaration rather than an excuse: a
+      ``dead_today`` arm must stay reachable and be PROVEN so synthetically, and an arm that
+      is unreachable is retired instead. The alternative -- delete a plan the
+      moment a build stops needing it -- trades the shed guarantee for an economy, which is
+      exactly the swap the earlier lesson warned against ("economy buys margin, the rule buys
+      the guarantee -- ship both").
 
     Both directions are checked by ``tests/contract/test_frame_pressure.py``: a
     ``dead_today`` plan must still fire under a synthetically lowered cap, and a ``NONE``
@@ -110,7 +110,7 @@ class ShedStatus(Enum):
 
 
 #: The states that mean "this tool declares a plan", so the plan is expected to fire when
-#: the frame does not fit. Derived once here rather than spelled at each guard (§V37).
+#: the frame does not fit. Derived once here rather than spelled at each guard.
 PLAN_DECLARED = frozenset({ShedStatus.LIVE, ShedStatus.DEAD_TODAY})
 
 
@@ -124,7 +124,7 @@ class InputKind(Enum):
     many, and a fatter row class can peak higher than the unfiltered mix (on the promoted
     build ``search_entities`` peaks at ``entity_type=stage``, not at no filter at all).
 
-    The rest are the knobs §V121 (a) means: every flag on, every page at its maximum size,
+    The rest are the widening knobs: every flag on, every page at its maximum size,
     every bounded integer at its bound, every enum knob at its widest member, every set
     knob holding its whole domain.
     """
@@ -155,7 +155,7 @@ WIDENED_KINDS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class EnumKnob:
-    """A string-enum knob whose widest member cannot be read off the schema (§V121 a).
+    """A string-enum knob whose widest member cannot be read off the schema.
 
     ``depth=detailed`` returns more than ``summary`` and ``mode=with_observations`` returns
     more than ``facts_only``, but nothing in JSON Schema says so -- the order is semantic.
@@ -171,7 +171,7 @@ class EnumKnob:
 
 @dataclass(frozen=True, slots=True)
 class ToolFramePressure:
-    """One registered tool's counted cap pressure (§V120 f).
+    """One registered tool's counted cap pressure.
 
     ``selectors`` and ``filters`` between them account for every nullable-string property
     the tool publishes: a selector names the row (the sweep supplies one), a filter only
@@ -180,7 +180,7 @@ class ToolFramePressure:
     ``query`` are both "optional string" -- and getting it wrong in the lenient direction
     would sweep a tool at a narrowed window while reporting full coverage.
 
-    ``shed`` is the §V120 (f) claim, in three states rather than two (:class:`ShedStatus`):
+    ``shed`` is the shed claim, in three states rather than two (:class:`ShedStatus`):
     whether this tool declares a plan, and whether the promoted build still reaches it. The
     guard checks it against the measured peak in both directions, and checks the BEHAVIOUR
     (a non-empty answer under the cap; a ``dead_today`` plan firing under a lowered cap;
@@ -211,19 +211,19 @@ class ToolFramePressure:
 
     @property
     def declares_plan(self) -> bool:
-        """True when this tool carries a §V120 shed plan, live or ``dead_today``."""
+        """True when this tool carries a shed plan, live or ``dead_today``."""
         return self.shed in PLAN_DECLARED
 
 
-#: §V120 (f)/§V121 (c): every registered tool's peak result frame at its widest legal
+#: Every registered tool's peak result frame at its widest legal
 #: request over the whole promoted build :data:`CAP_PRESSURE_BASIS`, in registration order.
 #: Pinned by ``tests/contract/test_frame_pressure.py``, which re-measures on whatever build
 #: is promoted and fails when a peak leaves its band, when ``shed`` disagrees with the
 #: measurement in either direction, or when a tool is registered without a row here.
 #:
-#: Three of these figures reproduce the spec verbatim -- ``get_stage`` 302656 (B169),
-#: ``analyze_stage`` 85128 (B169), ``get_announcements`` 11013 (§T217 a) -- which is what
-#: made the sweep trustworthy enough to pin the other thirteen.
+#: Three of these figures reproduce earlier counts verbatim -- ``get_stage`` 302656,
+#: ``analyze_stage`` 85128, ``get_announcements`` 11013 -- which is what made the sweep
+#: trustworthy enough to pin the other thirteen.
 FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
     ToolFramePressure(
         tool="search_entities",
@@ -236,7 +236,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         counted=(
             "15.1% of cap. Swept the query battery x every entity_type x every server, "
             "limit=50, pre-shed frame bytes. Bounded by construction at 50 locator rows of "
-            "capped fields (§V19), and the peak is a filtered class rather than the "
+            "capped fields, and the peak is a filtered class rather than the "
             "unfiltered mix -- stage locators are the fattest row kind."
         ),
     ),
@@ -263,11 +263,11 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         peak_frame_bytes=302656,
         peak_at="cn/act1football_01",
         counted=(
-            "151.3% of cap -- the widest legal shape B169 counted, and the reason arm (b) "
+            "151.3% of cap -- the widest legal shape the sweep counted, and the reason arm (b) "
             "exists. 6716 stages x all four include flags x routes_page/spawns_page "
             "page_size=100, pre-shed frame bytes. Route-heavy (routes 67.6% of the "
             "payload, map_image 19.7%, spawns 11.3%), so the plan orders by the measured "
-            "weight of the response in hand (§V121 d)."
+            "weight of the response in hand."
         ),
     ),
     ToolFramePressure(
@@ -281,10 +281,10 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         counted=(
             "4.0% of cap. 3879 enemies, pre-shed frame bytes; the tool publishes no flag "
             "and no page, so one shape per enemy IS its widest legal request. This is the "
-            "one surface the §T219 hoist COSTS: a response carries exactly one ref, so the "
+            "one surface the hoist COSTS: a response carries exactly one ref, so the "
             "response-level image_refs_source_id is wider than the per-ref copy it replaced "
             "and the peak grew 22 bytes from 7925. Declared, not discovered -- the hoist has "
-            "to be uniform or one key means two things (§V67/B168 iv)."
+            "to be uniform or one key means two things."
         ),
     ),
     ToolFramePressure(
@@ -298,11 +298,11 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         counted=(
             "48.9% of cap -- the widest headroom of any tool that declares no plan. 884 "
             "operators x all six include flags, pre-shed frame bytes. This row is where "
-            "B168's scope claim was tested and failed: it called the per-ref source_id the "
+            "the scope claim was tested and failed: it called the per-ref source_id the "
             "biggest lever for every refs-bearing surface, and counted, this surface carries "
             "6167 refs over 884 rows -- about 7 a row, not the fat gallery the claim assumed. "
-            "The §T219 hoist moved this peak 470 bytes, 0.24% of cap, from 98309. It rides "
-            "along for shape uniformity (§V67), not for bytes."
+            "The hoist moved this peak 470 bytes, 0.24% of cap, from 98309. It rides "
+            "along for shape uniformity, not for bytes."
         ),
     ),
     ToolFramePressure(
@@ -334,7 +334,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         peak_frame_bytes=85128,
         peak_at="cn/act1football_s02",
         counted=(
-            "42.6% of cap, reproducing B169's own sweep of this surface to the byte -- the "
+            "42.6% of cap, reproducing the earlier sweep of this surface to the byte -- the "
             "count that said the stage family carries no third live hole. 6716 stages x "
             "depth=detailed, pre-shed frame bytes."
         ),
@@ -375,7 +375,7 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         peak_frame_bytes=11013,
         peak_at="cn page 1, page_size=100",
         counted=(
-            "5.5% of cap, reproducing §T217 (a)'s figure for this tool exactly -- the "
+            "5.5% of cap, reproducing the earlier figure for this tool exactly -- the "
             "count behind 'the other paginated list tool declares no plan'. Every page of "
             "both regions at page_size=100, no date bound, pre-shed frame bytes. Keeping "
             "that claim true is this row's job."
@@ -392,13 +392,14 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         counted=(
             "86.5% of cap. Every page of both regions at page_size=100, no date or text "
             "filter, pre-shed frame bytes; all nine reachable windows land in [9.3%, 86.5%]. "
-            "This shape is B167's -- it read 220131 (110.1%) until §T219 hoisted the per-ref "
-            "source_id, and 21.4% of the frame was that one repeated constant. So the plan "
+            "This shape is the original defect's -- it read 220131 (110.1%) until the hoist "
+            "moved the per-ref source_id, and 21.4% of the frame was that one repeated "
+            "constant. So the plan "
             "arm (a) built is DEAD_TODAY rather than retired: nothing live reaches it, but "
             "page_size tops out at 100 while a banner's featured_ops count is the source's "
             "to decide, so a fat event re-crosses 13.5 points of margin. Its order still "
             "holds where it matters -- the ref step takes this window to 68444 with all 100 "
-            "rows aboard, and trimming rows to that size keeps 6 (§V120 b)."
+            "rows aboard, and trimming rows to that size keeps 6."
         ),
     ),
     ToolFramePressure(
@@ -521,9 +522,9 @@ def classify_inputs(
     """Sort every published property of one tool into exactly one :class:`InputKind`.
 
     Reading the schema rather than a hand-written parameter list is the point: this is what
-    makes "every include flag on, every knob at its maximum" (§V121 a) a construction over
-    the tool's real request space instead of a memory of it. A property this cannot place
-    raises :class:`CapPressureError`, so the next parameter shape added to the surface stops
+    makes "every include flag on, every knob at its maximum" a construction over the tool's
+    real request space instead of a memory of it. A property this cannot place raises
+    :class:`CapPressureError`, so the next parameter shape added to the surface stops
     the guard instead of being swept at its default.
 
     The nullable-string case is the one that cannot be decided from the schema -- a row
@@ -550,7 +551,7 @@ def classify_inputs(
             if not isinstance(items, Mapping) or not isinstance(items.get("enum"), Sequence):
                 raise CapPressureError(
                     f"property {name!r} is an array with no enumerated item domain, so its "
-                    "widest legal value cannot be derived (§V121 a)"
+                    "widest legal value cannot be derived"
                 )
             kinds[name] = InputKind.SET_KNOB
         elif isinstance(schema.get("enum"), Sequence) and "default" in raw:
@@ -566,7 +567,7 @@ def classify_inputs(
                 raise CapPressureError(
                     f"{pressure.tool!r} publishes optional property {name!r} and declares it "
                     "neither a row selector nor a narrowing filter, so the sweep cannot know "
-                    "whether omitting it narrows the request (§V121 a)"
+                    "whether omitting it narrows the request"
                 )
         elif name in required and "default" not in raw:
             kinds[name] = InputKind.IDENTITY
@@ -574,13 +575,13 @@ def classify_inputs(
             raise CapPressureError(
                 f"{pressure.tool!r} property {name!r} does not classify: {dict(schema)!r}. A "
                 "parameter whose widest legal value is unknown must not be swept at its "
-                "default -- that is how B167 and B169 both shipped (§V121 a)"
+                "default -- that is how both bugs shipped"
             )
     return kinds
 
 
 def widest_knobs(input_schema: Mapping[str, Any], pressure: ToolFramePressure) -> dict[str, Any]:
-    """The knob half of this tool's widest legal request (§V121 a).
+    """The knob half of this tool's widest legal request.
 
     Every flag on, every page at its published maximum size, every bounded integer at its
     bound, every enum knob at its declared widest member, every set knob holding its whole
@@ -609,7 +610,7 @@ def widest_knobs(input_schema: Mapping[str, Any], pressure: ToolFramePressure) -
             if name not in widest_enum:
                 raise CapPressureError(
                     f"{pressure.tool!r} publishes enum knob {name!r} and declares no widest "
-                    "member; the order of enum members is semantic, not schematic (§V121 a)"
+                    "member; the order of enum members is semantic, not schematic"
                 )
             args[name] = widest_enum[name]
     return args

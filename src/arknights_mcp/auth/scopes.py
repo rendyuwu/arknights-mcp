@@ -1,13 +1,13 @@
-"""Required-scope enforcement for validated tokens (§V10).
+"""Required-scope enforcement for validated tokens.
 
 Two OIDC providers disagree on where granted authority lives in an access token:
 the OAuth ``scope`` claim is a single space-delimited string, while Auth0's
 client-credentials tokens carry an Auth0-specific ``permissions`` array (and emit
-``scope`` only after an API permission is granted to the M2M app). §V10 requires we
-accept authority from *both* -- the granted set is their union.
+``scope`` only after an API permission is granted to the M2M app). We accept
+authority from *both* -- the granted set is their union.
 
-Required-scope matching is AND (§V10): a caller is authorized only when *every*
-required scope is present in the granted set. This is the single home (§V37) for
+Required-scope matching is AND: a caller is authorized only when *every*
+required scope is present in the granted set. This is the single home for
 that policy; :mod:`arknights_mcp.auth.oidc` calls it, and nothing re-implements it.
 """
 
@@ -18,7 +18,7 @@ from typing import Any
 
 
 def granted_scopes(claims: Mapping[str, Any]) -> frozenset[str]:
-    """Union of granted authority across ``scope`` and ``permissions`` (§V10).
+    """Union of granted authority across ``scope`` and ``permissions``.
 
     * ``scope`` -- a space-delimited string (standard OAuth); split on whitespace.
     * ``permissions`` -- an array of strings (Auth0 client-credentials).
@@ -37,14 +37,14 @@ def granted_scopes(claims: Mapping[str, Any]) -> frozenset[str]:
 
 
 def missing_scopes(granted: Iterable[str], required: Iterable[str]) -> frozenset[str]:
-    """Required scopes not present in ``granted`` (AND semantics, §V10)."""
+    """Required scopes not present in ``granted`` (AND semantics)."""
     return frozenset(required) - frozenset(granted)
 
 
 def has_required_scopes(granted: Iterable[str], required: Iterable[str]) -> bool:
-    """True iff *every* required scope is granted (AND, §V10).
+    """True iff *every* required scope is granted (AND).
 
-    An empty ``required`` set is trivially satisfied; the §V9 startup gate refuses a
+    An empty ``required`` set is trivially satisfied; the startup gate refuses a
     remote deployment whose ``required_scopes`` is empty, so this never authorizes an
     unscoped caller in a real remote run.
     """

@@ -1,6 +1,6 @@
-"""T20: the read-only SQLite connection factory (§V2).
+"""The read-only SQLite connection factory.
 
-``open_read_only`` is the concrete enforcement point for §V2 -- every MCP
+``open_read_only`` is the concrete enforcement point -- every MCP
 process opens the promoted build through it, and a write must be impossible:
 
 * a ``SELECT`` succeeds;
@@ -44,7 +44,7 @@ def test_open_read_only_allows_select(tmp_path: Path) -> None:
 
 
 def test_open_read_only_rejects_writes(tmp_path: Path) -> None:
-    # §V2: the connection cannot mutate the database.
+    # The connection cannot mutate the database.
     conn = open_read_only(_built_db(tmp_path))
     try:
         with pytest.raises(sqlite3.OperationalError):
@@ -66,7 +66,7 @@ def test_query_only_pragma_is_on(tmp_path: Path) -> None:
 
 
 def test_missing_database_fails_closed(tmp_path: Path) -> None:
-    # §V2/§V23: no silently-created empty DB; a typed error naming only the file.
+    # No silently-created empty DB; a typed error naming only the file.
     missing = tmp_path / "absent.sqlite"
     with pytest.raises(DatabaseUnavailable) as excinfo:
         open_read_only(missing)

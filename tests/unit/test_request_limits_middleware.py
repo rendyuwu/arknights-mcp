@@ -1,8 +1,8 @@
-"""§T54/§V11: per-request body-size + timeout limits.
+"""Per-request body-size + timeout limits.
 
 Drives :class:`~arknights_mcp.middleware.request_limits.RequestLimitsMiddleware`
 with a raw ASGI ``(scope, receive, send)`` -- no socket -- asserting the two
-per-request §V11 controls: an oversized body is refused ``413`` (declared or
+per-request controls: an oversized body is refused ``413`` (declared or
 streamed), a handler that stalls past the deadline yields ``504``, and the long-lived
 ``GET`` SSE stream is exempt from the timeout.
 """

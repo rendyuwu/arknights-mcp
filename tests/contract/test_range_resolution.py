@@ -1,25 +1,24 @@
-"""T200: an emitted `range_id` resolves to a real grid (§V98/§V69/§V96; B132).
+"""An emitted `range_id` resolves to a real grid.
 
 ``range_id`` ("3-1", "x-4") rides every operator phase and every skill level. It shipped
 bare -- no resolver, no limitation -- so "what is this skill's range" was unanswerable
 from the response, and the registry made it worse by DECLARING ``range_table.json`` in
-``fields_consumed`` while no sync fetched it and no importer read it (§V98).
+``fields_consumed`` while no sync fetched it and no importer read it.
 
 Three groups, because the defect had three separable halves:
 
 * **upstream** -- the file really exists at the pin, in the shape the parser assumes,
   and ``direction`` really is a single constant (so dropping it is a counted fact, not
-  an assumption -- §V96/§V112 (c));
+  an assumption);
 * **build** -- every ``range_id`` the promoted corpus emits resolves against its OWN
-  region's table, counted rather than assumed (§V96 non-degenerate);
+  region's table, counted rather than assumed;
 * **wire** -- the grid arrives beside the id through the real tool.
 
 The counts matter more than the shapes here. A resolver that resolves nothing is the
-silent no-op §V96 was written for: it would ship, every synthetic test would pass, and
+silent no-op this guard exists for: it would ship, every synthetic test would pass, and
 ``range_id`` would still be bare on every real response.
 
-The upstream group is CI-only (``ARKMCP_LIVE_UPSTREAM``); nothing fetched is persisted
-(§V16).
+The upstream group is CI-only (``ARKMCP_LIVE_UPSTREAM``); nothing fetched is persisted.
 """
 
 from __future__ import annotations
@@ -52,7 +51,7 @@ requires_build = pytest.mark.skipif(
     reason="needs a promoted build (data/current.json); run `arknights-mcp sync` first",
 )
 
-#: §V96 non-degenerate floors, well under the counts at the pin (68 EN / 73 CN entries;
+#: Non-degenerate floors, well under the counts at the pin (68 EN / 73 CN entries;
 #: 56 EN / 57 CN distinct ids in use on the promoted build). Floors, not equalities: an
 #: upstream that adds a range must not fail this, an upstream that empties one must.
 MIN_RANGE_ENTRIES = 50
@@ -64,7 +63,7 @@ AMIYA = "char_002_amiya"
 
 @lru_cache(maxsize=len(SERVERS))
 def _upstream_table(server: str) -> dict[str, Any]:
-    """The pinned ``range_table`` for ``server``; fetched once, never written (§V16)."""
+    """The pinned ``range_table`` for ``server``; fetched once, never written."""
     url = f"{arknights_assets_base_url(server)}/{RANGE_TABLE_PATH}"
     table = json.loads(fetch_upstream_bytes(url).decode("utf-8"))
     assert isinstance(table, dict) and table, f"{server} range_table is not a populated dict"
@@ -77,7 +76,7 @@ def _upstream_table(server: str) -> dict[str, Any]:
 @requires_upstream
 @pytest.mark.parametrize("server", SERVERS)
 def test_upstream_entries_have_the_parsed_shape(server: str) -> None:
-    """§V29: ``{id, direction, grids: [{row, col}]}``, keyed by the id a phase stores."""
+    """``{id, direction, grids: [{row, col}]}``, keyed by the id a phase stores."""
     raw = _upstream_table(server)
     assert len(raw) >= MIN_RANGE_ENTRIES, f"{server}: only {len(raw)} range entries"
     for key, entry in raw.items():
@@ -91,10 +90,10 @@ def test_upstream_entries_have_the_parsed_shape(server: str) -> None:
 @requires_upstream
 @pytest.mark.parametrize("server", SERVERS)
 def test_direction_is_a_single_constant_so_dropping_it_loses_nothing(server: str) -> None:
-    """§V96/§V112 (c): constant by DATA, not by construction -- so PIN it.
+    """Constant by DATA, not by construction -- so PIN it.
 
-    ``direction`` is deliberately not imported (§V94: it would be a column no reader
-    consumes, the dead substrate §V113/B160 caught). That is only safe while it carries
+    ``direction`` is deliberately not imported (it would be a column no reader
+    consumes, dead substrate a real-corpus guard catches). That is only safe while it carries
     one value. A second value would mean the field distinguishes something this build
     cannot express, and this fails loudly rather than dropping it silently.
     """
@@ -114,7 +113,7 @@ def test_parser_keeps_every_upstream_entry(server: str) -> None:
 
 @requires_upstream
 def test_cn_is_a_superset_so_the_lookup_must_be_region_scoped() -> None:
-    """§V5: CN carries ranges EN does not, so a region-blind resolve would cross regions.
+    """CN carries ranges EN does not, so a region-blind resolve would cross regions.
 
     This is why the repository keys on ``(server, range_id)`` rather than falling back to
     another region's table when a lookup misses.
@@ -123,7 +122,7 @@ def test_cn_is_a_superset_so_the_lookup_must_be_region_scoped() -> None:
     assert en < cn, "EN is no longer a strict subset of CN -- re-check the region scoping"
 
 
-# --- build: every emitted id resolves, counted (§V96) ---------------------------
+# --- build: every emitted id resolves, counted ---------------------------
 
 
 @pytest.fixture(scope="module")
@@ -157,7 +156,7 @@ def _emitted_ids(conn: sqlite3.Connection, server: str) -> set[str]:
 def test_every_emitted_range_id_resolves_on_the_build(
     build_conn: sqlite3.Connection, server: str
 ) -> None:
-    """The pairing arm, counted: zero bare ids left on the real corpus (§V69/B132)."""
+    """The pairing arm, counted: zero bare ids left on the real corpus."""
     emitted = _emitted_ids(build_conn, server)
     assert len(emitted) >= MIN_DISTINCT_IDS_IN_USE, f"{server}: only {len(emitted)} ids in use"
     stored = {
@@ -173,7 +172,7 @@ def test_every_emitted_range_id_resolves_on_the_build(
 @requires_build
 @pytest.mark.parametrize("server", SERVERS)
 def test_stored_grids_are_non_degenerate(build_conn: sqlite3.Connection, server: str) -> None:
-    """§V96: a table of one-cell grids would resolve everything and mean nothing."""
+    """A table of one-cell grids would resolve everything and mean nothing."""
     sizes = [
         len(json.loads(r[0]))
         for r in build_conn.execute("SELECT grids_json FROM ranges WHERE server = ?", (server,))
@@ -186,7 +185,7 @@ def test_stored_grids_are_non_degenerate(build_conn: sqlite3.Connection, server:
 
 @requires_build
 def test_ranges_carry_provenance_and_never_cross_regions(build_conn: sqlite3.Connection) -> None:
-    """§V17 + §V5: every row is attributable, and no row is region-less."""
+    """Every row is attributable, and no row is region-less."""
     orphans = build_conn.execute(
         "SELECT count(*) FROM ranges r LEFT JOIN record_provenance p "
         "ON p.provenance_id = r.provenance_id WHERE p.provenance_id IS NULL"
@@ -201,7 +200,7 @@ def test_ranges_carry_provenance_and_never_cross_regions(build_conn: sqlite3.Con
 
 @requires_build
 def test_wire_resolves_the_ids_it_emits(build_conn: sqlite3.Connection) -> None:
-    """§V69: the id still ships (it is the joinable key) and the grid ships with it."""
+    """The id still ships (it is the joinable key) and the grid ships with it."""
     envelope = (
         registry_for(build_conn)
         .get("get_operator")
@@ -229,7 +228,7 @@ def test_wire_resolves_the_ids_it_emits(build_conn: sqlite3.Connection) -> None:
 
 @requires_build
 def test_wire_symbols_decode_the_board(build_conn: sqlite3.Connection) -> None:
-    """The board is only readable if the alphabet rides with it (§V66: hoisted once)."""
+    """The board is only readable if the alphabet rides with it (hoisted once)."""
     envelope = (
         registry_for(build_conn)
         .get("get_operator")

@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Founder decision:** D3 (Data acquisition), D7 (Update cadence)
-- **Invariants:** §V3, §V4, §V20
 
 ## Context
 
@@ -28,8 +27,8 @@ schema-incompatible sync **fails closed** and leaves the current DB active.
 
 ## Consequences
 
-- Readers always open a fully validated, immutable file read-only (§V2).
+- Readers always open a fully validated, immutable file read-only.
 - Rollback = repoint `current.json`.
 - `purge --rebuild` keeps the current DB active until the rebuilt candidate
-  validates (§V20).
+  validates.
 - Requires disk for retained versions; acceptable for the local/private scope.

@@ -1,10 +1,10 @@
-"""T28: the takedown drill — disable + purge + rebuild, current DB stays (§V20).
+"""The takedown drill — disable + purge + rebuild, current DB stays.
 
 A takedown walks a fixed ceremony: ``source disable`` flips the registry kill
 switch and keeps serving the current data, then ``source purge --rebuild`` rebuilds
 a candidate with the source's rows removed and promotes it **only after** it
 validates. The current database stays active the whole time; the active build file
-is never mutated in place (§V4 backstop), so "stays until validate" is provable by
+is never mutated in place, so "stays until validate" is provable by
 the old build surviving byte-identical while ``current.json`` swaps atomically to a
 new, validated build.
 
@@ -75,13 +75,13 @@ def test_takedown_drill_current_stays_until_validate(tmp_path: Path) -> None:
     import_argv = ["import", "--server", "en", "--source-path", str(FIXTURE_ROOT)]
     assert main(["--config", str(config), *import_argv]) == 0
 
-    # Snapshot the active build the drill starts from (§V20 "current data").
+    # Snapshot the active build the drill starts from ("current data").
     build0 = _active_build(data_dir)
     build0_bytes = build0.read_bytes()
     current_before = (data_dir / "current.json").read_bytes()
     assert _count(build0, "SELECT COUNT(*) FROM stages") > 0
 
-    # Step 1 — disable: kill switch off, but current data keeps being served (§V20).
+    # Step 1 — disable: kill switch off, but current data keeps being served.
     assert main(["--config", str(config), "source", "disable", _LOCAL, "--reason", "takedown"]) == 0
     entry = load_source_registry(registry, validate=False).get(_LOCAL)
     assert entry is not None and entry.enabled is False
@@ -103,7 +103,7 @@ def test_takedown_drill_current_stays_until_validate(tmp_path: Path) -> None:
         events = list(conn.execute("SELECT event_type, source_id FROM source_policy_events"))
     assert ("purge", _LOCAL) in events
 
-    # "Stays until validate" (§V20/§V4): the old build was never mutated in place —
+    # "Stays until validate": the old build was never mutated in place —
     # it still exists byte-identical, so the current pointer served it unchanged
     # right up to the atomic swap onto the validated rebuild.
     assert build0.is_file()
@@ -142,11 +142,11 @@ def test_takedown_drill_purges_only_target_keeps_others_live(tmp_path: Path) -> 
     build0_bytes = build0.read_bytes()
 
     # Take down only the en source: the rebuild removes rows attributable to it and
-    # promotes iff valid (§V20).
+    # promotes iff valid.
     result = purge_and_rebuild(active, _LOCAL, data_dir=data_dir)
     assert result.validation_passed
 
-    # Only the target source's rows are gone; the other source stays live (§V20).
+    # Only the target source's rows are gone; the other source stays live.
     rebuilt = _active_build(data_dir)
     assert _count(rebuilt, "SELECT COUNT(*) FROM stages WHERE server = 'en'") == 0
     assert _count(rebuilt, "SELECT COUNT(*) FROM enemies WHERE server = 'en'") == 0
@@ -156,7 +156,7 @@ def test_takedown_drill_purges_only_target_keeps_others_live(tmp_path: Path) -> 
         remaining = {row[0] for row in conn.execute("SELECT source_id FROM source_snapshots")}
     assert remaining == {_PRIMARY}
 
-    # The FTS index was rebuilt with the purge (§V16/§V20/§V32): entity_fts is a
+    # The FTS index was rebuilt with the purge: entity_fts is a
     # standalone FTS5 index with no triggers, so the purge must clear + rebuild it
     # or the taken-down source's documents linger and keep surfacing in search.
     assert _count(rebuilt, "SELECT COUNT(*) FROM entity_fts WHERE server = 'en'") == 0
@@ -167,5 +167,5 @@ def test_takedown_drill_purges_only_target_keeps_others_live(tmp_path: Path) -> 
         assert search_entities(conn, query="drone", server="cn").hits
 
     # The pre-purge build stayed valid until the rebuild validated: it was copied,
-    # never mutated in place, so it survives byte-identical (§V4 backstop of §V20).
+    # never mutated in place, so it survives byte-identical.
     assert build0.read_bytes() == build0_bytes

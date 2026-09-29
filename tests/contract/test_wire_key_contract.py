@@ -1,25 +1,25 @@
-"""T198: the v0.3 wire-KEY rules, swept mechanically over every registered tool.
+"""The v0.3 wire-KEY rules, swept mechanically over every registered tool.
 
-Three of the five T198 fixes are rules about what a key may be NAMED and what it may
+Three of the five fixes are rules about what a key may be NAMED and what it may
 MEAN. Each was found on one surface and each could have been closed on that one surface:
 
-* **§V100/B134** -- ``get_stage_drops.ranking[]`` emitted ``{id, name}`` holding an ITEM
+* **ranked-row keys** -- ``get_stage_drops.ranking[]`` emitted ``{id, name}`` holding an ITEM
   id and an item display name, while the sibling ``get_item_drops.ranking[]`` emitted the
   same two keys holding a STAGE id and a stage CODE. One shape, flipped referents, and a
   ``name`` that was not a name, so an LLM mislabelled the column it rendered.
-* **§V71 (d)/B140** -- ``talentIndex`` / ``requiredPotentialRank`` / ``unlockCondition``
+* **snake_case keys** -- ``talentIndex`` / ``requiredPotentialRank`` / ``unlockCondition``
   shipped camelCase inside a snake_case envelope, three lines from ``unlock_phase``.
-* **§V99/B148** -- ``schema_version`` named the response contract at the envelope level
+* **one key, one meaning** -- ``schema_version`` named the response contract at the envelope level
   and a DB migration id inside ``get_data_status.data``; ``status`` named the tool result
   and, in the same payload, a snapshot's import lifecycle.
 
-B134's own root note is the reason these are swept rather than asserted per site: the
-generic ``{id, name}`` spelling came from §V66 (1) itself, so *"fixing one call site would
+The root note is the reason these are swept rather than asserted per site: the
+generic ``{id, name}`` spelling came from the dedup work itself, so *"fixing one call site would
 leave the rule intact"*. A per-emitter assertion is that fix. What holds instead is a walk
 over the SERIALIZED envelope of every registered tool, driven from
-:meth:`ToolRegistry.names` -- the same construction §V85/B106 argued for and the same one
-:mod:`tests.contract.test_envelope_null_discipline` runs for §V67, sharing its call sets
-(``tests.support.tool_calls``, §V37) so a new tool joins all the sweeps at once or none.
+:meth:`ToolRegistry.names` -- the same construction argued for and the same one
+:mod:`tests.contract.test_envelope_null_discipline` runs, sharing its call sets
+(``tests.support.tool_calls``) so a new tool joins all the sweeps at once or none.
 
 Two arms, for the reason the null sweep has two: the fixture corpus runs under the default
 gate, and the promoted build carries rows the fixture cannot (a real penguin cache, a real
@@ -56,26 +56,26 @@ REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
 BUILD = active_build()
 
-#: §V71 (d): a wire key is snake_case. Matches an inner capital, which is what a
+#: A wire key is snake_case. Matches an inner capital, which is what a
 #: camelCase leak from the upstream dump looks like (``talentIndex``, ``unlockCondition``).
 _CAMEL_CASE = re.compile(r"[a-z][A-Z]")
 
-#: §V100: a ranked/list row may not key its entity by a bare ``id`` or ``name``; the key
+#: A ranked/list row may not key its entity by a bare ``id`` or ``name``; the key
 #: must name the entity, because the sibling tool's row has the same shape and the other
 #: referent. Read post-call from the key alone, or not at all.
 _GENERIC_ROW_KEYS = frozenset({"id", "name"})
 
 #: Keys that legitimately repeat a name across nesting levels because they mean the SAME
-#: thing there. §V99 forbids one name for two MEANINGS, not one name used consistently.
+#: thing there. One name for two MEANINGS is forbidden, not one name used consistently.
 #:
-#: ``server`` / ``snapshot_id`` are the §V87 inline join keys, ``limitations`` is the
-#: observation-level list beside the envelope's own, ``analyzer_version`` is the §V6 field
+#: ``server`` / ``snapshot_id`` are the inline join keys, ``limitations`` is the
+#: observation-level list beside the envelope's own, ``analyzer_version`` is the field
 #: every observation must carry (mandated, and the same analyzer the envelope names), and
 #: ``provenance`` inside ``get_operator.data.operator`` is the documented
 #: ``include_provenance`` echo of the envelope's own attribution.
 #:
 #: Each entry is a claim that the two uses denote the same fact. That is a different thing
-#: from B148's ``schema_version``, where the inner value was a DB migration id and the
+#: from the ``schema_version`` collision, where the inner value was a DB migration id and the
 #: outer a response-contract version -- two unrelated axes under one name. An addition
 #: here has to survive that test, so it is not a place to park a collision.
 _SAME_MEANING_AT_BOTH_LEVELS = frozenset(
@@ -131,13 +131,13 @@ def fixture_conn(tmp_path: Path) -> sqlite3.Connection:
     return open_read_only(path)
 
 
-# --- §V71 (d)/B140: no camelCase reaches the wire ------------------------------
+# --- no camelCase reaches the wire ------------------------------
 
 
 def test_no_tool_emits_a_camelcase_key_on_the_fixture_corpus(
     fixture_conn: sqlite3.Connection,
 ) -> None:
-    # B140 was three named keys on two tools, but the leak class is structural: these are
+    # The defect was three named keys on two tools, but the leak class is structural: these are
     # decoded source blobs, so ANY key the upstream dump adds rides straight out unless
     # something looks. This looks.
     offenders = sorted(
@@ -148,13 +148,13 @@ def test_no_tool_emits_a_camelcase_key_on_the_fixture_corpus(
             if _CAMEL_CASE.search(key)
         }
     )
-    assert offenders == [], f"camelCase keys on the wire (§V71 d): {offenders}"
+    assert offenders == [], f"camelCase keys on the wire: {offenders}"
 
 
 def test_the_camelcase_detector_actually_fires() -> None:
     # Guard the guard: a regex that matched nothing would let this whole sweep pass
-    # vacuously. B128 is the precedent -- a classifier that matched 0 real records shipped
-    # green for two milestones. These are B140's own three keys, verbatim.
+    # vacuously. There is a precedent -- a classifier that matched 0 real records shipped
+    # green for two milestones. These are the three keys, verbatim.
     assert _CAMEL_CASE.search("talentIndex")
     assert _CAMEL_CASE.search("requiredPotentialRank")
     assert _CAMEL_CASE.search("unlockCondition")
@@ -164,7 +164,7 @@ def test_the_camelcase_detector_actually_fires() -> None:
     assert not _CAMEL_CASE.search("PHASE_2")
 
 
-# --- §V100/B134: a ranked row names its entity ---------------------------------
+# --- a ranked row names its entity ---------------------------------
 
 
 def _ranking_offenders(registry_conn: sqlite3.Connection, calls: dict[str, object]) -> list[str]:
@@ -196,7 +196,7 @@ def test_ranking_rows_are_actually_produced_by_the_call_sets(
 
 
 def test_a_name_key_never_carries_a_code(fixture_conn: sqlite3.Connection) -> None:
-    # §V100's second clause, and the subtler half of B134: ``get_item_drops`` put the
+    # The second clause, and the subtler half of the defect: ``get_item_drops`` put the
     # stage CODE ("1-7") under ``name`` while the stage's display name is "The Tyrant".
     # A ``*_name`` key must hold a display name; a code belongs in a ``*_code``.
     for name, body in serialized_envelopes(registry_for(fixture_conn), FIXTURE_CALLS):
@@ -209,11 +209,11 @@ def test_a_name_key_never_carries_a_code(fixture_conn: sqlite3.Connection) -> No
                 assert value != code, f"{name} ranking[].{key} carries the {entity} code"
 
 
-# --- §V99/B148: one key name, one meaning, across envelope levels ---------------
+# --- one key name, one meaning, across envelope levels ---------------
 
 
 def test_no_key_names_two_things_in_one_envelope(fixture_conn: sqlite3.Connection) -> None:
-    # B148: ``schema_version`` was the response contract at the envelope level AND a DB
+    # ``schema_version`` was the response contract at the envelope level AND a DB
     # migration id inside ``data``; ``status`` was the tool result AND a snapshot's import
     # lifecycle. Both in one payload, undocumented, so a client could not tell which
     # governed. The rule is checked against the ENVELOPE-level names, which are the four a
@@ -229,18 +229,18 @@ def test_no_key_names_two_things_in_one_envelope(fixture_conn: sqlite3.Connectio
             and key not in _SAME_MEANING_AT_BOTH_LEVELS
         }
     )
-    assert offenders == [], f"envelope key names reused for another meaning (§V99): {offenders}"
+    assert offenders == [], f"envelope key names reused for another meaning: {offenders}"
 
 
 def test_the_collision_detector_would_have_caught_b148(fixture_conn: sqlite3.Connection) -> None:
     # Guard the guard: the sweep above passes if the exemption set swallows everything, so
-    # the two names B148 actually collided on are asserted to be UNEXEMPT. If a later
+    # the two names that actually collided are asserted to be UNEXEMPT. If a later
     # commit parks ``schema_version`` or ``status`` in the exemption set to make a failure
     # go away, this fails instead -- which is the point.
     assert "schema_version" not in _SAME_MEANING_AT_BOTH_LEVELS
     assert "status" not in _SAME_MEANING_AT_BOTH_LEVELS
     # And the fixed shape is what actually ships: get_data_status carries the renamed keys
-    # and neither echo. This is B148's own payload, checked end to end.
+    # and neither echo. This is the payload, checked end to end.
     body = dict(
         next(
             body
@@ -258,13 +258,13 @@ def test_the_collision_detector_would_have_caught_b148(fixture_conn: sqlite3.Con
         assert "status" not in snapshot
 
 
-# --- §V66 (4)/§V67 (T219): the image-ref attribution lives at ONE level ---------
+# --- the image-ref attribution lives at ONE level ---------
 
 
 def _ref_attribution(body: object) -> tuple[int, int]:
     """``(per-ref copies, response-level keys)`` in one serialized envelope.
 
-    Counts both halves of the §T219 hoist so the two failure directions are distinguishable:
+    Counts both halves of the hoist so the two failure directions are distinguishable:
     a per-row copy coming back, and a hoisted key going missing on a page that has refs.
     """
     per_ref = sum(1 for row in _rows_under(body, "image_refs") if "source_id" in row)
@@ -279,16 +279,16 @@ def _ref_bearing(body: object) -> bool:
 def test_the_ref_attribution_is_uniform_across_every_emitting_tool(
     fixture_conn: sqlite3.Connection,
 ) -> None:
-    # §T219/§V67: three tools emit image_refs (get_operator / get_enemy / get_banners) and
+    # Three tools emit image_refs (get_operator / get_enemy / get_banners) and
     # the attribution has to live at the same level on all of them. A key living per-ROW on
     # one tool and per-RESPONSE on another makes one key mean two things, and a client would
-    # have to know which tool it called to know where to read it (B168 iv). Swept over the
-    # registry rather than asserted per tool, for the reason B134's root note gives: the
-    # shape came from a shared §V37 home, so a per-emitter assertion fixes a call site and
+    # have to know which tool it called to know where to read it. Swept over the
+    # registry rather than asserted per tool, for the reason the root note gives: the
+    # shape came from a shared home, so a per-emitter assertion fixes a call site and
     # leaves the rule.
     #
     # Read off the SERIALIZED envelope, so this also fails when the hoist is present but the
-    # per-ref copy came back beside it -- 576 duplicates of one constant is what B168 counted,
+    # per-ref copy came back beside it -- 576 duplicates of one constant is what the sweep counted,
     # and both keys existing at once would satisfy any assertion that only looked for one.
     emitting = []
     for name, body in serialized_envelopes(registry_for(fixture_conn), FIXTURE_CALLS):
@@ -296,11 +296,11 @@ def test_the_ref_attribution_is_uniform_across_every_emitting_tool(
         assert per_ref == 0, f"{name}: {per_ref} image_refs rows still carry their own source_id"
         assert hoisted == (1 if _ref_bearing(body) else 0), (
             f"{name}: {hoisted} response-level image_refs_source_id keys for a payload that "
-            f"{'does' if _ref_bearing(body) else 'does not'} emit refs (§V67)"
+            f"{'does' if _ref_bearing(body) else 'does not'} emit refs"
         )
         if _ref_bearing(body):
             emitting.append(name)
-    # §V96 non-degenerate: a sweep over zero ref-bearing responses passes every assertion
+    # A sweep over zero ref-bearing responses passes every assertion
     # above vacuously. All three emitting tools reach it on the fixture corpus, which is what
     # makes "uniform across every emitting tool" a claim this arm can actually test rather
     # than one deferred to the build arm.
@@ -316,7 +316,7 @@ def test_the_ref_attribution_is_uniform_across_every_emitting_tool(
 )
 def test_wire_key_rules_hold_on_the_promoted_build() -> None:
     # The corpus the tools actually answer from: a real penguin cache (so the ranking rows
-    # are the real ones B134 was found on), real multi-source snapshots, and real decoded
+    # are the real ones the defect was found on), real multi-source snapshots, and real decoded
     # module blobs. The fixture cannot produce any of those.
     assert BUILD is not None
     with open_read_only(BUILD) as conn:
@@ -329,9 +329,9 @@ def test_wire_key_rules_hold_on_the_promoted_build() -> None:
                 if _CAMEL_CASE.search(key)
             }
         )
-        assert camel == [], f"camelCase keys on the wire (§V71 d): {camel}"
+        assert camel == [], f"camelCase keys on the wire: {camel}"
         assert _ranking_offenders(conn, BUILD_CALLS) == []
-        # §T219/§V66 (4) on the corpus the hoist was counted over. The fixture arm already
+        # On the corpus the hoist was counted over. The fixture arm already
         # reaches all three tools, so what this adds is scale: a real gacha_table page
         # carrying a hundred banners and 576 refs, which is where 576 stray per-ref copies
         # would show up and a two-banner fixture would not notice.

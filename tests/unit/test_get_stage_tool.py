@@ -1,22 +1,21 @@
-"""§T34 ``get_stage`` tool tests (§V19/§V22/§V23; §V5; §I.tool).
+"""``get_stage`` tool tests.
 
 The tool is the model -> service -> envelope bridge for a single stage lookup;
-these drive it end to end against the same production read-only path (§V2) using
+these drive it end to end against the same production read-only path using
 the pinned 4-4 fixture. They assert:
 
-* the §V22 default is compact facts + provenance -- the heavy map/routes/spawns
+* the default is compact facts + provenance -- the heavy map/routes/spawns
   sections stay off unless their include flag is set;
-* each opted-in section is a *bounded page* (§V19): a small ``page_size`` returns
+* each opted-in section is a *bounded page*: a small ``page_size`` returns
   a page with ``has_more`` and never an unbounded slice, and an out-of-range
   ``page_size`` is *rejected* at both the model gate and the service;
-* the §V5 region + provenance ride every ``ok`` result, en/cn never mixed;
-* the typed §V23 envelope shape, including fail-closed ``not_found`` /
+* the region + provenance ride every ``ok`` result, en/cn never mixed;
+* the typed envelope shape, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak.
 """
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -46,7 +45,6 @@ from arknights_mcp.models.common import PAGE_SIZE_MAX
 from arknights_mcp.services.stage_route_digest import (
     _digest_checkpoints,
     _distinct_routes,
-    _route_truncated_limitation,
 )
 from arknights_mcp.services.stages import (
     SpawnFacts,
@@ -79,7 +77,7 @@ def _handler(conn: sqlite3.Connection):  # type: ignore[no-untyped-def]
     return build_get_stage_spec(lambda: conn).handler
 
 
-# --- §V22 default: compact facts only -----------------------------------------
+# --- default: compact facts only ----------------------------------------------
 
 
 def test_default_response_is_facts_only(conn: sqlite3.Connection) -> None:
@@ -88,9 +86,9 @@ def test_default_response_is_facts_only(conn: sqlite3.Connection) -> None:
     assert env.schema_version == SCHEMA_VERSION
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
-    # §V22: heavy sections are opt-in -- absent by default. ``enum_legend`` rides every
-    # response (§V104 b/§T207): every stage row carries difficulty + stage_type, so their
-    # domains travel with the values instead of in the description (§V111 contention).
+    # Heavy sections are opt-in -- absent by default. ``enum_legend`` rides every
+    # response: every stage row carries difficulty + stage_type, so their
+    # domains travel with the values instead of in the description.
     assert set(data) == {"stage", "enum_legend"}
     assert set(data["enum_legend"]) == {"difficulty", "stage_type"}  # type: ignore[arg-type,index]
     stage = data["stage"]
@@ -101,7 +99,7 @@ def test_default_response_is_facts_only(conn: sqlite3.Connection) -> None:
 
 
 def test_zone_id_is_paired_with_its_display_name(conn: sqlite3.Connection) -> None:
-    # §V69 (T186): a bare opaque id is a forced second lookup the client has no tool
+    # A bare opaque id is a forced second lookup the client has no tool
     # for, or an invitation to guess. "main_4" ships with the name it stands for.
     stage = _handler(conn)(server="en", stage_code="4-4").to_dict()["data"]["stage"]  # type: ignore[index]
     assert stage["zone_game_id"] == "main_4"
@@ -111,10 +109,10 @@ def test_zone_id_is_paired_with_its_display_name(conn: sqlite3.Connection) -> No
 def test_unnamed_zone_omits_display_name_and_keeps_the_id(
     tmp_path: Path, conn: sqlite3.Connection
 ) -> None:
-    # §V67: 416 of 3264 en stages on the 2026-07-27 build sit in a zone the source
+    # 416 of 3264 en stages on the 2026-07-27 build sit in a zone the source
     # never names. The key is OMITTED there -- never a null the client cannot tell
     # from "this zone is called nothing" -- while zone_game_id still ships, so the
-    # absence stays visible rather than fabricated (§V26).
+    # absence stays visible rather than fabricated.
     facts = StageFacts(
         server="en",
         game_id="lt_01_01",
@@ -136,7 +134,7 @@ def test_unnamed_zone_omits_display_name_and_keeps_the_id(
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
-    # §V5: every factual response carries region + provenance.
+    # Every factual response carries region + provenance.
     env = _handler(conn)(server="en", stage_code="4-4")
     prov = env.to_dict()["provenance"]
     assert isinstance(prov, list) and len(prov) == 1
@@ -159,7 +157,7 @@ def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connecti
     header = data["map"]  # type: ignore[index]
     assert header["width"] == 8  # type: ignore[index]
     assert header["height"] == 5  # type: ignore[index]
-    # §V74 (c): the grid rides as ONE compact per-row block -- one string per grid row
+    # The grid rides as ONE compact per-row block -- one string per grid row
     # (top row / highest y first), a legend decoding each character, and a reserved
     # absent symbol for a cell with no tile. No per-tile object list, no page cursor.
     assert "tiles" not in data and "tiles_page" not in data
@@ -167,7 +165,7 @@ def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connecti
     assert grid["absent_symbol"] == "."  # type: ignore[index]
     assert len(grid["rows"]) == 5  # one string per grid row (height)  # type: ignore[index]
     assert all(len(row) == 8 for row in grid["rows"])  # width chars each  # type: ignore[index]
-    # §V95: rows are top-first in a y-DOWN frame -- rows[y] is the tile row y. Decode
+    # Rows are top-first in a y-DOWN frame -- rows[y] is the tile row y. Decode
     # the two fixture tiles via the legend: tile_start at (0,0) is top-left,
     # tile_end at (7,4) is bottom-right.
     by_symbol = {e["symbol"]: e for e in grid["legend"]}  # type: ignore[index]
@@ -175,7 +173,7 @@ def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connecti
     bottom_right = by_symbol[grid["rows"][4][7]]  # type: ignore[index]
     assert top_left["tile_key"] == "tile_start"
     assert bottom_right["tile_key"] == "tile_end"
-    # Every legend entry carries the four typed tile fields (§V18 allowlisted), no more.
+    # Every legend entry carries the four typed tile fields, no more.
     for entry in grid["legend"]:  # type: ignore[index]
         assert set(entry) == {"symbol", "tile_key", "height_type", "buildable_type", "passable"}
 
@@ -183,23 +181,23 @@ def test_include_map_returns_header_and_compact_tile_grid(conn: sqlite3.Connecti
 def test_tile_grid_response_carries_forbidden_vs_passable_gloss(
     conn: sqlite3.Connection,
 ) -> None:
-    # §V74 (d): the raw source pairs a forbidden/non-buildable tile_key with
+    # The raw source pairs a forbidden/non-buildable tile_key with
     # passable:true, which reads as a contradiction; every grid response carries a
     # gloss that deployment and enemy-passability are separate properties.
     env = _handler(conn)(server="en", stage_code="4-4", include_map=True)
     lims = " ".join(env.to_dict()["limitations"])  # type: ignore[arg-type]
     assert "passable" in lims and "deploy" in lims.lower()
     assert "tile_forbidden" in lims
-    # §T207/§V37: the description used to repeat this gloss verbatim while the limitation
+    # The description used to repeat this gloss verbatim while the limitation
     # already rode every grid response -- two homes for one fact, and 233 chars of the
-    # §V71 (f) budget on the copy a client reads BEFORE it has a grid to read it against.
+    # budget on the copy a client reads BEFORE it has a grid to read it against.
     # The limitation is now the sole home, so the description must NOT carry it back.
     desc = build_get_stage_spec(lambda: conn).description
     assert "tile_forbidden" not in desc
 
 
 def test_include_routes(conn: sqlite3.Connection) -> None:
-    # §V74 (a): routes are emitted as DISTINCT geometry + occurrence_count. The 4-4
+    # Routes are emitted as DISTINCT geometry + occurrence_count. The 4-4
     # fixture has a single route record -> one distinct geometry, occurrence 1.
     data = _handler(conn)(server="en", stage_code="4-4", include_routes=True).to_dict()["data"]
     routes = data["routes"]  # type: ignore[index]
@@ -225,7 +223,7 @@ def test_include_spawns(conn: sqlite3.Connection) -> None:
 
 
 def test_include_routes_checkpoints_is_always_a_list(conn: sqlite3.Connection) -> None:
-    # §V51/B44: checkpoints ride the wire as an array unconditionally; the 4-4
+    # Checkpoints ride the wire as an array unconditionally; the 4-4
     # route has none, and the empty set must be `[]`, never the source's `{}`.
     data = _handler(conn)(server="en", stage_code="4-4", include_routes=True).to_dict()["data"]
     checkpoints = data["routes"][0]["checkpoints"]  # type: ignore[index]
@@ -234,8 +232,8 @@ def test_include_routes_checkpoints_is_always_a_list(conn: sqlite3.Connection) -
 
 
 def test_checkpoint_digest_normalizes_every_source_shape() -> None:
-    # §V51: the checkpoint digest coerces any decoded fragment to a JSON array --
-    # the source's empty-set `{}` and a NULL column both yield `[]` (B44: the wire
+    # The checkpoint digest coerces any decoded fragment to a JSON array --
+    # the source's empty-set `{}` and a NULL column both yield `[]` (the wire
     # type must not vary row-to-row); the emitted list is always a list.
     assert _digest_checkpoints({})[0] == []  # source empty-set serialized as a dict
     assert _digest_checkpoints(None)[0] == []  # NULL / undecodable column
@@ -243,8 +241,8 @@ def test_checkpoint_digest_normalizes_every_source_shape() -> None:
 
 
 def test_checkpoint_digest_drops_wait_placeholder_and_snake_cases_keys() -> None:
-    # §V74 (b)/§V96 (B128): a non-spatial marker (real token, not the invented
-    # "WAIT") is dropped from the emitted geometry. §V71 (d): the surviving
+    # A non-spatial marker (real token, not the invented
+    # "WAIT") is dropped from the emitted geometry. The surviving
     # checkpoint's camelCase keys (reachOffset/randomizeReachOffset) are normalized
     # to snake_case.
     decoded = [
@@ -266,7 +264,7 @@ def test_checkpoint_digest_drops_wait_placeholder_and_snake_cases_keys() -> None
 
 
 def test_checkpoint_digest_suppresses_zero_default_optional_fields() -> None:
-    # §V81/§V67 (B85): a checkpoint always carries type + position; the optional
+    # A checkpoint always carries type + position; the optional
     # time/reach_distance/reach_offset/randomize_reach_offset fields are dropped when
     # they sit at their zero/false default, and kept only when they deviate.
     decoded = [
@@ -303,12 +301,12 @@ def test_checkpoint_digest_suppresses_zero_default_optional_fields() -> None:
 
 
 def test_checkpoint_omit_is_default_is_stated_in_the_map_guide() -> None:
-    # §V81 (B85): omit=default is part of the client contract, so the suppressible
+    # omit=default is part of the client contract, so the suppressible
     # checkpoint fields must be named somewhere a client reads, with "omitted means at
-    # default". §T207 moved that home from the description to the stage-map guide
-    # resource the description points at (§V84/§V111 a) -- it is read AGAINST a returned
+    # default". That home moved from the description to the stage-map guide
+    # resource the description points at -- it is read AGAINST a returned
     # checkpoint, and it was part of the ~970 chars that made get_stage the longest
-    # description on the server (B156). Moved, not dropped: both halves are asserted.
+    # description on the server. Moved, not dropped: both halves are asserted.
     guide = dict(STAGE_MAP_GUIDE_ENTRIES)["checkpoints"]
     assert "reach_offset" in guide and "randomize_reach_offset" in guide
     assert "omitted" in guide and "default" in guide
@@ -327,7 +325,7 @@ def _route_row(index: int, start: object, end: object, checkpoints: object) -> S
 
 
 def test_distinct_routes_collapses_identical_geometry() -> None:
-    # §V74 (a): records sharing (start, end, checkpoint positions) collapse to one
+    # Records sharing (start, end, checkpoint positions) collapse to one
     # distinct geometry carrying every contributing route_index + an occurrence_count.
     a = {"col": 0, "row": 0}
     b = {"col": 5, "row": 2}
@@ -347,7 +345,7 @@ def test_distinct_routes_collapses_identical_geometry() -> None:
 
 
 def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> None:
-    # §V74 (a)+(b)/B128: two records with the same spatial path but one carrying an
+    # Two records with the same spatial path but one carrying an
     # extra WAIT_FOR_SECONDS marker collapse to one -- the marker is not geometry
     # (the real 7-2 over-count: 7 groups where 6 are distinct).
     a = {"col": 0, "row": 0}
@@ -366,8 +364,8 @@ def test_distinct_routes_merges_records_differing_only_by_wait_placeholder() -> 
 
 
 def test_checkpoint_digest_keeps_a_real_move_at_grid_corner() -> None:
-    # §V74 (b)/B74/B128: a non-spatial marker is detected by the typed `type` field
-    # against the REAL token set (§V96), NOT a position coincidence. A real MOVE
+    # A non-spatial marker is detected by the typed `type` field
+    # against the REAL token set, NOT a position coincidence. A real MOVE
     # targeting grid corner (0,0) must be KEPT -- the earlier position-only
     # heuristic dropped it as if it were a placeholder. (The type-less-checkpoint
     # case is pinned in test_stage_route_digest: spatial, fallback dead.)
@@ -382,7 +380,7 @@ def test_checkpoint_digest_keeps_a_real_move_at_grid_corner() -> None:
 
 
 def test_distinct_routes_keep_routes_differing_only_by_a_corner_move() -> None:
-    # §V74 (a)+(b)/B74: two routes differing ONLY by a real MOVE through grid corner
+    # Two routes differing ONLY by a real MOVE through grid corner
     # (0,0) are distinct geometry and must NOT collapse (the position-only heuristic
     # collapsed them, inflating occurrence_count + corrupting the polyline).
     a = {"col": 0, "row": 0}
@@ -402,7 +400,7 @@ def test_distinct_routes_keep_routes_differing_only_by_a_corner_move() -> None:
 def test_include_routes_truncation_disclosed_when_read_hits_cap(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # §V74 (a)/B73: the raw route read is capped at MAX_MAP_ROUTES BEFORE dedup, so a
+    # The raw route read is capped at MAX_MAP_ROUTES BEFORE dedup, so a
     # raw count == cap means records past it were dropped and the distinct total may
     # under-report -- get_stage must say so, not silently undercount. Squeeze the cap
     # to 1 so the fixture's single route trips it (the same as a real 1000-record cap
@@ -423,21 +421,14 @@ def test_include_routes_no_truncation_limitation_under_cap(
     assert "truncated" not in lims
 
 
-def test_route_truncated_limitation_carries_no_spec_cite() -> None:
-    # §V71 (b): a runtime client-facing string never leaks a §V/§T/B spec cite.
-    text = _route_truncated_limitation()
-    assert "§" not in text
-    assert not re.search(r"\bB\d", text)
-
-
 def test_sections_are_independent(conn: sqlite3.Connection) -> None:
-    # Only the requested section appears; the others stay off (§V22).
+    # Only the requested section appears; the others stay off.
     data = _handler(conn)(server="en", stage_code="4-4", include_spawns=True).to_dict()["data"]
     assert set(data) == {"stage", "spawns", "spawns_page", "enum_legend"}
 
 
 def test_sections_coexist_and_spawns_page_independently(conn: sqlite3.Connection) -> None:
-    # §V19/§V74 (c): the tile grid rides whole (unpaged) while spawns still page on
+    # The tile grid rides whole (unpaged) while spawns still page on
     # their own cursor -- requesting both returns the full grid AND a bounded spawns
     # page, neither shifting the other.
     data = _handler(conn)(
@@ -458,7 +449,7 @@ def test_sections_coexist_and_spawns_page_independently(conn: sqlite3.Connection
     }
 
 
-# --- §V67/§V26 (B58) null discipline: omit always-null scalars + absent limitation --
+# --- null discipline: omit always-null scalars + absent limitation ------------------
 
 
 def _spawn(**overrides: object) -> SpawnFacts:
@@ -479,14 +470,14 @@ def _spawn(**overrides: object) -> SpawnFacts:
 
 
 def test_spawn_group_omitted_when_absent() -> None:
-    # §V67: ``spawn_group`` is an always-optional scalar -- omitted when the source
+    # ``spawn_group`` is an always-optional scalar -- omitted when the source
     # carried none, emitted when present (never an ambiguous null).
     assert "spawn_group" not in _spawn_to_dict(_spawn(spawn_group=None))
     assert _spawn_to_dict(_spawn(spawn_group="g0"))["spawn_group"] == "g0"
 
 
 def test_spawn_variant_id_omitted_when_absent() -> None:
-    # §V67/B90: ``variant_id`` (inline useDb:false variant, §T80) is omitted for a
+    # ``variant_id`` (inline useDb:false variant) is omitted for a
     # base-enemy spawn and emitted only when the spawn is an inline variant.
     assert "variant_id" not in _spawn_to_dict(_spawn(variant_id=None))
     assert _spawn_to_dict(_spawn(variant_id="enemy_1007_slime_a"))["variant_id"] == (
@@ -502,7 +493,7 @@ def test_spawn_group_present_on_fixture_spawns(conn: sqlite3.Connection) -> None
 
 
 def test_stage_absent_field_limitation_helper() -> None:
-    # §V67/§V26 (B58): the helper names an absent expected scalar and emits nothing when
+    # The helper names an absent expected scalar and emits nothing when
     # both are present.
     prov = StageProvenance(snapshot_id="en:x", imported_at="t")
     bare = StageFacts(
@@ -529,7 +520,7 @@ def test_stage_absent_field_limitation_helper() -> None:
 
 def test_4_4_stage_has_no_absent_field_limitation(conn: sqlite3.Connection) -> None:
     # 4-4 carries recommendedLevel (45) + maxLifePoints (3), so no "not present" caveat
-    # and the present scalars still emit (§V67/B98 omits ABSENT ones only, §V21).
+    # and the present scalars still emit (omits ABSENT ones only).
     env = _handler(conn)(server="en", stage_code="4-4")
     assert not any("not present" in lim.lower() for lim in env.limitations)
     stage = env.to_dict()["data"]["stage"]  # type: ignore[index]
@@ -537,7 +528,7 @@ def test_4_4_stage_has_no_absent_field_limitation(conn: sqlite3.Connection) -> N
     assert stage["max_life_points"] == 3  # type: ignore[index]
 
 
-# --- §V80/B84: get_stage difficulty is the truthful variant tag ---------------
+# --- get_stage difficulty is the truthful variant tag --------------------------
 
 
 def _seed_stage(conn: sqlite3.Connection, game_id: str, difficulty: str | None) -> None:
@@ -567,9 +558,9 @@ def _seed_stage(conn: sqlite3.Connection, game_id: str, difficulty: str | None) 
 
 
 def test_v80_get_stage_tough_prefix_reports_tough_not_normal(tmp_path: Path) -> None:
-    # §V80/B84: a tough_* stage carries source difficulty "NORMAL", yet get_stage must
+    # A tough_* stage carries source difficulty "NORMAL", yet get_stage must
     # emit the truthful variant tag TOUGH -- never NORMAL -- so a client is not silently
-    # mixing normal/tough stats. The same tag the search locators surface (§V37 home).
+    # mixing normal/tough stats. The same tag the search locators surface.
     path = tmp_path / "toughstage.sqlite"
     writer = build_database(path)
     _seed_stage(writer, "tough_14-06", "NORMAL")
@@ -581,7 +572,7 @@ def test_v80_get_stage_tough_prefix_reports_tough_not_normal(tmp_path: Path) -> 
 
 
 def test_v80_get_stage_four_star_source_variant_preserved(tmp_path: Path) -> None:
-    # §V80: a genuine source variant (FOUR_STAR challenge, #f# suffix, no tough/easy
+    # A genuine source variant (FOUR_STAR challenge, #f# suffix, no tough/easy
     # prefix) is authoritative and passes through unchanged -- the prefix rule never
     # clobbers it.
     path = tmp_path / "fourstar.sqlite"
@@ -595,7 +586,7 @@ def test_v80_get_stage_four_star_source_variant_preserved(tmp_path: Path) -> Non
 
 
 def test_bare_stage_names_absent_scalars_on_the_wire(tmp_path: Path) -> None:
-    # §V67/§V26 (B58): a stage whose source omits recommended_level + max_life_points
+    # A stage whose source omits recommended_level + max_life_points
     # surfaces a standing "not present in source" limitation naming them (end to end).
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
@@ -628,27 +619,25 @@ def test_bare_stage_names_absent_scalars_on_the_wire(tmp_path: Path) -> None:
         server="en", game_id="bare_stage"
     )
     assert env.status == "ok"
-    # §V67/B98 (T180): the absent scalars' keys are OMITTED from the payload -- the
+    # The absent scalars' keys are OMITTED from the payload -- the
     # limitation below is the sole absence signal, never a null+limitation duplicate.
     stage = env.to_dict()["data"]["stage"]  # type: ignore[index]
     assert "recommended_level" not in stage and "max_life_points" not in stage
     blob = " ".join(env.limitations).lower()
     assert "recommended_level" in blob and "max_life_points" in blob
     assert "not present" in blob
-    # §V71: no internal cite/jargon in the client-facing limitation.
-    assert all("§v" not in lim.lower() and "b58" not in lim.lower() for lim in env.limitations)
 
 
 def test_description_states_list_field_convention(conn: sqlite3.Connection) -> None:
-    # §V67: the []-vs-absent convention is stated in the tool description.
+    # The []-vs-absent convention is stated in the tool description.
     assert LIST_FIELD_CONVENTION in build_get_stage_spec(lambda: conn).description
 
 
-# --- §V19 bounded pagination --------------------------------------------------
+# --- bounded pagination --------------------------------------------------------
 
 
 def test_tile_grid_is_a_single_unpaged_block(conn: sqlite3.Connection) -> None:
-    # §V74 (c): the compact grid replaces the paged per-tile list -- there is no map
+    # The compact grid replaces the paged per-tile list -- there is no map
     # page cursor and the whole board comes in one response. map_page is no longer an
     # accepted parameter (dropped with the paged shape).
     handler = _handler(conn)
@@ -659,7 +648,7 @@ def test_tile_grid_is_a_single_unpaged_block(conn: sqlite3.Connection) -> None:
 
 
 def test_page_size_out_of_range_rejected_at_gate(conn: sqlite3.Connection) -> None:
-    # §V19: the model gate *rejects* an out-of-range page_size before any query
+    # The model gate *rejects* an out-of-range page_size before any query
     # (asserted on the still-paged spawns section).
     handler = _handler(conn)
     for bad in (0, -1, PAGE_SIZE_MAX + 1):
@@ -672,8 +661,8 @@ def test_page_size_out_of_range_rejected_at_gate(conn: sqlite3.Connection) -> No
 
 
 def test_service_rejects_out_of_range_page_size(conn: sqlite3.Connection) -> None:
-    # §V19 mirrored at the service: a direct caller gets the same rejection, not a
-    # silent clamp (parallels the search-service limit contract, B23).
+    # Mirrored at the service: a direct caller gets the same rejection, not a
+    # silent clamp (parallels the search-service limit contract).
     with pytest.raises(ValueError, match="page_size"):
         get_stage(conn, server="en", stage_code="4-4", spawns_page_size=PAGE_SIZE_MAX + 1)
     with pytest.raises(ValueError, match="page"):
@@ -681,7 +670,7 @@ def test_service_rejects_out_of_range_page_size(conn: sqlite3.Connection) -> Non
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", stage_code="4-4", include_tiles=True)
 
@@ -694,7 +683,7 @@ def test_selector_must_be_exactly_one(conn: sqlite3.Connection) -> None:
         handler(server="en", stage_code="4-4", game_id="main_04-04")  # both
 
 
-# --- §V23 / §V5 typed failures ------------------------------------------------
+# --- typed failures ------------------------------------------------------------
 
 
 def test_not_found_envelope(conn: sqlite3.Connection) -> None:
@@ -703,12 +692,12 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert data["message"] == "no stage matched the given region and selector"
-    # §V24: a not_found never suggests a query-time download/scrape.
+    # A not_found never suggests a query-time download/scrape.
     assert "download" not in data["suggested_action"].lower()  # type: ignore[union-attr]
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query.
+    # en data is not surfaced under a cn query.
     assert _handler(conn)(server="cn", stage_code="4-4").status == "not_found"
 
 
@@ -719,7 +708,7 @@ def test_database_unavailable_envelope() -> None:
     env = build_get_stage_spec(boom).handler(server="en", stage_code="4-4")
     assert env.status == "database_unavailable"
     data = env.to_dict()["data"]
-    # §V23: no local path / file name leaks into the client-facing message.
+    # No local path / file name leaks into the client-facing message.
     assert data["message"] == "the active database is unavailable"  # type: ignore[index]
     assert "cand.sqlite" not in str(data)
 
@@ -730,16 +719,16 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_get_stage_spec(boom).handler(server="en", stage_code="4-4")
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # The fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V2 read-only / §I.tool wire contract ------------------------------------
+# --- read-only / wire contract -------------------------------------------------
 
 
 def test_service_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # The service only reads -- no writes recorded on the connection.
     before = conn.total_changes
     get_stage(conn, server="en", stage_code="4-4", include_map=True, include_spawns=True)
     assert conn.total_changes == before
@@ -752,10 +741,10 @@ def test_spec_registers_read_only_with_bounded_schema(conn: sqlite3.Connection) 
     assert spec.read_only is True
     tool = spec.to_mcp_tool()
     assert tool.annotations is not None and tool.annotations.readOnlyHint is True
-    # §V18/§V19: unknown params forbidden + the page_size bound rides the wire.
+    # Unknown params forbidden + the page_size bound rides the wire.
     assert tool.inputSchema["additionalProperties"] is False
     props = tool.inputSchema["properties"]
-    # §V74 (c): the tile grid is unpaged, so map_page is gone; routes/spawns still page.
+    # The tile grid is unpaged, so map_page is gone; routes/spawns still page.
     assert {"routes_page", "spawns_page"} <= set(props)
     assert "map_page" not in props
     page_schema = tool.inputSchema["$defs"]["PageParams"]

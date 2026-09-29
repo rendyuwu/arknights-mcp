@@ -1,17 +1,17 @@
-"""T15: the minimal on-disk 4-4 fixture under ``tests/fixtures/stage_4_4``.
+"""The minimal on-disk 4-4 fixture under ``tests/fixtures/stage_4_4``.
 
 The fixture is a *hand-authored, minimal* snapshot tree — only the fields the M0
-importer + analyzer tests require, never a full game-data dump (§V16). Unlike
-T14 (which drives the parsers with inline dicts), this fixture is the canonical,
-reusable snapshot that downstream M0 tasks (T16 threat rule, T17 service, T18
-accept test) build a candidate DB from.
+importer + analyzer tests require, never a full game-data dump. Unlike the
+inline-dict parser tests, this fixture is the canonical,
+reusable snapshot that downstream M0 tasks (threat rule, service, accept test)
+build a candidate DB from.
 
 These tests keep the fixture honest:
 
-* **minimal (§V16, §V18)** — each tabular record carries only allowlisted,
+* **minimal** — each tabular record carries only allowlisted,
   test-required fields; no prose/story keys anywhere; record counts stay tiny;
   the whole tree is orders of magnitude smaller than a real dump.
-* **valid & reusable (§V17)** — importing the fixture yields the 4-4 stage, its
+* **valid & reusable** — importing the fixture yields the 4-4 stage, its
   two enemy occurrences, and per-record provenance.
 """
 
@@ -44,7 +44,7 @@ FIXTURE_FILES = (
     "gamedata/levels/main/level_main_04-04.json",
 )
 
-#: Free-text / prose keys that must never appear in a minimal fixture (§V16).
+#: Free-text / prose keys that must never appear in a minimal fixture.
 FORBIDDEN_PROSE_KEYS = frozenset(
     {
         "description",
@@ -120,7 +120,7 @@ def _import_fixture(tmp_path: Path) -> sqlite3.Connection:
     return conn
 
 
-# --- minimality: only test-required fields, no full dump (§V16, §V18) ---------
+# --- minimality: only test-required fields, no full dump ---------
 
 
 def test_fixture_tree_present() -> None:
@@ -133,11 +133,11 @@ def test_no_prose_keys_anywhere() -> None:
     for rel in FIXTURE_FILES:
         keys = set(_iter_keys(_load(rel)))
         leaked = keys & FORBIDDEN_PROSE_KEYS
-        assert not leaked, f"prose key(s) {sorted(leaked)} in {rel} (§V16)"
+        assert not leaked, f"prose key(s) {sorted(leaked)} in {rel}"
 
 
 def test_records_only_carry_allowlisted_fields() -> None:
-    """Tabular records hold only fields the importer keeps (§V18): the fixture is
+    """Tabular records hold only fields the importer keeps: the fixture is
     the allowlist, not a dump of every source field."""
     for entry in _load("gamedata/excel/enemy_handbook_table.json")["enemyData"].values():
         assert set(entry) <= ENEMY_HANDBOOK_ALLOWLIST
@@ -159,10 +159,10 @@ def test_record_counts_stay_tiny() -> None:
 
 def test_fixture_is_not_a_dump() -> None:
     total = sum((FIXTURE_ROOT / rel).stat().st_size for rel in FIXTURE_FILES)
-    assert total < MAX_FIXTURE_BYTES, f"fixture too large ({total} bytes); is it a dump? (§V16)"
+    assert total < MAX_FIXTURE_BYTES, f"fixture too large ({total} bytes); is it a dump?"
 
 
-# --- valid & reusable: imports into stage + occurrences + provenance (§V17) ---
+# --- valid & reusable: imports into stage + occurrences + provenance ---
 
 
 def test_fixture_imports_stage_enemies_and_provenance(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ def test_fixture_imports_stage_enemies_and_provenance(tmp_path: Path) -> None:
     assert stage is not None
     assert stage[0] == "4-4"
     assert stage[1] == 18
-    assert stage[2] is not None  # §V17 provenance attached
+    assert stage[2] is not None  # provenance attached
 
     occ = conn.execute(
         "SELECT e.game_id, se.total_count FROM stage_enemies se "
@@ -188,7 +188,7 @@ def test_fixture_imports_stage_enemies_and_provenance(tmp_path: Path) -> None:
         "enemy_1105_drone": 2,
     }
 
-    # The aerial drone is preserved so the M0 threat rule (T16) has evidence.
+    # The aerial drone is preserved so the M0 threat rule has evidence.
     drone = conn.execute(
         "SELECT motion_type, is_elite FROM enemies WHERE game_id='enemy_1105_drone'"
     ).fetchone()

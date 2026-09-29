@@ -1,11 +1,11 @@
-"""T42: operator + skill + talent importer (character_table, skill_table, aliases).
+"""Operator + skill + talent importer (character_table, skill_table, aliases).
 
 Parses the real id-keyed ``character_table`` / ``skill_table`` shapes into the
-operator domain with the field allowlist + sanitization (§V18/§V31), per-record
-provenance (§V17), and fail-closed constraint handling (§V33). The skill-level +
+operator domain with the field allowlist + sanitization, per-record
+provenance, and fail-closed constraint handling. The skill-level +
 talent-candidate effect-description TEMPLATE (mechanic text referencing the
-blackboard keys) is imported into ``gameplay_description`` (§V65 (a)/ADR 0010);
-operator-level lore ``description`` stays excluded (§V16 ceiling).
+blackboard keys) is imported into ``gameplay_description`` (ADR 0010);
+operator-level lore ``description`` stays excluded.
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ from arknights_mcp.importers.skills import _level_only, parse_skills
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 DESCRIPTION_PROSE = "A long lore blurb that must never be imported into the database."
-#: §T127/§V65/ADR 0010: skill + talent effect-description TEMPLATES (mechanic text
+#: Skill + talent effect-description TEMPLATES (mechanic text
 #: referencing the blackboard keys) ARE imported into gameplay_description; the
-#: operator-level lore ``description`` above stays excluded (§V16 ceiling). The raw
-#: source carries in-game rich-text tags; T136/§V18 strips them at import so only the
+#: operator-level lore ``description`` above stays excluded. The raw
+#: source carries in-game rich-text tags; the importer strips them at import so only the
 #: ``{blackboard-key}`` grounding placeholders remain -- the ``*_GROUNDED`` form is
 #: what lands in the column.
 SKILL_TEMPLATE = "Deals <@ba.vup>{atk:0%}</> of ATK as Arts damage to enemies in range."
@@ -243,15 +243,15 @@ def test_parse_excludes_prose() -> None:
 def test_parse_sanitizes_nested_tag_string() -> None:
     amiya = parse_operators(CHARACTER)[0]
     assert "Nuker" in amiya.tags
-    assert "\x00" not in "".join(amiya.tags)  # §V31 nested string leaf sanitized
+    assert "\x00" not in "".join(amiya.tags)  # nested string leaf sanitized
 
 
 def test_parse_skills_round_trips_a_bare_numeric_sp_type() -> None:
-    # §V99/§V104 (c) (B157/§T208): upstream ships ``spType`` as a NAME on most rows and as
+    # Upstream ships ``spType`` as a NAME on most rows and as
     # a bare int on the rest -- both in the same file at the same pin, so the int is not a
     # legacy form. It is stringified, never mapped: no name for the code exists upstream
     # (verified against the pin and a second independent export of the same game data), so
-    # any map would be invented, which §V29/§V96 forbid. The sibling enum on the same level
+    # any map would be invented. The sibling enum on the same level
     # stays a name -- the two clean columns are clean by DATA, not by construction.
     raw = {
         "sktok_numeric": {
@@ -276,11 +276,11 @@ def test_parse_skills_round_trips_a_bare_numeric_sp_type() -> None:
     assert skill.duration_type == "NONE"
 
 
-#: §V112/B159: the real shape a flattening importer cannot represent -- one skill whose
+#: The real shape a flattening importer cannot represent -- one skill whose
 #: levels disagree on all four per-level fields. Transcribed from ``sktok_mjcsdw`` at the
 #: pinned upstream (level 1 PASSIVE with the unnamed ``spType`` code 8, level 2 AUTO with
 #: the NAMED ``INCREASE_WITH_TIME``) plus the ``sktok_sunmao`` rename, so the fixture is a
-#: real corpus shape rather than an invented one (B107 lesson). The live count is pinned
+#: real corpus shape rather than an invented one. The live count is pinned
 #: against upstream itself in ``tests/contract/test_skill_enum_encoding.py``.
 _VARYING_SKILL = {
     "sktok_varies": {
@@ -310,7 +310,7 @@ _VARYING_SKILL = {
 
 
 def test_parse_skills_keeps_a_field_the_levels_disagree_on_per_level() -> None:
-    # §V112 (a)/(b) (B159): all four are scoped per LEVEL upstream. Reading level 1 and
+    # All four are scoped per LEVEL upstream. Reading level 1 and
     # calling it the skill's value discarded the rest -- and on this exact skill it kept
     # the unnamed sp_type code 8 while level 2 carries the NAMED token. The skill claims
     # nothing when its levels disagree; each level keeps its own.
@@ -330,7 +330,7 @@ def test_parse_skills_keeps_a_field_the_levels_disagree_on_per_level() -> None:
 
 
 def test_parse_skills_hoists_a_field_every_level_shares() -> None:
-    # §V112 (a)/§V66.3: the uniform case (1597 of 1598 EN skills) rides the skill row once
+    # The uniform case (1597 of 1598 EN skills) rides the skill row once
     # and the level rows repeat nothing -- the same hoist gameplay_description uses.
     skill = {s.game_id: s for s in parse_skills(SKILLS)}["skchr_amiya_1"]
     assert skill.display_name == "Arts Charge"
@@ -342,7 +342,7 @@ def test_parse_skills_hoists_a_field_every_level_shares() -> None:
 
 
 def test_a_field_absent_from_every_level_stays_absent_on_both_sides() -> None:
-    # §V26/§V67: "the source carried none" is a different fact from "the levels disagree",
+    # "The source carried none" is a different fact from "the levels disagree",
     # and neither side may invent a value for it.
     raw = {"sk_bare": {"skillId": "sk_bare", "levels": [{"duration": 0.0, "blackboard": []}]}}
     skill = parse_skills(raw)[0]
@@ -397,7 +397,7 @@ def test_provenance_attached_to_operators_and_skills(tmp_path: Path) -> None:
 
 
 def test_lore_excluded_but_effect_template_imported(tmp_path: Path) -> None:
-    # §T127/§V65/§V16 (ADR 0010): the operator-level lore `description` stays excluded,
+    # The operator-level lore `description` stays excluded,
     # but the skill-level + talent-candidate effect-description TEMPLATE (mechanic text
     # referencing the blackboard keys) IS imported into gameplay_description alongside
     # the blackboard for grounding.
@@ -419,9 +419,9 @@ def test_lore_excluded_but_effect_template_imported(tmp_path: Path) -> None:
         )
         for row in conn.execute(f"SELECT * FROM {table}")
     )
-    # §V16: operator-level lore is never imported.
+    # Operator-level lore is never imported.
     assert DESCRIPTION_PROSE not in dump
-    # §V65 (a): the effect templates ARE populated on the level rows.
+    # The effect templates ARE populated on the level rows.
     skill_descs = [
         r[0]
         for r in conn.execute(
@@ -439,8 +439,8 @@ def test_lore_excluded_but_effect_template_imported(tmp_path: Path) -> None:
 
 
 def test_parse_carries_effect_template_alongside_blackboard() -> None:
-    # §T127/§V65 (a): parsing keeps the effect TEMPLATE next to the blackboard on the
-    # typed parsed shapes (unit-testable without a DB). T136/§V18: the rich-text tags
+    # Parsing keeps the effect TEMPLATE next to the blackboard on the
+    # typed parsed shapes (unit-testable without a DB). The rich-text tags
     # are stripped at parse, leaving the {blackboard-key} placeholders.
     amiya = parse_operators(CHARACTER)[0]
     variant = amiya.talents[0].variants[0]
@@ -500,7 +500,7 @@ def test_link_to_absent_skill_is_skipped(tmp_path: Path) -> None:
 
 def test_duplicate_operator_fails_gracefully(tmp_path: Path) -> None:
     # A repeated (server, game_id) collides on UNIQUE and must raise a typed
-    # ImporterError, not an uncaught sqlite3.IntegrityError (§V33).
+    # ImporterError, not an uncaught sqlite3.IntegrityError.
     conn = build_database(tmp_path / "cand.sqlite")
     _seed_snapshot(conn)
     dup = ParsedOperator(
@@ -531,7 +531,7 @@ def test_duplicate_operator_fails_gracefully(tmp_path: Path) -> None:
 
 
 def test_operator_and_aliases_feed_search_index(tmp_path: Path) -> None:
-    # T42 aliases scope: operators + aliases populate the unified FTS index.
+    # Aliases scope: operators + aliases populate the unified FTS index.
     root = _adapter(tmp_path)
     conn = build_database(tmp_path / "cand.sqlite")
     _seed_snapshot(conn)
@@ -549,7 +549,7 @@ def test_operator_and_aliases_feed_search_index(tmp_path: Path) -> None:
 
 
 def test_en_operator_aliases_stamped_with_en_locale(tmp_path: Path) -> None:
-    # T98/§V57: the importer stamps each alias with its region's locale at insert time
+    # The importer stamps each alias with its region's locale at insert time
     # (the real fresh-build "backfill" -- migration 0011's UPDATE hits an empty
     # candidate). An en operator's aliases are English -> locale 'en'.
     root = _adapter(tmp_path)
@@ -562,8 +562,8 @@ def test_en_operator_aliases_stamped_with_en_locale(tmp_path: Path) -> None:
 
 
 def test_cn_operator_aliases_stamped_with_zh_locale(tmp_path: Path) -> None:
-    # §V57: a cn operator's canonical strings are Chinese -> locale 'zh' (not 'cn').
-    # The locale tag is NOT the fact region -- server stays 'cn' (§V5 unchanged).
+    # A cn operator's canonical strings are Chinese -> locale 'zh' (not 'cn').
+    # The locale tag is NOT the fact region -- server stays 'cn'.
     root = tmp_path / "cn"
     (root / "gamedata" / "excel").mkdir(parents=True)
     (root / "gamedata" / "excel" / "character_table.json").write_text(

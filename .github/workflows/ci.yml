@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # SPEC §C: CI runs on Linux/ubuntu-latest only (Docker -> OS-portable;
+        # CI runs on Linux/ubuntu-latest only (Docker -> OS-portable;
         # no macOS device -> cannot real-test).
         os: [ubuntu-latest]
     steps:
@@ -45,21 +45,21 @@ jobs:
         run: uv run pytest -q --cov=arknights_mcp --cov-report=term-missing
 
   live-upstream:
-    # SPEC §T68 / §T193 / §T204 / §T205 / §T208 / §T210 / §C: real-corpus validation against LIVE
+    # Real-corpus validation against LIVE
     # upstream. Needs network, so it is a dedicated Linux-only job gated by
     # ARKMCP_LIVE_UPSTREAM (the test modules skip themselves unless the flag is set).
     # Fetches a pinned arknights_assets_gamedata commit and asserts (a) real 4-4 combat
-    # data after an import (§T68), (b) the §V97 token boundary over every real EN effect
-    # template (§T193/B130), (c) §V109's zero-truncation template cap (§T204/B154),
-    # (d) §V110's real event titles reaching the search service (§T205/B155), (e) the
-    # §V99 skill enum encoding arms (§T208/B157) and (f) the §V113 enemy substrate --
+    # data after an import, (b) the token boundary over every real EN effect
+    # template, (c) the zero-truncation template cap,
+    # (d) real event titles reaching the search service, (e) the
+    # skill enum encoding arms and (f) the enemy substrate --
     # rangeRadius/applyWay/<x>Immune/damageType counted at the source, plus the
-    # melee-declared arts census that decided the ranged-arts field order (§T210/B160).
+    # melee-declared arts census that decided the ranged-arts field order.
     # The module list is enumerated, so a new
     # live guard is only guarded here once it is ADDED -- (c) and (d) were written but
-    # never listed, and so never ran in CI at all. Nothing fetched is committed (§V16,
-    # fetch -> discard).
-    name: live-upstream real-corpus (§T68, §T193, §T204, §T205, §T208, §T210)
+    # never listed, and so never ran in CI at all. Nothing fetched is committed
+    # (fetch -> discard).
+    name: live-upstream real-corpus
     runs-on: ubuntu-latest
     # Non-blocking: a flaky/unreachable/rate-limited upstream must not turn CI red
     # for unrelated changes. The job still runs and reports its own status; it just
@@ -81,7 +81,7 @@ jobs:
       - name: Real-corpus validation vs live upstream
         env:
           ARKMCP_LIVE_UPSTREAM: "1"
-          # §V56/§V61 official EN feed (the same endpoint config.example.toml and
+          # Official EN feed (the same endpoint config.example.toml and
           # config/data_sources.toml document). Supplied here rather than defaulted in
           # test code: there is deliberately no shipped default feed URL.
           ARKMCP_ANNOUNCE_FEED_URL: "https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json"
@@ -100,12 +100,12 @@ jobs:
           tests/contract/test_range_resolution.py -q
 
   cn-cross-validate:
-    # SPEC §T69 / §C: CI-only kengxxiao_gamedata CN cross-validator. Fetches a
+    # CI-only kengxxiao_gamedata CN cross-validator. Fetches a
     # pinned kengxxiao CN enemy_database + the primary CN counterpart and asserts
     # shared enemy stats (maxHp/baseAttackTime/massLevel/motion) agree across the two
-    # independent CN dumps (§V29). kengxxiao is never a runtime dep, never overrides
-    # the primary source, and nothing fetched is committed (§V16, fetch -> discard).
-    name: CN cross-validate (§T69)
+    # independent CN dumps. kengxxiao is never a runtime dep, never overrides
+    # the primary source, and nothing fetched is committed (fetch -> discard).
+    name: CN cross-validate
     runs-on: ubuntu-latest
     # Non-blocking for the same reason as live-upstream: a flaky/unreachable/
     # rate-limited upstream (two of them here) must not turn CI red for unrelated

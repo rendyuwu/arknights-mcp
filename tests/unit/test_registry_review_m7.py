@@ -1,26 +1,26 @@
-"""T60 (M7): source-registry review + simulated takedown/purge drill review.
+"""M7: source-registry review + simulated takedown/purge drill review.
 
-This is the M7 *review* layer, built on top of the T9 registry checks
-(``test_source_registry.py``) and the T28 drill (``test_takedown_drill.py``) --
-it does not re-implement either (§V37). It reuses the production builders
+This is the M7 *review* layer, built on top of the registry checks
+(``test_source_registry.py``) and the takedown drill (``test_takedown_drill.py``) --
+it does not re-implement either. It reuses the production builders
 (``build_candidate``, ``promote_candidate``, ``purge_and_rebuild``) and the
 ``stage_4_4`` fixture rather than rebuilding the import pipeline from scratch.
 
 It adds three review-level assertions the unit tests do not make:
 
 1. A *completeness audit* over the real ``config/data_sources.toml``: every
-   enabled source carries all §V27 static fields (not just the production
+   enabled source carries all required static fields (not just the production
    ``missing_mandatory_fields`` subset -- domains/``fields_consumed`` too).
 2. A *value-level leak scan* of the public projection (both the CLI
    ``public_registry`` view and the ``get_data_sources`` service): no secret,
    OAuth config, local filesystem path, or takedown correspondence escapes, and
    the emitted key set stays within the ``_PUBLIC_FIELDS`` allowlist (fail-closed).
-3. One consolidated end-to-end takedown drill proving §V20/§V32 (a)-(e) hold
+3. One consolidated end-to-end takedown drill: the guarantees hold
    *together*: current DB active until the candidate validates (a), only the
    purged source's rows removed while the other source/region stays live (b),
-   the FTS index no longer surfaces the purged entity (c, B19), the registry
-   ``enabled`` flag flips (d, B12), and no phantom purge is journaled on a failed
-   rebuild (e, B11).
+   the FTS index no longer surfaces the purged entity (c), the registry
+   ``enabled`` flag flips (d), and no phantom purge is journaled on a failed
+   rebuild (e).
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 _LOCAL = "local_snapshot"
 _PRIMARY = "arknights_assets_gamedata"
 
-# §V27 required static registry fields for an *enabled* source. This is stricter
+# Required static registry fields for an *enabled* source. This is stricter
 # than the production ``_MANDATORY_FOR_ENABLED`` gate: it also requires the
 # domains list (``fields_consumed``) so the audit is real, not a stub. "snapshot
 # commit" is deliberately absent -- it is tracked at runtime in
@@ -70,7 +70,7 @@ _V27_REQUIRED_FIELDS = (
     "last_reviewed_at",
 )
 
-# Substrings that must never appear in a public-projection key (§V27): secrets,
+# Substrings that must never appear in a public-projection key: secrets,
 # OAuth config, takedown correspondence. ``policy_notes`` (takedown correspondence
 # home) is covered explicitly as well.
 _FORBIDDEN_KEY_SUBSTRINGS = (
@@ -148,8 +148,8 @@ def _iter_str_leaves(value: object) -> Iterator[str]:
 
 
 def _looks_like_fs_path(value: str) -> bool:
-    """A local filesystem path (absolute POSIX/Windows or home-dir), which §V27
-    forbids leaking. ``http(s)://`` and ``local://`` are intended-public URIs, not
+    """A local filesystem path (absolute POSIX/Windows or home-dir), which must
+    never leak. ``http(s)://`` and ``local://`` are intended-public URIs, not
     filesystem paths, so they are exempt."""
     if value.startswith(("http://", "https://", "local://")):
         return False
@@ -158,11 +158,11 @@ def _looks_like_fs_path(value: str) -> bool:
     )
 
 
-# --- Part A: registry completeness review (§V27) ------------------------------
+# --- Part A: registry completeness review -------------------------------------
 
 
 def test_every_enabled_source_carries_all_v27_fields() -> None:
-    # §V27: the real registry must be complete for every enabled source. This is a
+    # The real registry must be complete for every enabled source. This is a
     # full field-by-field audit, not the production subset check alone.
     reg = load_source_registry(REGISTRY)  # validate=True raises if incomplete
     enabled = reg.enabled()
@@ -171,16 +171,16 @@ def test_every_enabled_source_carries_all_v27_fields() -> None:
         for field in _V27_REQUIRED_FIELDS:
             value = getattr(entry, field)
             if isinstance(value, str):
-                assert value.strip(), f"{entry.source_id}: empty §V27 field {field!r}"
+                assert value.strip(), f"{entry.source_id}: empty field {field!r}"
             else:  # regions / fields_consumed are lists
-                assert value, f"{entry.source_id}: empty §V27 list field {field!r}"
+                assert value, f"{entry.source_id}: empty list field {field!r}"
         assert entry.enabled is True
         # The production completeness gate must agree (it is a subset of the above).
         assert entry.missing_mandatory_fields() == []
 
 
 def test_public_projection_leaks_no_forbidden_content() -> None:
-    # §V27: neither public surface may leak secrets, OAuth config, local fs paths,
+    # Neither public surface may leak secrets, OAuth config, local fs paths,
     # or takedown correspondence. Both the CLI `source list --json` view
     # (public_registry) and the get_data_sources service are scanned at key AND
     # value level -- a check the unit tests (which only assert policy_notes-absent
@@ -211,7 +211,7 @@ def test_public_projection_leaks_no_forbidden_content() -> None:
                 assert not _looks_like_fs_path(leaf), f"local fs path leaked: {leaf!r}"
 
 
-# --- Part B: consolidated end-to-end takedown/purge drill (§V20/§V32) ---------
+# --- Part B: consolidated end-to-end takedown/purge drill --------------------
 
 
 def test_takedown_drill_success_proves_v20_v32(tmp_path: Path) -> None:
@@ -221,7 +221,7 @@ def test_takedown_drill_success_proves_v20_v32(tmp_path: Path) -> None:
     active0_bytes = active0.read_bytes()
     current_before = (data_dir / "current.json").read_bytes()
 
-    # Two independent sources/regions are live before the takedown (§V27 audit here
+    # Two independent sources/regions are live before the takedown (this audit here
     # covers the runtime "snapshot commit" leg: each source has its own snapshots).
     assert _count(active0, "SELECT COUNT(*) FROM stages WHERE server = 'en'") > 0
     assert _count(active0, "SELECT COUNT(*) FROM stages WHERE server = 'cn'") > 0
@@ -239,14 +239,14 @@ def test_takedown_drill_success_proves_v20_v32(tmp_path: Path) -> None:
 
     # (a) current DB active until the candidate validates: the old build was never
     # mutated in place (it survives byte-identical) and the pointer only moved once
-    # the rebuild validated (§V4 backstop of §V20).
+    # the rebuild validated.
     assert active0.is_file()
     assert active0.read_bytes() == active0_bytes
     assert rebuilt != active0
     assert (data_dir / "current.json").read_bytes() != current_before
 
     # (b) only the purged source's rows are removed; the other source/region stays
-    # live (§V20/§V32).
+    # live.
     assert _count(rebuilt, "SELECT COUNT(*) FROM stages WHERE server = 'en'") == 0
     assert _count(rebuilt, "SELECT COUNT(*) FROM enemies WHERE server = 'en'") == 0
     assert _count(rebuilt, "SELECT COUNT(*) FROM stages WHERE server = 'cn'") > 0
@@ -255,16 +255,16 @@ def test_takedown_drill_success_proves_v20_v32(tmp_path: Path) -> None:
         remaining = {r[0] for r in conn.execute("SELECT DISTINCT source_id FROM source_snapshots")}
     assert remaining == {_PRIMARY}
 
-    # (c) the FTS index no longer surfaces the purged entity (B19): entity_fts is a
+    # (c) the FTS index no longer surfaces the purged entity: entity_fts is a
     # standalone FTS5 index with no triggers, so purge must rebuild it from
-    # surviving rows or the taken-down entity keeps surfacing via search (§V16).
+    # surviving rows or the taken-down entity keeps surfacing via search.
     assert _count(rebuilt, "SELECT COUNT(*) FROM entity_fts WHERE server = 'en'") == 0
     assert _count(rebuilt, "SELECT COUNT(*) FROM entity_fts WHERE server = 'cn'") > 0
     with read_only_connection(rebuilt) as conn:
         assert search_entities(conn, query="drone", server="en").hits == ()
         assert search_entities(conn, query="drone", server="cn").hits
 
-    # (d) the machine-registry enabled flag flips (B12): a later `sync` cannot
+    # (d) the machine-registry enabled flag flips: a later `sync` cannot
     # repopulate the purged source.
     entry = load_source_registry(registry, validate=False).get(_LOCAL)
     assert entry is not None and entry.enabled is False
@@ -279,7 +279,7 @@ def test_takedown_failed_validation_no_phantom_purge_keeps_current(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # (a) + (e): a rebuild that fails validation leaves the current DB active and
-    # journals NO purge (B11 -- a phantom purge would materialize into the next
+    # journals NO purge (a phantom purge would materialize into the next
     # build while the source's rows are still present).
     config, data_dir, _ = _setup(tmp_path)
     active0 = _build_two_source_active(tmp_path, data_dir)
@@ -312,7 +312,7 @@ def test_purge_contract_current_active_until_candidate_validates(
 ) -> None:
     # (a) at the function-contract level: purge_and_rebuild never promotes when the
     # candidate fails validation (promotion is None), so the current build stays
-    # active (§V20). The active DB is only copied, never mutated in place (§V4).
+    # active. The active DB is only copied, never mutated in place.
     _, data_dir, _ = _setup(tmp_path)
     active0 = _build_two_source_active(tmp_path, data_dir)
     current_before = (data_dir / "current.json").read_bytes()

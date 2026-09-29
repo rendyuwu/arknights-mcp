@@ -1,15 +1,15 @@
-"""Enemy read repository (§V2; §T20/§T35).
+"""Enemy read repository.
 
 Encapsulates the parameterized ``SELECT``s that back the ``get_enemy`` service: a
 single enemy keyed by ``(server, game_id)`` -- the unique identity -- with its
-region-scoped provenance joined in (§V5), plus the enemy's typed level variants
+region-scoped provenance joined in, plus the enemy's typed level variants
 from ``enemy_levels`` (the stat block + allowlisted structural JSON fragments).
 Rows are returned as flat, typed dataclasses that mirror the selected columns
 1:1; domain shaping (JSON decode, envelope mapping) stays in the service.
 
 The enemy join is on NOT NULL foreign keys
 (``enemies -> record_provenance -> source_snapshots``), so a found enemy always
-carries ``snapshot_id`` + ``imported_at`` (§V5). Every value is bound (§V2).
+carries ``snapshot_id`` + ``imported_at``. Every value is bound.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from arknights_mcp.db.repositories.base import Repository
 
 @dataclass(frozen=True)
 class EnemyRow:
-    """One enemy row plus its joined region provenance (§V5)."""
+    """One enemy row plus its joined region provenance."""
 
     enemy_pk: int
     server: str
@@ -43,11 +43,11 @@ class EnemyLevelRow:
     """One level variant of an enemy (``enemy_levels``).
 
     Scalar stats are typed columns -- ``targeting`` among them, since upstream's
-    ``applyWay`` is one token, not a structure (§V99). ``immunities``/``abilities``
-    stay JSON strings here (allowlisted + sanitized at import, §V18/§V31) and are
+    ``applyWay`` is one token, not a structure. ``immunities``/``abilities``
+    stay JSON strings here (allowlisted + sanitized at import) and are
     decoded in the service.
 
-    ``attack_range`` and ``attack_range_declared_none`` are read as a PAIR (§V114/B161):
+    ``attack_range`` and ``attack_range_declared_none`` are read as a PAIR:
     a radius, or no radius with the source's own statement of which kind of "no" it is --
     DECLARED none (its ``-1.0`` sentinel) versus never stated. Reading the radius alone
     cannot tell them apart, which is what made an absent radius report as "missing" for
@@ -162,7 +162,7 @@ def _to_enemy_level_row(row: Any) -> EnemyLevelRow:
 
 
 class EnemyRepository(Repository):
-    """Read-only access to enemies and their level variants (§V2)."""
+    """Read-only access to enemies and their level variants."""
 
     def enemy_by_game_id(self, server: str, game_id: str) -> EnemyRow | None:
         """Enemy for ``(server, game_id)`` -- the unique key -- or ``None``."""

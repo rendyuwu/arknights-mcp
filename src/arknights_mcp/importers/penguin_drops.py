@@ -1,23 +1,22 @@
 """Penguin Statistics drop importer: items + result/matrix -> items + stage_drops.
 
 Consumes what the CLI-only :class:`~arknights_mcp.sources.penguin_statistics.PenguinStatsAdapter`
-returns (never a query-time fetch, §V52/§V1) and writes the drop-rate cache:
+returns (never a query-time fetch) and writes the drop-rate cache:
 
 * the penguin server -> fact-region map (``US``/Global -> ``en``, ``CN`` -> ``cn``;
-  ``JP``/``KR`` are outside {en,cn} in v0.2 and are dropped, §V54);
-* the field allowlist + recursive sanitize on every kept item / matrix row (§V18,
-  routed through :mod:`arknights_mcp.importers.field_policy`);
+  ``JP``/``KR`` are outside {en,cn} in v0.2 and are dropped);
+* the field allowlist + recursive sanitize on every kept item / matrix row (routed
+  through :mod:`arknights_mcp.importers.field_policy`);
 * a penguin ``source_snapshots`` row + per-record provenance so a drop fact carries
-  its OWN provenance chain, distinct from the ``arknights_assets`` game-data fact
-  (§V17/§V54);
-* the §V53 stale/attribution stamps (``fetched_at`` + ``expires_at`` + penguin
+  its OWN provenance chain, distinct from the ``arknights_assets`` game-data fact;
+* the stale/attribution stamps (``fetched_at`` + ``expires_at`` + penguin
   ``snapshot_id`` + ``region``) on every ``stage_drops`` row.
 
 Pure parsing (:func:`parse_items` / :func:`parse_matrix`) is separated from the DB
 write so it is unit-testable without a database. A penguin ``stageId`` / ``itemId``
 is the arknights game id, joined to the internal ``stages`` / ``items`` rows; a drop
 whose stage or item is absent is skipped (fail-closed, no fabricated row). A
-non-empty matrix that resolves to zero drops fails closed (§V30).
+non-empty matrix that resolves to zero drops fails closed.
 """
 
 from __future__ import annotations
@@ -45,18 +44,18 @@ from arknights_mcp.util.sqlite import integrity_guard
 
 _LOG = logging.getLogger(__name__)
 
-#: Penguin server code -> fact region (§V54). ``US`` is the Global/EN server, ``CN``
+#: Penguin server code -> fact region. ``US`` is the Global/EN server, ``CN``
 #: the Chinese server. ``JP``/``KR`` penguin servers are outside {en,cn} in v0.2 and
 #: are dropped -- never mislabelled as en/cn.
 PENGUIN_SERVER_TO_REGION: dict[str, str] = {"US": "en", "CN": "cn"}
 
-#: Default lifetime of a cached drop fact before it is served as ``data_stale``
-#: (§V53). The CLI/config may override; kept here as the single default home.
+#: Default lifetime of a cached drop fact before it is served as ``data_stale``.
+#: The CLI/config may override; kept here as the single default home.
 DEFAULT_DROP_TTL: timedelta = timedelta(days=7)
 
 
 class DropFetcher(Protocol):
-    """The read surface the importer needs from the penguin adapter (§V37).
+    """The read surface the importer needs from the penguin adapter.
 
     Matches :meth:`PenguinStatsAdapter.fetch`; typed as a Protocol so the importer
     is unit-testable with an in-memory fake and never depends on the network class.
@@ -87,7 +86,7 @@ class ParsedDrop:
 @dataclass(frozen=True)
 class PenguinDropImportResult:
     """Per-server outcome. ``region``/``snapshot_id`` are ``None`` for a dropped
-    (jp/kr) penguin server (§V54); ``drops_skipped`` counts matrix rows whose stage
+    (jp/kr) penguin server; ``drops_skipped`` counts matrix rows whose stage
     or item was absent from the DB (skipped fail-closed, no fabricated row)."""
 
     region: str | None
@@ -103,8 +102,8 @@ def region_for_penguin_server(penguin_server: str) -> str | None:
 
 
 #: The inverse of :data:`PENGUIN_SERVER_TO_REGION`, derived from it so the two
-#: directions cannot drift (§V37): the sync ride-along (§T102/§V58) maps a fact
-#: region back to the penguin server it fetches from (en->US, cn->CN). Built once at
+#: directions cannot drift: the sync ride-along maps a fact region back to the
+#: penguin server it fetches from (en->US, cn->CN). Built once at
 #: import; the source map has no duplicate values, so the inverse is unambiguous.
 REGION_TO_PENGUIN_SERVER: dict[str, str] = {
     region: server for server, region in PENGUIN_SERVER_TO_REGION.items()
@@ -114,8 +113,8 @@ REGION_TO_PENGUIN_SERVER: dict[str, str] = {
 def penguin_server_for_region(region: str) -> str | None:
     """Map an en/cn fact region to its penguin server code, or ``None`` if none.
 
-    The inverse of :func:`region_for_penguin_server` (§V54), used by the ``sync``
-    ride-along (§V58): a region with no penguin server (e.g. a jp/kr region that is
+    The inverse of :func:`region_for_penguin_server`, used by the ``sync``
+    ride-along: a region with no penguin server (e.g. a jp/kr region that is
     not in {en,cn} anyway) is skipped silently rather than mislabelled.
     """
     return REGION_TO_PENGUIN_SERVER.get(region)
@@ -133,13 +132,13 @@ def _as_text(value: Any) -> str | None:
 
 
 def _localized_item_name(kept: dict[str, Any], region: str) -> str | None:
-    """Pick the display name for ``region`` from a kept penguin item (B46/§V59).
+    """Pick the display name for ``region`` from a kept penguin item.
 
     Penguin's top-level ``name`` is the canonical *Chinese* label; ``name_i18n`` is
     the per-locale dict (en/zh/ja/ko). The en region wants ``name_i18n.en``, the cn
     region ``name_i18n.zh``; a missing/blank locale entry falls back to the canonical
     ``name`` so a locale gap yields *some* label rather than ``None`` -- never the
-    wrong-language surprise of reading ``name`` blind for en (the B46 defect).
+    wrong-language surprise of reading ``name`` blind for en.
     """
     locale = REGION_TO_NAME_LOCALE.get(region)
     i18n = kept.get("name_i18n")
@@ -153,7 +152,7 @@ def _localized_item_name(kept: dict[str, Any], region: str) -> str | None:
 def parse_items(items_raw: Any, *, region: str) -> list[ParsedItem]:
     """Transform the penguin ``items`` payload (a JSON array) into allowlisted items.
 
-    ``region`` selects the display-name locale (B46/§V59): en->``name_i18n.en``,
+    ``region`` selects the display-name locale: en->``name_i18n.en``,
     cn->``name_i18n.zh``, falling back to the canonical ``name`` when the locale
     entry is absent.
     """
@@ -224,10 +223,10 @@ def _insert_snapshot(
     matrix_raw: Any,
     fetched_at: str,
 ) -> str:
-    """Insert the penguin ``source_snapshots`` row (its own provenance chain, §V54).
+    """Insert the penguin ``source_snapshots`` row (its own provenance chain).
 
     The ``manifest_hash`` is derived from the fetched payloads so an unchanged fetch
-    yields a stable ``snapshot_id`` (like the game-data snapshot manifest, §V37).
+    yields a stable ``snapshot_id`` (like the game-data snapshot manifest).
     """
     files = {
         "items": sha256_hex(canonical_json(items_raw)),
@@ -270,7 +269,7 @@ def _insert_items(
     region: str,
     snapshot_id: str,
 ) -> dict[str, int]:
-    """Insert items for ``region``, returning a game_id -> item_pk map (§V17)."""
+    """Insert items for ``region``, returning a game_id -> item_pk map."""
     item_pk_by_game_id: dict[str, int] = {}
     for item in parsed_items:
         provenance_id = insert_record_provenance(
@@ -281,8 +280,7 @@ def _insert_items(
             record=item.provenance_record,
         )
         # A repeated itemId collides on UNIQUE(server, game_id); fail closed with a
-        # typed error rather than an uncaught IntegrityError tearing down the build
-        # (§V33 / §V3).
+        # typed error rather than an uncaught IntegrityError tearing down the build.
         with integrity_guard(
             f"penguin item {item.game_id!r} duplicates (server={region}, game_id)",
             ImporterError,
@@ -314,17 +312,16 @@ def import_penguin_drops(
 ) -> PenguinDropImportResult:
     """Fetch + import one penguin server's drops into items + stage_drops.
 
-    ``penguin_server`` maps to a fact region (§V54); a dropped (jp/kr) server returns
+    ``penguin_server`` maps to a fact region; a dropped (jp/kr) server returns
     an empty result without a snapshot. Every ``stage_drops`` row is stamped with the
     penguin ``snapshot_id`` + ``fetched_at`` + ``expires_at`` (= ``fetched_at`` +
-    ``ttl``) + ``region`` (§V53). A non-empty matrix that resolves to zero drops
-    fails closed (§V30).
+    ``ttl``) + ``region``. A non-empty matrix that resolves to zero drops fails closed.
     """
     region = region_for_penguin_server(penguin_server)
     if region is None:
-        # JP/KR penguin servers are outside {en,cn} in v0.2 -- dropped, not mislabelled
-        # (§V54). No snapshot, no rows.
-        _LOG.warning("penguin server %r has no en/cn fact region; dropped (§V54)", penguin_server)
+        # JP/KR penguin servers are outside {en,cn} in v0.2 -- dropped, not mislabelled.
+        # No snapshot, no rows.
+        _LOG.warning("penguin server %r has no en/cn fact region; dropped", penguin_server)
         return PenguinDropImportResult(
             region=None, snapshot_id=None, items_inserted=0, drops_inserted=0, drops_skipped=0
         )
@@ -374,7 +371,7 @@ def import_penguin_drops(
             record=drop.provenance_record,
         )
         # A duplicate (stage, item) drop collides on UNIQUE(stage_pk, item_pk);
-        # map the anomaly to a typed error (§V33), not an uncaught IntegrityError.
+        # map the anomaly to a typed error, not an uncaught IntegrityError.
         with integrity_guard(
             f"penguin drop {drop.stage_game_id!r}/{drop.item_game_id!r} duplicates (stage, item)",
             ImporterError,
@@ -398,9 +395,9 @@ def import_penguin_drops(
             )
         drops_inserted += 1
 
-    # §V30: a non-empty matrix yielding zero stored drops is a silent-empty regression
+    # A non-empty matrix yielding zero stored drops is a silent-empty regression
     # (a stageId/itemId join failure, or drops fetched for a region with no stages).
-    # Fail closed so the candidate is discarded and the active DB stays untouched (§V3).
+    # Fail closed so the candidate is discarded and the active DB stays untouched.
     guard_not_silently_empty(
         candidates=len(parsed_drops),
         produced=drops_inserted,

@@ -1,16 +1,16 @@
-"""MCP tool implementations (§T32+).
+"""MCP tool implementations.
 
-Each module bridges a bounded input model (§T30 -- the §V18/§V19 gate) and a
-shared domain service (§T31/§T17...) to the typed response envelope (§T29 -- one
-§V23 status per result), and exposes a ``build_*_spec`` factory that registers
+Each module bridges a bounded input model (the input gate) and a
+shared domain service to the typed response envelope (one
+status per result), and exposes a ``build_*_spec`` factory that registers
 into the single shared
-:class:`~arknights_mcp.mcp.tool_registry.ToolRegistry` (§V14). A tool owns no
+:class:`~arknights_mcp.mcp.tool_registry.ToolRegistry`. A tool owns no
 query logic of its own -- only the model -> service -> envelope mapping -- so
-both transports dispatch the exact same read-only (§V2) behaviour.
+both transports dispatch the exact same read-only behaviour.
 
-:func:`build_tool_registry` is the single home (§V37) for *which* tools exist:
+:func:`build_tool_registry` is the single home for *which* tools exist:
 it assembles every available M2 tool into one :class:`ToolRegistry`, so both
-transports (stdio + Streamable HTTP, §V14) dispatch the identical set instead of
+transports (stdio + Streamable HTTP) dispatch the identical set instead of
 each re-enumerating it. It lives here rather than in ``tool_registry`` because it
 depends on the concrete tool modules, which in turn import ``ToolSpec`` from
 ``tool_registry`` (keeping the assembler here avoids that import cycle).
@@ -43,13 +43,13 @@ from arknights_mcp.mcp.tools.search import build_search_entities_spec, build_sea
 from arknights_mcp.mcp.tools.stage import build_analyze_stage_spec, build_get_stage_spec
 from arknights_mcp.sources.registry import SourceRegistry
 
-#: :func:`build_tool_registry` is the single §V37 home for *which* tools exist + their
+#: :func:`build_tool_registry` is the single home for *which* tools exist + their
 #: registration order. Most builders need only the read-only connection; the three
-#: image-ref-bearing builders (get_enemy/get_operator/get_banners, §T120) take the extra
+#: image-ref-bearing builders (get_enemy/get_operator/get_banners) take the extra
 #: image-ref emission gate, the three account tools (ADR 0020) take the optional account
 #: roster store, and the two data-metadata tools (get_data_status/get_data_sources) take
 #: the deployment mode / live source registry. Both transports pick up the identical
-#: assembled set (§V14); the fixed order keeps ``list_tools`` stable.
+#: assembled set; the fixed order keeps ``list_tools`` stable.
 
 
 def build_tool_registry(
@@ -60,28 +60,28 @@ def build_tool_registry(
     image_refs_enabled: bool = False,
     account_store: AccountStore | None = None,
 ) -> ToolRegistry:
-    """Assemble the shared MCP tool registry with every available tool (§V14/§V37).
+    """Assemble the shared MCP tool registry with every available tool.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build; every registered spec is read-only (§V2) and bound to it. ``registry``
-    is the live source posture ``get_data_sources`` projects (§V27), and ``mode``
+    build; every registered spec is read-only and bound to it. ``registry``
+    is the live source posture ``get_data_sources`` projects, and ``mode``
     is the deployment-mode label ``get_data_status`` reports. ``image_refs_enabled``
-    is the combined §T120 emission gate (config private-only posture AND the
+    is the combined emission gate (config private-only posture AND the
     ``arknights_game_resource`` source enabled, computed once by the app layer via
     :func:`~arknights_mcp.services.image_refs.refs_enabled`); it is threaded into
     ``get_operator``/``get_enemy``/``get_banners`` so the additive ``image_refs`` field
-    is emitted only when the source is enabled (§V21/§V63), and defaults ``False`` so a
+    is emitted only when the source is enabled, and defaults ``False`` so a
     caller that does not opt in never emits it. ``account_store`` is the owner's account
     roster database (ADR 0020, read through a SELECT-only role); the three account tools
     are always registered and answer ``database_unavailable`` when it is ``None``. Both
-    transports call this so they dispatch one identical tool set of every §I.tool tool
-    (§V14) -- there is no per-transport tool list to drift. Registration order is
+    transports call this so they dispatch one identical tool set
+    -- there is no per-transport tool list to drift. Registration order is
     deterministic (the order below), so ``list_tools`` is stable.
     """
     tool_registry = ToolRegistry()
-    # Explicit, ordered assembly so ``list_tools`` stays stable (§V14): the three
+    # Explicit, ordered assembly so ``list_tools`` stays stable: the three
     # image-ref-bearing tools slot into their historical positions among the
-    # connection-only builders. Single §V37 home for which tools exist + their order.
+    # connection-only builders. Single home for which tools exist + their order.
     ordered = (
         build_search_entities_spec(get_conn),
         build_search_stages_spec(get_conn),
@@ -100,7 +100,7 @@ def build_tool_registry(
     )
     for spec in ordered:
         tool_registry.register(spec)
-    # The two data-metadata tools (§T77) round out the §I.tool set; they carry the
+    # The two data-metadata tools round out the tool set; they carry the
     # extra deployment-mode / source-registry deps the entity tools lack.
     tool_registry.register(build_get_data_status_spec(get_conn, mode=mode))
     tool_registry.register(build_get_data_sources_spec(get_conn, registry=registry))

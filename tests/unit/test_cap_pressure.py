@@ -1,9 +1,9 @@
-"""§V121 (a) made executable: the widest legal request, read off the schema (T217 c).
+"""The widest legal request, read off the schema.
 
-B167 and B169 shipped one tool apart for the same reason -- every cap test drove a tool at
+Two cap bugs shipped one tool apart for the same reason -- every cap test drove a tool at
 its *defaults*, so a payload that only overruns with all four include flags on and
-``page_size=100`` was never rendered. §V121 (a) fixed the definition ("∀ include flag on, ∀
-knob @max"); this module checks that :mod:`arknights_mcp.mcp.cap_pressure` derives that
+``page_size=100`` was never rendered. The widest request is "every include flag on, every
+knob @max"; this module checks that :mod:`arknights_mcp.mcp.cap_pressure` derives that
 shape from each tool's own published ``inputSchema`` rather than from a list somebody has to
 remember to update.
 
@@ -15,7 +15,7 @@ The load-bearing assertion is the negative one. A widener that quietly skips a p
 does not understand is worse than no widener: it reports full coverage over a narrowed
 request space, which is the exact state the surface was in when both bugs shipped. So
 :func:`~arknights_mcp.mcp.cap_pressure.classify_inputs` raises, and the arms that raise are
-fired here from synthetic schemas rather than merely declared (§V113 b).
+fired here from synthetic schemas rather than merely declared.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ REGISTRY_TOML = REPO_ROOT / "config" / "data_sources.toml"
 
 @pytest.fixture
 def tool_registry() -> Iterator[ToolRegistry]:
-    """The real shared registry (§V14). Handlers are never invoked -- the schema and name
+    """The real shared registry. Handlers are never invoked -- the schema and name
     enumeration needs no query -- so an empty connection is enough."""
     conn = sqlite3.connect(":memory:")
     try:
@@ -80,7 +80,7 @@ def _blank(tool: str = "synthetic") -> ToolFramePressure:
 
 
 def test_the_shed_status_agrees_with_the_declared_peak() -> None:
-    # §T219/§V120 (f), offline: the contract sweep proves `shed` against a MEASURED peak, but
+    # Offline: the contract sweep proves `shed` against a MEASURED peak, but
     # it costs 75 seconds and needs a promoted build. The declaration also has to be
     # self-consistent, and that is free: LIVE means "exceeds the cap", so its own pinned peak
     # must be over; DEAD_TODAY and NONE both mean "fits", so theirs must be under. A status
@@ -96,8 +96,8 @@ def test_the_shed_status_agrees_with_the_declared_peak() -> None:
 def test_exactly_one_tool_keeps_a_plan_no_build_reaches() -> None:
     # DEAD_TODAY is a real exemption from "the shedder set is the over-cap set", so it stays
     # enumerated rather than counted: a second tool acquiring one is a decision, not a
-    # detail, and §V117 wants each such arm declared with the count that makes its status
-    # true. get_banners is the one -- 86.5% of cap since §T219, plan kept because page_size
+    # detail, and each such arm is declared with the count that makes its status
+    # true. get_banners is the one -- 86.5% of cap, plan kept because page_size
     # tops out at 100 while featured_ops per banner is the source's to decide.
     parked = {row.tool for row in FRAME_PRESSURE if row.shed is ShedStatus.DEAD_TODAY}
     assert parked == {"get_banners"}
@@ -120,9 +120,9 @@ def test_only_a_wall_clock_payload_declares_a_volatile_field() -> None:
 
 
 def test_every_registered_tool_declares_its_frame_pressure(tool_registry: ToolRegistry) -> None:
-    # §V120 (f) "⊥ a remembered list of tools", both ways. A registered tool with no row
+    # "No remembered list of tools", both ways. A registered tool with no row
     # would be swept by nothing; a row naming no registered tool is dead weight that makes
-    # the coverage count look larger than the surface it covers (B135's shape).
+    # the coverage count look larger than the surface it covers.
     registered = set(tool_registry.names())
     declared = set(PRESSURE_BY_TOOL)
     assert registered - declared == set(), "a registered tool declares no cap pressure"
@@ -132,12 +132,12 @@ def test_every_registered_tool_declares_its_frame_pressure(tool_registry: ToolRe
 
 def test_the_declaration_order_is_the_registration_order(tool_registry: ToolRegistry) -> None:
     # Not cosmetic: reading the two side by side is how a reviewer notices a missing row,
-    # and ``list_tools`` order is itself pinned (§V14).
+    # and ``list_tools`` order is itself pinned.
     assert tuple(row.tool for row in FRAME_PRESSURE) == tool_registry.names()
 
 
 def test_every_declaration_names_its_basis(tool_registry: ToolRegistry) -> None:
-    # §V121 (c): a bare number is not re-checkable. Every row names where it peaked, states
+    # A bare number is not re-checkable. Every row names where it peaked, states
     # its unit (pre-shed frame bytes) and its share of the cap, and the module names the
     # build all of them were counted on.
     assert CAP_PRESSURE_BASIS == "2026-08-13T220624Z-en-cn"
@@ -151,7 +151,7 @@ def test_every_declaration_names_its_basis(tool_registry: ToolRegistry) -> None:
 def test_the_bands_bracket_the_declared_peak() -> None:
     # The pin has to be able to fail in both directions: growth past the ceiling is the
     # tripwire, and a declaration parked far above the real peak is a guard that cannot
-    # fail (§V117).
+    # fail.
     assert STALE_FLOOR < 1.0 < CREEP_CEILING
 
 
@@ -167,7 +167,7 @@ def test_every_registered_input_property_is_classified(tool_registry: ToolRegist
 
 
 def test_every_input_kind_is_live_on_the_real_surface(tool_registry: ToolRegistry) -> None:
-    # §V117's other half: a bucket no registered tool lands in is an untested rule, and an
+    # The other half: a bucket no registered tool lands in is an untested rule, and an
     # untested rule is where the next unclassified parameter would silently land.
     seen: set[InputKind] = set()
     for spec in tool_registry.specs():
@@ -209,7 +209,7 @@ def test_the_declared_enum_widest_members_match_the_published_domain(
     # The order of enum members is semantic, not schematic, so the widest one is declared.
     # A new ``depth`` or ``mode`` member therefore fails HERE -- where somebody has to
     # decide whether it is wider -- instead of leaving the sweep one member short in
-    # silence, which is the §V117 vocabulary failure one layer out.
+    # silence, which is the vocabulary failure one layer out.
     for spec in tool_registry.specs():
         pressure = PRESSURE_BY_TOOL[spec.name]
         kinds = classify_inputs(spec.input_schema, pressure)
@@ -251,7 +251,7 @@ def test_enum_filter_variants_cross_the_domain_and_absence(tool_registry: ToolRe
     assert enum_filter_variants(plain.input_schema, PRESSURE_BY_TOOL["get_enemy"]) == ({},)
 
 
-# --- the raising arms, fired rather than declared (§V113 b) ---------------------
+# --- the raising arms, fired rather than declared ------------------------------
 
 
 def test_an_unclassified_property_raises() -> None:
@@ -300,7 +300,7 @@ def test_a_dangling_page_ref_raises() -> None:
 def test_a_declared_widest_member_outside_the_domain_is_still_applied() -> None:
     # Not a raising arm: the domain pin above is what catches this, and it catches it with
     # the tool's real schema in hand. This records that the widener itself does not
-    # second-guess the declaration -- one home for the decision (§V37).
+    # second-guess the declaration -- one home for the decision.
     schema = {
         "type": "object",
         "properties": {"depth": {"type": "string", "enum": ["a", "b"], "default": "a"}},

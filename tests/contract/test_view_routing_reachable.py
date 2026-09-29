@@ -1,10 +1,10 @@
-"""T203: §V108's real-build guard -- every routing pointer actually leads somewhere.
+"""Real-build guard -- every routing pointer actually leads somewhere.
 
-The §T203 unit tests prove a coarse observation CARRIES a routing sentence and that the
+The unit tests prove a coarse observation CARRIES a routing sentence and that the
 flag it names is a real ``get_stage`` input. Neither proves the promise is kept: a
 limitation that says "call get_stage with include_routes for this stage" is a worse
 answer than silence if that call comes back empty, because the client has now been sent
-somewhere and told the data is there. B153's harm was a client acting on what a
+somewhere and told the data is there. The harm was a client acting on what a
 limitation implied; a dangling pointer is the same harm with an extra hop.
 
 So this walks the real corpus and checks the pointer against the tool it names. Counted
@@ -17,7 +17,7 @@ on the promoted ``2026-07-30T010030Z`` build:
 * ``threat.tiles_deploy`` fires on **241 en / 247 cn**, and ``include_map`` returns a
   tile grid on all of them.
 
-Also pinned: the two limitations that are NOT §V108 cases. ``ranged_arts``'s
+Also pinned: the two limitations that are NOT routing cases. ``ranged_arts``'s
 "attack_range missing" (13 en / 13 cn enemies) and ``def_res_skew``'s "res missing"
 (5 both) name a TRUE source absence -- the column is NULL on every level variant of
 those enemies, so ``get_enemy`` would show the same gap and routing there would be a
@@ -26,7 +26,7 @@ bolting a pointer onto an absence no view can fill.
 
 Deliberately NOT in ``ci.yml``'s enumerated live-upstream module list: it needs no
 network, so it is not a ``live_upstream_disabled`` module and the whole-suite run at
-``ci.yml:45`` already covers it (the §T201/§T212 precedent). Skipped when no build is
+``ci.yml:45`` already covers it (the existing precedent). Skipped when no build is
 promoted; the unit tests carry the behaviour, so a logic edit still fails offline.
 """
 
@@ -65,7 +65,7 @@ pytestmark = pytest.mark.skipif(
 #: rule_id -> (the include_ flag its limitation names, floor on how often it fires).
 #: The floors are ~90% of the counted figures: a real corpus edit may move them, a
 #: regression that stops the rule firing (and so stops the guard checking anything)
-#: cannot hide under them (§V96).
+#: cannot hide under them.
 _ROUTED_RULES = {
     "threat.lane_route": ("include_routes", 2200),
     "threat.pressure_spike": ("include_spawns", 1000),
@@ -113,7 +113,7 @@ def routed_cn(conn: sqlite3.Connection) -> dict[str, list[str]]:
 def test_routed_population_is_non_degenerate(
     routed_en: dict[str, list[str]], routed_cn: dict[str, list[str]], rule_id: str
 ) -> None:
-    # §V96: a rule that stopped firing would make every reachability assertion below
+    # A rule that stopped firing would make every reachability assertion below
     # pass over an empty list.
     _, floor = _ROUTED_RULES[rule_id]
     assert len(routed_en[rule_id]) >= floor, f"en {rule_id}: {len(routed_en[rule_id])}"
@@ -147,7 +147,7 @@ def test_every_routed_stage_reaches_a_non_empty_section(
     server: str,
     rule_id: str,
 ) -> None:
-    # §V108: the limitation tells the client the fuller view is one call away. On the
+    # The limitation tells the client the fuller view is one call away. On the
     # promoted build that is true for every stage it says it to -- 2453/2453 en and
     # 2484/2484 cn for routes, 1124/1124 and 1149/1149 for spawns, 241/241 and 247/247
     # for the tile grid. A single empty landing is a limitation that lied.
@@ -178,7 +178,7 @@ def test_absent_stat_is_absent_on_every_level_variant(
     # The counterpart to the routing rule: these enemies drive a "<stat> missing"
     # limitation, and the stat is NULL on EVERY level variant, so no view of this server
     # holds it. Routing them at get_enemy would send the client to the same NULL --
-    # §V108 asks for a fuller view, not for a pointer where none exists. If a future
+    # the rule asks for a fuller view, not for a pointer where none exists. If a future
     # import fills the column, this fails and the limitation gets re-examined.
     rows = conn.execute(
         f"SELECT el.{column} FROM enemy_levels el JOIN enemies e ON e.enemy_pk = el.enemy_pk "

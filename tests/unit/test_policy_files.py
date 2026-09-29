@@ -1,9 +1,9 @@
-"""T4: repository policy / legal files exist and carry their non-negotiable
+"""Repository policy / legal files exist and carry their non-negotiable
 content.
 
-Guards SPEC §V16 (release artifact excludes raw data + game content; NOTICE
-scopes the code license) and §V27 (source registry completeness in the
-human-readable mirror `DATA_SOURCES.md`).
+Guards the release artifact excluding raw data + game content (NOTICE
+scopes the code license) and source registry completeness in the
+human-readable mirror `DATA_SOURCES.md`.
 """
 
 from __future__ import annotations
@@ -15,11 +15,11 @@ from tests.support import REQUIRED_POLICY_FILES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Canonical policy-file list lives in tests.support so the release audit (§T49)
-# and this on-disk check read the same set (§V37).
+# Canonical policy-file list lives in tests.support so the release audit
+# and this on-disk check read the same set.
 REQUIRED_FILES = list(REQUIRED_POLICY_FILES)
 
-# Source ids that must appear in the human-readable registry mirror (§V27).
+# Source ids that must appear in the human-readable registry mirror.
 REGISTRY_SOURCE_IDS = [
     "arknights_assets_gamedata",
     "kengxxiao_gamedata",
@@ -30,7 +30,7 @@ REGISTRY_SOURCE_IDS = [
 ]
 
 # Mandatory per-source fields the mirror must surface for the enabled primary
-# source (§V27 / PRD 10.1).
+# source (PRD 10.1).
 REGISTRY_FIELD_MARKERS = [
     "Owner",
     "Canonical URL",
@@ -66,12 +66,12 @@ def test_license_is_apache_2() -> None:
 
 
 def test_notice_scopes_code_license_and_excludes_data() -> None:
-    # V16: Apache-2.0 covers project code only; imported data/game content excluded.
+    # Apache-2.0 covers project code only; imported data/game content excluded.
     text = _read("NOTICE")
     assert "applies ONLY" in text and "source code" in text
     assert "does NOT" in text or "does not relicense" in text.lower()
     assert "imported data" in text.lower()
-    # V16: no bundled raw snapshots or prebuilt databases in releases.
+    # No bundled raw snapshots or prebuilt databases in releases.
     norm = _norm(text)
     assert "prebuilt database" in norm
     assert "raw game-data snapshot" in norm
@@ -92,7 +92,7 @@ def test_data_sources_lists_every_source_id() -> None:
 
 
 def test_data_sources_carries_mandatory_fields() -> None:
-    # V27: mandatory registry fields must be present in the mirror.
+    # Mandatory registry fields must be present in the mirror.
     text = _read("DATA_SOURCES.md")
     for marker in REGISTRY_FIELD_MARKERS:
         assert marker in text, f"DATA_SOURCES.md missing mandatory field marker: {marker}"

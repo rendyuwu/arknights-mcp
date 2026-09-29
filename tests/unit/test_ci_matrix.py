@@ -1,7 +1,7 @@
-"""T78: CI workflow runs lint + type + test on Linux/ubuntu-latest only
-(SPEC §C) for Python 3.12, using uv with the locked dependencies. Docker makes
+"""CI workflow runs lint + type + test on Linux/ubuntu-latest only
+for Python 3.12, using uv with the locked dependencies. Docker makes
 the build OS-portable and there is no macOS device to real-test, so Windows and
-macOS runners are intentionally dropped (was T7's three-OS matrix).
+macOS runners are intentionally dropped (was the earlier three-OS matrix).
 
 Parsed as text to avoid adding a YAML dependency just for this guard.
 """
@@ -37,7 +37,7 @@ def test_matrix_covers_required_os(os_name: str) -> None:
 
 @pytest.mark.parametrize("os_name", FORBIDDEN_OS)
 def test_matrix_excludes_other_os(os_name: str) -> None:
-    # SPEC §C: Linux-only. Docker -> OS-portable; no macOS device to real-test.
+    # Linux-only. Docker -> OS-portable; no macOS device to real-test.
     assert os_name not in CI.read_text(encoding="utf-8"), f"CI matrix should not run {os_name}"
 
 
@@ -51,14 +51,14 @@ def test_required_step_present(step: str) -> None:
 
 
 def test_every_live_upstream_module_is_listed_in_the_job() -> None:
-    """A live-upstream guard that CI never selects runs NOWHERE (§T208 CI gap, §T210 d).
+    """A live-upstream guard that CI never selects runs NOWHERE.
 
     Each of those modules skips itself unless ``ARKMCP_LIVE_UPSTREAM`` is set, and the
     job names its modules explicitly rather than running ``tests/contract/``. So an
     unlisted module is silent in BOTH paths: the default suite skips it and CI never
     selects it. It looks green locally and guards nothing -- which is what happened to
-    §T204's template-truncation guard and §T205's event-title guard, written and then
-    unrun for two milestones until §T208 found them.
+    the template-truncation guard and the event-title guard, written and then
+    unrun for two milestones until the CI gap was found.
     """
     workflow = CI.read_text(encoding="utf-8")
     contract_dir = REPO_ROOT / "tests" / "contract"

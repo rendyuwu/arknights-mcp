@@ -1,34 +1,34 @@
-"""T217 (c): the §V120 (f) tripwire -- every tool, widest legal request, whole build.
+"""The tripwire -- every tool, widest legal request, whole build.
 
 Arms (a) and (b) fixed two shapes. This is the guard that says a third one cannot ship
-quietly. B167 and B169 were the same failure one tool apart, and both root causes are
+quietly. Two earlier defects were the same failure one tool apart, and both root causes are
 recorded in the same words: *no test drove a tool at its widest legal request over the real
 corpus*. The cap suite drove defaults, so a frame that only overruns with every include
 flag on and ``page_size=100`` was outside everything anyone was looking at.
 
 So this module drives exactly that shape -- derived from each tool's own published schema
-(:mod:`arknights_mcp.mcp.cap_pressure`, §V121 a), never from a list of parameters somebody
+(:mod:`arknights_mcp.mcp.cap_pressure`), never from a list of parameters somebody
 maintains -- over every row of the promoted build, and reads the frame **before** any shed.
 Four things then have to hold:
 
-* the measured peak sits inside the band its declaration pinned (the distribution half of
-  §V120 f, and the part that fires when a new event grows a fatter window);
+* the measured peak sits inside the band its declaration pinned (the distribution half,
+  and the part that fires when a new event grows a fatter window);
 * the set of tools that exceed the cap is *exactly* the set declaring ``ShedStatus.LIVE``,
   in both directions;
 * every tool that exceeds it answers -- non-empty ``data`` under the cap -- which is the
-  B167/B169 harm itself, checked as behaviour rather than as the presence of a
+  harm itself, checked as behaviour rather than as the presence of a
   ``shed_plan=`` argument, so the declaration cannot drift from the code;
 * every tool that fits is byte-identical with the cap lifted, so nothing sheds spuriously;
-* the two ways of fitting stay distinguishable BY EXECUTION (§T219): a ``DEAD_TODAY`` plan
+* the two ways of fitting stay distinguishable BY EXECUTION: a ``DEAD_TODAY`` plan
   still fires when the cap is lowered under the tool's own peak, and a ``NONE`` tool still
   withholds when it is. Without that pair, ``dead_today`` would be a place to park a
-  declaration for a plan somebody had already deleted -- a guard that cannot fail (§V117) --
-  and the lowered cap is the synthetic value §V113 (b) requires, because the promoted build
+  declaration for a plan somebody had already deleted -- a guard that cannot fail --
+  and the lowered cap is the synthetic value a proof requires, because the promoted build
   no longer reaches the arm.
 
 Skipped without a promoted build. Not added to ``ci.yml``'s enumerated module list on
 purpose: that list names the modules the live-upstream job guards and this needs no network
-(T201/T203/T212/T217 a+b precedent); ``ci.yml`` already runs the whole suite. The sweep is
+(same precedent as the other arms); ``ci.yml`` already runs the whole suite. The sweep is
 the expensive kind of honest -- about 75 seconds, three quarters of it ``get_stage`` at max
 detail over 6716 stages -- and it runs once per session as a module fixture.
 """
@@ -87,7 +87,7 @@ _PAGED_TOOLS = ("get_announcements", "get_banners", "get_my_roster", "get_my_inv
 
 #: Free-text tools. Their request space is unbounded, so the battery below stands in for it
 #: and the declaration says so -- what actually bounds them is 50 rows of capped locator
-#: fields (§V19), not the query.
+#: fields, not the query.
 _SEARCH_TOOLS = ("search_entities", "search_stages")
 
 #: No client-controlled input at all: one shape each, which IS the widest legal request.
@@ -112,7 +112,7 @@ class Peak:
 
 @contextlib.contextmanager
 def _cap_lifted() -> Iterator[None]:
-    """Read the PRE-shed frame, the way B169's own count did.
+    """Read the PRE-shed frame, the way the earlier count did.
 
     ``MAX_RESPONSE_BYTES`` is referenced only inside ``envelopes`` (``_enforce_cap`` and
     the cap limitation), so rebinding the module attribute lifts it everywhere. That the
@@ -241,9 +241,9 @@ def peaks(registry: ToolRegistry, conn: sqlite3.Connection) -> dict[str, Peak]:
 
 
 def test_every_registered_tool_is_swept(registry: ToolRegistry) -> None:
-    # §V120 (f) "⊥ a remembered list of tools": a registered tool in no driver group would
+    # "Never a remembered list of tools": a registered tool in no driver group would
     # be reported as covered by the declaration test and driven by nothing here, which is
-    # exactly the half-covered state B167 and B169 shipped from. Fails both ways.
+    # exactly the half-covered state the earlier defects shipped from. Fails both ways.
     driven = set(_ROW_CORPUS) | set(_PAGED_TOOLS) | set(_SEARCH_TOOLS) | set(_STATIC_TOOLS)
     assert set(registry.names()) - driven == set(), "a registered tool is in no driver group"
     assert driven - set(registry.names()) == set(), "a driver group names no registered tool"
@@ -274,7 +274,7 @@ def test_the_measured_peak_stays_within_its_declared_band(
 ) -> None:
     # The tripwire. Above the ceiling means the corpus grew a fatter window than anyone
     # counted -- re-count, and give the tool a shed plan if the new peak crossed the cap.
-    # Below the floor means the declaration is no longer a pin (§V117: a guard that cannot
+    # Below the floor means the declaration is no longer a pin (a guard that cannot
     # fail is not a guard).
     measured = peaks[row.tool].frame
     ceiling = int(row.peak_frame_bytes * CREEP_CEILING)
@@ -290,18 +290,18 @@ def test_the_peak_shape_is_where_the_declaration_says(
     peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
     # A peak that moved to another row while staying inside the band is still news: the
-    # declaration's ``peak_at`` is what a reader checks a figure against (§V121 c), and
+    # declaration's ``peak_at`` is what a reader checks a figure against, and
     # ``get_stage``'s own peak row is the shape arm (b) was built on.
     assert peaks[row.tool].label == row.peak_at
 
 
-# --- §V120 (f): able to exceed ⇒ a LIVE plan, and a live plan ⇒ answers ---------
+# --- able to exceed means a LIVE plan, and a live plan means answers ---------
 
 
 def test_the_declared_live_shedder_set_is_exactly_the_over_cap_set(peaks: dict[str, Peak]) -> None:
     # The clause itself, failing both ways. A tool that can exceed and declares no live plan
-    # is the next B167; a tool declaring LIVE that cannot exceed is a claim no build backs.
-    # The second direction is why §T219 had to split the declaration: hoisting the per-ref
+    # is the next regression; a tool declaring LIVE that cannot exceed is a claim no build backs.
+    # The second direction is why the declaration splits: hoisting the per-ref
     # source_id took get_banners to 86.5% of cap while its plan stayed, so LIVE became false
     # and NONE would have been false too -- the plan is DEAD_TODAY, and the probes below are
     # what keep that from being a way to escape this assertion.
@@ -316,7 +316,7 @@ def test_the_declared_live_shedder_set_is_exactly_the_over_cap_set(peaks: dict[s
 def test_every_over_cap_tool_answers_instead_of_withholding(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
-    # B167 and B169 verbatim, at the widest legal request rather than at defaults: the
+    # The two historical defects verbatim, at the widest legal request rather than at defaults: the
     # response the cap acts on comes back non-empty and under the cap. Checked as behaviour,
     # so it holds whatever mechanism a tool declares its plan through.
     env = registry.get(row.tool).handler(**peaks[row.tool].params)
@@ -325,17 +325,17 @@ def test_every_over_cap_tool_answers_instead_of_withholding(
     assert env.status in {"ok", "partial"}, row.tool
 
 
-# --- §V113 (b)/§V117: a plan no build reaches, proven reachable rather than claimed
+# --- a plan no build reaches, proven reachable rather than claimed
 
 
 @contextlib.contextmanager
 def _cap_at(limit: int) -> Iterator[None]:
     """Drive the cap to a synthetic value the promoted corpus does not produce.
 
-    §V113 (b)'s "proven by a value the real corpus does not carry", applied to the cap
+    The "proven by a value the real corpus does not carry" rule, applied to the cap
     instead of to a column: a ``DEAD_TODAY`` plan is unreachable on this build precisely
     because every window fits, so the only honest proof drives the boundary rather than the
-    payload. Lowering the cap is the same synthetic move §T217 (b) used for the ``map_image``
+    payload. Lowering the cap is the same synthetic move used for the ``map_image``
     step, which fires on no live stage either.
     """
     original = envelopes.MAX_RESPONSE_BYTES
@@ -353,9 +353,9 @@ def test_a_dead_today_plan_still_fires_under_a_lowered_cap(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
     # The declaration's load-bearing half. DEAD_TODAY says "the plan is kept because it is
-    # reachable by construction", and §V117 makes that a proof rather than a sentence: with
+    # reachable by construction", and the rule makes that a proof rather than a sentence: with
     # the cap under this tool's own peak the plan has to fire and the answer has to survive
-    # -- non-empty data, under the lowered cap, with a limitation naming what left (§V120 c).
+    # -- non-empty data, under the lowered cap, with a limitation naming what left.
     # A plan that had been deleted while the declaration stayed fails here, which is exactly
     # the drift a third status could otherwise hide.
     peak = peaks[row.tool]
@@ -375,7 +375,7 @@ def test_a_tool_with_no_plan_withholds_under_a_lowered_cap(
 ) -> None:
     # The other direction, and the reason the pair is one guard: without it, NONE and
     # DEAD_TODAY are indistinguishable by execution and the difference is prose. A tool
-    # declaring no plan must take the §V22 fail-closed withhold when its frame does not fit
+    # declaring no plan must take the fail-closed withhold when its frame does not fit
     # -- empty data, `partial`, and never an oversized frame on the wire.
     peak = peaks[row.tool]
     with _cap_at(peak.frame - 1):
@@ -391,11 +391,11 @@ def test_a_tool_with_no_plan_withholds_under_a_lowered_cap(
 def test_a_tool_that_fits_is_untouched_by_the_cap(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
-    # The other direction of §V120: nothing sheds a response that fits. Compared against the
+    # The other direction: nothing sheds a response that fits. Compared against the
     # cap-lifted response rather than against shed-limitation marker strings, so this stays
     # tool-agnostic and keeps holding when a tool declares a plan later -- ``get_stage``'s
     # ``cn/act2multi_tr02`` at 95.5% of the cap is the tightest live example of what must
-    # survive whole (§V96 non-degenerate).
+    # survive whole.
     spec = registry.get(row.tool)
     params = peaks[row.tool].params
     enforced = spec.handler(**params)
@@ -413,14 +413,14 @@ def test_a_tool_that_fits_is_untouched_by_the_cap(
         assert enforced.data[name] != lifted.data[name], (row.tool, name, "does not vary")
 
 
-# --- §V121 (a): "every include flag on" is the widest shape, counted ------------
+# --- "every include flag on" is the widest shape, counted ------------
 
 
 @pytest.mark.parametrize("row", FRAME_PRESSURE, ids=lambda row: row.tool)
 def test_all_flags_on_is_the_widest_shape(
     registry: ToolRegistry, peaks: dict[str, Peak], row: ToolFramePressure
 ) -> None:
-    # §V121 (a) says the widest legal request is every include flag ON, which assumes a flag
+    # The widest legal request is every include flag ON, which assumes a flag
     # only ever ADDS. That is an assumption about the tool, so it is counted rather than
     # taken: on this tool's own peak row, every combination of its flags is driven and
     # all-on has to be the maximum. A flag that swapped a section for a smaller one would

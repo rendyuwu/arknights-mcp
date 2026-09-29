@@ -1,5 +1,5 @@
-"""T13: enemy parser -> enemies + enemy_levels, with field allowlist + string
-sanitization (§V18) and per-record provenance (§V17).
+"""Enemy parser -> enemies + enemy_levels, with field allowlist + string
+sanitization and per-record provenance.
 """
 
 from __future__ import annotations
@@ -120,7 +120,7 @@ def test_parse_drops_prose_and_reads_typed_fields() -> None:
     assert drone.motion_type == "FLY"
     assert drone.is_elite is True
     assert drone.levels[0].hp == 900
-    # V18: prose field never survives parsing.
+    # Prose field never survives parsing.
     assert "description" not in drone.provenance_record["handbook"]
     assert DESCRIPTION_PROSE not in str(drone.provenance_record)
 
@@ -147,16 +147,16 @@ def test_insert_enemies_and_levels(tmp_path: Path) -> None:
     ).fetchone()
     assert drone[0] == "FLY"
     assert drone[1] == 1
-    assert drone[2] is not None  # V17: provenance attached
+    assert drone[2] is not None  # provenance attached
 
 
 def test_declared_no_radius_reaches_the_column_as_an_answer(tmp_path: Path) -> None:
-    """§T211/§V114 (B161): the sentinel's ANSWER survives the strip all the way to SQL.
+    """The sentinel's ANSWER survives the strip all the way to SQL.
 
-    Driven from the REAL upstream shape through the §V30 bridge, not from an
+    Driven from the REAL upstream shape through the bridge, not from an
     already-normalized dict: the flag is derived by the bridge from ``rangeRadius``, so a
     normalized-input test would assert the parser copies a key the real path never
-    produces -- B160's exact blind spot.
+    produces -- the exact blind spot.
     """
     handbook = {
         "enemyData": {
@@ -194,7 +194,7 @@ def test_declared_no_radius_reaches_the_column_as_an_answer(tmp_path: Path) -> N
     row = conn.execute(
         "SELECT attack_range, attack_range_declared_none FROM enemy_levels"
     ).fetchone()
-    assert row == (None, 1)  # §V103 keeps the mask out; §V114 keeps the answer
+    assert row == (None, 1)  # mask out of the value column; answer in the flag
 
 
 def test_a_stored_radius_never_coexists_with_a_declared_none(tmp_path: Path) -> None:
@@ -257,7 +257,7 @@ def test_no_prose_anywhere_in_db(tmp_path: Path) -> None:
         handbook_source_path="gamedata/excel/enemy_handbook_table.json",
     )
     conn.commit()
-    # V18: the excluded prose must not appear in any text column of the DB.
+    # The excluded prose must not appear in any text column of the DB.
     dump = "\n".join(
         str(row)
         for table in ("enemies", "enemy_levels", "record_provenance")

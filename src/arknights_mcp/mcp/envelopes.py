@@ -1,39 +1,39 @@
-"""Typed MCP response envelope (§T29; §I; §V21/§V22/§V23).
+"""Typed MCP response envelope.
 
 Every MCP tool result is wrapped in the same envelope so both transports emit an
-identical shape (§V14). The envelope carries, in order (§I):
+identical shape. The envelope carries, in order:
 
 ``schema_version`` -> ``status`` -> ``data`` (facts) -> ``provenance`` ->
 ``limitations`` -> ``analyzer_version``.
 
 Three invariants live here:
 
-* **§V21** -- every envelope stamps a stable :data:`SCHEMA_VERSION`. Required
-  fields stay backward-compatible within a schema line (now v0.2); a breaking
+* **stable schema version** -- every envelope stamps a stable :data:`SCHEMA_VERSION`.
+  Required fields stay backward-compatible within a schema line (now v0.2); a breaking
   change bumps the constant and needs an ADR.
-* **§V22/§V119 (e)** -- a default tool response is capped at
+* **response cap** -- a default tool response is capped at
   :data:`MAX_RESPONSE_BYTES`. The builder measures the *whole result frame* both
   copies of the payload ride in (:func:`wire_size`) rather than emitting an
   oversized response.
-* **§V120** -- what an over-cap response *emits*. When the tool declares a shed plan
-  (:mod:`arknights_mcp.mcp.shed`), the knob-bounded part of the payload is shrunk
-  until the frame fits and the client gets a smaller legal answer with a limitation
-  naming what left. Withholding the whole payload is the floor for a response with
-  no such knob, not the answer to every over-cap reply (B167).
-* **§V119** -- a ``tools/call`` result carries the envelope twice: as
+* **over-cap emission** -- what an over-cap response *emits*. When the tool declares a
+  shed plan (:mod:`arknights_mcp.mcp.shed`), the knob-bounded part of the payload is
+  shrunk until the frame fits and the client gets a smaller legal answer with a
+  limitation naming what left. Withholding the whole payload is the floor for a
+  response with no such knob, not the answer to every over-cap reply.
+* **result frame** -- a ``tools/call`` result carries the envelope twice: as
   ``structuredContent`` and as the compact JSON mirror in ``content``
   (:func:`mirror_text`), because a content-only client reads ``content`` alone.
   The mirror text and the cap measure come from this one home, so the measured
-  bytes are the emitted bytes (B21's gap, B166's blackout).
-* **§V67/§V103** -- the payload rules, applied once here for every tool because
-  four per-surface rollouts did not close them (B135): no ``null`` reaches the
-  wire, and a masked source name/description carries its disclosure (B141). See
+  bytes are the emitted bytes.
+* **payload rules** -- the payload rules, applied once here for every tool because
+  four per-surface rollouts did not close them: no ``null`` reaches the
+  wire, and a masked source name/description carries its disclosure. See
   :mod:`arknights_mcp.mcp.payload_hygiene`.
-* **§V23** -- every result carries a typed status from :data:`STATUS_VALUES`; an
-  unknown status is rejected. Error envelopes never leak a stack trace or local
+* **typed status** -- every result carries a typed status from :data:`STATUS_VALUES`;
+  an unknown status is rejected. Error envelopes never leak a stack trace or local
   path -- :func:`internal_error` emits a fixed, safe message and keeps any
   internal detail out of the response, and :func:`invalid_input` wraps a malformed
-  request in the same typed envelope (never raw framework error text; §V71).
+  request in the same typed envelope (never raw framework error text).
 
 Envelopes are plain frozen dataclasses (matching the service layer) with a
 ``to_dict`` that yields JSON-serializable primitives only.
@@ -52,7 +52,7 @@ from pydantic import ValidationError
 from arknights_mcp.mcp.payload_hygiene import clean_payload
 from arknights_mcp.mcp.shed import ShedFrame, ShedPlan, shed_to_fit
 
-#: §V21 wire-contract version stamped on every envelope. Bump only on a breaking
+#: Wire-contract version stamped on every envelope. Bump only on a breaking
 #: change to a required field, and only alongside an ADR (mirrors ``TRANSFORM``/
 #: ``ANALYZER`` versions). Additive optional fields do not bump it.
 #:
@@ -60,47 +60,46 @@ from arknights_mcp.mcp.shed import ShedFrame, ShedPlan, shed_to_fit
 #: by 0013 + 0014): ranked-single efficiency obs, hoisted provenance, snake_case fields,
 #: digested routes, string-grid tiles, hoisted skill templates.
 #:
-#: v0.3 (T198, ADR 0017) is the next such set -- again ONE bump for the whole thing,
-#: because B69's lesson is that a breaking reshape landing without its coordinated flip
-#: leaves a stale tag on a reshaped payload, and that the flip has to be a TRACKED task
-#: rather than a footnote in the last bundle member. Its members:
-#:   * item ``rarity`` -> int on the same 1-indexed base as operator rarity (§V99/B133)
-#:   * ranking rows entity-prefixed, a code in ``*_code`` (§V100/B134)
-#:   * change-bundle keys snake_case + one unlock-phase encoding (§V71 d/B140)
-#:   * empty SET query -> ``ok`` + empty collection + limitation (§V106/B147)
+#: v0.3 (ADR 0017) is the next such set -- again ONE bump for the whole thing,
+#: because a breaking reshape landing without its coordinated flip leaves a stale tag on a
+#: reshaped payload, and that the flip has to be a TRACKED task rather than a footnote in
+#: the last bundle member. Its members:
+#:   * item ``rarity`` -> int on the same 1-indexed base as operator rarity
+#:   * ranking rows entity-prefixed, a code in ``*_code``
+#:   * change-bundle keys snake_case + one unlock-phase encoding
+#:   * empty SET query -> ``ok`` + empty collection + limitation
 #:   * ``get_data_status``: ``db_schema_version`` / ``import_status``, echoes dropped
-#:     (§V99/B148)
 #:
-#: v0.4 (T219, ADR 0019) has ONE member, and it is breaking because it REMOVES a published
+#: v0.4 (ADR 0019) has ONE member, and it is breaking because it REMOVES a published
 #: per-row key: ``image_refs[].source_id`` is gone, hoisted to a response-level
-#: ``image_refs_source_id`` beside the ``image_refs_base_url`` that was already there
-#: (§V66 (4)/B168). It was byte-identical on every ref -- 576 copies of one 23-char
-#: constant on a single ``get_banners`` page -- and dropping it is what lets that page keep
-#: its references under the §V22 cap instead of shedding them. B168 filed the change as
+#: ``image_refs_source_id`` beside the ``image_refs_base_url`` that was already there.
+#: It was byte-identical on every ref -- 576 copies of one 23-char constant on a single
+#: ``get_banners`` page -- and dropping it is what lets that page keep
+#: its references under the cap instead of shedding them. The change was filed as
 #: "additive"; removing a key a client reads is not, which is why this is a bump and not a
-#: footnote (§V21, and B69's lesson that the flip must be its own tracked row).
+#: footnote (the flip must be its own tracked row).
 SCHEMA_VERSION = "0.4"
 
-#: §V22 default response cap. The whole ``tools/call`` result frame -- both copies
-#: of the envelope (§V119: ``structuredContent`` + the ``content`` mirror) -- must
+#: Default response cap. The whole ``tools/call`` result frame -- both copies
+#: of the envelope (``structuredContent`` + the ``content`` mirror) -- must
 #: stay under this size, measured at its worst-case ASCII-escaped byte length (see
 #: :func:`wire_size`) so the cap holds on the wire regardless of the transport's
 #: encoding; large map/spawn payloads are opt-in via tool include flags +
-#: pagination (§T34).
+#: pagination.
 MAX_RESPONSE_BYTES = 200_000
 
-#: §V119 (b): the mirror is compact JSON. The SDK's own fallback copy uses
+#: The mirror is compact JSON. The SDK's own fallback copy uses
 #: ``indent=2`` (~1.15x these bytes for no client benefit), which is what the
-#: single-copy transport (B21) was avoiding when it emptied ``content`` altogether.
+#: single-copy transport was avoiding when it emptied ``content`` altogether.
 _COMPACT_SEPARATORS = (",", ":")
 
-#: §V119 (e): allowance for the JSON-RPC framing the result rides in
+#: Allowance for the JSON-RPC framing the result rides in
 #: (``{"jsonrpc":"2.0","id":<n>,"result":<frame>}`` = 38 bytes + the id), so the
 #: measure stays an upper bound on the message a client receives rather than on the
-#: result object alone. Fail-closed per §V22: over-measure, never under-measure.
+#: result object alone. Fail-closed: over-measure, never under-measure.
 _JSONRPC_FRAMING_BYTES = 64
 
-#: §V23 typed status vocabulary. Every tool result reports exactly one of these.
+#: Typed status vocabulary. Every tool result reports exactly one of these.
 ToolStatus = Literal[
     "ok",
     "partial",
@@ -134,26 +133,26 @@ _ERROR_STATUSES: frozenset[str] = frozenset(
     }
 )
 
-#: Fixed, path/trace-free message for an internal failure (§V23).
+#: Fixed, path/trace-free message for an internal failure.
 _INTERNAL_ERROR_MESSAGE = "an internal error occurred while handling the request"
 
-#: §V71 (a): the next step for a malformed request names no admin CLI -- the client
+#: The next step for a malformed request names no admin CLI -- the client
 #: owns its own parameters, so it fixes them and retries. Client-facing text, so no
-#: internal cites/jargon (§V71 (b)); the cites live in this comment, never the string.
+#: internal cites/jargon; the cites live in this comment, never the string.
 _INVALID_INPUT_ACTION = "check the request parameters against the tool's input schema and retry"
 
 
 class EnvelopeError(ValueError):
-    """Raised when an envelope is constructed with an invalid status (§V23)."""
+    """Raised when an envelope is constructed with an invalid status."""
 
 
 @dataclass(frozen=True)
 class Provenance:
-    """Region-scoped provenance for a factual response (§V5).
+    """Region-scoped provenance for a factual response.
 
     Every fact-bearing envelope carries at least one of these so a client can
     attribute the data to a region + snapshot + import time. ``server`` keeps
-    en/cn from being silently mixed (§V5).
+    en/cn from being silently mixed.
     """
 
     server: str
@@ -170,12 +169,12 @@ class Provenance:
 
 @dataclass(frozen=True)
 class ResponseEnvelope:
-    """The typed wrapper around every MCP tool result (§I; §V21/§V23).
+    """The typed wrapper around every MCP tool result.
 
     Prefer the :func:`ok` / :func:`error` / :func:`build_envelope` builders over
-    constructing this directly -- they validate the status (§V23) and enforce the
-    §V22 size cap. ``data`` holds the tool-specific facts (already allowlisted +
-    sanitized upstream); ``provenance`` is the region/snapshot attribution;
+    constructing this directly -- they validate the status and enforce the size cap.
+    ``data`` holds the tool-specific facts (already allowlisted + sanitized upstream);
+    ``provenance`` is the region/snapshot attribution;
     ``limitations`` records analyzer caveats + any bounding applied.
     """
 
@@ -187,7 +186,7 @@ class ResponseEnvelope:
     schema_version: str = SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, object]:
-        # §I field order: schema_version -> status -> data -> provenance ->
+        # Field order: schema_version -> status -> data -> provenance ->
         # limitations -> analyzer_version. Dicts preserve insertion order, so the
         # emitted JSON matches the contract shape.
         body: dict[str, object] = {
@@ -197,7 +196,7 @@ class ResponseEnvelope:
             "provenance": [p.to_dict() for p in self.provenance],
             "limitations": list(self.limitations),
         }
-        # §V67 (B135): a non-analysis tool runs no analyzer, so it has no analyzer
+        # A non-analysis tool runs no analyzer, so it has no analyzer
         # version -- the key is absent rather than an ambiguous null. ``data`` is
         # swept at :func:`build_envelope`; this is the one null that lives on the
         # envelope itself, outside that payload.
@@ -212,25 +211,25 @@ def serialized_size(envelope: ResponseEnvelope) -> int:
     Measured with ``ensure_ascii=True`` (JSON's default): a CJK/astral character
     serializes to its ``\\uXXXX`` escape, whose byte length is >= its raw UTF-8
     encoding (a 3-byte CJK char -> 6 ASCII bytes). So this is an upper bound on the
-    bytes any JSON serializer can emit for the envelope, whether the transport (T51)
-    emits compact UTF-8 or ASCII-escaped JSON. Fail-closed: a CN-heavy payload is
-    measured at its largest.
+    bytes any JSON serializer can emit for the envelope, whether the transport emits
+    compact UTF-8 or ASCII-escaped JSON. Fail-closed: a CN-heavy payload is measured at
+    its largest.
 
-    This is *payload* accounting (what one copy of the answer costs). The §V22 cap
-    is enforced on :func:`wire_size`, which counts the copies a result actually
-    ships (§V119 e) -- measuring one copy while shipping two is the B21 defect.
+    This is *payload* accounting (what one copy of the answer costs). The cap is enforced
+    on :func:`wire_size`, which counts the copies a result actually ships -- measuring one
+    copy while shipping two is the original defect.
     """
     return len(json.dumps(envelope.to_dict()).encode("utf-8"))
 
 
 def mirror_text(envelope: ResponseEnvelope) -> str:
-    """The ``content`` mirror of ``envelope``: compact JSON, one home (§V119 b).
+    """The ``content`` mirror of ``envelope``: compact JSON, one home.
 
     MCP rev 2025-06-18 says a tool returning structured content SHOULD also return
     the serialized JSON in a text block, and a *content-only* client (LibreChat reads
     ``result?.content ?? []`` and never looks at ``structuredContent``) has nothing
     else to read -- an empty ``content`` renders as "(No response)" for every call
-    while ``initialize``/``tools/list`` look healthy (B166).
+    while ``initialize``/``tools/list`` look healthy.
 
     Compact separators, not the SDK's ``indent=2`` fallback: the indentation is ~15%
     more wire bytes no client reads. Emitter and cap measure both come here, so the
@@ -240,7 +239,7 @@ def mirror_text(envelope: ResponseEnvelope) -> str:
 
 
 def wire_size(envelope: ResponseEnvelope) -> int:
-    """Worst-case byte size of the whole ``tools/call`` result frame (§V22/§V119 e).
+    """Worst-case byte size of the whole ``tools/call`` result frame.
 
     Counts what a client actually receives: the ``structuredContent`` copy, the
     JSON-escaped ``content`` mirror (a JSON string, so every ``"`` in the payload
@@ -248,10 +247,10 @@ def wire_size(envelope: ResponseEnvelope) -> int:
     allowance. Measured ``ensure_ascii=True`` for the same fail-closed reason as
     :func:`serialized_size`.
 
-    B21 was a *measure* that counted one copy of a payload the SDK shipped twice; the
-    fix then was to stop shipping the second copy, which is what blacked out every
-    content-only client (B166). Both copies are contractual now, so the cap counts
-    both -- the accounting stays honest without deleting half the wire.
+    An earlier measure counted one copy of a payload the SDK shipped twice; the fix then
+    was to stop shipping the second copy, which is what blacked out every content-only
+    client. Both copies are contractual now, so the cap counts both -- the accounting
+    stays honest without deleting half the wire.
     """
     body = envelope.to_dict()
     frame: dict[str, object] = {
@@ -263,7 +262,7 @@ def wire_size(envelope: ResponseEnvelope) -> int:
 
 
 def envelope_output_schema() -> dict[str, object]:
-    """JSON Schema for the envelope every tool returns (§V119 d).
+    """JSON Schema for the envelope every tool returns.
 
     Declared as each tool's ``outputSchema`` so ``tools/list`` states that results
     carry structured output -- without it a client has no contract for the structured
@@ -319,20 +318,20 @@ def _cap_limitation() -> str:
 
 
 def _enforce_cap(envelope: ResponseEnvelope, plan: ShedPlan) -> ResponseEnvelope:
-    """Bring an over-cap envelope under the §V22 cap (§V120).
+    """Bring an over-cap envelope under the cap.
 
-    Measured on :func:`wire_size` -- the frame with both payload copies (§V119 e), so
+    Measured on :func:`wire_size` -- the frame with both payload copies, so
     the budget an answer is checked against is the budget it spends.
 
-    Over cap, the declared shed plan runs first (§V120 a): the knob-bounded part of the
+    Over cap, the declared shed plan runs first: the knob-bounded part of the
     payload is shrunk until the frame fits, the client is told what left and which knob
     returns it, and a paginated trim keeps its ``ok`` status because a smaller page is a
-    smaller *legal* window (§V120 d). Only when no plan can fit the frame -- or the tool
+    smaller *legal* window. Only when no plan can fit the frame -- or the tool
     declares none, because nothing in the request bounds the payload -- does the response
     fail closed to a bounded ``partial`` with the data dropped (provenance + limitations
     stay: small, and they carry the region attribution).
 
-    That order is the whole of B167. Withholding was the *only* move here, so two legal
+    That order is the whole point. Withholding was the *only* move here, so two legal
     ``get_banners`` windows whose rows ``page_size<=80`` returns fine came back empty.
     """
     if wire_size(envelope) <= MAX_RESPONSE_BYTES:
@@ -356,7 +355,7 @@ def _enforce_cap(envelope: ResponseEnvelope, plan: ShedPlan) -> ResponseEnvelope
     if shed is not None:
         frame, section_shed = shed
         fitted = _rebuild(frame)
-        # §V120 (d): a client-flagged section the caller asked for and did not get is a
+        # A client-flagged section the caller asked for and did not get is a
         # ``partial`` result; a trimmed page is not.
         return dataclasses.replace(fitted, status="partial") if section_shed else fitted
 
@@ -379,22 +378,22 @@ def build_envelope(
     analyzer_version: str | None = None,
     shed_plan: ShedPlan = (),
 ) -> ResponseEnvelope:
-    """Build a validated, size-bounded envelope (§V21/§V22/§V23/§V120).
+    """Build a validated, size-bounded envelope.
 
-    Rejects an unknown ``status`` (§V23) and enforces the §V22 cap: a payload that would
+    Rejects an unknown ``status`` and enforces the cap: a payload that would
     put the result frame over :data:`MAX_RESPONSE_BYTES` is shrunk along ``shed_plan``
-    (§V120) and, if nothing in the plan fits, returned as a bounded ``partial`` envelope
+    and, if nothing in the plan fits, returned as a bounded ``partial`` envelope
     instead. ``shed_plan`` is the tool's own ordered declaration of which part of ITS
     payload a client knob bounds -- it is applied here, at the one chokepoint every tool
     result converges on, rather than by a measure-and-trim copy in each service.
 
     Every tool result converges here, so this is where the two payload rules apply
     (:func:`~arknights_mcp.mcp.payload_hygiene.clean_payload`): ``null`` leaves are
-    dropped (§V67) and a masked source name/description earns its §V103 disclosure.
-    Doing it here rather than at each shaping site is the point -- B135's null
+    dropped and a masked source name/description earns its disclosure.
+    Doing it here rather than at each shaping site is the point -- the null
     discipline had been rolled out four times, once per surface under review, and
     each pass left the surfaces nobody was looking at still shipping nulls. The
-    sweep runs BEFORE the §V22 cap so the cap measures the bytes actually emitted,
+    sweep runs BEFORE the cap so the cap measures the bytes actually emitted,
     disclosure included.
     """
     _validate_status(status)
@@ -417,7 +416,7 @@ def ok(
     analyzer_version: str | None = None,
     shed_plan: ShedPlan = (),
 ) -> ResponseEnvelope:
-    """A successful (``ok``) result envelope (§V23). Size-bounded (§V22/§V120)."""
+    """A successful (``ok``) result envelope. Size-bounded."""
     return build_envelope(
         "ok",
         data=data,
@@ -436,11 +435,11 @@ def error(
     limitations: Iterable[str] = (),
     suggested_action: str | None = None,
 ) -> ResponseEnvelope:
-    """A typed error/degraded-result envelope (§V23).
+    """A typed error/degraded-result envelope.
 
     ``status`` must be a non-``ok``/``partial`` status (e.g. ``not_found``,
     ``database_unavailable``). ``message`` must be a safe, human-readable string
-    -- never a stack trace or local path (§V23); callers own that contract, and
+    -- never a stack trace or local path; callers own that contract, and
     :func:`internal_error` enforces it for the internal-failure path.
     """
     if status not in _ERROR_STATUSES:
@@ -457,7 +456,7 @@ def error(
 
 
 def internal_error() -> ResponseEnvelope:
-    """An ``internal_error`` envelope with a fixed, safe message (§V23).
+    """An ``internal_error`` envelope with a fixed, safe message.
 
     The response body carries no exception text, stack trace, or local path --
     those belong in the (redacted) server log, never the client-facing envelope.
@@ -470,8 +469,8 @@ def invalid_input(exc: ValidationError) -> ResponseEnvelope:
 
     A malformed tool call (unknown parameter, missing/blank required field,
     out-of-range bound, bad region, non-ISO date bound) is a client mistake, so it
-    is delivered as a normal typed result rather than a leaked framework error
-    (§V23/§V71 (c); B60). The message is rebuilt from each error's ``loc`` (which
+    is delivered as a normal typed result rather than a leaked framework error.
+    The message is rebuilt from each error's ``loc`` (which
     parameter) + ``msg`` (why) so the client learns what to fix, but the raw Pydantic
     framing ("N validation errors for ModelName") and the ``errors.pydantic.dev``
     documentation URL are dropped -- the ``url`` / ``input`` / ``ctx`` fields Pydantic

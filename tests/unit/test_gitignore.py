@@ -1,6 +1,6 @@
-"""V16 regression: release artifacts (raw snapshots / built DBs) must never be
-committed. The .gitignore is the first line of defence; assert its exclusions
-hold both textually and via `git check-ignore`.
+"""Release artifacts (raw snapshots / built DBs) must never be committed. The
+.gitignore is the first line of defence; assert its exclusions hold both
+textually and via `git check-ignore`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GITIGNORE = REPO_ROOT / ".gitignore"
 
-# Paths that V16 forbids from ever being tracked.
+# Paths forbidden from ever being tracked.
 FORBIDDEN_PATHS = [
     "data/builds/20260717-en-cn.sqlite",
     "data/builds/anything.sqlite",

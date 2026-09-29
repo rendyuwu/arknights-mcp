@@ -1,4 +1,4 @@
-"""§T81/§V45: unauthenticated RFC 9728 OAuth discovery in the Streamable HTTP stack.
+"""Unauthenticated RFC 9728 OAuth discovery in the Streamable HTTP stack.
 
 An MCP OAuth client (`claude mcp login`) bootstraps auth by fetching the
 protected-resource metadata -- a request that cannot itself carry a bearer. This
@@ -12,8 +12,8 @@ socket, no uvicorn) and asserts:
   bearer gate still stands;
 * the composed :func:`wrap_remote_app` stack serves discovery unauthenticated while
   ``/mcp`` still yields a ``401`` whose challenge carries the ``resource_metadata``
-  hint (RFC 9728 §5.1);
-* the §V45 scope split (B126): ``scopes_supported`` is the ADVERTISE list -- a
+  hint (RFC 9728 section 5.1);
+* the scope split: ``scopes_supported`` is the ADVERTISE list -- a
   superset of ``required_scopes`` carrying the flow-only ``offline_access`` -- while
   the ``insufficient_scope`` challenge stays the required list.
 """
@@ -96,26 +96,26 @@ def _www_authenticate(sent: list[dict[str, Any]]) -> str:
     return _headers(sent).get(b"www-authenticate", b"").decode("latin-1")
 
 
-# --- the metadata document builder (§V45) -----------------------------------------
+# --- the metadata document builder ------------------------------------------------
 
 
 def test_metadata_document_shape() -> None:
     remote = AppConfig().mcp.remote  # public_base_url default https://, path /mcp
     doc = _protected_resource_metadata(remote, _SETTINGS)
     assert doc["resource"] == remote.public_base_url.rstrip("/") + remote.path
-    # Advertises the issuer ONLY -- the client fetches AS metadata from it (§V1).
+    # Advertises the issuer ONLY -- the client fetches AS metadata from it.
     assert doc["authorization_servers"] == ["https://dev-tenant.us.auth0.com/"]
     assert doc["scopes_supported"] == ["arknights:read", "offline_access"]
     assert doc["bearer_methods_supported"] == ["header"]
-    # §V12: no secret ever appears in the discovery document.
+    # No secret ever appears in the discovery document.
     blob = json.dumps(doc)
     assert _SETTINGS.jwks_url not in blob  # jwks url is not advertised here
     assert "oauth-authorization-server" not in blob  # AS metadata never served/proxied
 
 
 def test_advertised_scopes_are_a_superset_of_required() -> None:
-    # §V45 scope split (B126): the client derives its authorize request from this
-    # document, so it must name every scope §V10 will demand -- plus the flow-only
+    # The scope split: the client derives its authorize request from this
+    # document, so it must name every scope validation will demand -- plus the flow-only
     # ones the AS consumes without minting (offline_access → refresh token).
     doc = _protected_resource_metadata(AppConfig().mcp.remote, _SETTINGS)
     advertised = doc["scopes_supported"]
@@ -123,14 +123,14 @@ def test_advertised_scopes_are_a_superset_of_required() -> None:
     assert set(_SETTINGS.required_scopes) <= set(advertised)
     assert "offline_access" in advertised
     # ...and the required list itself stays free of the flow-only scope: requiring a
-    # claim Auth0 never emits would 403 every token (the B126 outage trap).
+    # claim Auth0 never emits would 403 every token (the outage trap).
     assert "offline_access" not in _SETTINGS.required_scopes
 
 
 def test_shipped_config_default_advertises_offline_access() -> None:
     # The default [auth] config -- what a deployment gets without touching scopes --
     # already advertises the refresh-token scope, so interactive login survives past
-    # access-token expiry (B126).
+    # access-token expiry.
     auth = AppConfig().auth
     assert auth.prm_scopes == ["arknights:read", "offline_access"]
     assert auth.required_scopes == ["arknights:read"]
@@ -148,9 +148,9 @@ def test_shipped_config_default_advertises_offline_access() -> None:
 
 
 def test_prm_scopes_stay_a_superset_when_advertise_list_omits_required() -> None:
-    # §V37 one home for the ⊇ guarantee: a config that lists advertised_scopes without
+    # One home for the ⊇ guarantee: a config that lists advertised_scopes without
     # a required scope would otherwise publish metadata making clients request too
-    # little -- every resulting token then 403s at the §V10 check.
+    # little -- every resulting token then 403s at the validation check.
     auth = AppConfig().auth.model_copy(update={"advertised_scopes": ["offline_access"]})
     assert auth.prm_scopes == ["arknights:read", "offline_access"]
     # Duplicates collapse and order is deterministic (byte-stable document).
@@ -161,7 +161,7 @@ def test_prm_scopes_stay_a_superset_when_advertise_list_omits_required() -> None
 
 
 def test_advertise_list_does_not_gate_startup_validity() -> None:
-    # §V9/§V45: advertising drives bootstrap convenience, not authority -- an empty
+    # Advertising drives bootstrap convenience, not authority -- an empty
     # advertise list must not fail a deployment closed.
     auth = AppConfig().auth.model_copy(
         update={
@@ -189,7 +189,7 @@ def test_prm_url_is_absolute_suffixed() -> None:
     )
 
 
-# --- the unauthenticated discovery layer (§V45) -----------------------------------
+# --- the unauthenticated discovery layer -------------------------------------------
 
 
 def _metadata_app(inner: _InnerApp) -> _ProtectedResourceMetadataASGIApp:
@@ -237,10 +237,10 @@ def test_mcp_path_falls_through_to_inner() -> None:
 def test_unrelated_wellknown_falls_through() -> None:
     inner = _InnerApp()
     _drive(_metadata_app(inner), path="/.well-known/openid-configuration")
-    assert inner.called is True  # we neither serve nor proxy AS metadata (§V1)
+    assert inner.called is True  # we neither serve nor proxy AS metadata
 
 
-# --- the composed stack: discovery open, /mcp still gated (§V45) -------------------
+# --- the composed stack: discovery open, /mcp still gated --------------------------
 
 
 class _AcceptAllVerifier:
@@ -275,14 +275,14 @@ def test_stack_serves_discovery_but_gates_mcp() -> None:
 
 
 class _InsufficientScopeVerifier:
-    """Verifier stub rejecting every token for missing scope (§V10 403 path)."""
+    """Verifier stub rejecting every token for missing scope (403 path)."""
 
     def verify(self, token: str) -> Principal:
         raise AuthError("insufficient_scope", 403, "required scope not granted")
 
 
 def test_scope_challenge_names_required_not_advertised() -> None:
-    # §V45 split (B126): the 403 challenge states what is MISSING for authorization
+    # The scope split: the 403 challenge states what is MISSING for authorization
     # (required_scopes), never what the login flow should request -- a client told to
     # obtain `offline_access` would chase a scope no access token ever carries.
     app = _BearerAuthASGIApp(_InnerApp(), _InsufficientScopeVerifier(), _SETTINGS)  # type: ignore[arg-type]
@@ -294,7 +294,7 @@ def test_scope_challenge_names_required_not_advertised() -> None:
 
 
 def test_bearer_challenge_carries_resource_metadata() -> None:
-    # §V45 / RFC 9728 §5.1: the resource_metadata hint is emitted on the challenge.
+    # RFC 9728 section 5.1: the resource_metadata hint is emitted on the challenge.
     inner = _InnerApp()
     app = _BearerAuthASGIApp(
         inner,

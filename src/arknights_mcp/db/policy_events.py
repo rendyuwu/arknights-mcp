@@ -1,9 +1,9 @@
-"""Operational source-policy event journal + materialization (§T26; PRD 10.8, 12.2).
+"""Operational source-policy event journal + materialization (PRD 10.8, 12.2).
 
 ``source_policy_events`` is a table inside the *immutable* versioned build, so a
 bare ``source enable``/``disable`` -- which keeps the current data and does not
 rebuild -- cannot write to it without mutating the active database, which is
-forbidden (§V4). Events are therefore appended to an operational journal
+forbidden. Events are therefore appended to an operational journal
 (``data/policy_events.jsonl``) the moment the admin acts, and every build
 (``sync``/``import``/``purge --rebuild``) *materializes* the full journal into the
 candidate's ``source_policy_events`` table. The content database stays immutable;

@@ -1,7 +1,7 @@
--- 0019 operator subclass display name (SPEC §T202; §V69/B150).
+-- 0019 operator subclass display name.
 -- `operators.subclass_id` shipped bare on every operator response -- "corecaster",
 -- "ringhealer", "artsfghter" -- with no name beside it and no limitation saying the
--- name is unavailable. §V69 allows exactly two outcomes for an emitted opaque id
+-- name is unavailable. Two outcomes are allowed for an emitted opaque id
 -- (pair it with the display name when the name is imported, or emit the id plus a
 -- limitation when it is not) and neither held, so a client either guessed the class
 -- or dropped the field.
@@ -9,24 +9,24 @@
 -- The name IS upstream and was already being fetched: `uniequip_table.json` carries
 -- `subProfDict[<subProfessionId>] = {subProfessionId, subProfessionName,
 -- subProfessionCatagory}`, and that file has been in the sync's supplementary set
--- since the module domain landed (§V41). It was fetched and never read -- the
--- "fetched is not read" gap §V98 names. Verified at the pinned upstream: 75 EN / 76
+-- since the module domain landed. It was fetched and never read -- the
+-- "fetched is not read" gap. Verified at the pinned upstream: 75 EN / 76
 -- CN entries, covering all 71 EN / 72 CN distinct `subclass_id` values on the
 -- promoted build with zero unresolved.
 --
 -- A denormalized column rather than a `subclasses` dimension table: the only query is
 -- "give me this operator's subclass name" on a row already being selected, so a table
--- would add a join and an index to serve no other reader (§V94/B122 -- structure
+-- would add a join and an index to serve no other reader (structure
 -- added before its query is write amplification). `subProfessionCatagory` is NOT
--- imported: nothing reads it, and an allowlisted-but-dead column is what §V113/B160
--- caught one domain over.
+-- imported: nothing reads it, and an allowlisted-but-dead column is what the earlier
+-- sweep caught one domain over.
 --
 -- NULLABLE and no index. NULL means the build's `uniequip_table` had no entry for
 -- that id (or the snapshot lacks the file entirely -- a combat-only snapshot imports
--- operators with no modules at all), which is the §V69 limitation arm rather than a
+-- operators with no modules at all), which is the limitation arm rather than a
 -- fabricated name. The name is region-scoped like every other display string: CN
--- stores the Chinese label, EN the English one (§V5).
+-- stores the Chinese label, EN the English one.
 --
 -- No new provenance FK: the subclass name is another field of the operator record the
--- row's `provenance_id` already points at, joined in at parse time (§V17).
+-- row's `provenance_id` already points at, joined in at parse time.
 ALTER TABLE operators ADD COLUMN subclass_name TEXT;

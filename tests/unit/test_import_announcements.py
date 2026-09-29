@@ -1,11 +1,11 @@
-"""T95: the official-announcement importer (feed -> announcements, metadata-ONLY).
+"""The official-announcement importer (feed -> announcements, metadata-ONLY).
 
-Covers the §T95 contract with an in-memory fake fetcher (no live network, §V1): the
-field allowlist that keeps ONLY the §V56 metadata and drops any body/html/prose/image
-(§V16/§V18), the recursive string sanitize (§V18), the en/cn region stamp never mixed
-(§V5/§V56), per-record provenance + an announcement snapshot row (§V17), the
-fail-closed skip of an entry missing an announceId, the §V30 non-empty-or-fail guard,
-and the §V33 duplicate-id guard.
+Covers the importer contract with an in-memory fake fetcher (no live network): the
+field allowlist that keeps ONLY the metadata and drops any body/html/prose/image,
+the recursive string sanitize, the en/cn region stamp never mixed,
+per-record provenance + an announcement snapshot row, the
+fail-closed skip of an entry missing an announceId, the non-empty-or-fail guard,
+and the duplicate-id guard.
 """
 
 from __future__ import annotations
@@ -62,9 +62,9 @@ def _db(tmp_path: Path) -> sqlite3.Connection:
 
 
 def _entry(announce_id: str, **extra: Any) -> dict[str, Any]:
-    # A complete valid metadata entry: a real feed row always carries a date (§V61), so
+    # A complete valid metadata entry: a real feed row always carries a date, so
     # the helper does too -- otherwise every all-``_entry`` feed would (correctly) trip
-    # the §V61 date-only degradation guard (B47).
+    # the date-only degradation guard.
     return {
         "announceId": announce_id,
         "title": "Maintenance",
@@ -74,7 +74,7 @@ def _entry(announce_id: str, **extra: Any) -> dict[str, Any]:
     }
 
 
-# --- field allowlist: metadata-only, no body/prose (§V16/§V18/§V56) -----------
+# --- field allowlist: metadata-only, no body/prose ---------------------------
 
 
 def test_parse_keeps_only_metadata_and_drops_body() -> None:
@@ -86,7 +86,7 @@ def test_parse_keeps_only_metadata_and_drops_body() -> None:
                 "date": "2026-07-21T00:00:00+00:00",
                 "url": "https://www.arknights.global/news/ann-1001",
                 "category": "event",
-                # forbidden non-metadata (§V16): must never survive the allowlist.
+                # forbidden non-metadata: must never survive the allowlist.
                 "body": "the full article body that must never be stored",
                 "html": "<p>...</p>",
                 "content": "prose",
@@ -119,14 +119,14 @@ def test_end_to_end_stores_no_body_column(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- recursive sanitize (§V18) ------------------------------------------------
+# --- recursive sanitize -------------------------------------------------------
 
 
 def test_title_control_chars_sanitized(tmp_path: Path) -> None:
     conn = _db(tmp_path)
     try:
         # U+202E RIGHT-TO-LEFT OVERRIDE (a Cf bidi control) must be stripped. A mapped
-        # ``date`` is present so the §V30/§V61 date-only degradation guard (B47) is not
+        # ``date`` is present so the date-only degradation guard is not
         # the thing under test here.
         fetcher = _FakeFetcher(
             [
@@ -173,7 +173,7 @@ def test_happy_path_inserts_row(tmp_path: Path) -> None:
             "en",
             "ann-1001",
             "Maintenance Notice",
-            # The explicit feed value is rendered to its calendar DAY (§V116/B163): the
+            # The explicit feed value is rendered to its calendar DAY: the
             # column is what the since/until window compares as text, and a timestamp
             # stored here would sort outside every bound naming its own day.
             "2026-07-21",
@@ -185,7 +185,7 @@ def test_happy_path_inserts_row(tmp_path: Path) -> None:
 
 
 def test_feed_wrapped_in_object_is_accepted(tmp_path: Path) -> None:
-    # §V56 tolerant shape: a feed may wrap the list under a common key.
+    # Tolerant shape: a feed may wrap the list under a common key.
     conn = _db(tmp_path)
     try:
         fetcher = _FakeFetcher({"announceList": [_entry("ann-1001")]})
@@ -195,7 +195,7 @@ def test_feed_wrapped_in_object_is_accepted(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- provenance + snapshot (§V17) ---------------------------------------------
+# --- provenance + snapshot ----------------------------------------------------
 
 
 def test_row_carries_provenance_and_announcement_snapshot(tmp_path: Path) -> None:
@@ -222,7 +222,7 @@ def test_row_carries_provenance_and_announcement_snapshot(tmp_path: Path) -> Non
         conn.close()
 
 
-# --- region never mixed (§V56/§V5) --------------------------------------------
+# --- region never mixed -------------------------------------------------------
 
 
 def test_cn_import_labels_every_row_cn_and_leaves_en_untouched(tmp_path: Path) -> None:
@@ -244,7 +244,7 @@ def test_cn_import_labels_every_row_cn_and_leaves_en_untouched(tmp_path: Path) -
 
 
 def test_same_announce_id_in_both_regions_is_allowed(tmp_path: Path) -> None:
-    # §V5: UNIQUE(region, announce_id) -- the same id in a DIFFERENT region is fine.
+    # UNIQUE(region, announce_id) -- the same id in a DIFFERENT region is fine.
     conn = _db(tmp_path)
     try:
         import_announcements(
@@ -288,7 +288,7 @@ def test_entry_missing_announce_id_skipped_not_fabricated(tmp_path: Path) -> Non
         conn.close()
 
 
-# --- §V30 non-empty-or-fail + legitimate empty feed ---------------------------
+# --- non-empty-or-fail + legitimate empty feed -------------------------------
 
 
 def test_feed_with_entries_but_no_ids_fails_closed(tmp_path: Path) -> None:
@@ -310,7 +310,7 @@ def test_feed_with_entries_but_no_ids_fails_closed(tmp_path: Path) -> None:
 
 def test_empty_feed_imports_zero_without_error(tmp_path: Path) -> None:
     # An empty feed is a legitimate empty build (announcements not a CRITICAL_TABLE,
-    # disabled by default D14/§V56) -- unlike the all-ids-missing shape mismatch above.
+    # disabled by default D14) -- unlike the all-ids-missing shape mismatch above.
     conn = _db(tmp_path)
     try:
         result = import_announcements(conn, _FakeFetcher([]), region="en", fetched_at=_FETCHED)
@@ -320,7 +320,7 @@ def test_empty_feed_imports_zero_without_error(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- §V33 duplicate id --------------------------------------------------------
+# --- duplicate id -------------------------------------------------------------
 
 
 def test_duplicate_announce_id_maps_to_importer_error(tmp_path: Path) -> None:
@@ -341,11 +341,11 @@ def test_parse_rejects_non_list_non_wrapped_shape() -> None:
         parse_announcements("not a feed", fetched_at=_FETCHED)
 
 
-# --- T107/§V61: real official feed field-map (day/month/webUrl/group) ----------
+# --- real official feed field-map (day/month/webUrl/group) --------------------
 
 
 def _real_feed_entry(announce_id: str, **extra: Any) -> dict[str, Any]:
-    """A real-official-feed-shaped entry (§V61): day/month ints, webUrl, group."""
+    """A real-official-feed-shaped entry: day/month ints, webUrl, group."""
     return {
         "announceId": announce_id,
         "title": "Maintenance",
@@ -358,7 +358,7 @@ def _real_feed_entry(announce_id: str, **extra: Any) -> dict[str, Any]:
 
 
 def test_parse_maps_real_feed_shape_to_canonical_fields() -> None:
-    # §V61: the real feed names three fields differently; the field-map normalizes
+    # The real feed names three fields differently; the field-map normalizes
     # day+month->date (year from fetched_at), webUrl->url, group->category.
     parsed = parse_announcements(
         [
@@ -369,7 +369,7 @@ def test_parse_maps_real_feed_shape_to_canonical_fields() -> None:
                 "month": 7,
                 "webUrl": "https://ak-conf.hypergryph.com/news/ann-1001",
                 "group": "ACTIVITY",
-                # forbidden non-metadata (§V16): must never survive the allowlist.
+                # forbidden non-metadata: must never survive the allowlist.
                 "webBody": "the full article body that must never be stored",
                 "imgUrl": "https://cdn/x.png",
             }
@@ -381,7 +381,7 @@ def test_parse_maps_real_feed_shape_to_canonical_fields() -> None:
     assert ann.date == "2026-07-15"  # year inferred from _FETCHED (2026-07-21)
     assert ann.url == "https://ak-conf.hypergryph.com/news/ann-1001"
     assert ann.category == "ACTIVITY"
-    # The forbidden body/image never survived (§V16/§V18).
+    # The forbidden body/image never survived.
     assert "webBody" not in ann.provenance_record
     assert "imgUrl" not in ann.provenance_record
 
@@ -403,7 +403,7 @@ def test_real_feed_shape_stores_non_null_date_url_category(tmp_path: Path) -> No
 
 def test_explicit_canonical_key_wins_over_source_key() -> None:
     # A feed carrying BOTH the canonical and the source key keeps the canonical value
-    # (the T95 shape stays valid alongside the §V61 field-map).
+    # (the canonical shape stays valid alongside the field-map).
     parsed = parse_announcements(
         [
             {
@@ -421,16 +421,16 @@ def test_explicit_canonical_key_wins_over_source_key() -> None:
     )
     ann = parsed[0]
     # The canonical key still WINS (day 15/month 7 is ignored); its value is rendered to
-    # the stored column's day granularity (§V116/B163), never taken as written.
+    # the stored column's day granularity, never taken as written.
     assert ann.date == "2026-01-02"
     assert ann.url == "https://canonical/url"
     assert ann.category == "canonical"
 
 
 def test_unplaceable_explicit_date_falls_through_to_day_month() -> None:
-    # §V116/B163 on the stored side: a date the window could never place is not stored as
-    # written -- the §V61 day+month path answers instead, and only if it also cannot,
-    # the date is absent rather than fabricated (§V26).
+    # On the stored side: a date the window could never place is not stored as
+    # written -- the day+month path answers instead, and only if it also cannot,
+    # the date is absent rather than fabricated.
     (placed,) = parse_announcements(
         [{"announceId": "ann-1001", "date": "july", "day": 15, "month": 7}],
         fetched_at=_FETCHED,
@@ -443,7 +443,7 @@ def test_unplaceable_explicit_date_falls_through_to_day_month() -> None:
 
 
 def test_december_entry_seen_in_january_rolls_year_back() -> None:
-    # §V61 Dec->Jan rollover: an entry whose month is AFTER the fetch month belongs to
+    # Dec->Jan rollover: an entry whose month is AFTER the fetch month belongs to
     # the prior year (a December announcement first seen the following January).
     fetched_january = datetime(2027, 1, 5, tzinfo=UTC)
     parsed = parse_announcements(
@@ -471,7 +471,7 @@ def test_out_of_range_day_month_yields_no_date() -> None:
     assert parsed[0].category == "SYSTEM"
 
 
-# --- §V30/§V61 degradation guard: rows survive but every mapped field is NULL --
+# --- degradation guard: rows survive but every mapped field is NULL --------------
 
 
 def test_feed_with_ids_but_no_mapped_fields_fails_closed(tmp_path: Path) -> None:
@@ -484,7 +484,7 @@ def test_feed_with_ids_but_no_mapped_fields_fails_closed(tmp_path: Path) -> None
         )
         with pytest.raises(ImporterError, match="silent degraded announcement build"):
             import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
-        # Fail closed BEFORE the snapshot write: no announcement snapshot persisted (§V3).
+        # Fail closed BEFORE the snapshot write: no announcement snapshot persisted.
         snaps = conn.execute(
             "SELECT COUNT(*) FROM source_snapshots "
             "WHERE source_id = 'arknights_global_official_news'"
@@ -497,7 +497,7 @@ def test_feed_with_ids_but_no_mapped_fields_fails_closed(tmp_path: Path) -> None
 
 def test_partial_mapped_feed_promotes(tmp_path: Path) -> None:
     # At least one row carries a mapped date -> NOT a date-degradation; the build
-    # proceeds (§V61/B47 guards the all-rows-no-date case only, not a single sparse row).
+    # proceeds (the guard covers the all-rows-no-date case only, not a single sparse row).
     conn = _db(tmp_path)
     try:
         fetcher = _FakeFetcher(
@@ -512,12 +512,12 @@ def test_partial_mapped_feed_promotes(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- B47: date-only field-map break trips the degradation guard ----------------
+# --- date-only field-map break trips the degradation guard --------------------
 
 
 def test_feed_with_url_category_but_no_date_fails_closed(tmp_path: Path) -> None:
-    # B47/§V61: a field-map break that nulls ONLY date (webUrl->url + group->category
-    # still resolve) MUST fail closed. The since/until filter (§T96) keys on date alone,
+    # A field-map break that nulls ONLY date (webUrl->url + group->category
+    # still resolve) MUST fail closed. The since/until filter keys on date alone,
     # so a date-only break silently empties every windowed query -- the exact trap. The
     # old all-3-null guard missed it (url/category were non-null, so all(...) was False).
     conn = _db(tmp_path)
@@ -530,7 +530,7 @@ def test_feed_with_url_category_but_no_date_fails_closed(tmp_path: Path) -> None
         )
         with pytest.raises(ImporterError, match="mapped date"):
             import_announcements(conn, fetcher, region="en", fetched_at=_FETCHED)
-        # Fail closed BEFORE the snapshot write (§V3): no snapshot, no rows.
+        # Fail closed BEFORE the snapshot write: no snapshot, no rows.
         snaps = conn.execute(
             "SELECT COUNT(*) FROM source_snapshots "
             "WHERE source_id = 'arknights_global_official_news'"
@@ -541,11 +541,11 @@ def test_feed_with_url_category_but_no_date_fails_closed(tmp_path: Path) -> None
         conn.close()
 
 
-# --- B47: calendar-invalid day/month -> None, never a fabricated impossible date --
+# --- calendar-invalid day/month -> None, never a fabricated impossible date -----
 
 
 def test_calendar_invalid_day_yields_no_date() -> None:
-    # B47/§V26: a day beyond the month's real length is calendar-invalid -> None, not a
+    # A day beyond the month's real length is calendar-invalid -> None, not a
     # fabricated "2026-02-31". datetime.date construction rejects the impossible date.
     for month, day in ((2, 31), (4, 31), (2, 30), (6, 31)):
         parsed = parse_announcements(
@@ -558,7 +558,7 @@ def test_calendar_invalid_day_yields_no_date() -> None:
 
 
 def test_leap_day_valid_when_a_nearby_leap_year_fits() -> None:
-    # B47: 2/29 is valid in a leap year; nearest-year search picks 2024 (a leap year).
+    # 2/29 is valid in a leap year; nearest-year search picks 2024 (a leap year).
     parsed = parse_announcements(
         [{"announceId": "a", "day": 29, "month": 2, "group": "SYSTEM"}],
         fetched_at=datetime(2024, 2, 20, tzinfo=UTC),
@@ -567,7 +567,7 @@ def test_leap_day_valid_when_a_nearby_leap_year_fits() -> None:
 
 
 def test_feb_29_yields_no_date_when_no_nearby_leap_year() -> None:
-    # B47: 2/29 with no leap year in prior/current/next -> None (genuinely ambiguous),
+    # 2/29 with no leap year in prior/current/next -> None (genuinely ambiguous),
     # never a fabricated non-leap Feb 29.
     parsed = parse_announcements(
         [{"announceId": "a", "day": 29, "month": 2, "group": "SYSTEM"}],
@@ -576,11 +576,11 @@ def test_feb_29_yields_no_date_when_no_nearby_leap_year() -> None:
     assert parsed[0].date is None
 
 
-# --- B47: year inferred by NEAREST, not blind "future month -> prior year" -------
+# --- year inferred by NEAREST, not blind "future month -> prior year" -------------
 
 
 def test_pre_announced_future_month_keeps_current_year() -> None:
-    # B47: an August entry fetched in July is a PRE-announcement -> current year. The old
+    # An August entry fetched in July is a PRE-announcement -> current year. The old
     # "entry month > fetch month -> prior year" rule stamped it 2025 (a year early).
     parsed = parse_announcements(
         [{"announceId": "a", "day": 15, "month": 8, "group": "SYSTEM"}],
@@ -590,7 +590,7 @@ def test_pre_announced_future_month_keeps_current_year() -> None:
 
 
 def test_new_year_utc_boundary_resolves_to_nearest_year() -> None:
-    # B47: a Jan-1 entry fetched Dec-31 23:30 UTC (server already Jan 1) resolves to the
+    # A Jan-1 entry fetched Dec-31 23:30 UTC (server already Jan 1) resolves to the
     # nearest real date 2026-01-01, not 2025 from the old naive month-compare rule.
     parsed = parse_announcements(
         [{"announceId": "a", "day": 1, "month": 1, "group": "SYSTEM"}],
@@ -599,11 +599,11 @@ def test_new_year_utc_boundary_resolves_to_nearest_year() -> None:
     assert parsed[0].date == "2026-01-01"
 
 
-# --- B48: byte-identical re-import maps to a typed ImporterError (§V33) ----------
+# --- byte-identical re-import maps to a typed ImporterError ---------------------
 
 
 def test_byte_identical_reimport_maps_to_importer_error(tmp_path: Path) -> None:
-    # B48/§V33: a byte-identical feed re-import for the same region on one connection
+    # A byte-identical feed re-import for the same region on one connection
     # collides the deterministic snapshot_id PK. It must surface as a typed ImporterError
     # (like the row-insert guard right below it), NOT an uncaught sqlite3.IntegrityError
     # that escapes the typed-error discipline.
@@ -617,11 +617,11 @@ def test_byte_identical_reimport_maps_to_importer_error(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- B47: the skipped-entry warning is emitted exactly once ---------------------
+# --- the skipped-entry warning is emitted exactly once --------------------------
 
 
 def test_skipped_entries_warned_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    # B47: the missing-announceId skipped-count warning was recomputed + re-logged at the
+    # The missing-announceId skipped-count warning was recomputed + re-logged at the
     # tail; it must now be emitted exactly once.
     conn = _db(tmp_path)
     try:

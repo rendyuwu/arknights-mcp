@@ -1,18 +1,18 @@
-"""§T46 module analyzer tests (§V6, §V7, §V26).
+"""Module analyzer tests.
 
 Drive :func:`~arknights_mcp.analyzers.module.analyze_modules` directly over typed,
-DB-free contexts (the compare service, §T45, builds these from vetted structural
+DB-free contexts (the compare service builds these from vetted structural
 JSON). The analyzer is pure, so these assert the deterministic contract without a
 database:
 
-* every observation carries the five §V6 fields (rule_id + evidence + confidence +
-  limitations + analyzer_version), with typed-field evidence only (§V26);
-* an absent requested level is a §V26 warning, never a false/zero conclusion;
-* a module with no typed changes yields no observation (missing != zero, §V26);
-* summaries state capability facts, never a "mandatory"/"best" verdict (§V7);
-* modules + evidence are emitted in a stable order (deterministic, §V26).
+* every observation carries the five attribution fields (rule_id + evidence + confidence +
+  limitations + analyzer_version), with typed-field evidence only;
+* an absent requested level is a warning, never a false/zero conclusion;
+* a module with no typed changes yields no observation (missing != zero);
+* summaries state capability facts, never a "mandatory"/"best" verdict;
+* modules + evidence are emitted in a stable order (deterministic).
 
-§T202/ADR 0018 (B152/§V66.1): the trait and talent rules are RETIRED, so the tests
+ADR 0018: the trait and talent rules are RETIRED, so the tests
 that pinned their output are gone with them and one guard is here in their place --
 the analyzer emits stat observations only. The retired rules restated facts the same
 payload already carried (which levels alter the trait, which talent index each change
@@ -77,14 +77,14 @@ def _by_tag(analysis) -> dict[str, object]:  # type: ignore[no-untyped-def]
     return {o.tag: o for o in analysis.observations}
 
 
-# --- §V6: every observation is fully attributed --------------------------------
+# --- every observation is fully attributed --------------------------------------
 
 
 def test_stat_observation_emitted_and_fully_attributed() -> None:
     analysis = analyze_modules(_ctx(_full_cx1()))
     assert set(_by_tag(analysis)) == {"stat_bonus"}
     for obs in analysis.observations:
-        # §V6: rule_id + evidence + confidence + limitations + analyzer_version.
+        # rule_id + evidence + confidence + limitations + analyzer_version.
         assert obs.rule_id.startswith("module.")
         assert obs.category == "module"
         assert obs.evidence  # never a bare verdict
@@ -96,9 +96,9 @@ def test_stat_observation_emitted_and_fully_attributed() -> None:
 
 
 def test_stat_observation_reports_cross_level_diff() -> None:
-    # §T148/§V66.1: the per-level absolute bonuses are visible in the stat_bonus rows, so
+    # The per-level absolute bonuses are visible in the stat_bonus rows, so
     # the observation reports only the computed cross-level delta -- atk +14 (Lv1->2), +18
-    # (Lv2->3). max_hp appears at a single level so it contributes no delta (§V26).
+    # (Lv2->3). max_hp appears at a single level so it contributes no delta.
     stat = _by_tag(analyze_modules(_ctx(_full_cx1())))["stat_bonus"]
     seen = {(ev.field, ev.value) for ev in stat.evidence}  # type: ignore[attr-defined]
     assert ("stat_bonus.atk", 14.0) in seen  # 48 - 34
@@ -110,7 +110,7 @@ def test_stat_observation_reports_cross_level_diff() -> None:
 
 
 def test_single_level_stat_bonus_yields_no_observation() -> None:
-    # §T148/§V66.1: a stat bonus at a single level is fully visible in its stat_bonus row,
+    # A stat bonus at a single level is fully visible in its stat_bonus row,
     # so there is no cross-level change to compute -> no observation (never restate a row).
     one = _amiya_cx1(
         (ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),)
@@ -120,7 +120,7 @@ def test_single_level_stat_bonus_yields_no_observation() -> None:
 
 
 def test_constant_stat_across_levels_yields_no_observation() -> None:
-    # §V66.1/B75: a stat that holds constant across two present levels (atk 34 -> 34) is
+    # A stat that holds constant across two present levels (atk 34 -> 34) is
     # not a change; emitting a "+0" step would restate a non-change as a change. With the
     # only stat constant, there is no evidence -> no observation (never a bare "+0").
     flat = _amiya_cx1(
@@ -135,7 +135,7 @@ def test_constant_stat_across_levels_yields_no_observation() -> None:
 
 
 def test_constant_stat_skipped_but_changing_stat_kept() -> None:
-    # §V66.1/B75: the skip is per-stat, not all-or-nothing -- atk changes (34 -> 48) so its
+    # The skip is per-stat, not all-or-nothing -- atk changes (34 -> 48) so its
     # +14 delta is kept, while def holds constant (10 -> 10) and contributes no evidence and
     # no "+0" in the summary.
     mixed = _amiya_cx1(
@@ -160,13 +160,13 @@ def test_constant_stat_skipped_but_changing_stat_kept() -> None:
     assert "+0" not in stat.summary  # type: ignore[attr-defined]
 
 
-# --- ADR 0018/§V66.1 (B152): the two padded rules are retired -------------------
+# --- ADR 0018: the two padded rules are retired ---------------------------------
 
 
 def test_retired_trait_and_talent_rules_emit_nothing() -> None:
-    # B152: a module that alters the trait at every level and overrides two talents used to
+    # A module that alters the trait at every level and overrides two talents used to
     # emit two extra observations restating exactly that -- both facts are already in the
-    # emitted trait_changes / talent_changes rows the same response carries (§V66.1: evidence
+    # emitted trait_changes / talent_changes rows the same response carries (evidence
     # never re-states numbers already in sibling facts). The analyzer input no longer even
     # carries the change lists, so the guard asserts the OUTPUT: whatever the levels hold,
     # the only rule that fires is the computed stat delta.
@@ -180,7 +180,7 @@ def test_retired_trait_and_talent_rules_emit_nothing() -> None:
 def test_module_whose_only_content_is_changes_yields_no_observation() -> None:
     # The other half of the retirement: a module with change bundles but no stat movement
     # now yields NOTHING rather than two restating rows. The facts still ship -- the change
-    # bundles are in the payload beside this empty observations list (§V26 disclosure is
+    # bundles are in the payload beside this empty observations list (disclosure is
     # the response's job, not a rule's).
     changes_only = _amiya_cx1(
         (
@@ -192,12 +192,12 @@ def test_module_whose_only_content_is_changes_yields_no_observation() -> None:
     assert analysis.observations == ()
 
 
-# --- §V26: absent level -> warning, missing != zero ----------------------------
+# --- absent level -> warning, missing != zero -----------------------------------
 
 
 def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
     # A module defined at levels 1-2 but level 3 requested: the missing level is warned,
-    # never reported as an empty/zero change (§V26), and forms no cross-level delta.
+    # never reported as an empty/zero change, and forms no cross-level delta.
     partial = _amiya_cx1(
         (
             ModuleLevelInput(level=1, present=True, stats=(ModuleStat(key="atk", value=34.0),)),
@@ -214,7 +214,7 @@ def test_absent_requested_level_is_a_warning_not_a_conclusion() -> None:
 
 
 def test_module_with_no_typed_changes_yields_no_observation() -> None:
-    # §V26: absent typed data is not a zero conclusion -- a bare module produces no
+    # Absent typed data is not a zero conclusion -- a bare module produces no
     # observation (and no warning, since every requested level is present).
     bare = _amiya_cx1((ModuleLevelInput(level=1, present=True, stats=()),))
     analysis = analyze_modules(_ctx(bare, levels=(1,)))
@@ -222,7 +222,7 @@ def test_module_with_no_typed_changes_yields_no_observation() -> None:
     assert analysis.warnings == ()
 
 
-# --- §V7: conservative, no prescriptive language -------------------------------
+# --- conservative, no prescriptive language -------------------------------------
 
 
 def test_no_prescriptive_language() -> None:
@@ -237,7 +237,7 @@ def test_no_prescriptive_language() -> None:
 
 def test_modules_processed_in_supplied_order() -> None:
     # Two modules -> observations grouped in the order the service supplies them
-    # (it orders by game_id), so output is deterministic (§V26).
+    # (it orders by game_id), so output is deterministic.
     a = ModuleInput(
         game_id="uniequip_002_a",
         module_type="AA-1",

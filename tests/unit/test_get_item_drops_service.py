@@ -1,21 +1,21 @@
-"""§T103 ``get_item_drops`` read-layer / service tests (§V60/§V54/§V55/§V5/§V24/§V37).
+"""``get_item_drops`` read-layer / service tests.
 
 The reverse of ``get_stage_drops``: for a fixed item, the service resolves the item
 PER region and ranks the stages that drop it ascending by sanity per item. These
-drive the shared service directly against the same production read-only path (§V2),
+drive the shared service directly against the same production read-only path,
 seeding several synthetic stages that all drop one item (each with its own sanity
 cost / drop rate / expiry) so a ranking, a per-stage stale verdict, and the region
 scope are all deterministic (no wall-clock coupling). They assert:
 
-* §V60: the comparison is ranked ascending by sanity per item, an expired stage's
+* the comparison is ranked ascending by sanity per item, an expired stage's
   figure is downgraded but KEPT (never dropped), and the mandatory availability /
   first-clear / byproduct caveats ride the result;
-* §V5: the item is resolved per region and only same-region stages are ranked -- an
+* the item is resolved per region and only same-region stages are ranked -- an
   en item's comparison never surfaces a cn stage;
-* §V54: every per-stage figure carries its OWN penguin provenance chain;
-* §V24: an absent item, or an item with no drop cache, is ``not_found`` (no ranking),
+* every per-stage figure carries its OWN penguin provenance chain;
+* an absent item, or an item with no drop cache, is ``not_found`` (no ranking),
   never a query-time download/scrape fallback;
-* §V2: the service performs no writes.
+* the service performs no writes.
 """
 
 from __future__ import annotations
@@ -56,12 +56,12 @@ def _candidate(tmp_path: Path) -> Path:
 
 
 def _ranking(result):  # type: ignore[no-untyped-def]
-    """The ranking rows of the single ranked observation (§V66.1)."""
+    """The ranking rows of the single ranked observation."""
     assert result.observation is not None
     return result.observation.ranking
 
 
-# --- §V60: ranked ascending over ≥2 stages ------------------------------------
+# --- ranked ascending over ≥2 stages ------------------------------------------
 
 
 def test_ranked_ascending_by_sanity_per_item(tmp_path: Path) -> None:
@@ -78,25 +78,25 @@ def test_ranked_ascending_by_sanity_per_item(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="sugar", include_efficiency=True)
     assert result.status == "ok"
     assert result.item is not None and result.item.game_id == "sugar"
-    # §V66.1: ONE ranked observation; its ranking rows are ascending by sanity per item.
+    # ONE ranked observation; its ranking rows are ascending by sanity per item.
     ranking = _ranking(result)
     assert [row.sanity_per_item for row in ranking] == [12.0, 72.0, 120.0]
-    # §V68/B57: the row id is the unambiguous stage_game_id, with the stage_code shown
+    # The row id is the unambiguous stage_game_id, with the stage_code shown
     # alongside as name.
     assert [row.name for row in ranking] == ["a-1", "4-4", "b-2"]
     assert all(row.id != row.name for row in ranking)
-    # §T161/B82: in efficiency mode the service realigns result.stages 1:1 with the
+    # In efficiency mode the service realigns result.stages 1:1 with the
     # ranking PAGE (same order) so the shaper folds each fact into its ranking row and
     # drops the separate stages list.
     assert result.stages_page is None
     assert len(result.stages) == len(ranking)
     assert [s.stage_game_id for s in result.stages] == [row.id for row in ranking]
-    # §V60/§V66.1: the mandatory comparison caveats ride the observation-level limitations.
+    # The mandatory comparison caveats ride the observation-level limitations.
     obs = result.observation
     assert obs is not None
     blob = " ".join(obs.limitations).lower()
     assert "availability" in blob and "byproduct" in blob
-    # §V7/§V55: an ordering + evidence, never a prescriptive verdict.
+    # An ordering + evidence, never a prescriptive verdict.
     text = f"{obs.title} {obs.summary} {' '.join(obs.limitations)}".lower()
     assert not any(word in text for word in _PROSCRIBED)
 
@@ -113,7 +113,7 @@ def test_facts_present_without_the_efficiency_flag(tmp_path: Path) -> None:
     assert result.analyzer_version is None
 
 
-# --- §V54: per-stage penguin provenance chain ---------------------------------
+# --- per-stage penguin provenance chain ---------------------------------------
 
 
 def test_each_stage_carries_penguin_provenance(tmp_path: Path) -> None:
@@ -128,7 +128,7 @@ def test_each_stage_carries_penguin_provenance(tmp_path: Path) -> None:
         assert stage.sanity_cost is not None
 
 
-# --- §V5: region-scoped -- an en item never surfaces a cn stage ----------------
+# --- region-scoped -- an en item never surfaces a cn stage ---------------------
 
 
 def test_comparison_is_region_scoped(tmp_path: Path) -> None:
@@ -155,7 +155,7 @@ def test_comparison_is_region_scoped(tmp_path: Path) -> None:
     assert {row.id for row in _ranking(cn)} <= {s.stage_game_id for s in cn.stages}
 
 
-# --- §V53/§V60: expired stage downgraded but KEPT in the ranking ---------------
+# --- expired stage downgraded but KEPT in the ranking --------------------------
 
 
 def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
@@ -171,7 +171,7 @@ def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="sugar", include_efficiency=True)
     assert result.status == "data_stale"
     assert result.stale is True
-    # §V60: the expired stage is flagged, not withheld -- still present in facts + ranking.
+    # The expired stage is flagged, not withheld -- still present in facts + ranking.
     expired_stage = next(s for s in result.stages if s.stage_code == "a-1")
     assert expired_stage.expired is True
     ranking = _ranking(result)
@@ -180,12 +180,12 @@ def test_expired_stage_is_stale_but_still_ranked(tmp_path: Path) -> None:
     expired_row = next(row for row in ranking if row.name == "a-1")
     assert expired_row.confidence is not None and expired_row.confidence < 0.5
     assert expired_row.expired is True
-    # §V85: the expiry sentence is hoisted once onto the observation, not per row.
+    # The expiry sentence is hoisted once onto the observation, not per row.
     assert result.observation is not None
     assert any("expired" in lim for lim in result.observation.limitations)
 
 
-# --- §V24: absent item / no drop cache -> not_found, no fetch fallback ---------
+# --- absent item / no drop cache -> not_found, no fetch fallback ---------------
 
 
 def test_absent_item_is_not_found(tmp_path: Path) -> None:
@@ -196,12 +196,12 @@ def test_absent_item_is_not_found(tmp_path: Path) -> None:
 
 
 def test_item_with_no_drop_cache_is_an_empty_ok(tmp_path: Path) -> None:
-    # §V106 (b)/B147: an item that EXISTS but has no stage_drops rows is a set query that
+    # An item that EXISTS but has no stage_drops rows is a set query that
     # came back empty -- the lookup succeeded, so the status is ``ok``, not ``not_found``.
-    # The service still CARRIES the resolved identity (§V60/B91), distinct from an UNKNOWN
+    # The service still CARRIES the resolved identity, distinct from an UNKNOWN
     # item (which returns item=None), so the tool can point a craft/synthesis-only
     # material at a freshness self-check rather than an admin re-sync that adds no drop.
-    # B91's split survives the status change; that is the whole point of carrying ``item``.
+    # That split survives the status change; that is the whole point of carrying ``item``.
     path = _candidate(tmp_path)
     conn0 = sqlite3.connect(str(path))
     try:
@@ -228,14 +228,14 @@ def test_item_with_no_drop_cache_is_an_empty_ok(tmp_path: Path) -> None:
     result = get_item_drops(conn, server="en", game_id="orphan")
     assert result.status == "ok"
     assert result.stages == ()
-    # §V60/B91: the resolved identity rides the empty result (a craft-only material), so
+    # The resolved identity rides the empty result (a craft-only material), so
     # the tool can distinguish it from an UNKNOWN item (item=None), which stays not_found.
     assert result.item is not None
     assert result.item.game_id == "orphan"
     assert get_item_drops(conn, server="en", game_id="nosuchitem").status == "not_found"
 
 
-# --- §V2: read-only ------------------------------------------------------------
+# --- read-only ----------------------------------------------------------------
 
 
 def test_service_is_read_only(tmp_path: Path) -> None:

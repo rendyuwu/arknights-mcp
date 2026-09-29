@@ -1,18 +1,18 @@
-"""One home for the offline authenticated-remote server the wire tests need (§V37).
+"""One home for the offline authenticated-remote server the wire tests need.
 
-Both §T56 (happy-path shared-core parity) and §T57 (adversarial security/privacy
-matrix) drive the *full* auth-requiring remote stack over a real loopback socket:
+Both the happy-path shared-core parity and the adversarial security/privacy
+matrix drive the *full* auth-requiring remote stack over a real loopback socket:
 the shared core promoted from the pinned 4-4 fixture, wrapped in
 :func:`~arknights_mcp.transports.streamable_http.wrap_remote_app` with a real
 :class:`~arknights_mcp.auth.oidc.OidcTokenVerifier` whose JWKS key is resolved from a
-local issuer (no network, §V1). Rather than each suite re-implementing the config
-write + fixture import + uvicorn thread lifecycle, that scaffolding lives here once
-(§V37); the suites supply only their assertions.
+local issuer (no network). Rather than each suite re-implementing the config
+write + fixture import + uvicorn thread lifecycle, that scaffolding lives here once;
+the suites supply only their assertions.
 
 Offline + deterministic: the active build is promoted via the real ``import`` CLI
-(no network, §V1); the OIDC keypair + JWKS are local (no provider reached, §V10).
-TLS is the reverse proxy's job (§I.api); the process speaks plain HTTP on loopback,
-with ``behind_proxy`` auth semantics enforced in the app layer (§V40).
+(no network); the OIDC keypair + JWKS are local (no provider reached).
+TLS is the reverse proxy's job; the process speaks plain HTTP on loopback,
+with ``behind_proxy`` auth semantics enforced in the app layer.
 """
 
 from __future__ import annotations
@@ -38,9 +38,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "stage_4_4"
 REGISTRY = REPO_ROOT / "config" / "data_sources.toml"
 
-#: The read-only tool set the shared registry exposes (§V14) -- the authenticated
+#: The read-only tool set the shared registry exposes -- the authenticated
 #: remote server must enumerate exactly this over the wire, identical to stdio. One
-#: home (§V37) shared by the parity test and the isolation test's post-probe check.
+#: home shared by the parity test and the isolation test's post-probe check.
 EXPECTED_TOOLS = frozenset(
     {
         "search_entities",
@@ -64,7 +64,7 @@ EXPECTED_TOOLS = frozenset(
 
 
 def _write_config(tmp_path: Path, *, limits: dict[str, int] | None) -> Path:
-    """Write a minimal loopback config; optionally override ``[limits]`` (§V11)."""
+    """Write a minimal loopback config; optionally override ``[limits]``."""
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     text = (
@@ -104,8 +104,8 @@ def remote_server(
     :class:`OidcTokenVerifier` whose JWKS key is resolved from a local issuer, then
     binds uvicorn on an ephemeral loopback port. Yields the ``/mcp`` URL and the
     issuer (so a caller mints a bearer the verifier will accept, or shapes an attack
-    token on the same trusted keypair). ``limits`` overrides ``[limits]`` so the §V11
-    rate-limit test can drive a low per-principal cap without a bespoke harness (§V37).
+    token on the same trusted keypair). ``limits`` overrides ``[limits]`` so the
+    rate-limit test can drive a low per-principal cap without a bespoke harness.
     """
     config_path = _write_config(tmp_path, limits=limits)
     _promote_fixture_build(config_path)
@@ -115,8 +115,8 @@ def remote_server(
     issuer = LocalOidcIssuer()
     verifier = OidcTokenVerifier(issuer.settings, jwks_client=issuer.jwks_resolver)
     app = build_asgi_app(core, path="/mcp")
-    # The full §T54 stack: redacted logging → bearer (§V10) → rate/concurrency →
-    # request limits (§V11) → session manager. Real verifier, local JWKS.
+    # The full stack: redacted logging → bearer → rate/concurrency →
+    # request limits → session manager. Real verifier, local JWKS.
     wrapped = wrap_remote_app(app, config, verifier, issuer.settings)
 
     port = _free_port()

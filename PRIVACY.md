@@ -2,7 +2,7 @@
 
 This document explains what this project does and does not process, store, and
 log. It reflects the founder-approved decisions (D10, D15) and the privacy and
-logging rules in the PRD (Section 17.5) and [`SPEC.md`](SPEC.md).
+logging rules in the PRD (Section 17.5).
 
 ## Personal account sync (opt-in, CLI-only; ADR 0020)
 
@@ -10,7 +10,7 @@ This project can optionally sync one owner-controlled Yostar (`en`) account,
 driven entirely by the CLI `account` command group (`login`, `sync`,
 `status`, `logout`, `purge`). Nothing about this is automatic: it never runs
 on a schedule and is never exposed as an MCP tool. This is the one exception
-to this project's no-game-credentials posture (SPEC §V15): the resulting
+to this project's no-game-credentials posture: the resulting
 Yostar session token functions as a game credential, and its storage is
 deliberately scoped to the machine that requested it.
 
@@ -51,7 +51,7 @@ expiry.
   any non-loopback access. There is no anonymous public endpoint.
 - **No telemetry by default.**
 
-## Logging (SPEC §V12)
+## Logging
 
 By default, operational logs record only: tool name, status, latency, a
 pseudonymous principal ID, result size, and data version. Logs do **not**

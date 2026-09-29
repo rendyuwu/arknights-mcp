@@ -2,8 +2,7 @@
 
 This policy governs what data this project ingests, how it is transformed and
 attributed, and what is never distributed. It derives from the founder-approved
-decisions and the legal/distribution guardrails in the PRD (Section 10) and the
-invariants in [`SPEC.md`](SPEC.md).
+decisions and the legal/distribution guardrails in the PRD (Section 10).
 
 ## Distribution guardrails (PRD Section 10.9)
 
@@ -17,20 +16,20 @@ invariants in [`SPEC.md`](SPEC.md).
    unused prose.
 5. Full raw source files are **never** exposed through MCP tools or resources.
 6. Every imported record stores its **source snapshot, source path/key,
-   transform version, and content hash** (SPEC §V17).
+   transform version, and content hash**.
 7. The README includes an **unofficial-project disclaimer and trademark
    notice**.
 8. **No game credentials** are requested, stored, or transmitted, except the
-   CLI-only personal account session described in ADR 0020 (SPEC §V15).
+   CLI-only personal account session described in ADR 0020.
 9. v0.1 remains **private and non-commercial**.
 10. No tool supports **bulk dump, arbitrary SQL, unbounded pagination, or
-    database download** (SPEC §V19).
+    database download**.
 11. Public access, monetization, or database distribution requires a **new
     founder decision, source-policy review, qualified legal review, and a
     written public data-distribution policy** — it cannot be enabled by a
     configuration flag.
 
-## Field allowlist (SPEC §V18)
+## Field allowlist
 
 - The importer parses **only explicitly allowlisted gameplay fields**. The
   authoritative list lives in `src/arknights_mcp/importers/field_policy.py` and
@@ -59,7 +58,7 @@ The following are **never** ingested into core tables or distributed:
 request; that is outside this MCP's data pipeline and is never cached into core
 tables.)
 
-## Provenance (SPEC §V17)
+## Provenance
 
 Every imported record is stamped with `snapshot_id`, `source_path` /
 `source_record_key`, `transform_version`, and `record_hash`, linked through the
@@ -74,7 +73,7 @@ Original Simplified Chinese and available English/canonical aliases are
 preserved. Tool keys and schemas are English. Bulk machine-translated source
 descriptions are not stored.
 
-## Region separation (SPEC §V5)
+## Region separation
 
 `en` and `cn` data are never silently mixed. Every region-sensitive entity and
 factual response identifies its region and source snapshot.

@@ -1,31 +1,30 @@
-"""FTS-backed search MCP tools: ``search_entities`` (§T32) + ``search_stages``
-(§T33) (§V19/§V23; §I.tool).
+"""FTS-backed search MCP tools: ``search_entities`` + ``search_stages``.
 
-Each bridges a bounded input model (§T30 -- the §V19 ``limit`` gate) to a shared
-domain service (§T31) and wraps the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29 -- one §V23 status per
-result). Both transports dispatch these exact specs via the single registry
-(§V14): a tool owns no query logic of its own, only the model -> service ->
+Each bridges a bounded input model (the ``limit`` gate) to a shared
+domain service and wraps the outcome in the typed
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (one status per
+result). Both transports dispatch these exact specs via the single registry:
+a tool owns no query logic of its own, only the model -> service ->
 envelope mapping, and the two share one guarded-run + locator-shaping path
-(:func:`_guarded_search`, §V37). ``search_stages`` differs only in that an exact
-``stage_code`` match is ranked first (§T33), enforced in the service.
+(:func:`_guarded_search`). ``search_stages`` differs only in that an exact
+``stage_code`` match is ranked first, enforced in the service.
 
-Two invariants are load-bearing here:
+Two rules are load-bearing here:
 
-* **§V19** -- the search window is bounded on one contract enforced twice: the
+* The search window is bounded on one contract enforced twice: the
   input model rejects an out-of-range ``limit`` (or an over-length query / bad
   region / unknown parameter) *before* the handler runs, and the service rejects
   it again. A malformed request is *rejected* (the ``ValidationError`` propagates
   as a protocol-level error), never silently widened into a bulk dump.
-* **§V23** -- every delivered result is a typed-status envelope
-  (``ok`` for any delivered set, including an empty one -- §V106 (b): a search is a
+* Every delivered result is a typed-status envelope
+  (``ok`` for any delivered set, including an empty one -- a search is a
   set query, so zero hits is an ``ok`` with an empty ``results`` and a limitation
   carrying the why, never ``not_found``). A database failure or any unexpected error
   fails closed to a fixed, path/trace-free envelope
   (``database_unavailable``/``internal_error``), never a leaked exception.
 
 Search hits are region-tagged *locators* (the ``server`` field on each row keeps
-en/cn from mixing, §V5); a client fetches full facts + provenance through the
+en/cn from mixing); a client fetches full facts + provenance through the
 ``get_operator`` / ``get_enemy`` / ``get_stage`` tools.
 """
 
@@ -52,42 +51,42 @@ from arknights_mcp.services.search import SearchHit, SearchResult, search_entiti
 
 #: The service call a search tool runs once it has a connection: it takes the
 #: read-only connection and returns the domain :class:`SearchResult`. The
-#: bound-model parsing happens in the tool handler *before* this runs (§V18/§V19).
+#: bound-model parsing happens in the tool handler *before* this runs.
 SearchRunner = Callable[[sqlite3.Connection], SearchResult]
 
 #: Search-coverage + region-order notes shared by both sibling search descriptions
-#: (§V75: same rule stated in both, one home §V37; short client-facing sentences,
-#: §V71(f)). Coverage: the ja/ko alias axis is retired (§V57/T156) -- say so where
+#: (same rule stated in both, one home; short client-facing sentences). Coverage:
+#: the ja/ko alias axis is retired -- say so where
 #: the client reads, instead of letting a ja query die as an unexplained empty set;
-#: zone display names ARE indexed as stage aliases (T179), so a zone name surfaces
-#: that zone's stages, and so does the EVENT TITLE those zones belong to (§V110/T205 --
-#: a separate string from a separate file, ``activity_table``; before it was imported
-#: "Lone Trail" matched nothing, B155). Both worked examples are VERIFIED against the
+#: zone display names ARE indexed as stage aliases, so a zone name surfaces
+#: that zone's stages, and so does the EVENT TITLE those zones belong to (a
+#: separate string from a separate file, ``activity_table``; before it was imported
+#: "Lone Trail" matched nothing). Both worked examples are VERIFIED against the
 #: shipped build ("Gavial's Footprints" -> 16 stages; "Lone Trail" -> the act25side
 #: stages), not invented ones -- an example that matches nothing is a description
-#: promising output the tool cannot produce (§V47 class). Ranking (T186/B113): those
+#: promising output the tool cannot produce. Ranking: those
 #: alias-driven stages rank below every own-name match, and the names ride the hit as
 #: ``zone_display_name`` / ``event_name`` so the client can see why an unrelated-looking
 #: stage came back. The modes with no activity row at all are named too, so a client
-#: does not read the coverage gap as a search failure (§V26). Region order (B97): membership in the
+#: does not read the coverage gap as a search failure. Region order: membership in the
 #: bounded result set is best-match-first across both regions; the returned set is then
 #: listed en before cn (search_stages lists exact stage-code matches ahead of the
 #: region order), so the ``results[0]`` grab is predictable and the escape hatch
 #: (server filter / per-row server field) is named. The en/cn-only clause is one
 #: constant because both empty-result limitations repeat it -- one home, three readers.
 _EN_CN_ONLY_CLAUSE = "names are indexed in English and Chinese only"
-#: §V84/§V111 (§T207): this block was 788 chars and BYTE-IDENTICAL in both search
+#: This block was 788 chars and BYTE-IDENTICAL in both search
 #: descriptions -- exactly the ">=500-char identical block across >=2 tool descriptions"
-#: §V84 forbids, and it went unseen because §V84's only guard checked the blackboard
-#: glossary. It is now split by WHEN a caller needs it (§V111 c), not deleted (§V111 b):
+#: the duplication bar forbids, and it went unseen because the only guard checked the
+#: blackboard glossary. It is now split by WHEN a caller needs it, not deleted:
 #: what stays here is the PRE-call half, which changes how a caller forms the query at all
 #: (which languages index, that matching is exact-token, that a zone or event title is a
 #: usable query); the ranking/attribution/coverage-gap half is read AGAINST a result and
 #: moved to the ``arknights://glossary/search-coverage`` resource this note points at.
-#: What remains is under §V84's 500-char duplication bar.
+#: What remains is under the 500-char duplication bar.
 #: Split in two so the per-tool region-order note can sit BETWEEN them (see
 #: :data:`_BOUNDED_NOTE`): back to back these are ~490 shared chars, and abutting any
-#: other shared sentence they cross §V84's 500-char bar again.
+#: other shared sentence they cross the 500-char bar again.
 _INDEX_NOTE = (
     _EN_CN_ONLY_CLAUSE[:1].upper() + _EN_CN_ONLY_CLAUSE[1:] + ", so Japanese or Korean names "
     "will not match. Matching is exact-token with prefix support, so typos and fuzzy "
@@ -109,23 +108,23 @@ _STAGES_REGION_ORDER_NOTE = (
     "each row's server field."
 )
 
-#: §V104 (b) (§T207): a locator's ``difficulty`` is now decoded by the response's
+#: A locator's ``difficulty`` is now decoded by the response's
 #: ``enum_legend``, so what stays inline is only the pointer to it. WHY the tag exists --
 #: that a variant shares its code and name with the base stage -- moved INTO the TOUGH /
 #: EASY glosses, which is where a client meets the ambiguity it resolves. Shared by both
-#: search descriptions (§V37), well under §V84's duplication bar.
+#: search descriptions, well under the duplication bar.
 _DIFFICULTY_LEGEND_NOTE = (
     "A stage locator's difficulty is the stage variant tag, and the response's "
     "enum_legend gives its values."
 )
 
-#: §V84 (§T207): the shared blocks are ORDERED so the text that genuinely DIFFERS sits
+#: The shared blocks are ORDERED so the text that genuinely DIFFERS sits
 #: between them. These two descriptions legitimately share four notes; run back to back
-#: they formed a 790-char identical block -- the thing §V84 forbids -- even though no
-#: single note is near the 500-char bar, and the bar is on the BLOCK, not the constant.
-#: Interleaving the per-tool region-order note keeps the longest identical run at ~383,
-#: and reads better besides: what indexes, then how results order, then bounds, then the
-#: zone/event coverage that closes the string.
+#: they formed a 790-char identical block -- the thing the duplication bar forbids --
+#: even though no single note is near the 500-char bar, and the bar is on the BLOCK, not
+#: the constant. Interleaving the per-tool region-order note keeps the longest identical
+#: run at ~383, and reads better besides: what indexes, then how results order, then
+#: bounds, then the zone/event coverage that closes the string.
 _BOUNDED_NOTE = "Results are bounded (default 10, max 50) and en/cn are never mixed."
 
 _ENTITIES_TOOL_NAME = "search_entities"
@@ -164,18 +163,18 @@ _STAGES_TOOL_DESCRIPTION = (
     + _ZONE_EVENT_NOTE
 )
 
-#: §V106 (b)/B147: a search is a SET QUERY, so zero hits is an ``ok`` result with an
+#: A search is a SET QUERY, so zero hits is an ``ok`` result with an
 #: empty ``results`` list -- not ``not_found``, which reports a well-formed question as a
 #: failed request and made a client branching on ``status`` treat "no name matched
 #: 'Amyia'" as a failure while treating "no announcements in this window" as a success.
 #: The wording that used to be the error ``message`` + ``suggested_action`` is MOVED here
-#: rather than dropped (§V111 b): the reason and the retry guidance still reach the
+#: rather than dropped: the reason and the retry guidance still reach the
 #: client, now as the limitation an ``ok`` envelope carries. Same home as the shipped
-#: ``get_announcements`` precedent (T206), which folds its action into the limitation
+#: ``get_announcements`` precedent, which folds its action into the limitation
 #: string rather than adding a ``suggested_action`` key to an ``ok`` payload.
-#: Fixed, safe copy (§V23 -- no query echo, no stack trace, no local path); no internal
-#: cites or jargon (§V71 b). The shared DB-unavailable/internal fail-closed copy + guard
-#: live in ``_shared.run_guarded`` (one failure mode, one home §V37).
+#: Fixed, safe copy (no query echo, no stack trace, no local path); no internal
+#: cites or jargon. The shared DB-unavailable/internal fail-closed copy + guard
+#: live in ``_shared.run_guarded`` (one failure mode, one home).
 _ENTITIES_NO_MATCH_LIMITATION = (
     "No indexed entity matched the search query. Broaden the query, drop the "
     "server/entity_type filter, or check the spelling; " + _EN_CN_ONLY_CLAUSE + "."
@@ -184,19 +183,19 @@ _STAGES_NO_MATCH_LIMITATION = (
     "No indexed stage matched the search query. Broaden the query, drop the server "
     "filter, or check the stage code; " + _EN_CN_ONLY_CLAUSE + "."
 )
-#: The OTHER empty case (§V106 b): the query passed the input model but held no letters
+#: The OTHER empty case: the query passed the input model but held no letters
 #: or digits, so no search expression could be built at all. A distinct sentence, because
 #: reporting it as "nothing matched" would tell the client its query ran and failed when
-#: in fact it never ran. Shared by both tools -- one wording, one home (§V37).
+#: in fact it never ran. Shared by both tools -- one wording, one home.
 _NO_SEARCHABLE_TOKENS_LIMITATION = (
     "The query contains no letters or digits, so there was nothing to search for. "
     "Retry with a name, a stage code, or a game id."
 )
 
-#: Fixed, safe copy for the §V50 region-availability verdicts, shared by both
-#: search tools (§V37): a region is gated *before* absence is asserted, so a client
-#: never reads a bare ``not_found`` for an empty region index (B42). No query echo,
-#: no path; the suggested action is an admin step, never a query-time download (§V24).
+#: Fixed, safe copy for the region-availability verdicts, shared by both
+#: search tools: a region is gated *before* absence is asserted, so a client
+#: never reads a bare ``not_found`` for an empty region index. No query echo,
+#: no path; the suggested action is an admin step, never a query-time download.
 _UNSUPPORTED_SERVER_MESSAGE = "the requested region is not supported"
 _UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
 _DATA_STALE_MESSAGE = "no active snapshot for the requested region in the active build"
@@ -206,28 +205,28 @@ _DATA_STALE_ACTION = (
 
 
 def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
-    """One hit as a region-tagged locator (§V5: region travels on every row).
+    """One hit as a region-tagged locator (region travels on every row).
 
     ``stage_code`` + ``difficulty`` are STAGE-domain fields: an operator / enemy /
     item locator carries neither, so both keys are OMITTED (not emitted as an
-    ambiguous ``null``) on a non-stage row (§V67 null discipline / B90; omitting an
-    always-absent field is additive-safe, §V21). A stage locator always keys both --
+    ambiguous ``null``) on a non-stage row (null discipline; omitting an
+    always-absent field is additive-safe). A stage locator always keys both --
     ``stage_code`` is present, and ``difficulty`` is kept even when ``null`` (a plain
     stage with no variant), because for a stage the tag is a domain-expected field a
     client reads unconditionally, not an ambiguous absence. ``difficulty`` is the
-    §V70/§V80 stage variant tag: two stages that share a ``display_name`` +
+    stage variant tag: two stages that share a ``display_name`` +
     ``stage_code`` (a normal stage and its challenge / tough / easy variant) carry
     distinct difficulty values, so a client can tell them apart in one result set
-    without parsing the game-data ``game_id`` suffix/prefix (B59/B84).
+    without parsing the game-data ``game_id`` suffix/prefix.
 
-    ``zone_display_name`` (T186/B113) names the zone the stage belongs to and
-    ``event_name`` (§V110/B155) the event that zone is part of -- either can be the
+    ``zone_display_name`` names the zone the stage belongs to and
+    ``event_name`` the event that zone is part of -- either can be the
     string an alias query matched. They are what make an alias-driven hit attributable:
     without them a client gets a stage whose own name and code look unrelated to the
     query and cannot group mixed results by event. They are distinct facts, not
     synonyms: the zone name is the sub-zone subtitle ("The Coming of The Future"), the
     event name the title ("Lone Trail"). Unlike the two fields above both are OMITTED
-    when absent (§V67): a stage's zone is unnamed in source often enough (416 of 3264 en
+    when absent: a stage's zone is unnamed in source often enough (416 of 3264 en
     stages on the 2026-07-27 build), and a zone may belong to no event at all
     (annihilation / tower / IS zones), so a null would be an ambiguous absence rather
     than a domain-expected tag.
@@ -238,7 +237,7 @@ def _hit_to_dict(hit: SearchHit) -> dict[str, object]:
         "game_id": hit.game_id,
         "display_name": hit.display_name,
     }
-    # §V67/B90: the stage-only locator fields ride only a stage row. A non-stage
+    # The stage-only locator fields ride only a stage row. A non-stage
     # locator omits both keys instead of emitting a bare null; a stage keeps both
     # (difficulty may be null there, a domain-expected tag, not an absence).
     if hit.entity_type == "stage":
@@ -258,22 +257,22 @@ def _guarded_search(
     tool_name: str,
     no_match_limitation: str,
 ) -> ResponseEnvelope:
-    """Run a search service call and map it to a typed §V23 envelope.
+    """Run a search service call and map it to a typed envelope.
 
     Shared by ``search_entities`` and ``search_stages``: the only per-tool
     variation is the runner (which service + params), the empty-result copy, and the
-    ``tool_name`` the §V104 legend fields are keyed on. The connection acquisition +
-    fail-closed error handling is delegated to the shared :func:`run_guarded` (§V37);
-    here we own only the search-specific locator shaping and the §V106 empty-set
+    ``tool_name`` the legend fields are keyed on. The connection acquisition +
+    fail-closed error handling is delegated to the shared :func:`run_guarded`;
+    here we own only the search-specific locator shaping and the empty-set
     limitation.
     """
 
     def shape(result: SearchResult) -> ResponseEnvelope:
-        # §V50/§V24: the service gates region availability before asserting
+        # The service gates region availability before asserting
         # absence, so an unsupported region or an empty region index surfaces as a
         # typed region verdict -- never an empty ``ok`` that would wrongly claim the
-        # entity is absent from a region that simply has no data (B42). §V106 keeps
-        # these two as REAL errors, fired BEFORE the empty-set rule below.
+        # entity is absent from a region that simply has no data. These two stay
+        # REAL errors, fired BEFORE the empty-set rule below.
         if result.status == "unsupported_server":
             return error(
                 "unsupported_server",
@@ -287,8 +286,8 @@ def _guarded_search(
             "count": len(result.hits),
             "results": [_hit_to_dict(hit) for hit in result.hits],
         }
-        # §V104 (b)/§V67: only a STAGE locator carries ``difficulty`` (a non-stage row
-        # omits the key entirely, B90), so the legend rides only a result set that
+        # Only a STAGE locator carries ``difficulty`` (a non-stage row
+        # omits the key entirely), so the legend rides only a result set that
         # actually has one -- and when it does it is the WHOLE 5-value vocabulary, never
         # just the tags these hits happen to carry (a filtered legend teaches a partial
         # domain the client then caches).
@@ -296,7 +295,7 @@ def _guarded_search(
         limitations = attach_enum_legend(
             data, TOOL_ENUM_LEGEND_FIELDS[tool_name] if emits_difficulty else (), ()
         )
-        # §V106 (b): an empty set is a delivered answer, so the WHY rides a limitation
+        # An empty set is a delivered answer, so the WHY rides a limitation
         # instead of an error body. The two empty cases carry different sentences -- a
         # query that ran and matched nothing is not a query that could not run at all.
         if result.empty_reason == "no_match":
@@ -309,20 +308,20 @@ def _guarded_search(
 
 
 def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
-    """Build the ``search_entities`` :class:`ToolSpec` (§T32; §V14).
+    """Build the ``search_entities`` :class:`ToolSpec`.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build. The returned spec is read-only (§V2) and is meant to register into the
-    single shared registry both transports dispatch from (§V14); its
-    ``input_schema`` is the bounded model's JSON Schema, so the §V19 ``limit``
-    bound + §V18 caps land on the wire exactly as validated.
+    build. The returned spec is read-only and is meant to register into the
+    single shared registry both transports dispatch from; its
+    ``input_schema`` is the bounded model's JSON Schema, so the ``limit``
+    bound + input caps land on the wire exactly as validated.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V18/§V19 gate: the bounded model rejects an out-of-range limit, an
+        # The bounded model rejects an out-of-range limit, an
         # over-length query, a bad region, or an unknown parameter *before* any
         # query runs. A ValidationError here propagates as a protocol-level
-        # rejection -- never a silently widened search (§V19).
+        # rejection -- never a silently widened search.
         parsed = SearchEntitiesInput.model_validate(params)
         return _guarded_search(
             get_conn,
@@ -347,13 +346,13 @@ def build_search_entities_spec(get_conn: ConnectionProvider) -> ToolSpec:
 
 
 def build_search_stages_spec(get_conn: ConnectionProvider) -> ToolSpec:
-    """Build the ``search_stages`` :class:`ToolSpec` (§T33; §V19/§I.tool).
+    """Build the ``search_stages`` :class:`ToolSpec`.
 
     Stage-scoped sibling of ``search_entities``: an exact ``stage_code`` match is
-    ranked first (the service enforces the ordering). Same §V18/§V19 model gate
+    ranked first (the service enforces the ordering). Same model gate
     (out-of-range ``limit`` / over-length query / unknown parameter *rejected*
-    before any query runs) and same fail-closed §V23 envelope path (§V14). The
-    spec is read-only (§V2) for the single shared registry both transports use.
+    before any query runs) and same fail-closed envelope path. The
+    spec is read-only for the single shared registry both transports use.
     """
 
     def handler(**params: object) -> ResponseEnvelope:

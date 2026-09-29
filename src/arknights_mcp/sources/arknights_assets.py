@@ -1,15 +1,15 @@
-"""Primary allowlisted source adapter: ``arknights_assets_gamedata`` (§T21; §V1).
+"""Primary allowlisted source adapter: ``arknights_assets_gamedata``.
 
 This is a network-touching adapter used **exclusively** by the CLI ``sync`` job
-(never at query time, §V1): it downloads a fixed allowlist of gameplay JSON files
+(never at query time): it downloads a fixed allowlist of gameplay JSON files
 over HTTPS into an isolated staging directory, enforcing size, JSON-depth,
-record-count, and redirect limits (PRD §11.2), and then hands the import pipeline
+record-count, and redirect limits (PRD Section 11.2), and then hands the import pipeline
 an ordinary local, read-only :class:`LocalSnapshotAdapter` rooted at that staging
 directory. The network concern is therefore fully contained here; everything
 downstream sees only local files.
 
 The shared HTTPS transport + safety caps live in :mod:`arknights_mcp.sources.http_fetch`
-(§V37: one home) so this adapter and the ``penguin_statistics`` adapter apply identical
+(one home) so this adapter and the ``penguin_statistics`` adapter apply identical
 limits. The HTTP transport is injected (:class:`Fetcher`) so the caps are unit-testable
 without live network access; the default :class:`HttpsFetcher` refuses non-HTTPS URLs
 and caps redirects and response size.
@@ -41,7 +41,7 @@ _LOG = logging.getLogger(__name__)
 #: Default source id for this adapter (matches the registry entry).
 DEFAULT_SOURCE_ID = "arknights_assets_gamedata"
 
-#: Relative paths only under these prefixes may be fetched (allowlist, §V18).
+#: Relative paths only under these prefixes may be fetched (allowlist).
 ALLOWED_PREFIXES: tuple[str, ...] = ("gamedata/excel/", "gamedata/levels/")
 
 #: Discovered stage level files may only live under these prefixes -- narrower
@@ -52,7 +52,7 @@ LEVEL_PREFIXES: tuple[str, ...] = ("gamedata/levels/",)
 
 #: The fixed core files fetched every sync (enemy + stage/zone tables). These are
 #: mandatory: a missing one fails the whole sync (a bad ``base_url`` must not
-#: silently produce an empty build). The §V30 silent-empty guard is scoped to this
+#: silently produce an empty build). The silent-empty guard is scoped to this
 #: combat data.
 CORE_FILES: tuple[str, ...] = (
     "gamedata/excel/enemy_handbook_table.json",
@@ -61,44 +61,44 @@ CORE_FILES: tuple[str, ...] = (
     "gamedata/excel/stage_table.json",
 )
 
-#: The stage table is fetched + parsed serially before level discovery fans out
-#: (§V42 ordering): the discovered level paths come from it.
+#: The stage table is fetched + parsed serially before level discovery fans out:
+#: the discovered level paths come from it.
 STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 
 #: Operator/module excel tables the pipeline importers read (``import_operators`` →
 #: ``character_table``/``skill_table``; ``import_modules`` → ``uniequip_table``/
-#: ``battle_equip_table``). In-scope for v0.1 (PRD §6.1) but *optional per snapshot*:
+#: ``battle_equip_table``). In-scope for v0.1 (PRD Section 6.1) but *optional per snapshot*:
 #: a combat-only snapshot legitimately lacks them and the pipeline imports the
 #: domain empty (``operators.py`` / ``modules.py`` return empty if the table is
 #: absent). They are therefore fetched every sync but tolerated-if-absent (404/410
-#: skip+warn, B34 precedent) rather than added to the strict :data:`CORE_FILES` set,
+#: skip+warn precedent) rather than added to the strict :data:`CORE_FILES` set,
 #: so a combat-only snapshot still syncs. They MUST be attempted, though — else a
 #: real ``sync`` silently builds ``operators=modules=0`` and ``get_operator`` /
-#: ``compare_operator_modules`` return empty (B36; §V41). ``uniequip_data`` is read
+#: ``compare_operator_modules`` return empty. ``uniequip_data`` is read
 #: from ``uniequip_table``'s ``equipDict`` and is not a separate file.
 #:
-#: ``gacha_table`` (§T111/§V62) is the same class: the banner-archive importer reads
+#: ``gacha_table`` is the same class: the banner-archive importer reads
 #: its ``gachaPoolClient`` from the SAME snapshot as the combat data, but a banner
 #: is a standalone FACT and a combat-only snapshot legitimately lacks the table, so
 #: it too is fetched every sync yet tolerated-if-absent (404/410 skip+warn) rather
-#: than a mandatory :data:`CORE_FILES` entry (§V62; the §V41 introspection test still
+#: than a mandatory :data:`CORE_FILES` entry (the introspection test still
 #: asserts the banner importer's default path is in this staged set).
 #:
-#: ``skin_table`` (§T182/§V88, ADR 0015) is the same class again: the skin-gallery
+#: ``skin_table`` (ADR 0015) is the same class again: the skin-gallery
 #: importer reads its ``charSkins`` metadata from the SAME snapshot, a skin is
 #: cosmetic naming FACT (``operator_skins`` is outside CRITICAL_TABLES), and a
 #: combat-only snapshot legitimately lacks the table.
-#: ``activity_table`` (§T205/§V110, B155) joins the same class once more: the stage
+#: ``activity_table`` joins the same class once more: the stage
 #: importer reads its ``basicInfo[<actId>].name`` + ``zoneToActivity`` map to give each
 #: event zone its TITLE ("Lone Trail", "Babel"). That title exists in no other file --
 #: ``zone_table`` carries only the sub-zone SUBTITLE -- so without this fetch the event
-#: name a client actually types matches nothing (B155). It is name-only metadata from
+#: name a client actually types matches nothing. It is name-only metadata from
 #: the SAME snapshot, and a combat-only snapshot legitimately lacks it, so it is
 #: fetched every sync and tolerated-if-absent (the zones then keep a NULL event_name).
-#: ``range_table`` (§T200/§V98, B132) is the class again, and the case that named the
+#: ``range_table`` is the class again, and the case that named the
 #: rule: it was DECLARED in the registry's ``fields_consumed`` yet never appeared here,
 #: so no sync ever fetched it and no importer ever read it, while ``range_id`` shipped
-#: bare on every operator phase and skill level with no resolver (§V69). 68 EN / 73 CN
+#: bare on every operator phase and skill level with no resolver. 68 EN / 73 CN
 #: grids, ~70 KiB, resolving every emitted id with zero unresolved. Same tolerant-absent
 #: posture: a combat-only snapshot lacks it and the wire falls back to the limitation.
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
@@ -116,7 +116,7 @@ SUPPLEMENTARY_FILES: tuple[str, ...] = (
 def _validate_relative_path(
     relative_path: str, *, allowed_prefixes: tuple[str, ...] = ALLOWED_PREFIXES
 ) -> str:
-    """Reject absolute paths, traversal, and paths outside the allowlist (§V18).
+    """Reject absolute paths, traversal, and paths outside the allowlist.
 
     Both the literal path and its percent-decoded form are checked: the remote
     server decodes ``%2f`` back to ``/``, so ``a/..%2f..%2fsecret`` would escape the
@@ -135,9 +135,9 @@ def _validate_relative_path(
 
 
 class ArknightsAssetsAdapter:
-    """Network stager for the primary source; produces a local snapshot (§V1)."""
+    """Network stager for the primary source; produces a local snapshot."""
 
-    #: This adapter performs network I/O; it is only ever run from CLI sync (§V1).
+    #: This adapter performs network I/O; it is only ever run from CLI sync.
     touches_network: bool = True
 
     def __init__(
@@ -163,8 +163,8 @@ class ArknightsAssetsAdapter:
             fetcher if fetcher is not None else HttpsFetcher(max_redirects=limits.max_redirects)
         )
         self._limits = limits
-        # Bounds the download thread pool (§T79/§V42): 1 forces the serial fallback;
-        # never an unbounded fan-out (2257 refs ⊥ 2257 sockets).
+        # Bounds the download thread pool: 1 forces the serial fallback;
+        # never an unbounded fan-out (2257 refs, not 2257 sockets).
         self._max_parallel = max_parallel
         # A per-run budget may be injected so a multi-server sync shares one cap;
         # standalone use falls back to a per-adapter budget from ``limits``.
@@ -175,7 +175,7 @@ class ArknightsAssetsAdapter:
         normalized = _validate_relative_path(relative_path)
         url = f"{self.base_url}/{normalized}"
         # The shared fetch-and-cap sequence (budget, per-file size cap, depth/node
-        # caps) lives in one home (§V37); the raw bytes are staged for hashing.
+        # caps) lives in one home; the raw bytes are staged for hashing.
         data, parsed = fetch_json(self._fetcher, url, limits=self._limits, budget=self._budget)
         target = staging_root / normalized
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +187,7 @@ class ArknightsAssetsAdapter:
 
         The real ``levelId`` is a Title-case, extension-less reference
         (``Obt/Main/level_main_04-04``); it is rewritten to the actual snapshot
-        path before the allowlist check (§V29/§V30) so the level file is actually
+        path before the allowlist check so the level file is actually
         fetched. ``normalize_level_id`` always forces the result under
         ``gamedata/levels/``, so a crafted ``levelId`` still cannot enqueue an excel
         table (L8), and traversal is rejected by ``_validate_relative_path`` at
@@ -210,7 +210,7 @@ class ArknightsAssetsAdapter:
             if resolved is None or resolved in seen:
                 continue
             seen.add(resolved)
-            # Confine discovery to the levels tree post-normalization (§V36): a
+            # Confine discovery to the levels tree post-normalization: a
             # crafted levelId must not fetch an excel table or escape the tree.
             if is_clean_level_path(resolved):
                 paths.append(resolved)
@@ -235,11 +235,11 @@ class ArknightsAssetsAdapter:
     def _download_all(self, paths: Iterable[str], staging_root: Path, *, strict: bool) -> int:
         """Download every path with bounded parallelism; return the missing count.
 
-        Each file is fetched independently: every §V1 gate (allowlist, per-file byte
+        Each file is fetched independently: every gate (allowlist, per-file byte
         cap, JSON depth/node cap) runs per file inside ``_download`` regardless of the
         worker, the shared :class:`DownloadBudget` charge is thread-safe, and each file
         is written to its own normalized path so the staged output does not depend on
-        completion order (§V42). ``max_parallel == 1`` runs the serial path (identical
+        completion order. ``max_parallel == 1`` runs the serial path (identical
         to the old behavior); the returned missing count is the exact sum across
         workers, and a strict fetch failure re-raises out of the pool (fail-closed).
         """
@@ -274,16 +274,16 @@ class ArknightsAssetsAdapter:
         ``base_url`` must not silently produce an empty build). Both the
         operator/module tables and the discovered level files are fetched but
         tolerated-if-absent (404/410 skip+warn): a discovered ``levelId`` may point at
-        a retired event whose data is pruned (B34), and a combat-only snapshot may
-        lack the operator/module tables entirely (B36) — the pipeline imports those
+        a retired event whose data is pruned, and a combat-only snapshot may
+        lack the operator/module tables entirely — the pipeline imports those
         domains empty (optional per snapshot). Both must still be *attempted*, else a
-        real sync silently omits an in-scope domain (§V41). The §V30 gate still fails
+        real sync silently omits an in-scope domain. The silent-empty gate still fails
         closed if 0 levels import overall.
         """
         root = Path(staging_root)
         root.mkdir(parents=True, exist_ok=True)
         # The stage table is fetched + parsed serially FIRST: level discovery fans
-        # out from it, so it must be in hand before the pool starts (§V42 ordering).
+        # out from it, so it must be in hand before the pool starts.
         stage_table: Any = self._download(STAGE_TABLE_PATH, root)
         remaining_core = [f for f in CORE_FILES if f != STAGE_TABLE_PATH]
         self._download_all(remaining_core, root, strict=True)

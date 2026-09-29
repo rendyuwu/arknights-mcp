@@ -1,4 +1,4 @@
-"""Shared candidate-build pipeline (§T21/§T22; PRD §11.2).
+"""Shared candidate-build pipeline (PRD Section 11.2).
 
 One code path builds a SQLite *candidate* from source adapters, used by both
 ``sync`` (network-staged snapshot) and ``import`` (local snapshot) so the two
@@ -6,19 +6,19 @@ never diverge. The network concern is isolated upstream in
 :mod:`arknights_mcp.sources.arknights_assets`: by the time the pipeline runs it
 only ever sees a local, read-only :class:`SourceAdapter` rooted at a snapshot
 directory (staged download or user-supplied), so this module performs no network
-I/O (§V1).
+I/O.
 
-Steps per build (PRD §11.2):
+Steps per build (PRD Section 11.2):
 
 * open a fresh writable candidate + run migrations (never touch the active DB);
 * seed ``data_sources`` from the source registry (the authoritative posture);
 * materialize the source-policy-event journal into ``source_policy_events``;
-* per server: hash the snapshot into a manifest + provenance snapshot row (§V17),
-  then import enemies + stages/levels through the field allowlist (§V16/§V18).
+* per server: hash the snapshot into a manifest + provenance snapshot row,
+  then import enemies + stages/levels through the field allowlist.
 
-The candidate is *not* promoted here: the caller validates it (§T23) and only then
-promotes it atomically (§T24/§V4). A malformed snapshot raises, the candidate is
-discarded, and the active database stays untouched (fail-closed, §V3).
+The candidate is *not* promoted here: the caller validates it and only then
+promotes it atomically. A malformed snapshot raises, the candidate is
+discarded, and the active database stays untouched (fail-closed).
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class ServerImport:
 class SnapshotSummary:
     """Per-server outcome recorded for CLI reporting (no game content).
 
-    Carries the per-stage import counts (§V30): tiles/spawns/stage_enemies plus how
+    Carries the per-stage import counts: tiles/spawns/stage_enemies plus how
     many referenced level files actually imported, so a silent empty combat build
     is both reported and refused.
     """
@@ -175,23 +175,23 @@ def _import_one(
     stages = import_stages(conn, job.adapter, record.snapshot_id)
     _guard_not_silently_empty(job.server, stages)
     # Operators are optional per snapshot: a combat-only snapshot without
-    # character_table imports zero and is not a silent-empty failure (§V30 is
+    # character_table imports zero and is not a silent-empty failure (the guard is
     # combat-scoped).
     operators = import_operators(conn, job.adapter, record.snapshot_id)
     # Modules link to operators via operator_pk, so they import after operators;
-    # a snapshot without uniequip_table imports zero (optional per snapshot, §V30
-    # is combat-scoped).
+    # a snapshot without uniequip_table imports zero (optional per snapshot; the
+    # guard is combat-scoped).
     modules = import_modules(conn, job.adapter, record.snapshot_id)
-    # Banners and skins are the OPTIONAL fail-open domains of the main build (§V58):
+    # Banners and skins are the OPTIONAL fail-open domains of the main build:
     # both soft-resolve char ids to an operator_pk so both import after operators,
     # INSIDE this build (not as a post-promotion ride-along), and a snapshot carrying
-    # neither table imports zero of each (optional per snapshot, B36/§V41). An optional
-    # domain must not fail-close the MANDATORY combat core (§V62/§V88/B53), so each runs
-    # under import_optional_domain (the §V37 home, B125): its ImporterError (a §V30
-    # non-empty-source-zero-rows guard, or a §V33 dup gachaPoolId / skinId) rolls back
+    # neither table imports zero of each (optional per snapshot). An optional
+    # domain must not fail-close the MANDATORY combat core, so each runs
+    # under import_optional_domain (the single home): its ImporterError (a
+    # non-empty-source-zero-rows guard, or a dup gachaPoolId / skinId) rolls back
     # only THIS region's partial domain + provenance rows and the build continues
     # game-data-only -- neither table is CRITICAL, so an empty archive/gallery is
-    # legitimate and §V3 combat fail-closed is unchanged.
+    # legitimate and combat fail-closed is unchanged.
     banners = import_optional_domain(
         conn,
         lambda: import_banners(conn, job.adapter, record.snapshot_id),
@@ -199,7 +199,6 @@ def _import_one(
         server=job.server,
         describe="banner archive",
         empty=BannerImportResult,
-        cites="§V62/§V58",
     )
     skins = import_optional_domain(
         conn,
@@ -208,14 +207,13 @@ def _import_one(
         server=job.server,
         describe="skin gallery",
         empty=SkinImportResult,
-        cites="§V88/§V58",
     )
-    # §T200/§V98 (B132): the attack-range grids that resolve the `range_id` phases and
+    # The attack-range grids that resolve the `range_id` phases and
     # skill levels emit. Same optional fail-open class as banners/skins -- `range_table`
-    # is fetched tolerant-absent (§V41/B36) and `ranges` is not CRITICAL, so a snapshot
-    # without it imports zero and the wire takes §V69's limitation arm. It references no
+    # is fetched tolerant-absent and `ranges` is not CRITICAL, so a snapshot
+    # without it imports zero and the wire surfaces its limitation. It references no
     # operator row, so its position here is free; it runs last with the other optional
-    # domains so one §V37 home (import_optional_domain) governs them all.
+    # domains so one home (import_optional_domain) governs them all.
     ranges = import_optional_domain(
         conn,
         lambda: import_ranges(conn, job.adapter, record.snapshot_id),
@@ -223,7 +221,6 @@ def _import_one(
         server=job.server,
         describe="attack-range grids",
         empty=RangeImportResult,
-        cites="§V98/§V69",
     )
     lv = stages.levels
     return SnapshotSummary(
@@ -249,12 +246,12 @@ def _import_one(
 
 
 def _guard_not_silently_empty(server: str, stages: StageImportResult) -> None:
-    """Fail closed if a non-empty combat source yielded no combat rows (§V30).
+    """Fail closed if a non-empty combat source yielded no combat rows.
 
-    Two silent-empty regressions B6 warns of: every stage names a level file but
+    Two silent-empty regressions: every stage names a level file but
     none resolves (a schema/path mismatch), or level files import yet produce zero
     tiles/spawns/stage_enemies (a shape mismatch). Either raises so the candidate is
-    discarded and the active database stays untouched (§V3) — never a promoted
+    discarded and the active database stays untouched — never a promoted
     build with empty combat data.
     """
     lv = stages.levels
@@ -269,7 +266,7 @@ def _guard_not_silently_empty(server: str, stages: StageImportResult) -> None:
     )
     # The second case does not fit the shared candidates-vs-produced predicate (three
     # downstream counts, any one of them zero), so it states its own reason and raises
-    # through the same §V37 refusal home rather than re-forking the message (B125).
+    # through the same refusal home rather than re-forking the message.
     if stages.levels_imported and (lv.tiles == 0 or lv.spawns == 0 or lv.stage_enemies == 0):
         refuse_silent_empty(
             f"{server}: imported {stages.levels_imported} level file(s) but produced "
@@ -291,7 +288,7 @@ def build_candidate(
 
     Opens a fresh writable candidate, seeds ``data_sources`` + policy events, and
     imports each server's snapshot. On any error the partially-built candidate is
-    discarded by the caller and the active database is untouched (§V3). Foreign
+    discarded by the caller and the active database is untouched. Foreign
     keys are enforced throughout (migrations turn them on).
     """
     if not imports:
@@ -304,7 +301,7 @@ def build_candidate(
         materialize_policy_events(conn, policy_events)
         summaries = [_import_one(conn, job, imported_at=imported_at) for job in imports]
         # Populate the unified FTS search index once every server is imported, so
-        # it covers all regions in one pass (§T31); read-only from here on (§V2).
+        # it covers all regions in one pass; read-only from here on.
         build_search_index(conn)
         conn.commit()
     finally:

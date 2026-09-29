@@ -1,22 +1,22 @@
-"""§T120 image-ref WIRING tests (§V63/§V21/§V14/§V5/§V19; §I.tool).
+"""Image-ref WIRING tests.
 
-T119 proved the derivation is pure + network-free; this task wires the additive
+The derivation is pure + network-free; this task wires the additive
 ``image_refs`` list into the ``get_operator`` (portrait+avatar+skin) + ``get_enemy``
 (enemy) envelopes and the ``get_banners`` resolved featured-op (portrait), gated on the
 combined config + registry source-enabled gate. These tests drive the real tools end to
-end against the production read-only path (§V2). One test group per cited invariant:
+end against the production read-only path. One test group per invariant:
 
-* **§V63** -- an enabled source makes ``get_operator``/``get_enemy`` carry the exact
+* **refs** -- an enabled source makes ``get_operator``/``get_enemy`` carry the exact
   DERIVED urls, a resolved banner featured-op carry its portrait; DISABLED (default) emits
   no ``image_refs`` at all. The combined ``refs_enabled`` gate needs BOTH the config
   posture AND the registry ``enabled`` flag.
-* **§V21** -- the field is ADDITIVE: absent by default (backward-compatible), and when on
+* **additive** -- the field is ADDITIVE: absent by default (backward-compatible), and when on
   it only ADDS a key -- every pre-existing field stays.
-* **§V14** -- the shared registry both transports dispatch threads the same gate, so the
+* **shared gate** -- the shared registry both transports dispatch threads the same gate, so the
   registry-dispatched result is identical to the tool's own spec.
-* **§V5** -- a ref rides the entity's OWN region envelope; a wrong-region lookup is
+* **region** -- a ref rides the entity's OWN region envelope; a wrong-region lookup is
   ``not_found`` with no ref (en/cn never mixed).
-* **§V19** -- a ref is a bounded per-entity attach: a small fixed list, no catalog
+* **bounded** -- a ref is a bounded per-entity attach: a small fixed list, no catalog
   list/page/search key.
 """
 
@@ -84,8 +84,7 @@ def _seed_banner_db(tmp_path: Path, *, with_operator: bool = True) -> Path:
     """A candidate with an en LIMITED banner whose featured op resolves to Amiya.
 
     ``with_operator=False`` omits the operator row, so BOTH featured char ids stay
-    unresolved -- the page then emits no ``image_refs`` list at all (the §V72 "no ref ->
-    no caveat" case).
+    unresolved -- the page then emits no ``image_refs`` list at all (no ref, no caveat).
     """
     path = tmp_path / "banners.sqlite"
     db = build_database(path)
@@ -146,16 +145,16 @@ def _enabled_registry() -> SourceRegistry:
     )
 
 
-# --- §V63: derived shape + emit only when enabled -----------------------------
+# --- derived shape + emit only when enabled -----------------------------------
 
 
 def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) -> None:
     handler = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler
     data = handler(server="en", game_id=_AMIYA).to_dict()["data"]
-    # §T183/§V66: the shared base is hoisted ONCE at the data level; each ref carries a
+    # The shared base is hoisted ONCE at the data level; each ref carries a
     # RELATIVE path the client joins onto it.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
-    # §T219/§V66 (4): the registry attribution is hoisted the same way, ONCE beside the
+    # The registry attribution is hoisted the same way, ONCE beside the
     # base, and no ref carries its own copy.
     assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     op = data["operator"]  # type: ignore[index]
@@ -164,13 +163,13 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
     by_cat: dict[str, list[str]] = {}
     for r in refs:
         by_cat.setdefault(r["category"], []).append(r["path"])
-    # §V63 verified shape: portrait _1/_2, avatar base/_2.
+    # Verified shape: portrait _1/_2, avatar base/_2.
     assert by_cat["portrait"] == [
         f"portrait/{_AMIYA}_1.png",
         f"portrait/{_AMIYA}_2.png",
     ]
     assert by_cat["avatar"] == [f"avatar/{_AMIYA}.png", f"avatar/{_AMIYA}_2.png"]
-    # §T182/§V88: the fixture snapshot carries skin_table.json, so the skin category is
+    # The fixture snapshot carries skin_table.json, so the skin category is
     # the NAMED gallery -- one ref per imported operator_skins row (skin/<portraitId>b),
     # ordered by (skin_group_id, skin_id) -- not the derived _1b/_2b fallback pair.
     assert by_cat["skin"] == [
@@ -178,7 +177,7 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
         f"skin/{_AMIYA}_1b.png",
         "skin/char_1001_amiya2_2b.png",
     ]
-    # §V78/B80: each ref carries the E0/E1/E2/skin/base variant label on the wire; a
+    # Each ref carries the E0/E1/E2/skin/base variant label on the wire; a
     # default-art skin row (ILLUST_0/2) maps to e0/e2, a named outfit stays "skin".
     assert [(r["category"], r["variant"]) for r in refs] == [
         ("portrait", "e0"),
@@ -192,7 +191,7 @@ def test_operator_carries_derived_refs_when_enabled(conn: sqlite3.Connection) ->
 
 
 def test_named_gallery_ref_fields(conn: sqlite3.Connection) -> None:
-    # §T182/§V88/§V67: a named skin ref carries skin_id always; skin_name/skin_group only
+    # A named skin ref carries skin_id always; skin_name/skin_group only
     # when imported; alt_form/paid only when TRUE (absent = default art / not applicable).
     handler = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler
     op = handler(server="en", game_id=_AMIYA).to_dict()["data"]["operator"]  # type: ignore[index]
@@ -205,7 +204,7 @@ def test_named_gallery_ref_fields(conn: sqlite3.Connection) -> None:
     assert "alt_form" not in outfit
 
     default = skins["char_002_amiya#1"]
-    assert "skin_name" not in default  # default art has no outfit name (§V67 omit)
+    assert "skin_name" not in default  # default art has no outfit name
     assert "paid" not in default and "alt_form" not in default
 
     alt = skins["char_1001_amiya2#2"]
@@ -217,10 +216,10 @@ def test_enemy_carries_derived_ref_when_enabled(conn: sqlite3.Connection) -> Non
     handler = build_get_enemy_spec(lambda: conn, image_refs_enabled=True).handler
     data = handler(server="en", game_id=_SLIME).to_dict()["data"]
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
-    # §T219/§V67: this tool emits exactly ONE ref, so the hoist COSTS it 22 bytes -- a
+    # This tool emits exactly ONE ref, so the hoist COSTS it 22 bytes -- a
     # response-level key is wider than the single per-ref constant it replaces. Taken
     # anyway, and pinned here: a hoisted key living per-ROW on one tool and per-RESPONSE
-    # on another would make one key mean two things (B168 iv).
+    # on another would make one key mean two things.
     assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     enemy = data["enemy"]  # type: ignore[index]
     assert enemy["image_refs"] == [  # type: ignore[index]
@@ -238,16 +237,16 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
     conn = open_read_only(_seed_banner_db(tmp_path))
     handler = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler
     data = handler(server="en").to_dict()["data"]
-    # §T183/§V66: the base is hoisted ONCE at the data level for the WHOLE page -- never
+    # The base is hoisted ONCE at the data level for the WHOLE page -- never
     # repeated per featured op or per ref.
     assert data["image_refs_base_url"] == BASE  # type: ignore[index]
-    # §T219/§V66 (4): so is the attribution -- once for the WHOLE page. This is the surface
+    # So is the attribution -- once for the WHOLE page. This is the surface
     # the hoist was counted on: at page_size=100 the per-ref copy was 576 duplicates of one
-    # 23-char constant, 21.4% of the whole result frame (B168 i).
+    # 23-char constant, 21.4% of the whole result frame.
     assert data["image_refs_source_id"] == SOURCE_ID  # type: ignore[index]
     ops = data["banners"][0]["featured_ops"]  # type: ignore[index]
     resolved = {o["char_id"]: o for o in ops}
-    # §V72/§V63/§V62: the resolved featured op (char_id == operator game_id) carries BOTH
+    # The resolved featured op (char_id == operator game_id) carries BOTH
     # portrait (E0/E2) AND avatar (base/E2) -- the avatar rides ALONGSIDE the portrait so
     # the mirror's lagging portrait tree never leaves a portrait-only (possibly dead) ref.
     assert resolved[_AMIYA]["image_refs"] == [
@@ -262,7 +261,7 @@ def test_banner_resolved_featured_op_carries_portrait_and_avatar_when_enabled(
 
 def test_disabled_emits_no_refs_anywhere(conn: sqlite3.Connection) -> None:
     # Default (gate off) -> the additive field is absent on every surface, and so is the
-    # hoisted base (§V67: no refs -> no base key).
+    # hoisted base (no refs -> no base key).
     op = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
     assert "image_refs" not in op.to_dict()["data"]["operator"]  # type: ignore[index]
     assert "image_refs_base_url" not in op.to_dict()["data"]  # type: ignore[operator]
@@ -274,8 +273,8 @@ def test_disabled_emits_no_refs_anywhere(conn: sqlite3.Connection) -> None:
 def test_base_url_hoisted_once_and_join_rebuilds_verified_urls(
     conn: sqlite3.Connection,
 ) -> None:
-    # §T183/§V66 (ADR 0014): ONE base key per response; every ref path is RELATIVE
-    # (scheme-free), and base + "/" + path reconstructs the exact §V63-verified absolute
+    # ADR 0014: ONE base key per response; every ref path is RELATIVE
+    # (scheme-free), and base + "/" + path reconstructs the exact verified absolute
     # URL -- the hoist changes bytes, never the resolvable link.
     env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
         server="en", game_id=_AMIYA
@@ -294,8 +293,8 @@ def test_base_url_hoisted_once_and_join_rebuilds_verified_urls(
 
 
 def test_no_base_url_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
-    # §V67/§T183: a page that emits no image_refs list emits no base key either --
-    # the hoisted base tracks actual refs exactly like the §V72 caveat. §T219: and neither
+    # A page that emits no image_refs list emits no base key either --
+    # the hoisted base tracks actual refs exactly like the caveat. And neither
     # does the attribution -- an unconditional source_id would claim a source for
     # references the response does not carry.
     conn = open_read_only(_seed_banner_db(tmp_path, with_operator=False))
@@ -308,9 +307,9 @@ def test_no_base_url_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
 def test_the_ref_source_id_rides_the_response_once(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    # §T219/§V66 (4) on all three emitting surfaces at once: the attribution appears
+    # On all three emitting surfaces at once: the attribution appears
     # EXACTLY once in the serialized envelope, and no ref carries it. Counted over the
-    # serialized payload rather than asserted per key, because the defect B168 filed was a
+    # serialized payload rather than asserted per key, because the filed defect was a
     # COUNT -- 576 copies of one constant -- and a per-key assertion passes just as well
     # while every row still repeats it.
     banner_conn = open_read_only(_seed_banner_db(tmp_path))
@@ -335,22 +334,22 @@ def test_refs_enabled_gate_needs_both_config_and_registry() -> None:
         entries={SOURCE_ID: SourceRegistryEntry(source_id=SOURCE_ID, enabled=False)}
     )
     absent = SourceRegistry(entries={})
-    # BOTH gates required: config posture AND the registry source enabled (§V63/§C/§V27).
+    # BOTH gates required: config posture AND the registry source enabled.
     assert refs_enabled(config_enabled=True, registry=enabled) is True
     assert refs_enabled(config_enabled=False, registry=enabled) is False
     assert refs_enabled(config_enabled=True, registry=disabled) is False
     assert refs_enabled(config_enabled=True, registry=absent) is False
-    # §T124: the shipped registry now ships the source ENABLED -> gate on when config on.
+    # The shipped registry now ships the source ENABLED -> gate on when config on.
     assert refs_enabled(config_enabled=True, registry=load_source_registry(REGISTRY)) is True
 
 
-# --- §V72/§V26: the standing derived-unverified limitation rides every emit -----------
+# --- the standing derived-unverified limitation rides every emit ----------------------
 
 
 def test_image_refs_limitation_rides_every_emitting_surface(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    # §V72/§V26 (§T135, B61): every response that emits an image_refs list carries the
+    # Every response that emits an image_refs list carries the
     # standing derived-unverified caveat -- get_operator, get_enemy, AND a get_banners
     # page with a resolved featured op. Disclosure keeps a derived link from being
     # presented as a verified fact.
@@ -376,10 +375,10 @@ def test_image_refs_limitation_rides_every_emitting_surface(
 def test_n_image_refs_yield_exactly_one_disclaimer(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    # §V72/§V66 (T149): the standing derived-unverified disclaimer is ONE shared block per
+    # The standing derived-unverified disclaimer is ONE shared block per
     # envelope, never repeated per ref. A full operator emits 6 refs and a resolved banner
     # op emits 4, yet the caveat rides the envelope exactly ONCE -- a ~300-char disclaimer
-    # copied per ref would be a §V66 economy breach. Presence stays mandatory (count == 1).
+    # copied per ref would be an economy breach. Presence stays mandatory (count == 1).
     op_env = build_get_operator_spec(lambda: conn, image_refs_enabled=True).handler(
         server="en", game_id=_AMIYA
     )
@@ -398,7 +397,7 @@ def test_n_image_refs_yield_exactly_one_disclaimer(
 
 
 def test_no_image_refs_limitation_when_gate_off(conn: sqlite3.Connection, tmp_path: Path) -> None:
-    # §V72: no ref emitted -> no caveat. With the gate OFF no surface emits image_refs, so
+    # No ref emitted -> no caveat. With the gate OFF no surface emits image_refs, so
     # the standing limitation never appears (it rides exactly when a link is present).
     op_env = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
     assert IMAGE_REFS_LIMITATION not in op_env.limitations
@@ -410,7 +409,7 @@ def test_no_image_refs_limitation_when_gate_off(conn: sqlite3.Connection, tmp_pa
 
 
 def test_no_image_refs_limitation_when_banner_page_emits_no_ref(tmp_path: Path) -> None:
-    # §V72: even with the gate ON, a page whose featured ops all stay unresolved emits no
+    # Even with the gate ON, a page whose featured ops all stay unresolved emits no
     # image_refs list, so the derived-unverified caveat does NOT ride -- the caveat tracks
     # an actual link, never appears on a page that emitted none.
     conn = open_read_only(_seed_banner_db(tmp_path, with_operator=False))
@@ -423,7 +422,7 @@ def test_no_image_refs_limitation_when_banner_page_emits_no_ref(tmp_path: Path) 
 def test_named_gallery_drops_partial_limitation_and_notes_alt_form(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    # §T182/§V88: with the skin domain imported the outfit list is complete, so the T181
+    # With the skin domain imported the outfit list is complete, so the earlier
     # partial-gallery limitation is DROPPED; the emitted gallery here carries an alt-form
     # ref, so the standing alt-form note rides instead, exactly ONCE per envelope
     # (ADR 0015: labeled + disclosed, never silently folded into the base operator).
@@ -449,7 +448,7 @@ def test_named_gallery_drops_partial_limitation_and_notes_alt_form(
 
 
 def test_fallback_path_keeps_partial_limitation(tmp_path: Path) -> None:
-    # §V88/§V26 (§T181->§T182, B99): a build WITHOUT imported skin rows (combat-only
+    # A build WITHOUT imported skin rows (combat-only
     # snapshot / pre-0014 active DB) emits the derived base `_1b`/`_2b` fallback pair and
     # the partial-gallery limitation rides exactly ONCE -- the deferral stays visible,
     # never a silently partial gallery a client presents as complete. The alt-form note
@@ -466,18 +465,18 @@ def test_fallback_path_keeps_partial_limitation(tmp_path: Path) -> None:
 
 
 def test_no_skin_gallery_limitation_when_gate_off(conn: sqlite3.Connection) -> None:
-    # §V88: gate OFF -> no skin ref emitted -> no partial-gallery caveat (it rides
-    # exactly when a skin link is present, like the §V72 derived-unverified caveat).
+    # Gate OFF -> no skin ref emitted -> no partial-gallery caveat (it rides
+    # exactly when a skin link is present, like the derived-unverified caveat).
     op_env = build_get_operator_spec(lambda: conn).handler(server="en", game_id=_AMIYA)
     assert SKIN_GALLERY_PARTIAL_LIMITATION not in op_env.limitations
 
 
 def test_banner_avatar_survives_absent_portrait(tmp_path: Path) -> None:
-    # §V72 accept (B61): the mirror's portrait tree lags newer ops, so a resolved featured
+    # The mirror's portrait tree lags newer ops, so a resolved featured
     # op must carry a WORKING avatar ref alongside the portrait -- even if the mirror lacks
     # the portrait, the banner still carries a usable avatar reference, and the standing
     # limitation names the avatar as the best-coverage fallback. The server never fetches
-    # to check (§V63), so honesty is the disclosure, not a live probe.
+    # to check, so honesty is the disclosure, not a live probe.
     conn = open_read_only(_seed_banner_db(tmp_path))
     env = build_get_banners_spec(lambda: conn, image_refs_enabled=True).handler(server="en")
     ops = env.to_dict()["data"]["banners"][0]["featured_ops"]  # type: ignore[index]
@@ -488,7 +487,7 @@ def test_banner_avatar_survives_absent_portrait(tmp_path: Path) -> None:
     assert "avatar" in IMAGE_REFS_LIMITATION and "fallback" in IMAGE_REFS_LIMITATION
 
 
-# --- §V21: additive, backward-compatible --------------------------------------
+# --- additive, backward-compatible --------------------------------------------
 
 
 def test_field_is_additive_only(conn: sqlite3.Connection) -> None:
@@ -504,7 +503,7 @@ def test_field_is_additive_only(conn: sqlite3.Connection) -> None:
         assert on_op[key] == off_op[key]
 
 
-# --- §V14: same shared registry both transports -------------------------------
+# --- same shared registry both transports --------------------------------------
 
 
 def test_shared_registry_threads_the_gate(conn: sqlite3.Connection) -> None:
@@ -517,12 +516,12 @@ def test_shared_registry_threads_the_gate(conn: sqlite3.Connection) -> None:
         .handler(server="en", game_id=_AMIYA)
         .to_dict()
     )
-    # §V14: the assembled registry adds no divergent logic -- identical to the direct spec.
+    # The assembled registry adds no divergent logic -- identical to the direct spec.
     assert via_registry == direct
     assert "image_refs" in via_registry["data"]["operator"]  # type: ignore[index]
 
 
-# --- §V5: ref rides the entity's OWN region envelope --------------------------
+# --- ref rides the entity's OWN region envelope --------------------------------
 
 
 def test_ref_scoped_to_entity_region(conn: sqlite3.Connection) -> None:
@@ -537,7 +536,7 @@ def test_ref_scoped_to_entity_region(conn: sqlite3.Connection) -> None:
     assert "operator" not in cn.to_dict()["data"]  # type: ignore[operator]
 
 
-# --- §V19: bounded per-entity attach, no catalog ------------------------------
+# --- bounded per-entity attach, no catalog ------------------------------------
 
 
 def test_refs_are_bounded_single_entity_attach(conn: sqlite3.Connection) -> None:
@@ -545,7 +544,7 @@ def test_refs_are_bounded_single_entity_attach(conn: sqlite3.Connection) -> None
     data = handler(server="en", game_id=_AMIYA).to_dict()["data"]
     op = data["operator"]  # type: ignore[index]
     # A small bounded list (portrait 2 + avatar 2 + one ref per imported skin row),
-    # attached to the one entity -- never a catalog list/page/search key (§V19 no
+    # attached to the one entity -- never a catalog list/page/search key (no
     # bulk/enum; the skin rows are the operator's OWN gallery, not an art index).
     assert len(op["image_refs"]) == 7
     assert "page" not in data and "results" not in data  # type: ignore[operator]

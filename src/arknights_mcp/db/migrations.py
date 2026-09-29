@@ -1,11 +1,11 @@
-"""Explicit schema migration runner (SPEC §C "small runner"; §T12).
+"""Explicit schema migration runner.
 
 Applies ``migrations/NNNN_*.sql`` files in order against a writable SQLite
 candidate database, recording each applied version and its checksum in
 ``schema_migrations``. Idempotent (already-applied versions are skipped) and
 drift-detecting (a changed migration file whose version is already recorded
 raises rather than silently diverging). Building always targets a fresh
-candidate; a failed migration leaves the candidate to be discarded (§V3).
+candidate; a failed migration leaves the candidate to be discarded.
 """
 
 from __future__ import annotations

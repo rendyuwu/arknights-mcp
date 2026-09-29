@@ -1,4 +1,4 @@
-"""Shared coercion helpers + DRY guard (SPEC §V37; T70).
+"""Shared coercion helpers + DRY guard.
 
 ``as_int``/``as_float``/``as_str``/``json_or_none`` were copy-pasted across the
 three importers. They now live in one home (``util/coerce.py``); the one-time
@@ -19,7 +19,7 @@ from arknights_mcp.util.coerce import as_float, as_int, as_str, json_or_none, un
 from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH
 
 # A control (Cc) char and a bidi-override format (Cf) char sanitize_text removes.
-# §V97/B130: the two categories are removed DIFFERENTLY. Cc stood between two words
+# The two categories are removed DIFFERENTLY. Cc stood between two words
 # in the source, so it leaves a space behind -- deleting it welded "safe"+"te" into a
 # junk token. Cf is zero-width by construction, so deleting it opens no gap.
 _INJECTION = "safe\x00te‮xt"
@@ -60,7 +60,7 @@ def test_as_float(value: object, expected: float | None) -> None:
 
 def test_as_str_default_is_raw() -> None:
     # Default (enemies/stages path): the string passes through untouched because
-    # the caller already ran it through apply_allowlist's sanitize_value (§V18).
+    # the caller already ran it through apply_allowlist's sanitize_value.
     assert as_str(_INJECTION) == _INJECTION
     assert as_str(123) is None
     assert as_str(None) is None
@@ -89,7 +89,7 @@ def test_json_or_none() -> None:
 
 
 def test_all_importers_share_the_one_home() -> None:
-    """§V37: the coerce helpers resolve to the single ``util.coerce`` module."""
+    """The coerce helpers resolve to the single ``util.coerce`` module."""
     for mod in (enemies, levels, stages):
         for name in ("as_int", "as_str"):
             fn = getattr(mod, name)
@@ -102,7 +102,7 @@ def test_all_importers_share_the_one_home() -> None:
 
 
 def test_no_importer_redefines_coerce_helpers() -> None:
-    """§V37: no importer re-introduces a local copy (`def _as_int` etc.)."""
+    """No importer re-introduces a local copy (`def _as_int` etc.)."""
     importer_dir = Path(enemies.__file__).resolve().parent
     banned = ("def _as_int", "def _as_float", "def _as_str", "def _json_or_none")
     offenders: list[str] = []
@@ -114,7 +114,7 @@ def test_no_importer_redefines_coerce_helpers() -> None:
     assert not offenders, f"copy-pasted coerce helpers reintroduced: {offenders}"
 
 
-# --- §V112/B159: one value for every entry, or none ---------------------------
+# --- one value for every entry, or none ---
 
 
 @pytest.mark.parametrize(
@@ -131,17 +131,17 @@ def test_no_importer_redefines_coerce_helpers() -> None:
 def test_uniform_str_collapses_only_when_every_entry_agrees(
     values: list[str | None], expected: str | None
 ) -> None:
-    """§V112 (a): the shared rule behind both the import-time and read-time hoists.
+    """The shared rule behind both the import-time and read-time hoists.
 
     A scalar derived from a repeated source structure may only claim the value EVERY entry
     carries; anything else keeps its per-entry copies. Returning ``values[0]`` here is the
-    exact flatten B159 filed.
+    exact defect this guard pins.
     """
     assert uniform_str(values) == expected
 
 
 def test_uniform_str_is_the_single_home_of_the_read_side_hoist() -> None:
-    """§V37: the service's template hoist delegates rather than keeping its own copy."""
+    """The service's template hoist delegates rather than keeping its own copy."""
     from arknights_mcp.services.operators import hoist_uniform_template
 
     assert hoist_uniform_template(["X", "X"]) == uniform_str(["X", "X"]) == "X"

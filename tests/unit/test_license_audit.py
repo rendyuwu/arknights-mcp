@@ -1,7 +1,7 @@
-"""§T59 (M7) dependency + project-code license audit.
+"""Dependency + project-code license audit (M7).
 
-§C fixes the license boundary: **Apache-2.0 project code only**; the ``NOTICE``
-excludes imported data + game content. §V16 forbids a release from carrying game
+The license boundary: **Apache-2.0 project code only**; the ``NOTICE``
+excludes imported data + game content. No release carries game
 content. This audit proves, fail-closed:
 
 * every third-party package pinned in ``uv.lock`` resolves to a license that is
@@ -196,7 +196,7 @@ _LOCKED_PACKAGES: tuple[str, ...] = tuple(_locked_package_names())
 
 @pytest.mark.parametrize("package", _LOCKED_PACKAGES)
 def test_dependency_license_is_apache_compatible(package: str) -> None:
-    # §C: an Apache-2.0 release may only carry permissive or Apache-compatible
+    # An Apache-2.0 release may only carry permissive or Apache-compatible
     # (MPL-2.0) deps. Fail-closed: an unresolved or unrecognized license fails.
     tokens = _resolve_license_tokens(package)
     assert tokens, (
@@ -207,7 +207,7 @@ def test_dependency_license_is_apache_compatible(package: str) -> None:
     copyleft = sorted(t for t in tokens if _is_copyleft(t))
     assert not copyleft, (
         f"{package} carries strong-copyleft license(s) {copyleft} -- "
-        f"incompatible with an Apache-2.0 release (§C/§V16)"
+        "incompatible with an Apache-2.0 release"
     )
 
     unknown = sorted(t for t in tokens if t not in _ALLOWED)
@@ -219,7 +219,7 @@ def test_dependency_license_is_apache_compatible(package: str) -> None:
 
 
 def test_no_copyleft_in_any_dependency() -> None:
-    # Headline safety roll-up (§C): scan the whole locked set at once so a single
+    # Headline safety roll-up: scan the whole locked set at once so a single
     # GPL/AGPL/LGPL dep surfaces here with the full offender list.
     offenders: dict[str, list[str]] = {}
     for package in _LOCKED_PACKAGES:
@@ -243,7 +243,7 @@ def test_every_locked_package_resolves_to_a_known_license() -> None:
 
 
 def test_project_code_is_apache_2_0() -> None:
-    # §C: the project's OWN code is Apache-2.0. Assert it three ways.
+    # The project's OWN code is Apache-2.0. Assert it three ways.
     project = _pyproject()["project"]
     classifiers = [str(c) for c in project.get("classifiers", [])]
     assert any("Apache Software License" in c for c in classifiers), (
@@ -262,7 +262,7 @@ def test_project_code_is_apache_2_0() -> None:
 
 
 def test_notice_scopes_license_and_attributes_third_parties() -> None:
-    # §C / §V16: NOTICE scopes the Apache grant to code only, excludes imported
+    # NOTICE scopes the Apache grant to code only, excludes imported
     # data + game content, and attributes the third-party rights holders.
     norm = _norm((REPO_ROOT / "NOTICE").read_text(encoding="utf-8"))
 
@@ -274,6 +274,6 @@ def test_notice_scopes_license_and_attributes_third_parties() -> None:
     assert "imported" in norm
     assert "game content" in norm
 
-    # Third-party rights holders attributed (Apache-2.0 §4(d) / trademark notice).
+    # Third-party rights holders attributed (Apache-2.0 section 4(d) / trademark notice).
     assert "hypergryph" in norm
     assert "yostar" in norm

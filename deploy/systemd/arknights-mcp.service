@@ -1,13 +1,13 @@
-# systemd unit for the Arknights Intelligence MCP private remote (§I.api; §T55).
+# systemd unit for the Arknights Intelligence MCP private remote.
 #
 # Serves the read-only Streamable HTTP transport on loopback for a
 # TLS-terminating reverse proxy (nginx, Cloudflare Tunnel, ...) to front. The
 # bind stays 127.0.0.1, so a loopback bind is NOT proof the listener is private
-# -- `[mcp.remote] behind_proxy = true` in config.toml is what forces the §V9
-# HTTPS + OIDC startup gate and per-request bearer enforcement even on 127.0.0.1
-# (§V40). Without it, this posture would be the authless loopback-dev exception.
+-- `[mcp.remote] behind_proxy = true` in config.toml is what forces the
+HTTPS + OIDC startup gate and per-request bearer enforcement even on 127.0.0.1.
+Without it, this posture would be the authless loopback-dev exception.
 #
-# Secrets are env-only (§V12/§I.env): the non-secret OIDC descriptors
+# Secrets are env-only: the non-secret OIDC descriptors
 # (issuer/audience/jwks_url) are read from the EnvironmentFile below, never baked
 # into this unit or committed. Copy arknights-mcp.env.example to
 # /etc/arknights-mcp/arknights-mcp.env, fill it in, then chmod 600 (root-owned).
@@ -24,7 +24,7 @@
 Description=Arknights Intelligence MCP (read-only private remote)
 Documentation=file:///opt/arknights-mcp/deploy/README.md
 # Wanted (not Required) only so the JWKS endpoint is reachable when the first
-# bearer arrives; serve itself never fetches source data at query time (§V1).
+# bearer arrives; serve itself never fetches source data at query time.
 After=network-online.target
 Wants=network-online.target
 
@@ -35,12 +35,12 @@ Group=arknights-mcp
 WorkingDirectory=/opt/arknights-mcp
 
 # Non-secret OIDC descriptors + any ARKNIGHTS_MCP_* overrides live here, never in
-# this unit or in git (§V12/§I.env). Root-owned, chmod 600.
+# this unit or in git. Root-owned, chmod 600.
 EnvironmentFile=/etc/arknights-mcp/arknights-mcp.env
 
 # The console script from the project venv. `serve` opens the promoted build
-# strictly read-only (§V2) and never touches the source network at query time
-# (§V1). config.toml must set `[mcp.remote] behind_proxy = true` (§V40).
+# strictly read-only and never touches the source network at query time.
+# config.toml must set `[mcp.remote] behind_proxy = true`.
 ExecStart=/opt/arknights-mcp/.venv/bin/arknights-mcp --config /opt/arknights-mcp/config.toml serve --transport streamable-http
 
 Restart=on-failure

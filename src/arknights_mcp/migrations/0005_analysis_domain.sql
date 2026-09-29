@@ -1,9 +1,9 @@
--- 0005 analysis domain (SPEC §T19; PRD §12.6).
+-- 0005 analysis domain (PRD Section 12.6).
 -- analysis_rules (rule registry) + analysis_findings (optional cache).
--- analysis_findings carries the §V6 observation fields: rule_id + evidence_json
+-- analysis_findings carries the observation fields: rule_id + evidence_json
 -- + confidence + analyzer_version (limitations live inside finding_json, per the
 -- PRD column list). entity_pk is polymorphic (stage_pk | operator_pk | ...)
--- keyed by entity_type, so it is not a single foreign key by design (§12.6).
+-- keyed by entity_type, so it is not a single foreign key by design (PRD Section 12.6).
 -- Caching is optional in v0.1 (findings computed at query time); these tables
 -- only need to exist. Depends on nothing beyond 0001.
 

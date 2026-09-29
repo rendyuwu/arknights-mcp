@@ -1,4 +1,4 @@
-"""T11: snapshot manifest/checksum + provenance construction (§V17).
+"""Snapshot manifest/checksum + provenance construction.
 
 Every imported record must carry snapshot_id + source_path/key +
 transform_version + record_hash; the manifest hash must be deterministic and
@@ -128,7 +128,7 @@ def _seed_snapshot(conn: sqlite3.Connection, snapshot_id: str = "en:test000000")
 
 
 def test_insert_record_provenance_writes_v17_row(tmp_path: Path) -> None:
-    # V17/V37: the single shared insert helper writes every provenance column and
+    # The single shared insert helper writes every provenance column and
     # returns the DB-assigned provenance_id both importers link their rows to.
     conn = build_database(tmp_path / "cand.sqlite")
     snapshot_id = _seed_snapshot(conn)
@@ -160,7 +160,7 @@ def test_insert_record_provenance_writes_v17_row(tmp_path: Path) -> None:
 
 
 def test_provenance_insert_has_single_home() -> None:
-    # V37: the record_provenance INSERT lives in exactly one module (manifest);
+    # The record_provenance INSERT lives in exactly one module (manifest);
     # both importers route through the shared helper, with no divergent copies.
     manifest_src = inspect.getsource(manifest_mod)
     enemies_src = inspect.getsource(enemies_mod)

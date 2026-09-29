@@ -1,4 +1,4 @@
-"""Attack-range grid importer: range_table.json -> ranges (§T200; §V98/§V69/B132).
+"""Attack-range grid importer: range_table.json -> ranges.
 
 Parses the primary ``range_table.json`` -- the SAME ``arknights_assets_gamedata``
 snapshot as enemy/stage/operator, NOT a new source -- into the ``ranges`` dimension
@@ -6,23 +6,23 @@ table that resolves the ``range_id`` every operator phase and skill level emits.
 
 The file was DECLARED in that source's registry ``fields_consumed`` while no importer
 read it and no sync fetched it, so the declaration promised a resolution that did not
-exist (§V98) and ``range_id`` shipped bare with neither a resolver nor a limitation
-(§V69/§V73/B132). This module is the resolver arm.
+exist and ``range_id`` shipped bare with neither a resolver nor a limitation. This
+module is the resolver arm.
 
 The shape is an id-keyed dict of ``{id, direction, grids: [{row, col}]}`` (verified at
 the pinned commit 413a81a3ff3e: 68 EN / 73 CN entries, every entry's ``id`` equal to
-its key). Only ``id`` + ``grids`` are allowlisted (§V18/§V31) -- ``direction`` is the
-constant ``1`` everywhere at the pin with unverified semantics and no reader, the dead
-column §V94/§V113 forbids; the live-upstream guard pins that constancy instead.
+its key). Only ``id`` + ``grids`` are allowlisted -- ``direction`` is the
+constant ``1`` everywhere at the pin with unverified semantics and no reader, a dead
+column the schema forbids; the live-upstream guard pins that constancy instead.
 
 Pure parsing (:func:`parse_ranges`) is separated from the DB write so it is unit
 testable without a database. An entry with no id or no usable grid cell is skipped
 fail-closed -- an empty grid would read on the wire as "this range covers nothing",
-a claim the source did not make (§V26). A snapshot without ``range_table.json`` (a
+a claim the source did not make. A snapshot without ``range_table.json`` (a
 combat-only fixture) yields an empty result rather than failing: the table is fetched
-tolerant-absent per §V41/B36 and ``ranges`` is not a CRITICAL_TABLE, so the wire then
-takes §V69's limitation arm. A non-empty source that resolves to zero rows still fails
-closed (§V30) so a shape mismatch is never promoted as a silently empty domain.
+tolerant-absent and ``ranges`` is not a CRITICAL_TABLE, so the wire then takes the
+limitation arm. A non-empty source that resolves to zero rows still fails
+closed so a shape mismatch is never promoted as a silently empty domain.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from arknights_mcp.sources.base import SourceAdapter
 from arknights_mcp.util.coerce import as_dict, as_int, as_str
 from arknights_mcp.util.sqlite import integrity_guard
 
-#: Default snapshot path (the §V41 introspection test reads this signature default).
+#: Default snapshot path (an introspection test reads this signature default).
 RANGE_TABLE_PATH = "gamedata/excel/range_table.json"
 
 
@@ -65,12 +65,12 @@ class RangeImportResult:
 
 
 def _grid_cells(raw_grids: Any) -> tuple[tuple[int, int], ...]:
-    """Allowlist a raw ``grids`` list to ordered ``(row, col)`` integer pairs (§V31).
+    """Allowlist a raw ``grids`` list to ordered ``(row, col)`` integer pairs.
 
     A cell missing either coordinate is dropped rather than defaulted to 0: a
-    fabricated origin cell would claim coverage the source never stated (§V26).
+    fabricated origin cell would claim coverage the source never stated.
     Cells are de-duplicated and sorted so the stored JSON is deterministic across
-    builds (two snapshots with the same grid hash the same, §V92).
+    builds (two snapshots with the same grid hash the same).
     """
     if not isinstance(raw_grids, list):
         return ()
@@ -86,14 +86,14 @@ def _grid_cells(raw_grids: Any) -> tuple[tuple[int, int], ...]:
 
 
 def parse_ranges(range_raw: Any) -> list[ParsedRange]:
-    """Transform a raw ``range_table`` into typed, allowlisted ranges (§V18/§V31).
+    """Transform a raw ``range_table`` into typed, allowlisted ranges.
 
     Iteration is key-sorted so parse order (and thus provenance ids) is deterministic
     across builds. The entry's own ``id`` is preferred over its dict key and the key is
     the fallback -- they are equal on all 68 EN / 73 CN entries at the pin, so this only
     matters if upstream ever diverges, and the id a phase/skill row references is the
     key. An entry that yields no usable cell is skipped (fail-closed): an empty grid
-    would ship as a positive "covers nothing" claim (§V26/§V67).
+    would ship as a positive "covers nothing" claim.
     """
     if not isinstance(range_raw, dict):
         raise ImporterError("range_table is not a JSON object")
@@ -124,15 +124,14 @@ def insert_ranges(
     snapshot_id: str,
     source_path: str,
 ) -> RangeImportResult:
-    """Insert ``ranges`` rows with per-record provenance (§V17/§V33/§V5).
+    """Insert ``ranges`` rows with per-record provenance.
 
     Each grid is stored as a compact ``[[row, col], ...]`` JSON array -- pairs rather
     than ``{"row": .., "col": ..}`` objects, which halves the stored bytes for a value
     read only through :class:`~arknights_mcp.db.repositories.ranges.RangeRepository`,
     which restores the named shape. A duplicate ``range_id`` collides on
     ``UNIQUE(server, range_id)``; that anomaly maps to a typed :class:`ImporterError`
-    rather than an uncaught ``IntegrityError`` tearing down the multi-region build
-    (§V33).
+    rather than an uncaught ``IntegrityError`` tearing down the multi-region build.
     """
     inserted = 0
     for entry in parsed:
@@ -171,10 +170,10 @@ def import_ranges(
     """Read ``range_table.json`` via the adapter and import the attack-range grids.
 
     A snapshot without the file yields an empty result rather than failing, so the
-    range domain is optional per snapshot (B36/§V41) and the wire falls back to §V69's
+    range domain is optional per snapshot and the wire falls back to the
     limitation arm. A non-empty source table that produces zero rows fails closed
-    (§V30) so a shape mismatch is never promoted as a silently empty domain -- the
-    candidate is discarded and the active DB stays untouched (§V3).
+    so a shape mismatch is never promoted as a silently empty domain -- the
+    candidate is discarded and the active DB stays untouched.
     """
     if not adapter.exists(range_table_path):
         return RangeImportResult()

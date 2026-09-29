@@ -1,11 +1,11 @@
-"""A local, offline OIDC token issuer for remote-transport tests (§V10).
+"""A local, offline OIDC token issuer for remote-transport tests.
 
-Stands in for the external OpenID provider (Auth0 in the verified §V10 reference):
+Stands in for the external OpenID provider (Auth0 in the verified reference):
 holds one RSA keypair, mints RS256 bearer tokens the real
 :class:`~arknights_mcp.auth.oidc.OidcTokenVerifier` accepts, and exposes a static
 JWKS resolver so the verifier validates the signature without touching the network.
 
-One home (§V37) for the honest-token substrate the authenticated remote tests need:
+One home for the honest-token substrate the authenticated remote tests need:
 build the issuer, hand its :attr:`settings` to the app under test and its
 :attr:`jwks_resolver` to the verifier, then :meth:`mint` a bearer. The verifier's
 ``jwks_client`` seam (a resolver that returns an object with a ``.key``) is exactly
@@ -33,21 +33,21 @@ _DEFAULT_SUBJECT = "auth0|remote-tester"
 _DEFAULT_CLIENT_ID = "client-remote-test"
 _DEFAULT_SCOPE = "arknights:read"
 #: Advertised-only scope: the AS consumes it (refresh token) and never mints it into
-#: the access token, so it is advertised but never required (§V45 split, B126).
+#: the access token, so it is advertised but never required.
 _FLOW_ONLY_SCOPE = "offline_access"
 
 
 class LocalOidcIssuer:
-    """An in-process RSA token issuer + matching JWKS resolver (§V10).
+    """An in-process RSA token issuer + matching JWKS resolver.
 
     :param issuer: token ``iss`` (also matched exactly by the verifier).
     :param audience: token ``aud`` (also the verifier's expected audience).
     :param required_scopes: scopes the verifier will require; the default minted
         token grants exactly these.
-    :param advertised_scopes: scopes the RFC 9728 metadata publishes (§V45); defaults
+    :param advertised_scopes: scopes the RFC 9728 metadata publishes; defaults
         to the required scopes plus the flow-only ``offline_access``, mirroring the
         shipped config default -- so the wire tests see the real split, where a token
-        granting only the required scopes is still accepted (B126).
+        granting only the required scopes is still accepted.
     """
 
     def __init__(
@@ -75,7 +75,7 @@ class LocalOidcIssuer:
 
         Exposed so adversarial suites can build their own attack-shaped tokens
         (``alg=none``, HS256 confusion, omitted claims) on the same keypair the
-        :attr:`jwks_resolver` validates against, without duplicating keygen (§V37).
+        :attr:`jwks_resolver` validates against, without duplicating keygen.
         """
         return self._private_key
 

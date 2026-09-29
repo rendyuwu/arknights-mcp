@@ -1,15 +1,15 @@
-"""Defence/resistance-skew threat rule (§V6, §V26): flags enemies whose armor and
+"""Defence/resistance-skew threat rule: flags enemies whose armor and
 arts resistance are strongly asymmetric, so one damage type is far more effective
 against them than the other.
 
 Each enemy yields two evidence rows -- one per stat, each carrying its own scalar at
-its own emitted field path (§V101) -- with the skew direction stated in the note.
+its own emitted field path -- with the skew direction stated in the note.
 
-Reads the typed ``defense`` + ``res`` stats only (§V26) -- never a name or
+Reads the typed ``defense`` + ``res`` stats only -- never a name or
 description. Both stats must be present to judge a skew; a partially-typed enemy
-(one stat missing) is not concluded from, it is recorded as a limitation (§V26).
+(one stat missing) is not concluded from, it is recorded as a limitation.
 The summary states which damage type the enemy resists (a fact), never prescribes
-an operator (§V7). One enemy across several level variants counts once (§V35).
+an operator. One enemy across several level variants counts once.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ _CONFIDENCE = 0.8  # both stats are authoritative typed fields
 
 
 class DefResSkewRule:
-    """Flags enemies whose def/res asymmetry favors one damage type (§V6, §V26)."""
+    """Flags enemies whose def/res asymmetry favors one damage type."""
 
     rule_id = RULE_ID
 
@@ -50,7 +50,7 @@ class DefResSkewRule:
             d, r = occ.defense, occ.res
             if d is None or r is None:
                 if d is None and r is None:
-                    # §V118/B165: this used to be a bare ``continue``. The enemy the rule
+                    # This used to be a bare ``continue``. The enemy the rule
                     # knows LEAST about was the one it said nothing about, so 64 real
                     # occurrences -- one of them a boss -- were indistinguishable from
                     # enemies that were assessed and found unskewed, while the one-stat
@@ -72,7 +72,7 @@ class DefResSkewRule:
             else:
                 continue
 
-            # §V101/B137: one fact per row. This was a single row with an invented path
+            # One fact per row. This was a single row with an invented path
             # ("def/res") and a packed value ("def=1000,res=0") the client had to split
             # itself; both stats are separately emitted fields, so each gets its own row
             # carrying its own scalar, with the comparison stated in the shared note.
@@ -81,7 +81,7 @@ class DefResSkewRule:
             confidence = max(confidence, _CONFIDENCE)
 
         if not evidence:
-            # §V118 (b): the refusals outlive the conclusion that would have carried them.
+            # The refusals outlive the conclusion that would have carried them.
             return declined(limitations)
 
         count = distinct_refs(evidence)

@@ -1,27 +1,27 @@
-"""Single home (§V37) for the stage-variant tag derivation (§V70/§V80/§T164).
+"""Single home for the stage-variant tag derivation.
 
 The wire ``difficulty`` field is the client-facing stage VARIANT tag, not the raw
 ``stages.difficulty`` column read blind. Arknights carries the challenge / emergency
 variant in the source ``difficulty`` field itself (``FOUR_STAR``, game_id suffix
-``#f#`` -- already distinguishable, §V70) but leaves the story-mode and adverse-mode
+``#f#`` -- already distinguishable) but leaves the story-mode and adverse-mode
 variants (game_id prefixes ``easy_`` / ``tough_``) on ``NORMAL``. So a
 ``tough_14-06`` stage reports source ``difficulty:"NORMAL"`` even though it is the
-tough variant of ``14-06`` (B84): two stages sharing a ``display_name`` +
+tough variant of ``14-06``: two stages sharing a ``display_name`` +
 ``stage_code`` then differ only by the undocumented game_id prefix.
 
 :func:`stage_variant` upgrades that prefix-derived variant so the emitted tag is
-truthful (§V80: a ``tough_*`` / ``easy_*`` game_id is never labelled ``NORMAL``),
+truthful (a ``tough_*`` / ``easy_*`` game_id is never labelled ``NORMAL``),
 while never clobbering an already-specific source variant (a real ``FOUR_STAR``
 survives). It is the ONE home both ``get_stage``
 (:mod:`arknights_mcp.services.stages`) and the search locators
 (:mod:`arknights_mcp.services.search`) route through, so every surface emits the
-same tag for the same stage (§V80: get_stage + both search locators agree).
+same tag for the same stage (get_stage + both search locators agree).
 """
 
 from __future__ import annotations
 
 #: game_id prefix -> variant tag. A stage whose game_id starts with one of these is
-#: that variant even when its source ``difficulty`` column stayed ``NORMAL`` (B84).
+#: that variant even when its source ``difficulty`` column stayed ``NORMAL``.
 _PREFIX_VARIANTS: tuple[tuple[str, str], ...] = (
     ("tough_", "TOUGH"),
     ("easy_", "EASY"),
@@ -39,7 +39,7 @@ def stage_variant(game_id: str, difficulty: str | None) -> str | None:
     ``FOUR_STAR`` / ``None``) and for any non-stage id (no prefix matches, so an
     operator / enemy / item locator is untouched). A ``tough_*`` / ``easy_*``
     game_id whose source difficulty is unset or ``NORMAL`` is upgraded to ``TOUGH``
-    / ``EASY`` (§V80/B84); an already-specific source variant (``FOUR_STAR``) is
+    / ``EASY``; an already-specific source variant (``FOUR_STAR``) is
     never clobbered.
     """
     for prefix, variant in _PREFIX_VARIANTS:

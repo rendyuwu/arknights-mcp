@@ -1,21 +1,21 @@
-"""Operator module analyzer (§T46; §V6, §V7, §V26).
+"""Operator module analyzer.
 
 Deterministic, evidence-backed observations about one operator's modules at the
-requested potential levels. Pure and DB-free: the compare service (§T45) decodes
-the vetted structural JSON (§V18) into the typed inputs below and calls
+requested potential levels. Pure and DB-free: the compare service decodes
+the vetted structural JSON into the typed inputs below and calls
 :func:`analyze_modules`; there is no natural-language input -- every rule reads
-typed fields only (§V26), never a name or description string.
+typed fields only, never a name or description string.
 
-Each observation carries the five §V6 fields (``rule_id`` + evidence + confidence
+Each observation carries the five observation fields (``rule_id`` + evidence + confidence
 + limitations + ``analyzer_version``) reusing the shared
-:class:`~arknights_mcp.analyzers.base.Observation` / ``EvidenceItem`` vocabulary
-(§V37). Observations state capability facts (how a module's stat bonus scales across
-its levels) -- never a "mandatory" / "best-in-slot" verdict (§V7); the raw per-level
+:class:`~arknights_mcp.analyzers.base.Observation` / ``EvidenceItem`` vocabulary.
+Observations state capability facts (how a module's stat bonus scales across
+its levels) -- never a "mandatory" / "best-in-slot" verdict; the raw per-level
 bonuses live in the comparison rows, so the stat observation reports only the
-cross-level change they do not spell out (§V66.1). A requested level a module does
-not define is recorded as a §V26 warning, never concluded from.
+cross-level change they do not spell out. A requested level a module does
+not define is recorded as a warning, never concluded from.
 
-One rule, not three (ADR 0018, B152/§V66.1). ``module.trait_change`` and
+One rule, not three (ADR 0018). ``module.trait_change`` and
 ``module.talent_change`` restated facts the response already carried beside them: the
 levels that alter the trait, and which talent index each change targets, are both
 visible in the ``trait_changes`` / ``talent_changes`` rows the same payload emits, so
@@ -32,7 +32,7 @@ from arknights_mcp.analyzers.base import ANALYZER_VERSION, EvidenceItem, Observa
 
 _CATEGORY = "module"
 #: Direct typed structural fields (attributeBlackboard / override bundles) drive
-#: these observations, so confidence is high -- no inference is involved (§V6).
+#: these observations, so confidence is high -- no inference is involved.
 _CONFIDENCE = 0.9
 
 
@@ -50,7 +50,7 @@ class ModuleLevelInput:
 
     ``present`` distinguishes "the module defines this level" from "the requested
     level is absent" -- an absent level carries no changes and is surfaced as a
-    §V26 warning rather than concluded from as if it were empty.
+    warning rather than concluded from as if it were empty.
     """
 
     level: int
@@ -80,7 +80,7 @@ class ModuleAnalysisContext:
 
 @dataclass(frozen=True)
 class ModuleAnalysis:
-    """Aggregate result of running the module rules over one operator (§V6)."""
+    """Aggregate result of running the module rules over one operator."""
 
     server: str
     operator_game_id: str
@@ -94,7 +94,7 @@ def _label(module: ModuleInput) -> str:
 
     Prefers the recognizable ``module_type`` (e.g. ``"CX-1"``) and falls back to
     the ``game_id``; the allowlisted ``display_name`` is a proper name, not prose,
-    but the type/id keeps summaries deterministic and language-neutral (§V26).
+    but the type/id keeps summaries deterministic and language-neutral.
     """
     return module.module_type or module.game_id
 
@@ -113,14 +113,14 @@ def _stat_diff_summary(by_key: dict[str, list[tuple[int, int, float]]]) -> str:
 
 
 def _stat_observation(module: ModuleInput) -> Observation | None:
-    """How a module's attribute bonuses CHANGE across its levels (§V6, §V66.1).
+    """How a module's attribute bonuses CHANGE across its levels.
 
     The per-level absolute bonuses already sit in the comparison's ``stat_bonus`` rows, so
-    restating them adds nothing (§V66.1: evidence refs the facts, never copies them). This
+    restating them adds nothing (evidence refs the facts, never copies them). This
     computes the cross-level delta the raw rows do not spell out -- each stat's step change
     between consecutive present levels that both define it. ``None`` when no stat changes
     across two present levels: a single-level bonus is fully visible in its own row, so it
-    needs no observation, and an absent level is never treated as a zero (§V26).
+    needs no observation, and an absent level is never treated as a zero.
     """
     present = [
         (level.level, {stat.key: stat.value for stat in level.stats})
@@ -134,7 +134,7 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
             delta = stats_b[key] - stats_a[key]
             if delta == 0:
                 # A stat constant across two present levels is not a change; emitting a
-                # "+0" step would restate a non-change as a change (§V66.1, B75). Skip it
+                # "+0" step would restate a non-change as a change. Skip it
                 # so an all-constant module falls through to `not evidence` -> None.
                 continue
             evidence.append(
@@ -162,10 +162,10 @@ def _stat_observation(module: ModuleInput) -> Observation | None:
 
 
 def _analyze_module(module: ModuleInput) -> tuple[list[Observation], list[str]]:
-    """Run every module rule over one module; collect observations + §V26 warnings."""
+    """Run every module rule over one module; collect observations + warnings."""
     observations = [obs for obs in (_stat_observation(module),) if obs is not None]
     # A requested level the module does not define is omitted from the comparison
-    # and warned, never concluded from as an empty/zero change (§V26).
+    # and warned, never concluded from as an empty/zero change.
     warnings = [
         f"module {module.game_id}: requested level {level.level} is not defined; "
         "omitted from the comparison"
@@ -176,12 +176,12 @@ def _analyze_module(module: ModuleInput) -> tuple[list[Observation], list[str]]:
 
 
 def analyze_modules(ctx: ModuleAnalysisContext) -> ModuleAnalysis:
-    """Run the deterministic module rules over ``ctx`` (§V6, §V26).
+    """Run the deterministic module rules over ``ctx``.
 
     Modules are processed in the order supplied (the compare service orders them by
     ``game_id``), so observations + warnings are emitted deterministically. Every
-    observation carries the five §V6 fields; the analyzer adds no prescriptive
-    language (§V7).
+    observation carries the five observation fields; the analyzer adds no prescriptive
+    language.
     """
     observations: list[Observation] = []
     warnings: list[str] = []

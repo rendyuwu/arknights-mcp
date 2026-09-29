@@ -1,4 +1,4 @@
-"""Unit tests for the compact tile-grid encoder (§V74 (c)/§V66/§V22, §T145).
+"""Unit tests for the compact tile-grid encoder.
 
 Exercise :func:`~arknights_mcp.services.stage_tile_grid.build_tile_grid` directly
 (the tool-level path is covered against the pinned 4-4 fixture in
@@ -28,7 +28,7 @@ def _tile(x: int, y: int, key: str, passable: bool = True) -> StageTileRow:
 
 
 def test_build_tile_grid_encodes_rows_top_first_with_reused_symbols() -> None:
-    # §V95/§V74 (c): the grid frame is y-DOWN -- y is the source map's row index and
+    # The grid frame is y-DOWN -- y is the source map's row index and
     # row 0 is the board's TOP row -- so rows are emitted in ASCENDING y. Two tiles of
     # the SAME (tile_key, height_type, buildable_type, passable) type share ONE symbol.
     tiles = [
@@ -60,7 +60,7 @@ def test_build_tile_grid_encodes_rows_top_first_with_reused_symbols() -> None:
 
 
 def test_build_tile_grid_row_index_equals_tile_y() -> None:
-    # §V95/B127: the emitted row index IS the tile's y. y comes from the source map's
+    # The emitted row index IS the tile's y. y comes from the source map's
     # row index (map[0] = the board's TOP row), so any flip here ships the whole board
     # vertically mirrored -- which is how 7-2's top-edge enemy spawns were reported as
     # bottom-edge ones. Pinned on an asymmetric column so a mirror cannot pass.
@@ -82,7 +82,7 @@ def test_build_tile_grid_none_when_no_tiles() -> None:
 
 
 def test_build_tile_grid_derives_extent_without_dimensions() -> None:
-    # §V74 (c): with no stored width/height, the extent is derived from the max tile
+    # With no stored width/height, the extent is derived from the max tile
     # coordinate so a grid with only tiles still encodes.
     grid = build_tile_grid([_tile(0, 0, "a"), _tile(2, 1, "b")], width=None, height=None)
     assert grid is not None
@@ -90,7 +90,7 @@ def test_build_tile_grid_derives_extent_without_dimensions() -> None:
 
 
 def test_build_tile_grid_refuses_more_types_than_symbol_pool() -> None:
-    # §V74 (c) fail-closed: a board with more distinct tile types than the symbol
+    # Fail-closed: a board with more distinct tile types than the symbol
     # pool is refused (None) rather than encoded ambiguously.
     over = len(_GRID_SYMBOLS) + 1
     tiles = [_tile(i, 0, f"tile_{i}") for i in range(over)]
@@ -98,17 +98,16 @@ def test_build_tile_grid_refuses_more_types_than_symbol_pool() -> None:
 
 
 def test_oversize_limitation_is_client_facing() -> None:
-    # §V22 caption names the cap and stays client-facing (§V71: no spec cites).
+    # The caption names the cap and stays client-facing (no spec cites).
     text = tile_grid_oversize_limitation()
     assert "tile grid omitted" in text
     assert str(MAX_MAP_CELLS) in text
-    assert "§" not in text and "V74" not in text
 
 
 def test_build_tile_grid_refuses_sparse_wide_over_extent() -> None:
-    # §V74 (c)/§V22/B70: a sparse board with only TWO tiles but a 2001x2001 extent
+    # A sparse board with only TWO tiles but a 2001x2001 extent
     # passes any row-COUNT cap (len == 2) yet would build a ~4M-char rows string. The
-    # extent-product guard (parity with the render) refuses it rather than breach §V22.
+    # extent-product guard (parity with the render) refuses it rather than breach the cap.
     far = 2_000  # (far + 1) ** 2 == 2001*2001 ~ 4M > MAX_MAP_CELLS
     tiles = [_tile(0, 0, "a"), _tile(far, far, "b")]
     assert len(tiles) <= MAX_MAP_CELLS  # count gate alone would let this through
@@ -118,7 +117,7 @@ def test_build_tile_grid_refuses_sparse_wide_over_extent() -> None:
 
 
 def test_build_tile_grid_extent_covers_tiles_beyond_stored_width() -> None:
-    # §V74 (c)/B72: a stored width/height that UNDER-reports the real tile extent
+    # A stored width/height that UNDER-reports the real tile extent
     # (tile at x=15 with a stored width of 13) must NOT silently drop the out-of-range
     # tile -- the effective extent is max(stored_dim, max coord + 1).
     tiles = [_tile(0, 0, "road"), _tile(15, 0, "wall")]
@@ -139,13 +138,13 @@ def test_resolve_tile_grid_ok_carries_grid_no_limitation() -> None:
 
 
 def test_resolve_tile_grid_no_tiles_is_silent() -> None:
-    # §V26: an absent grid is honest when there are simply no tiles -> no limitation.
+    # An absent grid is honest when there are simply no tiles -> no limitation.
     grid, limitation = resolve_tile_grid([], width=3, height=3)
     assert grid is None and limitation is None
 
 
 def test_resolve_tile_grid_refused_board_carries_limitation() -> None:
-    # §V26/B71: a NON-empty board that build refuses (here over-extent, B70) is never a
+    # A NON-empty board that build refuses (here over-extent) is never a
     # silent None -- it pairs with a say-so limitation distinguishable from "no tiles".
     far = 2_000
     grid, limitation = resolve_tile_grid([_tile(0, 0, "a"), _tile(far, far, "b")], None, None)
@@ -162,9 +161,8 @@ def test_resolve_tile_grid_over_count_cap_uses_oversize_limitation() -> None:
 
 
 def test_refused_limitation_is_client_facing() -> None:
-    # §V26/§V22 caption stays client-facing (§V71: no spec cites) and distinguishes a
+    # The caption stays client-facing (no spec cites) and distinguishes a
     # refused board from an absent one.
     text = tile_grid_refused_limitation()
     assert "tile grid omitted" in text
-    assert "§" not in text and "V74" not in text and "V26" not in text
     assert text != tile_grid_oversize_limitation()

@@ -1,15 +1,15 @@
-"""Bounded input model for ``get_banners`` (§T114; §V5/§V19/§V22/§V62).
+"""Bounded input model for ``get_banners``.
 
-A banner listing is region-attributed (§V5) and metadata-only (§V62). The optional
+A banner listing is region-attributed and metadata-only. The optional
 ``since``/``until`` bounds narrow the list by the banner's ISO ``open_time`` schedule;
-both are length capped (§V18) AND ISO-date-shape validated (§V19) via the shared
-:func:`~arknights_mcp.models.common.normalize_iso_bound` (§V37 -- the same gate the
-``get_announcements`` since/until window uses, B48) so a non-date bound is rejected at
+both are length capped AND ISO-date-shape validated via the shared
+:func:`~arknights_mcp.models.common.normalize_iso_bound` (the same gate the
+``get_announcements`` since/until window uses) so a non-date bound is rejected at
 the model gate rather than lexicographically emptying the query.
 
 The list is unbounded in principle (the archive accretes past + near-future banners),
-so it pages through the bounded :class:`~arknights_mcp.models.common.PageParams`
-(§V22/§V19); the page bounds surface in the tool ``inputSchema`` exactly as validated.
+so it pages through the bounded :class:`~arknights_mcp.models.common.PageParams`;
+the page bounds surface in the tool ``inputSchema`` exactly as validated.
 """
 
 from __future__ import annotations
@@ -28,23 +28,23 @@ from arknights_mcp.models.common import (
 
 
 class GetBannersInput(StrictModel):
-    """Parameters for ``get_banners`` (§I; §V5/§V19/§V22/§V62).
+    """Parameters for ``get_banners``.
 
     ``server`` is mandatory so the listing is region-attributed and en/cn are never
-    silently mixed (§V5). ``since``/``until`` optionally window the banners by their
-    stored ISO ``open_time`` (inclusive); both are length capped (§V18) AND ISO-date-
-    shape validated (§V19) so a non-date bound is rejected rather than lexicographically
-    emptying the result (B48); an accepted bound is NORMALIZED to the canonical ISO
-    notation (§V116/B163), since the window compares TEXT and a basic-format bound
+    silently mixed. ``since``/``until`` optionally window the banners by their
+    stored ISO ``open_time`` (inclusive); both are length capped AND ISO-date-
+    shape validated so a non-date bound is rejected rather than lexicographically
+    emptying the result; an accepted bound is NORMALIZED to the canonical ISO
+    notation, since the window compares TEXT and a basic-format bound
     collates against the stored timestamps arbitrarily (``until="20260101"`` used to be
-    ignored outright); the bound RELATION is checked too (§V105/B143), so a pair
+    ignored outright); the bound RELATION is checked too, so a pair
     whose window can match nothing is rejected rather than answered with an empty list.
     ``query`` optionally narrows the list to banners whose
     display name contains it (case-insensitive substring); it is a free-text field so it
-    is length capped at :data:`MAX_QUERY_LEN` (§V18) and, being an additive optional
-    filter over a still-paged list, does not weaken the §V19 no-dump bound. ``page`` pages
-    the list through the bounded §V19 window so a single request never pulls an unbounded
-    slice (§V22).
+    is length capped at :data:`MAX_QUERY_LEN` and, being an additive optional
+    filter over a still-paged list, does not weaken the no-dump bound. ``page`` pages
+    the list through the bounded window so a single request never pulls an unbounded
+    slice.
     """
 
     server: Region

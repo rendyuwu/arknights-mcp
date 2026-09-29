@@ -112,8 +112,7 @@ uv run pytest -q
 ```
 
 Contributor and coding-agent guardrails live in [`AGENTS.md`](AGENTS.md) and
-[`CLAUDE.md`](CLAUDE.md). The design of record is [`SPEC.md`](SPEC.md)
-(distilled from the PRD); the founder-approved decisions in the PRD are
+[`CLAUDE.md`](CLAUDE.md). The founder-approved decisions in the PRD are
 binding and any change requires an ADR (see `docs/adr/`).
 
 ## License

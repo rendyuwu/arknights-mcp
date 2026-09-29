@@ -6,14 +6,14 @@ This is the human-readable mirror of the machine-readable source registry
 updated whenever a source is enabled, disabled, purged, reviewed, or has its
 attribution changed (see [`TAKEDOWN_POLICY.md`](TAKEDOWN_POLICY.md)).
 
-Every enabled source records all of the following (PRD Section 10.1; SPEC §V27):
+Every enabled source records all of the following (PRD Section 10.1):
 `source_id`, owner/maintainer, canonical URL, source type and regions, exact
 fields/domains consumed, adapter and transform versions, license/permission
 status, private-hosting status, redistribution status, required attribution
 text, contact/issue URL, date last reviewed, enabled/disabled state, and the
 current snapshot commit/version and retrieval time.
 
-**Client-facing surface (SPEC §V71 b):** every public registry field ships
+**Client-facing surface:** every public registry field ships
 verbatim to an MCP client through `get_data_sources`, so `purpose` and the
 `*_status` tokens are written for that audience. Internal bookkeeping — founder
 decision ids, milestones, ADR numbers, spec cites — lives in the registry's
@@ -78,26 +78,26 @@ _Last reviewed: 2026-07-22._
 
 - **Owner / maintainer:** Official Arknights (Global) — Hypergryph / Yostar.
 - **Canonical URL:** https://www.arknights.global/
-- **Feed endpoint (verified 2026-07-21, SPEC §V61):** `https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json` — the client `network_config` key `an` value with the canonical `Android` platform substituted for `{0}` (`IOS` returns identical content). Distinct first-party host per region so en/cn are never mixed (§V5).
+- **Feed endpoint (verified 2026-07-21):** `https://ark-us-static-online.yo-star.com/announce/Android/announcement.meta.json` — the client `network_config` key `an` value with the canonical `Android` platform substituted for `{0}` (`IOS` returns identical content). Distinct first-party host per region so en/cn are never mixed.
 - **Source type / regions:** first-party announcement website; region `en`.
-- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — nothing else. The real feed names three of these differently (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`, field-mapped by the importer, §V61); those source keys are int/enum/name strings, never prose. Never the article body, HTML, prose, promotional images, image URLs, or full copied announcements.
+- **Fields / domains consumed (metadata-only maximum scope, D14):** `announce_id`, `title`, `date`, `url`, `category`, `region` — nothing else. The real feed names three of these differently (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`, field-mapped by the importer); those source keys are int/enum/name strings, never prose. Never the article body, HTML, prose, promotional images, image URLs, or full copied announcements.
 - **Adapter / transform versions:** `official_news` adapter (metadata-only maximum scope).
 - **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
 - **Redistribution status:** prohibited.
 - **Required attribution:** "Announcement dates from official Arknights channels © Hypergryph / Yostar."
 - **Contact / issue URL:** official channels.
-- **Enabled:** yes — enabled 2026-07-21 (§V56 flip, M9 review satisfied D14). Metadata-only remains the PERMANENT ceiling regardless of enabled state; widening requires a new review. The `sync` ride-along fetches this feed only when the source id is in `[sync].enabled_sources` and `[sync.arknights_global_official_news].feed_url` is set (§T106/§T107).
+- **Enabled:** yes — enabled 2026-07-21 (M9 review satisfied D14). Metadata-only remains the PERMANENT ceiling regardless of enabled state; widening requires a new review. The `sync` ride-along fetches this feed only when the source id is in `[sync].enabled_sources` and `[sync.arknights_global_official_news].feed_url` is set.
 - **Current snapshot commit / retrieved at:** n/a.
-- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified, §V61).
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified).
 
 ## `arknights_cn_official_news` — announcement metadata (v0.2 M9), **enabled**
 
 - **Owner / maintainer:** Official Arknights (CN) — Hypergryph.
 - **Canonical URL:** https://ak.hypergryph.com/
-- **Feed endpoint (verified 2026-07-21, SPEC §V61):** `https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json` — distinct first-party host from the Global feed so en/cn are never mixed (§V5).
+- **Feed endpoint (verified 2026-07-21):** `https://ak-conf.hypergryph.com/config/prod/announce_meta/Android/announcement.meta.json` — distinct first-party host from the Global feed so en/cn are never mixed.
 - **Source type / regions:** first-party announcement website; region `cn`.
-- **Fields / domains consumed (metadata-only maximum scope, D14; SPEC §V56):** `announce_id`, `title`, `date`, `url`, `category`, `region` — same metadata-only posture as the Global news source above, including the §V61 field-map (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`). Never the article body, HTML, prose, images, or image URLs.
+- **Fields / domains consumed (metadata-only maximum scope, D14):** `announce_id`, `title`, `date`, `url`, `category`, `region` — same metadata-only posture as the Global news source above, including the field-map (`day`+`month` → `date`, `webUrl` → `url`, `group` → `category`). Never the article body, HTML, prose, images, or image URLs.
 - **Adapter / transform versions:** `official_news` adapter (metadata-only maximum scope).
 - **License / permission status:** first-party copyrighted website; metadata-only maximum scope, M9 policy review recorded (see below).
 - **Private-hosting status:** deferred.
@@ -106,23 +106,23 @@ _Last reviewed: 2026-07-22._
 - **Contact / issue URL:** official channels.
 - **Enabled:** yes — enabled 2026-07-21 (same posture + ride-along gate as the Global news source).
 - **Current snapshot commit / retrieved at:** n/a.
-- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified, §V61).
+- **Last reviewed:** 2026-07-21 (M9 source policy review, D14 — metadata-only scope confirmed; full announcement body prohibited; feed endpoint + field-map verified).
 
 ## `arknights_game_resource` — image URL references (v0.3 M12), **enabled by default**
 
 - **Owner / maintainer:** yuanyan3060 (community mirror `ArknightsGameResource`).
 - **Canonical URL:** https://github.com/yuanyan3060/ArknightsGameResource
-- **Source type / regions:** image-asset URL reference (query-time DERIVED links, no import); regions `en`, `cn`. The `game_id` used to build a link is already region-scoped, so en/cn are never mixed (§V5).
-- **Fields / domains consumed:** none — nothing is imported. Image URLs are DERIVED at response-build time from a `game_id` already stored from the primary snapshot (operator portrait/avatar/skin from `operators.game_id`, enemy sprite from `enemies.game_id`). The database holds no bytes and no URL; the server performs no fetch/HEAD/GET/validation at import or query time (§V1/§V24/§V63). See [ADR 0008](docs/adr/0008-art-asset-url-references.md).
+- **Source type / regions:** image-asset URL reference (query-time DERIVED links, no import); regions `en`, `cn`. The `game_id` used to build a link is already region-scoped, so en/cn are never mixed.
+- **Fields / domains consumed:** none — nothing is imported. Image URLs are DERIVED at response-build time from a `game_id` already stored from the primary snapshot (operator portrait/avatar/skin from `operators.game_id`, enemy sprite from `enemies.game_id`). The database holds no bytes and no URL; the server performs no fetch/HEAD/GET/validation at import or query time. See [ADR 0008](docs/adr/0008-art-asset-url-references.md).
 - **Adapter / transform versions:** n/a (no adapter, no importer, no transform — pure query-time derivation).
 - **License / permission status:** the mirror's **AGPL-3.0 license covers its code only**; the referenced art assets are self-declared Yostar/Hypergryph copyright, "for learning and exchange only, content subject to removal upon request." No permission is assumed (D13). Referenced under a private, non-commercial posture with immediate takedown.
-- **Private-hosting status:** private, non-commercial only — **never OPEN/anonymous public** (D4/§C). Per [ADR 0009](docs/adr/0009-image-refs-authenticated-emit.md) an AUTHENTICATED (OIDC/bearer) deployment may emit references; §V9 fails startup closed on any anonymous non-loopback surface, so no single flag can expose it to an anonymous public.
-- **Redistribution status:** reference-link only — **never bytes**. No artwork, image bytes, or repository code enters any release artifact or the database (§V16 airtight; zero AGPL code intake keeps the copyleft out of the Apache-2.0 tree).
+- **Private-hosting status:** private, non-commercial only — **never OPEN/anonymous public** (D4). Per [ADR 0009](docs/adr/0009-image-refs-authenticated-emit.md) an AUTHENTICATED (OIDC/bearer) deployment may emit references; startup fails closed on any anonymous non-loopback surface, so no single flag can expose it to an anonymous public.
+- **Redistribution status:** reference-link only — **never bytes**. No artwork, image bytes, or repository code enters any release artifact or the database (airtight; zero AGPL code intake keeps the copyleft out of the Apache-2.0 tree).
 - **Required attribution:** "Image URL references courtesy of the yuanyan3060/ArknightsGameResource mirror (repository code AGPL-3.0). Referenced Arknights art assets © Hypergryph / Yostar, for learning and exchange only, removed on request."
 - **Contact / issue URL:** https://github.com/yuanyan3060/ArknightsGameResource/issues
-- **Enabled:** yes — ON by default (§T124, founder 2026-07-22: all existing user features default-enabled). `get_operator`/`get_enemy` carry an additive optional `image_refs` list; the two kill switches are the `[image_refs].enabled` flag and this source's enable/disable (§V28/§V20). Takedown is a config flip with nothing to purge.
+- **Enabled:** yes — ON by default (founder 2026-07-22: all existing user features default-enabled). `get_operator`/`get_enemy` carry an additive optional `image_refs` list; the two kill switches are the `[image_refs].enabled` flag and this source's enable/disable. Takedown is a config flip with nothing to purge.
 - **Current snapshot commit / retrieved at:** n/a — nothing is imported, so there is no snapshot commit for this source.
-- **Last reviewed:** 2026-07-22 (M12, ADR 0008 — founder-approved private + non-commercial URL references only; image bytes remain excluded; ADR 0009 authenticated-emit + §T124 ON by default, founder 2026-07-22).
+- **Last reviewed:** 2026-07-22 (M12, ADR 0008 — founder-approved private + non-commercial URL references only; image bytes remain excluded; ADR 0009 authenticated-emit ON by default, founder 2026-07-22).
 
 ## `local_snapshot` — user-supplied snapshot adapter, **enabled (adapter)**
 

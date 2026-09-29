@@ -1,9 +1,9 @@
-"""T41: the M3 golden suite (§V5, §V6).
+"""The M3 golden suite.
 
 Regression-locks the deterministic, evidence-backed stage analysis end to end. It
-drives the shared-core :func:`~arknights_mcp.services.stages.analyze_stage` (§V14)
+drives the shared-core :func:`~arknights_mcp.services.stages.analyze_stage`
 over pinned snapshot fixtures built through the production candidate pipeline
-(§T21/§T22), serializes the whole domain result to a canonical JSON artifact, and
+serializes the whole domain result to a canonical JSON artifact, and
 compares it against a committed golden file under ``tests/golden/data/``. A change
 to a rule's output, an enemy's typed stats, or the region/provenance a result
 carries surfaces as a golden diff, so an unintended analysis change cannot land
@@ -11,9 +11,9 @@ silently.
 
 ``imported_at`` is pinned per build, and ``snapshot_id`` is content-derived
 (``<server>:<manifest_hash[:12]>``), so provenance is fully deterministic: the
-golden locks region + provenance (§V5), not only the observations (§V6).
+golden locks region + provenance, not only the observations.
 
-Scenarios (all §V5/§V6):
+Scenarios:
 
 * **4-4** -- the pinned canonical fixture -> the aerial observation;
 * **drones** -- two flyers -> one aerial observation over two distinct types;
@@ -22,11 +22,11 @@ Scenarios (all §V5/§V6):
   *and* ``threat.tiles_deploy``;
 * **CN-only region separation** -- a single multi-region build where the cn stage
   is never surfaced under an ``en`` query and vice versa, and each region's
-  provenance stays its own (en & cn never silently mixed, §V5).
-* **operator (§T44)** -- the shared-core :func:`~arknights_mcp.services.operators.get_operator`
+  provenance stays its own (en & cn never silently mixed).
+* **operator** -- the shared-core :func:`~arknights_mcp.services.operators.get_operator`
   read path over a multi-region operator build: an en operator's full facts +
   region + provenance are locked, a cn operator's non-ASCII name survives the
-  pipeline, and neither region's operator is surfaced under the other's query (§V5).
+  pipeline, and neither region's operator is surfaced under the other's query.
 
 Regenerate the golden files after an *intended* analysis change with
 ``UPDATE_GOLDEN=1 uv run pytest tests/golden`` and review the diff.
@@ -58,7 +58,7 @@ GOLDEN_DIR = Path(__file__).resolve().parent / "data"
 REGISTRY_PATH = REPO_ROOT / "config" / "data_sources.toml"
 
 #: Pinned so provenance (snapshot_id + imported_at) is byte-stable across runs; the
-#: golden then locks region + provenance (§V5), not only the observations (§V6).
+#: golden then locks region + provenance, not only the observations.
 PINNED_IMPORTED_AT = "2026-07-18T00:00:00+00:00"
 
 #: ``UPDATE_GOLDEN=1`` rewrites the golden files instead of asserting against them.
@@ -93,7 +93,7 @@ def pinned_4_4(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Con
 
 @pytest.fixture(scope="session")
 def multi_region(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Connection]:
-    """One candidate holding both regions (en scenarios + a cn-only stage; §V5)."""
+    """One candidate holding both regions (en scenarios + a cn-only stage)."""
     conn = _build(
         tmp_path_factory.mktemp("golden_multi"),
         [
@@ -107,7 +107,7 @@ def multi_region(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.C
 
 @pytest.fixture(scope="session")
 def operator_multi(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Connection]:
-    """One candidate with an en operator + a distinct cn-only operator (§T44; §V5)."""
+    """One candidate with an en operator + a distinct cn-only operator."""
     conn = _build(
         tmp_path_factory.mktemp("golden_operator"),
         [
@@ -145,16 +145,16 @@ def _by_tag(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _assert_v5_v6(payload: dict[str, Any], *, server: str) -> None:
-    """Every golden carries region + provenance (§V5) and well-formed obs (§V6)."""
+    """Every golden carries region + provenance and well-formed obs."""
     assert payload["status"] == "ok"
     assert payload["server"] == server
     stage = payload["stage"]
     assert stage is not None and stage["server"] == server
     prov = stage["provenance"]
-    assert prov["snapshot_id"].startswith(f"{server}:")  # §V5 region on provenance
+    assert prov["snapshot_id"].startswith(f"{server}:")  # region on provenance
     assert prov["imported_at"] == PINNED_IMPORTED_AT
     for obs in payload["observations"]:
-        # §V6: rule_id + evidence + confidence + limitations + analyzer_version.
+        # rule_id + evidence + confidence + limitations + analyzer_version.
         assert obs["rule_id"]
         assert isinstance(obs["evidence"], list) and obs["evidence"]
         assert 0.0 <= obs["confidence"] <= 1.0
@@ -179,7 +179,7 @@ def test_golden_drones(multi_region: sqlite3.Connection) -> None:
     payload = _check_golden("drones", analyze_stage(multi_region, server="en", stage_code="GS-1"))
     _assert_v5_v6(payload, server="en")
     aerial = _by_tag(payload)["aerial"]
-    # Two distinct flyer types, both traced to the typed motion field (§V6/§V35).
+    # Two distinct flyer types, both traced to the typed motion field.
     assert {e["ref"] for e in aerial["evidence"]} == {"enemy_drone_a", "enemy_drone_b"}
     assert "2 aerial enemy types" in aerial["summary"]
 
@@ -213,11 +213,11 @@ def test_golden_cn_region(multi_region: sqlite3.Connection) -> None:
     assert payload["stage"]["display_name"] == "夜巡"
 
 
-# --- §V5 region separation ----------------------------------------------------
+# --- region separation ----------------------------------------------------
 
 
 def test_regions_never_silently_mixed(multi_region: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query and vice versa, in one DB.
+    # en data is not surfaced under a cn query and vice versa, in one DB.
     assert analyze_stage(multi_region, server="en", stage_code="CN-1").status == "not_found"
     assert analyze_stage(multi_region, server="cn", stage_code="GS-1").status == "not_found"
 
@@ -233,17 +233,17 @@ def test_regions_never_silently_mixed(multi_region: sqlite3.Connection) -> None:
     assert cn.stage.provenance.snapshot_id != en.stage.provenance.snapshot_id
 
 
-# --- operator scenarios (§T44) ------------------------------------------------
+# --- operator scenarios ------------------------------------------------
 
 
 def _assert_operator_v5(payload: dict[str, Any], *, server: str, game_id: str) -> None:
-    """The operator golden carries region + provenance (§V5)."""
+    """The operator golden carries region + provenance."""
     assert payload["status"] == "ok"
     assert payload["server"] == server
     op = payload["operator"]
     assert op is not None and op["server"] == server and op["game_id"] == game_id
     prov = op["provenance"]
-    assert prov["snapshot_id"].startswith(f"{server}:")  # §V5 region on provenance
+    assert prov["snapshot_id"].startswith(f"{server}:")  # region on provenance
     assert prov["imported_at"] == PINNED_IMPORTED_AT
 
 
@@ -287,9 +287,9 @@ def test_golden_operator_cn(operator_multi: sqlite3.Connection) -> None:
 
 
 def test_golden_compare_modules_en(operator_multi: sqlite3.Connection) -> None:
-    # §T45: the shared-core compare_operator_modules read path over the multi-region
+    # The shared-core compare_operator_modules read path over the multi-region
     # operator build. with_observations locks the deterministic module observations
-    # (§V6) + region/provenance (§V5) end to end -- an unintended analyzer change
+    # and region/provenance end to end -- an unintended analyzer change
     # surfaces as a golden diff.
     payload = _check_golden(
         "compare_modules_en",
@@ -304,14 +304,14 @@ def test_golden_compare_modules_en(operator_multi: sqlite3.Connection) -> None:
     assert payload["status"] == "ok"
     assert payload["server"] == "en" and payload["game_id"] == "char_002_amiya"
     prov = payload["provenance"]
-    assert prov["snapshot_id"].startswith("en:")  # §V5 region on provenance
+    assert prov["snapshot_id"].startswith("en:")  # region on provenance
     assert prov["imported_at"] == PINNED_IMPORTED_AT
     module = payload["modules"][0]
     assert module["module_type"] == "CX-1"
     assert [lv["level"] for lv in module["levels"]] == [1, 2, 3]
-    # §V6: every observation is fully attributed to the pinned analyzer version.
+    # Every observation is fully attributed to the pinned analyzer version.
     tags = {o["tag"] for o in payload["observations"]}
-    # §T202/ADR 0018 (B152): trait_change + talent_change are retired -- the golden's own
+    # ADR 0018: trait_change + talent_change are retired -- the golden's own
     # diff shows what that cost, 38 lines of observations restating rows still in the file.
     assert tags == {"stat_bonus"}
     for obs in payload["observations"]:
@@ -321,7 +321,7 @@ def test_golden_compare_modules_en(operator_multi: sqlite3.Connection) -> None:
 
 
 def test_operator_regions_never_silently_mixed(operator_multi: sqlite3.Connection) -> None:
-    # §V5: an en operator is not surfaced under a cn query and vice versa, in one DB.
+    # An en operator is not surfaced under a cn query and vice versa, in one DB.
     assert get_operator(operator_multi, server="cn", game_id="char_002_amiya").status == "not_found"
     assert get_operator(operator_multi, server="en", game_id="char_1013_chen").status == "not_found"
 

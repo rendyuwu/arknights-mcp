@@ -1,16 +1,16 @@
-"""T182: skin-gallery importer (skin_table.json -> operator_skins; ADR 0015).
+"""Skin-gallery importer (skin_table.json -> operator_skins; ADR 0015).
 
 Parses the primary ``skin_table`` ``charSkins`` dict into the metadata-only named
-skin gallery (§V88): identity/label fields only (no displaySkin prose, §V16/§V18),
+skin gallery: identity/label fields only (no displaySkin prose),
 token skins filtered, the alt-form link read from ``tmplId`` (base ``charId`` +
 distinct ``tmplId``, ADR 0015 -- char_patch_table is NOT imported), soft-resolved to
 an ``operator_pk`` when the operator is present else the raw char id with
-``resolved = 0`` (an unresolvable skin never fails the build, §V3). A non-empty
-operator-entry set yielding zero skins fails closed (§V30); an absent skin_table is
-a legitimate empty build (B36). A duplicate skin id maps to a typed ImporterError
-(§V33). Purge cascades the skin rows (§V32).
+``resolved = 0`` (an unresolvable skin never fails the build). A non-empty
+operator-entry set yielding zero skins fails closed; an absent skin_table is
+a legitimate empty build. A duplicate skin id maps to a typed ImporterError.
+Purge cascades the skin rows.
 
-Fixture entries mirror the REAL upstream shape (§V29 class; verified live
+Fixture entries mirror the REAL upstream shape (verified live
 2026-07-26): id-keyed ``charSkins``, ``displaySkin`` carrying skinName/skinGroupId/
 skinGroupName alongside forbidden prose leaves, ``portraitId`` stems with ``#``/``+``.
 """
@@ -36,7 +36,7 @@ from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 
 _SOURCE_ID = "local_snapshot"
 
-# Prose that must never survive the metadata-only allowlist (§V16/§V18/ADR 0015).
+# Prose that must never survive the metadata-only allowlist (ADR 0015).
 _PROSE = "outfit flavor copy that must never be imported into the database"
 
 _DEFAULT_E0 = {
@@ -116,7 +116,7 @@ def test_named_outfit_parsed_with_name_group_and_portrait() -> None:
 
 
 def test_default_skin_name_is_none() -> None:
-    # Default E0/E1/E2 art carries no outfit name; None, never a fabricated label (§V26).
+    # Default E0/E1/E2 art carries no outfit name; None, never a fabricated label.
     [skin] = parse_skins(_table(_DEFAULT_E0))
     assert skin.display_name is None
     assert skin.skin_group_id == "ILLUST_0"
@@ -124,7 +124,7 @@ def test_default_skin_name_is_none() -> None:
 
 
 def test_prose_is_never_kept() -> None:
-    # §V16/§V18: displaySkin prose/credit leaves never survive the sub-allowlist, so
+    # DisplaySkin prose/credit leaves never survive the sub-allowlist, so
     # they appear in no provenance record (the only place a raw fragment could ride in).
     parsed = parse_skins(_table(_DEFAULT_E0, _OUTFIT, _ALT_FORM))
     all_blob = _json.dumps([s.provenance_record for s in parsed])
@@ -142,7 +142,7 @@ def test_alt_form_tmpl_id_differs_from_char_id() -> None:
 
 
 def test_entry_missing_portrait_id_skipped() -> None:
-    # No art stem -> the §V63 URL cannot derive; skipped fail-closed, never fabricated.
+    # No art stem -> the URL cannot derive; skipped fail-closed, never fabricated.
     no_portrait = {**_OUTFIT, "portraitId": None}
     assert parse_skins(_table(no_portrait)) == []
 
@@ -153,7 +153,7 @@ def test_entry_missing_skin_id_skipped() -> None:
 
 
 def test_control_char_skin_name_sanitized_to_none() -> None:
-    # §V18 sanitize: an all-control-char name is stripped empty -> None (B52 lesson).
+    # Sanitize: an all-control-char name is stripped empty -> None.
     dirty = {**_OUTFIT, "displaySkin": {**_OUTFIT["displaySkin"], "skinName": "\x00\x08\x1f"}}
     [skin] = parse_skins(_table(dirty))
     assert skin.display_name is None
@@ -235,8 +235,8 @@ def test_skin_soft_resolves_present_operator(tmp_path: Path) -> None:
 
 
 def test_skin_stays_raw_when_operator_absent(tmp_path: Path) -> None:
-    # B36: a combat-only snapshot (no operators) keeps the raw char id with a NULL
-    # operator_pk; the unresolvable skin never fails the build (§V3).
+    # A combat-only snapshot (no operators) keeps the raw char id with a NULL
+    # operator_pk; the unresolvable skin never fails the build.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=False)
     try:
         result = _insert(conn, snap, _OUTFIT)
@@ -264,7 +264,7 @@ def test_alt_form_skin_resolves_to_base_operator(tmp_path: Path) -> None:
 
 
 def test_region_equals_server(tmp_path: Path) -> None:
-    # §V5: region is the fact region; en and cn are never mixed.
+    # Region is the fact region; en and cn are never mixed.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         _insert(conn, snap, _DEFAULT_E0, _OUTFIT)
@@ -274,7 +274,7 @@ def test_region_equals_server(tmp_path: Path) -> None:
 
 
 def test_every_row_carries_provenance(tmp_path: Path) -> None:
-    # §V17: each skin row FKs a record_provenance row keyed on its skin_id.
+    # Each skin row FKs a record_provenance row keyed on its skin_id.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         _insert(conn, snap, _OUTFIT)
@@ -288,7 +288,7 @@ def test_every_row_carries_provenance(tmp_path: Path) -> None:
 
 
 def test_duplicate_skin_id_fails_closed(tmp_path: Path) -> None:
-    # §V33: a duplicate skinId collides on UNIQUE(server, skin_id); the anomaly maps
+    # A duplicate skinId collides on UNIQUE(server, skin_id); the anomaly maps
     # to a typed ImporterError, not an uncaught IntegrityError.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
@@ -302,7 +302,7 @@ def test_duplicate_skin_id_fails_closed(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- adapter-driven import (tolerant-absent + §V30 guard) --------------------
+# --- adapter-driven import (tolerant-absent guard) ----------------------------
 
 
 def _adapter_with_skins(tmp_path: Path, payload: object | None) -> LocalSnapshotAdapter:
@@ -315,7 +315,7 @@ def _adapter_with_skins(tmp_path: Path, payload: object | None) -> LocalSnapshot
 
 
 def test_import_tolerates_absent_skin_table(tmp_path: Path) -> None:
-    # B36/§V41: a snapshot without skin_table.json imports zero skins, not a failure.
+    # A snapshot without skin_table.json imports zero skins, not a failure.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         adapter = _adapter_with_skins(tmp_path, None)
@@ -338,9 +338,9 @@ def test_import_end_to_end(tmp_path: Path) -> None:
 
 
 def test_non_empty_charskins_yielding_zero_skins_fails_closed(tmp_path: Path) -> None:
-    # §V30: operator entries that all lack a portraitId resolve to zero skins -> fail
+    # Operator entries that all lack a portraitId resolve to zero skins -> fail
     # closed (a shape/id mismatch is never a silent empty gallery). The domain is
-    # savepoint-isolated in the pipeline, so the combat build still continues (§V58).
+    # savepoint-isolated in the pipeline, so the combat build still continues.
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
         broken = _table({**_OUTFIT, "portraitId": None}, {**_DEFAULT_E0, "portraitId": ""})
@@ -352,7 +352,7 @@ def test_non_empty_charskins_yielding_zero_skins_fails_closed(tmp_path: Path) ->
 
 
 def test_all_token_table_is_legitimate_empty(tmp_path: Path) -> None:
-    # Token entries are dropped BEFORE the §V30 candidate count, so an all-token
+    # Token entries are dropped BEFORE the candidate count, so an all-token
     # charSkins imports zero without error (an empty operator gallery is legitimate).
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:
@@ -362,15 +362,15 @@ def test_all_token_table_is_legitimate_empty(tmp_path: Path) -> None:
         conn.close()
 
 
-# --- pipeline: optional fail-open domain (§V88/§V58 class) --------------------
+# --- pipeline: optional fail-open domain --------------------------------------
 
 
 def test_skin_failure_is_isolated_combat_promotes(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # §V88/§V58: a skin ImporterError (§V30 non-empty operator charSkins -> 0 rows)
+    # A skin ImporterError (non-empty operator charSkins -> 0 rows)
     # rolls back to the savepoint (zero skins), a warning is emitted, and the MANDATORY
-    # combat/operator core is STILL built -- an OPTIONAL gallery cannot fail-close §V3.
+    # combat/operator core is STILL built -- an OPTIONAL gallery cannot fail-close the build.
     import logging
     import shutil
 
@@ -405,7 +405,7 @@ def test_skin_failure_is_isolated_combat_promotes(
 
 
 def test_repo_skins_degrades_when_table_absent(tmp_path: Path) -> None:
-    # §V21 backward compat: an ACTIVE database built before migration 0014 has no
+    # Backward compat: an ACTIVE database built before migration 0014 has no
     # operator_skins table; the repository must degrade to no rows (the tool then takes
     # the derived-fallback path) -- never surface `no such table` as an internal_error
     # on every get_operator call.
@@ -420,7 +420,7 @@ def test_repo_skins_degrades_when_table_absent(tmp_path: Path) -> None:
 
 
 def test_purge_tolerates_pre_0014_database(tmp_path: Path) -> None:
-    # §V21/§V20: the purge candidate is a plain copy of the ACTIVE build, which may
+    # The purge candidate is a plain copy of the ACTIVE build, which may
     # predate migration 0014 -- the takedown path must degrade (0 skins) instead of
     # crashing with `no such table: operator_skins`.
     conn, _snap = _conn_with_operator(tmp_path, seed_operator=True)
@@ -436,7 +436,7 @@ def test_purge_tolerates_pre_0014_database(tmp_path: Path) -> None:
 
 
 def test_service_loads_skins_only_when_flag_set(tmp_path: Path) -> None:
-    # §T182: load_skins is wiring-driven -- skins are queried iff the emission gate
+    # load_skins is wiring-driven -- skins are queried iff the emission gate
     # will emit them; the default response never pays the query.
     from arknights_mcp.services.operators import get_operator
 
@@ -462,7 +462,7 @@ def test_service_loads_skins_only_when_flag_set(tmp_path: Path) -> None:
 
 
 def test_purge_cascades_skin_rows(tmp_path: Path) -> None:
-    # §V32: purging the source removes its operator_skins rows, leaving no dangling
+    # Purging the source removes its operator_skins rows, leaving no dangling
     # foreign key (children-before-parents; skins delete ahead of operators).
     conn, snap = _conn_with_operator(tmp_path, seed_operator=True)
     try:

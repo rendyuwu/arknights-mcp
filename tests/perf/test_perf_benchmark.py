@@ -1,4 +1,4 @@
-"""§T50: the M5 performance benchmark gate.
+"""The M5 performance benchmark gate.
 
 Budgets (the PRD's perf targets for v0.1):
 
@@ -6,7 +6,7 @@ Budgets (the PRD's perf targets for v0.1):
 * **stage analysis** p95 < 500 ms -- a full ``analyze_stage`` run;
 * **startup** < 2 s -- a cold server process reaching *ready to serve*.
 
-Scope + honesty. The committed fixtures are intentionally tiny (§V16 -- no raw
+Scope + honesty. The committed fixtures are intentionally tiny (no raw
 dump ever ships), so the absolute latencies here sit far under budget. This is
 therefore a **regression guard**, not a full-dataset SLA: it fails if a change
 turns a point lookup or a stage analysis into a full scan / O(rows) blowup that
@@ -14,10 +14,10 @@ would breach the budget on real data, and it pins that the shipped server reache
 ready-to-serve within the startup budget on a genuinely cold process.
 
 What it drives is the real thing, not a stand-in: the read-only domain services
-(§V2, parameterized SQL over a strictly read-only connection) over a candidate
-built through the production pipeline from local fixtures (§V1, offline), and --
+(parameterized SQL over a strictly read-only connection) over a candidate
+built through the production pipeline from local fixtures (offline), and --
 for startup -- the packaged ``serve --transport stdio`` twin of the console
-script over a real stdio pipe (the shared core §V14 both transports serve from).
+script over a real stdio pipe (the shared core both transports serve from).
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _adapter(root: Path, server: str) -> LocalSnapshotAdapter:
 
 
 def _build(tmp: Path, imports: list[ServerImport]) -> sqlite3.Connection:
-    """Build a candidate through the production pipeline and open it read-only (§V2)."""
+    """Build a candidate through the production pipeline and open it read-only."""
     path = tmp / "cand.sqlite"
     build_candidate(path, imports, registry=load_source_registry(REGISTRY_PATH))
     return open_read_only(path)
@@ -130,9 +130,9 @@ def operator_db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Co
 def test_lookup_p95_under_budget(
     combat_db: sqlite3.Connection, operator_db: sqlite3.Connection
 ) -> None:
-    """§T50: a mix of point reads / searches stays under the lookup p95 budget.
+    """A mix of point reads / searches stays under the lookup p95 budget.
 
-    Covers every §I lookup surface -- an enemy point read, a stage point read, a
+    Covers every lookup surface -- an enemy point read, a stage point read, a
     full operator read (heavy sections included), an entity search and a stage
     search -- so a missing index that scans on any one of them shows up here.
     """
@@ -165,7 +165,7 @@ def test_lookup_p95_under_budget(
 
 
 def test_stage_analysis_p95_under_budget(combat_db: sqlite3.Connection) -> None:
-    """§T50: a full stage analysis stays under the analysis p95 budget.
+    """A full stage analysis stays under the analysis p95 budget.
 
     GS-3 is the multi-route/tiles scenario, so it exercises the widest set of
     deterministic rules -- the heaviest analyze path in the fixture set.
@@ -187,7 +187,7 @@ def test_stage_analysis_p95_under_budget(combat_db: sqlite3.Connection) -> None:
 def _write_config(tmp_path: Path) -> Path:
     """A minimal config pointing at an empty data dir (startup needs no build).
 
-    The server starts ready-to-serve even with nothing promoted (§V23) -- ``list``
+    The server starts ready-to-serve even with nothing promoted -- ``list``
     of tools is served before any DB is touched -- so the startup budget is timed
     without an import step muddying the measurement.
     """
@@ -229,7 +229,7 @@ def _time_startup(config: Path, cwd: Path) -> float:
 
 
 def test_startup_under_budget(tmp_path: Path) -> None:
-    """§T50: a cold server process reaches ready-to-serve under the startup budget."""
+    """A cold server process reaches ready-to-serve under the startup budget."""
     config = _write_config(tmp_path)
     # Warm the bytecode / OS file cache so we time steady-state cold-process start,
     # not the one-off .pyc-compile penalty of the very first spawn.

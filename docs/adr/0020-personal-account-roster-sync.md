@@ -5,17 +5,17 @@
 - **Founder decision(s):** D10 reversed by the owner on 2026-09-29. Roster
   storage is allowed: opt-in via CLI, for one owner account, into the owner's
   own PostgreSQL database. Also changed:
-  - SPEC §C line 23 (the "⊥ game login | roster storage" constraint);
-  - the PRD §2 rows "Game-server login: Excluded" and "User roster storage:
+  - the "never game login | roster storage" constraint;
+  - the PRD section 2 rows "Game-server login: Excluded" and "User roster storage:
     Deferred";
-  - the PRD §6.2 exclusions "Game account login" and "Player account
+  - the PRD section 6.2 exclusions "Game account login" and "Player account
     synchronization or roster storage";
-  - PRD §10.9 rule 8, PRD §17.5 bullet 1 ("No Arknights credentials or player
-    account identifiers") and PRD §27 rule 8 ("Never request game credentials
+  - PRD section 10.9 rule 8, PRD section 17.5 bullet 1 ("No Arknights credentials or player
+    account identifiers") and PRD section 27 rule 8 ("Never request game credentials
     or add direct game-server authentication").
-  - For the account roster only: the PRD §2 rows "Data store: SQLite" and
-    "Runtime data access: SQLite only", PRD §4.2 principle 4 ("User-facing
-    tools read SQLite only"), PRD §9.2 question path ("Opens only the
+  - For the account roster only: the PRD section 2 rows "Data store: SQLite" and
+    "Runtime data access: SQLite only", PRD section 4.2 principle 4 ("User-facing
+    tools read SQLite only"), PRD section 9.2 question path ("Opens only the
     validated SQLite database in read-only mode"), and ADR 0003's
     "User-facing MCP tools read SQLite only". Game data keeps all of them
     unchanged.
@@ -25,7 +25,6 @@
     key, the Yostar salt, and the SDK header values) are taken from the
     GPL-3.0 `ashleney/ArkPRTS` repository as interoperability facts only, with
     no ArkPRTS code copied.
-- **Invariants:** §V1, §V2, §V5, §V12, §V15, §V16, §V17, §V19, §V27, §V28
 
 ## Context
 
@@ -59,7 +58,7 @@ from scratch against them.
 
 (a) A CLI-only command group, `arknights-mcp account`, with five actions:
 `login`, `sync`, `status`, `logout`, `purge`. None of the five is ever
-registered as an MCP tool (§V28).
+registered as an MCP tool.
 
 (b) The Yostar/Arknights client is this project's own code, built on the
 standard library only, using ArkPRTS purely as a protocol reference. No
@@ -98,9 +97,9 @@ in-process caching of the roster across calls.
 (f) Provenance for the roster is the `account_roster` row itself:
 `snapshot_id`, `synced_at`, `transform_version`, `content_hash`. There is no
 per-record provenance stamp, because one row is one snapshot of the whole
-roster (§V17 applies at that scope).
+roster (the provenance rule applies at that scope).
 
-(g) The account roster is not a source-registry entry (§V27): it is the
+(g) The account roster is not a source-registry entry: it is the
 owner's personal data, not a shared dataset, and it does not participate in
 `FIELD_POLICY_VERSION` (which only feeds the shared game-data build's
 content hash).
@@ -172,7 +171,7 @@ whole account-store code path without a real PostgreSQL server.
   the three new account tools follow the same read-only, typed-envelope
   contract as every existing tool.
 - The rule that user-facing tools never make a network request at query
-  time (§V1): the account tools read a database, the same shape of
+  time: the account tools read a database, the same shape of
   operation as reading the game-data SQLite file, not a request to Yostar.
 
 ## Consequences

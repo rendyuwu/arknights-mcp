@@ -1,11 +1,11 @@
-"""Optional ``arknights://`` MCP resources (§T37; §V27; §I.resource; PRD §13.11).
+"""Optional ``arknights://`` MCP resources (PRD Section 13.11).
 
 Resources are a second, read-only projection of the same intel the tools expose:
 a client can address one entity by a stable URI instead of a tool call. Every
 resource is a *point* address -- one enemy, one stage, one region's status, or the
-public source registry -- never a bulk enumeration or a raw dump (§V19; PRD §13.11).
+public source registry -- never a bulk enumeration or a raw dump (PRD Section 13.11).
 
-The surface mirrors PRD §13.11 / §I.resource::
+The surface mirrors PRD Section 13.11::
 
     arknights://enemy/{server}/{game_id}    (template)
     arknights://stage/{server}/{stage_id}   (template)
@@ -17,27 +17,27 @@ The surface mirrors PRD §13.11 / §I.resource::
     arknights://glossary/search-coverage    (fixed)
 
 ``arknights://operator/{server}/{game_id}`` is intentionally **not** registered
-yet: the operator intel service is a stub until ``get_operator`` (§T44, M4), and a
+yet: the operator intel service is a stub until ``get_operator`` (M4), and a
 resource whose reads always fail is worse than an absent one. It is added
-alongside §T44.
+alongside the operator tool.
 
 Four invariants shape this module:
 
-* **§V14 / §V37** -- resources own no query logic. Entity resources dispatch
-  through the exact ``get_enemy`` / ``get_stage`` tool handlers, and the metadata
-  resources call the shared ``get_data_status`` / ``get_data_sources`` services, so
-  both surfaces (tool + resource) run identical domain code with no duplicated
-  shaping. A resource read returns the same typed
+* **one shared implementation** -- resources own no query logic. Entity resources
+  dispatch through the exact ``get_enemy`` / ``get_stage`` tool handlers, and the
+  metadata resources call the shared ``get_data_status`` / ``get_data_sources``
+  services, so both surfaces (tool + resource) run identical domain code with no
+  duplicated shaping. A resource read returns the same typed
   :class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`, serialized as the
   resource body.
-* **§V27** -- ``arknights://sources`` routes through ``get_data_sources`` ->
+* **no secret leak** -- ``arknights://sources`` routes through ``get_data_sources`` ->
   ``registry.public_view()``: it never re-enumerates the allowlist, so it cannot
   leak secrets, local paths, OAuth config, or policy notes.
-* **§V5 / §V23** -- every factual body carries region + provenance and a typed
+* **typed bodies** -- every factual body carries region + provenance and a typed
   status; a bad region in a URI fails closed to an ``unsupported_server`` envelope,
   a missing/over-long id to ``not_found`` -- never a leaked exception or path.
-* **§V2** -- read-only throughout: the services only read, through the shared
-  read-only connection, and admin ops stay CLI-only (§V28).
+* **read-only** -- the services only read, through the shared
+  read-only connection, and admin ops stay CLI-only.
 """
 
 from __future__ import annotations
@@ -78,13 +78,13 @@ from arknights_mcp.services.status import DataStatus, get_data_status
 from arknights_mcp.sources.registry import SourceRegistry
 
 #: JSON mime for every resource body -- a typed envelope, the same shape a tool
-#: returns (§V14: one result contract across both surfaces).
+#: returns (one result contract across both surfaces).
 _JSON_MIME = "application/json"
 
-#: §V5 supported regions as a runtime set (mirrors ``models.common.Region``).
+#: Supported regions as a runtime set (mirrors ``models.common.Region``).
 _REGIONS = frozenset({"en", "cn"})
 
-#: ``arknights://`` URIs mirror PRD §13.11 / §I.resource verbatim.
+#: ``arknights://`` URIs mirror PRD Section 13.11 verbatim.
 _ENEMY_TEMPLATE = "arknights://enemy/{server}/{game_id}"
 _STAGE_TEMPLATE = "arknights://stage/{server}/{stage_id}"
 _STATUS_TEMPLATE = "arknights://status/{server}"
@@ -92,7 +92,7 @@ _BANNERS_TEMPLATE = "arknights://banners/{server}"
 _SOURCES_URI = "arknights://sources"
 _GLOSSARY_URI = "arknights://glossary/blackboard"
 
-#: Fixed, safe copy for the typed failure envelopes (§V23 -- no echo of untrusted
+#: Fixed, safe copy for the typed failure envelopes (no echo of untrusted
 #: URI input, no stack trace, no local path).
 _UNSUPPORTED_SERVER_MESSAGE = "the requested region is not supported"
 _UNSUPPORTED_SERVER_ACTION = "use a supported region: en or cn"
@@ -102,7 +102,7 @@ _NOT_FOUND_ACTION = (
     "to check the active build"
 )
 
-#: Region-scoped staleness copy (§V5): a region with no active snapshot is stale
+#: Region-scoped staleness copy: a region with no active snapshot is stale
 #: for that region even when another region keeps the build globally non-empty.
 _NO_REGION_DATA_MESSAGE = "no active snapshot for the requested region in the active build"
 _NO_REGION_DATA_ACTION = (
@@ -127,7 +127,7 @@ class ResourceSpec:
     A spec whose ``uri_template`` carries a ``{placeholder}`` is a *template*
     (advertised via ``list_resource_templates``); one without is a *fixed* resource
     (``list_resources``). ``handler`` maps the URI-captured params to the typed
-    :class:`ResponseEnvelope` that becomes the resource body (§V14/§V23).
+    :class:`ResponseEnvelope` that becomes the resource body.
     """
 
     name: str
@@ -185,7 +185,7 @@ def _compile(template: str) -> re.Pattern[str]:
 
 
 class ResourceRegistry:
-    """The shared, order-preserving registry of ``arknights://`` resources (§V14).
+    """The shared, order-preserving registry of ``arknights://`` resources.
 
     Both transports would list + read through this one registry, so a resource is
     served identically regardless of transport. Names and URIs are unique; ``read``
@@ -252,10 +252,10 @@ class ResourceRegistry:
 
 
 def _unsupported_region(params: Mapping[str, str]) -> ResponseEnvelope | None:
-    """Fail closed to ``unsupported_server`` when the URI region is not en/cn (§V5).
+    """Fail closed to ``unsupported_server`` when the URI region is not en/cn.
 
     Returns the envelope to short-circuit with, or ``None`` when the region is
-    valid. The fixed message never echoes the untrusted URI value (§V23).
+    valid. The fixed message never echoes the untrusted URI value.
     """
     if params.get("server") not in _REGIONS:
         return error(
@@ -267,10 +267,10 @@ def _unsupported_region(params: Mapping[str, str]) -> ResponseEnvelope | None:
 
 
 def _make_entity_handler(tool_handler: ToolHandler, *, uri_id_key: str) -> ResourceHandler:
-    """Bridge an entity URI to the ``get_enemy`` / ``get_stage`` tool handler (§V14).
+    """Bridge an entity URI to the ``get_enemy`` / ``get_stage`` tool handler.
 
-    The tool handler owns the region + id validation, the lookup, and the §V5/§V23
-    shaping, so the resource adds no domain logic (§V37). A bad region short-circuits
+    The tool handler owns the region + id validation, the lookup, and the shaping,
+    so the resource adds no domain logic. A bad region short-circuits
     to ``unsupported_server``; an over-long/empty id trips the tool's bounded model,
     which we map to ``not_found`` (a URI that cannot address a real entity), never a
     leaked ``ValidationError``.
@@ -289,12 +289,12 @@ def _make_entity_handler(tool_handler: ToolHandler, *, uri_id_key: str) -> Resou
 
 
 def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHandler:
-    """Region-scoped ``arknights://status/{server}`` over ``get_data_status`` (§V14).
+    """Region-scoped ``arknights://status/{server}`` over ``get_data_status``.
 
     Reuses the shared status service (no re-query here) and scopes its result to the
     URI region: only that region's snapshots are returned, and each contributes
-    provenance (§V5). A ``data_stale`` service result maps to the ``data_stale``
-    envelope status; the DB-unavailable/internal guard is the shared one (§V37).
+    provenance. A ``data_stale`` service result maps to the ``data_stale``
+    envelope status; the DB-unavailable/internal guard is the shared one.
     """
 
     def handler(params: Mapping[str, str]) -> ResponseEnvelope:
@@ -311,7 +311,7 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
             )
             # Region-scope the whole verdict, not just the snapshot list: a region
             # with no active snapshot is ``data_stale`` for that region even when
-            # another region keeps the build globally non-empty (§V5). Recompute
+            # another region keeps the build globally non-empty. Recompute
             # status/warnings/action for the region rather than leaking the global
             # verdict; keep the global build-wide warnings only when the region
             # itself has data.
@@ -323,22 +323,21 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
                 env_status = "data_stale" if status.status == "data_stale" else "ok"
                 warnings = status.warnings
                 suggested_action = status.suggested_action
-            # Reuse the service's enveloped projection (§V37/§V99 -- ``db_schema_version``
-            # for the DB migration id, no ``status``/``analyzer_version`` echo, B148) and
+            # Reuse the service's enveloped projection (``db_schema_version``
+            # for the DB migration id, no ``status``/``analyzer_version`` echo) and
             # override only the region-scoped keys, rather than re-enumerating the status
             # fields. The region verdict now travels ONLY as the envelope status, which
             # was always the field a client should branch on.
             data = status.to_envelope_data()
             data["server"] = server
-            # §V66/B78: the envelope ``provenance`` carries ``imported_at`` here too;
+            # The envelope ``provenance`` carries ``imported_at`` here too;
             # each snapshot row keeps the source/commit/version/age extras PLUS its
-            # ``snapshot_id`` join key (§V87 -- one region holds several active
+            # ``snapshot_id`` join key (one region holds several active
             # snapshots, so the id, not position, joins a row to its provenance
             # entry). Unlike the multi-region tool, rows stay server-less: this
             # resource is region-scoped and the top-level ``server`` states the
-            # region once (§V77); a per-row repeat would be the dup §V87 carves out.
-            # Null commit/version/age keys omitted by the shared extras view
-            # (§V67/§V37).
+            # region once; a per-row repeat would be a duplication.
+            # Null commit/version/age keys omitted by the shared extras view.
             data["snapshots"] = [s.to_provenance_extras() for s in snapshots]
             data["warnings"] = list(warnings)
             data["suggested_action"] = suggested_action
@@ -357,16 +356,16 @@ def _make_status_handler(get_conn: ConnectionProvider, mode: str) -> ResourceHan
 def _make_banners_handler(
     get_conn: ConnectionProvider, *, image_refs_enabled: bool
 ) -> ResourceHandler:
-    """Region-scoped ``arknights://banners/{server}`` over the ``get_banners`` tool (§V14).
+    """Region-scoped ``arknights://banners/{server}`` over the ``get_banners`` tool.
 
     Dispatches the exact ``get_banners`` tool handler with the URI region (and the
     bounded defaults for the since/until window + page), so the resource adds no domain
-    logic (§V37) and returns the same typed envelope the tool returns -- newest-first,
-    region-attributed, metadata-only (§V62), with the §V62/§V26 caveats in
+    logic and returns the same typed envelope the tool returns -- newest-first,
+    region-attributed, metadata-only, with the caveats in
     ``limitations``. ``image_refs_enabled`` is threaded so the resource surfaces the same
-    additive featured-op portrait refs as the tool when the source is enabled (§V14/§V63).
-    A bad region short-circuits to ``unsupported_server`` (§V5); a region with no banners
-    is a legitimate empty ``ok`` list (gacha_table is tolerant-absent, §V41/B36). The
+    additive featured-op portrait refs as the tool when the source is enabled.
+    A bad region short-circuits to ``unsupported_server``; a region with no banners
+    is a legitimate empty ``ok`` list (gacha_table is tolerant-absent). The
     DB-unavailable / internal guard is the tool's shared one.
     """
     tool_handler = build_get_banners_spec(get_conn, image_refs_enabled=image_refs_enabled).handler
@@ -383,11 +382,11 @@ def _make_banners_handler(
 def _make_sources_handler(
     get_conn: ConnectionProvider, registry: SourceRegistry
 ) -> ResourceHandler:
-    """``arknights://sources`` over ``get_data_sources`` -> ``public_view`` (§V27).
+    """``arknights://sources`` over ``get_data_sources`` -> ``public_view``.
 
-    The public-safe projection is the service's single allowlist (§V34): this
+    The public-safe projection is the service's single allowlist: this
     resource never re-enumerates it, so it cannot leak secrets, local paths, OAuth
-    config, or policy notes. Read-only through the shared connection (§V2).
+    config, or policy notes. Read-only through the shared connection.
     """
 
     def handler(_params: Mapping[str, str]) -> ResponseEnvelope:
@@ -396,25 +395,25 @@ def _make_sources_handler(
 
         # The registry is in memory; the build only enriches with active snapshots,
         # so an unpromoted build degrades to the registry-only projection rather than
-        # failing closed (mirrors the get_data_sources tool, §V27).
+        # failing closed (mirrors the get_data_sources tool).
         return run_registry_guarded(get_conn, lambda conn: get_data_sources(registry, conn), shape)
 
     return handler
 
 
 def _glossary_handler(_params: Mapping[str, str]) -> ResponseEnvelope:
-    """``arknights://glossary/blackboard`` -- the blackboard-key glossary (§V84/B144).
+    """``arknights://glossary/blackboard`` -- the blackboard-key glossary.
 
-    §V65 (c) grounding needs a glossary home a client can actually reach. The server
-    ``instructions`` string is an OPTIONAL ``initialize`` field a client may drop, so a
-    tool description pointing there alone dangles for such a client (B144, reported by an
-    auditing client that received no instructions). A resource is FETCHABLE from the tool
-    call itself, so it is the home the operator-tool descriptions now name.
+    Grounding needs a glossary home a client can actually reach. The server
+    ``instructions`` string is an OPTIONAL ``initialize`` field a client may drop, so a tool
+    description pointing there alone dangles for such a client (reported by an auditing
+    client that received no instructions). A resource is FETCHABLE from the tool call
+    itself, so it is the home the operator-tool descriptions now name.
 
     Static project prose projected from the single
-    :data:`~arknights_mcp.instructions.BLACKBOARD_KEY_ENTRIES` home (§V37) -- never
-    assembled from imported source strings (§V18/§V31), never region-scoped, and carrying
-    no provenance because it states no source fact (§V5 governs facts).
+    :data:`~arknights_mcp.instructions.BLACKBOARD_KEY_ENTRIES` home -- never assembled from
+    imported source strings, never region-scoped, and carrying no provenance because it
+    states no source fact.
     """
     return ok(
         {
@@ -428,19 +427,19 @@ def _glossary_handler(_params: Mapping[str, str]) -> ResponseEnvelope:
 
 
 def _make_guide_handler(topic: str, entries: tuple[tuple[str, str], ...]) -> ResourceHandler:
-    """A static reading-guide resource over ``entries`` (§V84/§V111 a, §T207).
+    """A static reading-guide resource over ``entries``.
 
-    The §V37 single home for both guides that moved off the tool-description surface:
+    The single home for both guides that moved off the tool-description surface:
     ``arknights://glossary/stage-map`` (get_stage's tile-grid/route/spawn rules, ~970
-    chars of the 2881 that made it the server's longest description, B156) and
+    chars of the 2881 that made it the server's longest description) and
     ``arknights://glossary/search-coverage`` (the 788-char block that was byte-identical
-    in BOTH search descriptions -- the duplication §V84 forbids outright).
+    in BOTH search descriptions -- a duplication).
 
     Static project prose projected from the single ``*_GUIDE_ENTRIES`` home in
-    ``tools._shared`` -- never assembled from imported source strings (§V18/§V31), never
-    region-scoped, and carrying no provenance because it states no source fact (§V5
-    governs facts). Needs no connection, so it stays readable on a build-less server: a
-    description that points here must never dangle (the B144 failure).
+    ``tools._shared`` -- never assembled from imported source strings, never
+    region-scoped, and carrying no provenance because it states no source fact. Needs no
+    connection, so it stays readable on a build-less server: a description that points here
+    must never dangle (the earlier failure).
     """
 
     def handler(_params: Mapping[str, str]) -> ResponseEnvelope:
@@ -454,7 +453,7 @@ def _make_guide_handler(topic: str, entries: tuple[tuple[str, str], ...]) -> Res
     return handler
 
 
-#: PRD §13.11 resource descriptions (short, no game prose; §V16/§V18).
+#: PRD Section 13.11 resource descriptions (short, no game prose).
 _ENEMY_DESCRIPTION = (
     "One Arknights enemy's facts by region + game_id: class/flags, attack + motion "
     "type, and the per-level stat block, with region + provenance. en/cn never mixed. "
@@ -506,16 +505,15 @@ def build_default_resources(
     mode: str,
     image_refs_enabled: bool = False,
 ) -> ResourceRegistry:
-    """Build the shared ``arknights://`` resource registry (§T37; §V14).
+    """Build the shared ``arknights://`` resource registry.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
     build; ``registry`` is the live source posture for ``arknights://sources``.
-    ``image_refs_enabled`` is the combined §T120 emission gate threaded to the entity
+    ``image_refs_enabled`` is the combined emission gate threaded to the entity
     resources so they surface the same additive ``image_refs`` as their tools when the
-    source is enabled (§V14/§V63); it defaults ``False``. Every registered resource is
-    read-only (§V2) and reuses the tools/services (§V14/§V37). The operator resource is
-    added with ``get_operator`` (§T44); it is absent here because the operator service is
-    a stub.
+    source is enabled; it defaults ``False``. Every registered resource is read-only and
+    reuses the tools/services. The operator resource is added with ``get_operator``; it is
+    absent here because the operator service is a stub.
     """
     enemy_handler = build_get_enemy_spec(get_conn, image_refs_enabled=image_refs_enabled).handler
     stage_handler = build_get_stage_spec(get_conn).handler
@@ -566,8 +564,8 @@ def build_default_resources(
             handler=_make_sources_handler(get_conn, registry),
         )
     )
-    # §V84/B144: the glossary's CLIENT-FETCHABLE home. Static text, so it needs no
-    # connection and stays readable on a build-less server (§V65 c grounding path).
+    # The glossary's CLIENT-FETCHABLE home. Static text, so it needs no
+    # connection and stays readable on a build-less server (the grounding path).
     resources.register(
         ResourceSpec(
             name="blackboard_glossary",
@@ -577,8 +575,8 @@ def build_default_resources(
             handler=_glossary_handler,
         )
     )
-    # §V84/§V111 (a) (§T207): the two reading guides that moved off the §V71 (f) budget.
-    # Static text, so neither needs a connection -- a pointer must not dangle (B144).
+    # The two reading guides that moved off the description budget.
+    # Static text, so neither needs a connection -- a pointer must not dangle.
     resources.register(
         ResourceSpec(
             name="stage_map_guide",

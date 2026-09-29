@@ -1,10 +1,10 @@
 """Level parser: map / tiles / routes / waves / spawns + derived stage_enemies.
 
-Reads the allowlisted structural fields of a stage's level file (§V18 — known
+Reads the allowlisted structural fields of a stage's level file (known
 keys read explicitly, string fields sanitized, no prose) and writes the map,
 tiles, routes, waves, and spawns for one stage, then derives the
 ``stage_enemies`` summary. Cross-file references (spawn -> enemy) must resolve
-(§21.2); an unresolved enemy fails closed.
+(section 21.2); an unresolved enemy fails closed.
 """
 
 from __future__ import annotations
@@ -66,10 +66,10 @@ class ParsedWave:
 
 @dataclass(frozen=True)
 class ParsedVariant:
-    """A stage-scoped inline enemy variant (``useDb:false`` ref; §T80/§V43).
+    """A stage-scoped inline enemy variant (``useDb:false`` ref).
 
     ``prefab_base_game_id`` is the base enemy it derives from (resolved to an
-    ``enemy_pk`` FK at insert). Stat fields are the §V29-verified overrides
+    ``enemy_pk`` FK at insert). Stat fields are the verified overrides
     ``overwrittenData`` defined; ``None`` = not overridden, so the base value is
     inherited at read. ``source_fragment`` is the allowlisted, prose-free trace.
     """
@@ -181,7 +181,7 @@ def parse_level(level_raw: Any) -> ParsedLevel:
                         interval=as_float(action.get("interval")),
                         spawn_group=as_str(action.get("spawnGroup"), sanitize=True),
                         hidden=bool(action.get("hidden", False)),
-                        # V18: keep only the allowlisted structural spawn fields
+                        # Keep only the allowlisted structural spawn fields
                         # (sanitized), never the whole raw action (which may carry
                         # prose/injection fields).
                         source_fragment=apply_allowlist(action, SPAWN_ACTION_ALLOWLIST).kept,
@@ -253,11 +253,11 @@ def insert_level(
 ) -> LevelImportResult:
     """Insert a stage's map/tiles/routes/waves/spawns and derive stage_enemies.
 
-    Every level-derived row carries ``provenance_id`` (§V17): all rows originate
+    Every level-derived row carries ``provenance_id``: all rows originate
     from the same level file, whose provenance is created once by the caller. A
     duplicate/absent structural index (a UNIQUE/PK collision) is surfaced as a
     graceful :class:`ImporterError` rather than an uncaught ``IntegrityError`` that
-    would tear down the whole candidate build with a raw traceback (§V3).
+    would tear down the whole candidate build with a raw traceback.
     """
     with integrity_guard(
         f"level import for stage_pk={stage_pk} violates a uniqueness constraint "
@@ -323,9 +323,9 @@ def _insert_level(
         )
         route_pk_by_index[route.route_index] = int(cur.lastrowid or 0)
 
-    # Stage-scoped inline enemy variants (§T80/§V43). Each resolves its base prefab
+    # Stage-scoped inline enemy variants. Each resolves its base prefab
     # to an enemy_pk (the FK); a base absent from the region's enemies fails closed
-    # (§V3, never a fabricated enemy row). Insert before spawns so a spawn/occurrence
+    # (never a fabricated enemy row). Insert before spawns so a spawn/occurrence
     # can carry its variant_pk.
     variant_pk_by_id: dict[str, int] = {}
     for variant in level.variants:
@@ -382,7 +382,7 @@ def _insert_level(
             )
             # A useDb:false inline-variant spawn carries the inline id under
             # ``variantId``; link it to the stage-scoped variant row so reads overlay
-            # its stats over the base prefab (§T80). A useDb:true spawn has none.
+            # its stats over the base prefab. A useDb:true spawn has none.
             spawn_variant_id = spawn.source_fragment.get("variantId")
             variant_pk = (
                 variant_pk_by_id.get(spawn_variant_id)

@@ -1,7 +1,7 @@
 # Deployment examples
 
 Reference deployments for the read-only Arknights Intelligence MCP. The bulk of
-this directory covers the **private remote** transport (§I.api; §T55) — three
+this directory covers the **private remote** transport — three
 interchangeable fronts for one posture:
 
 - [`systemd/`](systemd/) — a hardened service unit for a bare-metal / VM host.
@@ -15,13 +15,13 @@ The Docker front also serves the local **`stdio`** transport from the same image
 > `mcp.example.com`, certificate path, and OIDC value with your own, and review
 > against your own threat model before exposing anything.
 
-## The posture (§V9 / §V40)
+## The posture
 
 The server binds **loopback** (`127.0.0.1:8000`) and a **TLS-terminating reverse
 proxy** (nginx, Cloudflare Tunnel, ...) is the sole public ingress. A loopback
 bind is **not** proof the listener is private — a proxy or tunnel in front serves
 the public internet while the app still binds `127.0.0.1`. So the app does **not**
-infer "loopback ⇒ trusted": you declare the proxy explicitly in `config.toml`:
+infer "loopback means trusted": you declare the proxy explicitly in `config.toml`:
 
 ```toml
 [mcp.remote]
@@ -29,17 +29,17 @@ enabled = true
 bind_host = "127.0.0.1"
 bind_port = 8000
 path = "/mcp"
-public_base_url = "https://mcp.example.com"   # https:// = HTTPS is in front (§V9)
-behind_proxy = true                            # forces the §V9 gate on loopback (§V40)
+public_base_url = "https://mcp.example.com"   # https:// = HTTPS is in front
+behind_proxy = true                            # forces the HTTPS + auth gate on loopback
 ```
 
-With `behind_proxy = true`, startup **fails closed** (§V9/§V40) unless HTTPS is
+With `behind_proxy = true`, startup **fails closed** unless HTTPS is
 declared (`public_base_url` is `https://`) **and** valid OIDC settings are
-present — and every `/mcp` request must then carry a bearer the server validates
-(§V10). A genuine loopback dev bind (`behind_proxy = false`, no proxy) is the only
+present — and every `/mcp` request must then carry a bearer the server validates.
+A genuine loopback dev bind (`behind_proxy = false`, no proxy) is the only
 authless exception.
 
-## Secrets are env-only (§V12 / §I.env)
+## Secrets are env-only
 
 The non-secret OIDC descriptors — issuer, audience, jwks_url — and any secrets are
 supplied through the **environment**, never committed to `config.toml` or these
@@ -47,7 +47,7 @@ files:
 
 | Variable | Meaning |
 |---|---|
-| `ARKNIGHTS_MCP_OIDC_ISSUER` | Token issuer, exact match incl. trailing slash (§V10) |
+| `ARKNIGHTS_MCP_OIDC_ISSUER` | Token issuer, exact match incl. trailing slash |
 | `ARKNIGHTS_MCP_OIDC_AUDIENCE` | The MCP resource-server audience this deployment accepts |
 | `ARKNIGHTS_MCP_OIDC_JWKS_URL` | JWKS endpoint; keys selected by `kid` |
 | `ARKNIGHTS_MCP_ACCOUNT_DB_URL` | Personal account roster database (ADR 0020): read-only role URL for `serve`, writer role URL on the machine that runs `account login` / `account sync`; unset means the three account tools answer `database_unavailable` |
@@ -55,18 +55,18 @@ files:
 Each example ships an `arknights-mcp.env.example` with placeholders only. Copy it,
 fill in real values, and keep it out of git (`chmod 600` for the systemd file).
 
-## Data is mounted, never bundled (§V16)
+## Data is mounted, never bundled
 
 The Docker image is **code-only**: it bundles the project code + locked deps and
 **no** data. The promoted SQLite build is supplied at runtime as a **read-only**
-mounted volume (§V2/§V16). `.dockerignore` bars `data/`, `*.sqlite`, and snapshots
+mounted volume. `.dockerignore` bars `data/`, `*.sqlite`, and snapshots
 from the build context so they cannot leak into a layer. Build a database first
-with the admin CLI (`import` / `sync`) — it is a separate step (§V28); the server
-never fetches source data at query time (§V1).
+with the admin CLI (`import` / `sync`) — it is a separate step; the server
+never fetches source data at query time.
 
 ## Local `stdio` in the same image
 
-One shared core, two transports (§V14) — and one image for both (§T215). The
+One shared core, two transports — and one image for both. The
 Dockerfile keeps only the console script and `--config /app/config.toml` in
 `ENTRYPOINT`; the transport lives in `CMD`, so a `docker run` argument list
 overrides it:
@@ -93,14 +93,14 @@ Four points, each of which silently breaks the transport if missed:
 
 | Requirement | Why |
 |---|---|
-| `-i` (compose: `stdin_open: true`) | No stdin ⇒ EOF before `initialize` ⇒ the server exits and the client reports it died. |
-| **No** `-t` (compose: `-T`) | A TTY merges stderr into stdout and rewrites newlines, corrupting the JSON-RPC framing stdout carries (§V13). `compose run` allocates one by default. |
-| `--user` = the uid that owns `data/` | The image runs non-root as uid 999 (§V1/§V2) and reads the build through host permissions, but `import` writes `data/current.json` and the `.sqlite` builds mode `600` owned by the operator who ran it. Mismatch ⇒ `PermissionError` on `data/current.json` ⇒ every tool answers `internal_error`. Mounts stay `:ro`, so this is read access, never a write path. |
-| No env file, no OIDC | A local pipe has no bind, no bearer, and no §V9 gate. The compose `mcp` service's `env_file` is `required: false` for exactly this reason — otherwise a missing OIDC file would fail validation of the whole file and block `run mcp-stdio`. Remote serving without OIDC still fails closed at startup (§V9/§V40); the gate is in the app, not in whether a file exists. |
+| `-i` (compose: `stdin_open: true`) | No stdin so EOF before `initialize` so the server exits and the client reports it died. |
+| **No** `-t` (compose: `-T`) | A TTY merges stderr into stdout and rewrites newlines, corrupting the JSON-RPC framing stdout carries. `compose run` allocates one by default. |
+| `--user` = the uid that owns `data/` | The image runs non-root as uid 999 and reads the build through host permissions, but `import` writes `data/current.json` and the `.sqlite` builds mode `600` owned by the operator who ran it. Mismatch so `PermissionError` on `data/current.json` so every tool answers `internal_error`. Mounts stay `:ro`, so this is read access, never a write path. |
+| No env file, no OIDC | A local pipe has no bind, no bearer, and no auth gate. The compose `mcp` service's `env_file` is `required: false` for exactly this reason — otherwise a missing OIDC file would fail validation of the whole file and block `run mcp-stdio`. Remote serving without OIDC still fails closed at startup; the gate is in the app, not in whether a file exists. |
 
-Everything else is unchanged from the remote posture: the image stays code-only
-(§V16), the build arrives on a read-only mount (§V2), and `import` / `sync` remain
-host-side admin CLI steps (§V28).
+Everything else is unchanged from the remote posture: the image stays code-only,
+the build arrives on a read-only mount, and `import` / `sync` remain
+host-side admin CLI steps.
 
 ## Personal account roster database (ADR 0020)
 
@@ -143,14 +143,14 @@ request ever crosses it. This server never holds the writer role's URL or the
 Yostar session token; it only ever reads the roster through the SELECT-only
 reader role.
 
-## Pre-auth flood protection is the proxy's job (§V11)
+## Pre-auth flood protection is the proxy's job
 
-The app's per-principal rate/concurrency limits (§V11) only meter **validated**
+The app's per-principal rate/concurrency limits only meter **validated**
 principals. Unauthenticated request storms never reach a per-principal bucket, so
 capping them is the reverse proxy's responsibility — the nginx example carries
 `limit_req` / `limit_conn` zones for exactly that.
 
-## OAuth discovery must reach the app unauthenticated (§V45)
+## OAuth discovery must reach the app unauthenticated
 
 For interactive login (`claude mcp login`) the app publishes RFC 9728
 protected-resource metadata at `/.well-known/oauth-protected-resource` (and the
@@ -159,7 +159,7 @@ authorization server from a `401`. A proxy that forwards only `/mcp` would `404`
 that path — the nginx example therefore adds a `location` block forwarding the
 well-known prefix to the app (still capped by the pre-auth ingress zones). The
 metadata advertises the **issuer only**; the client fetches authorization-server
-metadata straight from your provider, so the app never proxies it (§V1). `/mcp`
+metadata straight from your provider, so the app never proxies it. `/mcp`
 itself stays bearer-gated. See [`../docs/clients/remote.md`](../docs/clients/remote.md).
 
 ## Quick start (systemd + nginx)
@@ -168,10 +168,10 @@ itself stays bearer-gated. See [`../docs/clients/remote.md`](../docs/clients/rem
 # 1. Deploy code under /opt/arknights-mcp and build the venv (locked deps):
 cd /opt/arknights-mcp && sudo -u arknights-mcp uv sync --frozen --no-dev
 
-# 2. Build + promote a database (admin CLI, §V28) — the server serves this:
+# 2. Build + promote a database (admin CLI) — the server serves this:
 sudo -u arknights-mcp .venv/bin/arknights-mcp import --server en --source-path ./snapshot/en
 
-# 3. Secrets (env-only, §V12), root-owned 600:
+# 3. Secrets (env-only), root-owned 600:
 sudo install -Dm600 deploy/systemd/arknights-mcp.env.example \
   /etc/arknights-mcp/arknights-mcp.env
 sudo "$EDITOR" /etc/arknights-mcp/arknights-mcp.env
@@ -191,5 +191,3 @@ sudo nginx -t && sudo systemctl reload nginx
   including the ready-to-paste Docker client entries (Option C in each).
 - [`../docs/adr/0006-oauth-oidc-remote-auth.md`](../docs/adr/0006-oauth-oidc-remote-auth.md)
   — the fail-closed OAuth/OIDC decision.
-- SPEC §V9/§V40 (auth posture), §V10 (bearer validation), §V11 (limits),
-  §V12/§I.env (env-only secrets), §V16 (code-only distribution).

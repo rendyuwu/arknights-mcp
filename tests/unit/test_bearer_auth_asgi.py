@@ -1,4 +1,4 @@
-"""§T52/§V10/§V40: wire-level bearer enforcement in the Streamable HTTP transport.
+"""Wire-level bearer enforcement in the Streamable HTTP transport.
 
 Drives :class:`~arknights_mcp.transports.streamable_http._BearerAuthASGIApp` with a
 stub verifier and a raw ASGI ``(scope, receive, send)`` -- no socket, no uvicorn --
@@ -144,7 +144,7 @@ def test_valid_token_reaches_inner_with_principal() -> None:
 
 
 def test_challenge_body_carries_no_token() -> None:
-    # §V12: the rejection response never echoes the presented bearer.
+    # The rejection response never echoes the presented bearer.
     inner = _InnerApp()
     verifier = _StubVerifier(error=AuthError("invalid_token", 401, "token invalid"))
     app = _BearerAuthASGIApp(inner, verifier, _SETTINGS)  # type: ignore[arg-type]

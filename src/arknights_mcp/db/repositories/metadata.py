@@ -1,9 +1,9 @@
-"""Metadata read repository (§V2; backs §T27 status services).
+"""Metadata read repository (backs the status services).
 
 Parameterized, read-only SELECTs over the core metadata tables
 (``schema_migrations``, ``source_snapshots``, ``data_sources``) plus per-domain
 row-count probes. This is the sole sanctioned SQL surface for the data-status and
-data-sources services; no value is interpolated into a query string (§V2).
+data-sources services; no value is interpolated into a query string.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class SnapshotRow:
 
 
 class MetadataRepository(Repository):
-    """Read-only access to schema, snapshot, and source metadata (§V2)."""
+    """Read-only access to schema, snapshot, and source metadata."""
 
     def schema_version(self) -> str | None:
         rows = self._all("SELECT version FROM schema_migrations ORDER BY version")
@@ -63,33 +63,33 @@ class MetadataRepository(Repository):
         ]
 
     def snapshots_for_source(self, source_id: str) -> list[SnapshotRow]:
-        """Snapshots attributable to one source (parameterized, §V2)."""
+        """Snapshots attributable to one source (parameterized)."""
         return [s for s in self.all_snapshots() if s.source_id == source_id]
 
     def active_servers(self) -> frozenset[str]:
-        """Distinct regions carrying at least one active snapshot (§V5/§V50).
+        """Distinct regions carrying at least one active snapshot.
 
         The sanctioned source of truth for "which regions have imported data".
         The search service gates region availability on this set *before*
-        asserting an entity absent (§V24/§V50): a region with no snapshot is
+        asserting an entity absent: a region with no snapshot is
         ``data_stale``, never a bare ``not_found`` that would wrongly claim the
         entity does not exist on that region. Mirrors the snapshot-presence check
-        the status service already makes over the same table (§V37).
+        the status service already makes over the same table.
         """
         rows = self._all("SELECT DISTINCT server FROM source_snapshots")
         return frozenset(str(r[0]) for r in rows)
 
     def has_source_snapshot(self, source_id: str, server: str) -> bool:
-        """Whether ONE source imported a snapshot for ONE region (§V5/§V50).
+        """Whether ONE source imported a snapshot for ONE region.
 
-        The sanctioned per-source availability probe, and the §V37 home for it:
+        The sanctioned per-source availability probe, and the home for it:
         :meth:`active_servers` answers "does this region have data at all", which an
         OPTIONAL domain (announcements, banners, skins, penguin drops) cannot use --
         its region is fully imported while its own feed never ran. Without this the
         two cases ship identical bytes: an unimported feed and a live feed with no
-        row in the requested window both answer ``ok`` + ``[]`` (B146/§V30).
+        row in the requested window both answer ``ok`` + ``[]``.
 
-        Both values are bound (§V2); the caller maps region -> source id, so no
+        Both values are bound; the caller maps region -> source id, so no
         region string is ever interpolated into the query.
         """
         row = self._one(

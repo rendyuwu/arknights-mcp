@@ -1,13 +1,13 @@
-"""Tiles/deploy threat rule (§V6, §V26): flags stages whose deploy surface is
+"""Tiles/deploy threat rule: flags stages whose deploy surface is
 constrained -- few high-ground (ranged) or ground (melee) buildable tiles -- so
 there is little room to place units.
 
 Reads the typed :class:`~arknights_mcp.analyzers.base.StageTiles` summary only
-(§V26): counts derived from ``buildable_type`` + ``height_type``. A stage with no
+-- counts derived from ``buildable_type`` + ``height_type``. A stage with no
 tile data (``tiles is None``) or too few tiles to judge (a stub grid) is skipped
-rather than concluded from (§V26). The summary states the tile counts as a fact,
-never prescribes a squad (§V7). The headline numbers are tile counts, not enemy
-tallies, so §V35 does not apply to them.
+rather than concluded from. The summary states the tile counts as a fact,
+never prescribes a squad. The headline numbers are tile counts, not enemy
+tallies, so the per-enemy dedup rule does not apply to them.
 """
 
 from __future__ import annotations
@@ -31,12 +31,12 @@ _SCARCE_MELEE = 3
 
 _CONFIDENCE = 0.8  # authoritative typed tile counts
 
-#: §V108/B153 class: this rule reports TALLIES ("2 high-ground tiles") off a
+#: This rule reports TALLIES ("2 high-ground tiles") off a
 #: :class:`~arknights_mcp.analyzers.base.StageTiles` summary; where those tiles sit --
 #: the thing that decides whether a scarce surface is actually a problem -- is the
 #: tile_grid on ``get_stage(include_map)``, present for all 241 EN / 247 CN stages this
-#: rule fires on. It carried NO limitation at all before, which is the same defect B153
-#: reported one step further along: a client told a stage has two ranged tiles and given
+#: rule fires on. It carried NO limitation at all before, which is the same defect, reported
+#: one step further along: a client told a stage has two ranged tiles and given
 #: no way to see them has been handed a bounded view presented as the whole answer.
 _TILE_LAYOUT_ROUTE = fuller_view_note(
     this_view="These are tile counts, not positions, so they do not say where the tiles sit.",
@@ -46,7 +46,7 @@ _TILE_LAYOUT_ROUTE = fuller_view_note(
 
 
 class TilesDeployRule:
-    """Flags stages offering a constrained deployment surface (§V6, §V26)."""
+    """Flags stages offering a constrained deployment surface."""
 
     rule_id = RULE_ID
 
@@ -63,8 +63,8 @@ class TilesDeployRule:
         if not scarce:
             return RuleResult()
 
-        # §V68/B136: ref = the stage's game_id, never the variant-shared stage_code.
-        # §V101: the tile counts are emitted at stage.metrics, so the evidence names that
+        # ref = the stage's game_id, never the variant-shared stage_code.
+        # The tile counts are emitted at stage.metrics, so the evidence names that
         # real path instead of a bare pseudo-field; the grid total was a number buried in
         # the note ("of 88 tiles") and is now its own row, one fact per row.
         evidence = (

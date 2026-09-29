@@ -1,19 +1,19 @@
-"""``get_enemy`` MCP tool (§T35; §V5/§V23; §I.tool).
+"""``get_enemy`` MCP tool.
 
-Bridges the bounded :class:`~arknights_mcp.models.enemies.GetEnemyInput` (§T30) to
-the shared :func:`~arknights_mcp.services.enemies.get_enemy` service (§V14) and
+Bridges the bounded :class:`~arknights_mcp.models.enemies.GetEnemyInput` to
+the shared :func:`~arknights_mcp.services.enemies.get_enemy` service and
 wraps the outcome in the typed
-:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope` (§T29). The tool owns no
+:class:`~arknights_mcp.mcp.envelopes.ResponseEnvelope`. The tool owns no
 query logic -- only the model -> service -> envelope mapping -- so both transports
-dispatch identical read-only (§V2) behaviour from the single registry.
+dispatch identical read-only behaviour from the single registry.
 
 Two invariants are load-bearing here:
 
-* **§V5** -- ``server`` is required, so every ``ok`` result is region-attributed +
+* ``server`` is required, so every ``ok`` result is region-attributed +
   carries provenance (snapshot_id + imported_at); an ``en`` enemy is never
   surfaced under a ``cn`` query (the service resolves by the unique
   ``(server, game_id)`` key), so en/cn are never silently mixed.
-* **§V23** -- every result is a typed-status envelope (``ok``/``not_found``); a
+* Every result is a typed-status envelope (``ok``/``not_found``); a
   database failure or any unexpected error fails closed to a fixed, path/trace-free
   envelope via the shared :func:`~arknights_mcp.mcp.tools._shared.run_guarded`
   guard (``database_unavailable``/``internal_error``).
@@ -77,7 +77,7 @@ _NOT_FOUND_ACTION = (
 )
 
 
-#: §V67 (B58/B98): the per-level optional fields (scalars + lists), keyed exactly as
+#: The per-level optional fields (scalars + lists), keyed exactly as
 #: emitted (wire key == ``EnemyLevelFacts`` attribute). ONE table drives BOTH the
 #: per-level key omission (:func:`_level_to_dict`) and the absent-field limitation
 #: (:func:`_enemy_absent_field_limitations`), so the omit set and the naming set can
@@ -90,16 +90,16 @@ _LEVEL_OPTIONAL_FIELDS: tuple[str, ...] = (
     "abilities",
 )
 
-#: §V114 (B161): the flag that says an absent ``attack_range`` is an ANSWER, not a gap.
+#: The flag that says an absent ``attack_range`` is an ANSWER, not a gap.
 #: Deliberately NOT in the omit table above: that table drives the absent-field limitation
 #: too, and this field's absence is never a gap to name -- a level without it either
-#: carries a radius or was never asked. It is emitted only when true, for the same §V67
+#: carries a radius or was never asked. It is emitted only when true, for the same
 #: reason the table exists (a ``false`` on every one of 4343 level rows would be bytes
 #: that say nothing), and its presence is what re-routes ``attack_range``'s own absence
 #: away from the "not present in source" sentence.
 _RANGE_DENIED_FIELD = "attack_range_declared_none"
 
-#: §V113 (B160 (c)): the two per-level fields NO real source fills. They stay in the
+#: The two per-level fields NO real source fills. They stay in the
 #: omit table above -- the day a source carries one it must reach the wire -- but their
 #: absence is reported by :data:`ENEMY_DEAD_FIELD_NOTE`, which names the true (corpus-
 #: wide) scope, instead of the per-entity absent-field sentence that would imply some
@@ -108,17 +108,17 @@ _DEAD_BY_DATA_LEVEL_FIELDS: frozenset[str] = frozenset({"block_behavior", "abili
 
 
 def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
-    """One level variant's typed stat block (structural JSON already vetted; §V18).
+    """One level variant's typed stat block (structural JSON already vetted).
 
-    §V67 list discipline: ``targeting`` / ``immunities`` / ``abilities`` are emitted as
+    List discipline: ``targeting`` / ``immunities`` / ``abilities`` are emitted as
     ``[]`` when the source confirms none and OMITTED when the source carried no such
     data (decoded ``None``) -- never ``null``, so a client need not decide "none vs
-    unknown" (B58). §V67 (B98): the absent-in-source scalars ``attack_range`` /
+    unknown". The absent-in-source scalars ``attack_range`` /
     ``block_behavior`` follow the same rule -- key omitted, never null. A field absent
     from EVERY level variant is named in the response limitations (the sole absence
     signal); a mixed case -- present on one variant, decoded ``None`` on another --
     omits the key on the absent variants only, with no limitation (matching the
-    pre-existing B58 list convention).
+    pre-existing list convention).
     """
     out: dict[str, object] = {
         "level_variant": level.level_variant,
@@ -135,30 +135,30 @@ def _level_to_dict(level: EnemyLevelFacts) -> dict[str, object]:
         value = getattr(level, key)
         if value is not None:
             out[key] = value
-    # §V114/B161: emitted only on the variants where the source answered "no radius";
+    # Emitted only on the variants where the source answered "no radius";
     # a false flag is not a fact about this level, it is the absence of one.
     if level.attack_range_declared_none:
         out[_RANGE_DENIED_FIELD] = True
     return out
 
 
-#: §V67/B58 expected enemy fields a client reasonably looks for; when the source omits
+#: Expected enemy fields a client reasonably looks for; when the source omits
 #: one, it is named in a "not present in source" limitation rather than emitted as null.
 def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
-    """§V67/§V26 (B58): name the expected enemy fields absent from the source.
+    """Name the expected enemy fields absent from the source.
 
     ``damage_types`` is absent when the enemy carried no handbook entry; a per-level
     field (the :data:`_LEVEL_OPTIONAL_FIELDS` scalars + lists) is absent when NO
     level variant carries a value (every variant decoded ``None``) -- a variant with
     ``[]`` is present-but-empty (confirmed none), not absent, and a MIXED enemy
     (present on one variant only) is not named here (its absent variants just omit
-    the key, the B58 convention). §V67 (B98): every named field's key is omitted
+    the key, the standing convention). Every named field's key is omitted
     from the payload, so the returned limitation is the sole absence signal. Returns
     the single standing limitation naming them (empty when nothing expected is
     absent)."""
     absent: list[str] = []
     standing: list[str] = []
-    # §V113/B160 (b): the retired scalar is not a gap in THIS enemy's data -- upstream
+    # The retired scalar is not a gap in THIS enemy's data -- upstream
     # stopped filling it for every enemy -- so it gets the routing sentence, not a place
     # in the per-entity absence list. Only when the live field is missing too is there
     # an entity-level gap worth naming.
@@ -173,10 +173,10 @@ def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
         if name in _DEAD_BY_DATA_LEVEL_FIELDS:
             dead_absent = True
         elif name == "attack_range" and any(lv.attack_range_declared_none for lv in enemy.levels):
-            # §V114 (b)/B161: the source FILLED this cell -- with its "no attack radius"
-            # answer, which §V103 keeps out of a distance column. Calling it "not present
-            # in this entity's source data" would be false, so it takes the note that
-            # says what the source actually did instead of joining the absent list.
+            # The source FILLED this cell -- with its "no attack radius" answer,
+            # which the sentinel rule keeps out of a distance column. Calling it "not
+            # present in this entity's source data" would be false, so it takes the note
+            # that says what the source actually did instead of joining the absent list.
             standing.append(ATTACK_RANGE_DENIED_NOTE)
         else:
             absent.append(name)
@@ -186,12 +186,12 @@ def _enemy_absent_field_limitations(enemy: EnemyFacts) -> tuple[str, ...]:
 
 
 def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, object]:
-    """The typed enemy facts + ordered level variants (no prose; §V16/§V18).
+    """The typed enemy facts + ordered level variants (no prose).
 
-    When ``image_refs_enabled`` (the combined §T120 config + registry gate), an additive
-    ``image_refs`` list with the DERIVED enemy sprite ref rides along (§V21/§V63) -- a
-    relative path under the ``data``-level ``image_refs_base_url`` the shaper hoists once
-    (§T183/§V66); when the gate is off the field is absent entirely.
+    When ``image_refs_enabled`` (the combined config + registry gate), an additive
+    ``image_refs`` list with the DERIVED enemy sprite ref rides along -- a
+    relative path under the ``data``-level ``image_refs_base_url`` the shaper hoists once;
+    when the gate is off the field is absent entirely.
     """
     data: dict[str, object] = {
         "server": enemy.server,
@@ -203,26 +203,26 @@ def _enemy_to_dict(enemy: EnemyFacts, *, image_refs_enabled: bool) -> dict[str, 
         "motion_type": enemy.motion_type,
         "levels": [_level_to_dict(level) for level in enemy.levels],
     }
-    # §V67 (B98): an absent-in-source scalar is omitted, never null -- the standing
+    # An absent-in-source scalar is omitted, never null -- the standing
     # absent-field limitation is the sole signal, not a null+limitation duplicate.
     if enemy.attack_type is not None:
         data["attack_type"] = enemy.attack_type
-    # §V67/B58: [] = the source confirms this enemy deals no damage kind; key absent =
+    # [] = the source confirms this enemy deals no damage kind; key absent =
     # the enemy has no handbook entry at all (it exists only in the stats database).
     if enemy.damage_types is not None:
         data["damage_types"] = list(enemy.damage_types)
     if image_refs_enabled:
-        # §V63: DERIVED from the enemy's already-stored game_id -- no byte, no url stored,
-        # no fetch. §V5: rides this enemy's OWN region envelope (game_id is region-scoped)
-        # so en/cn never mix. §V19: a bounded single-entity attach, never a catalog.
+        # DERIVED from the enemy's already-stored game_id -- no byte, no url stored,
+        # no fetch. Rides this enemy's OWN region envelope (game_id is region-scoped)
+        # so en/cn never mix. A bounded single-entity attach, never a catalog.
         data["image_refs"] = [image_ref_to_dict(r) for r in enemy_image_refs(enemy.game_id)]
     return data
 
 
 def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEnvelope:
-    """Map the domain result to a typed §V23 envelope (§V5 region + provenance).
+    """Map the domain result to a typed envelope (region + provenance).
 
-    §V67/§V26 (B58/B98): a standing limitation names any expected field
+    A standing limitation names any expected field
     (``attack_type`` + the :data:`_LEVEL_OPTIONAL_FIELDS`) the source omitted, so an
     absent field is called out rather than silently dropped.
     """
@@ -230,22 +230,22 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
         return error("not_found", _NOT_FOUND_MESSAGE, suggested_action=_NOT_FOUND_ACTION)
 
     prov = result.enemy.provenance
-    # §V67/§V26 (B58): name any expected field the source omitted. §V72/§V26 (§T135, B61):
-    # when the image_refs list is emitted (the combined §T120 gate), the standing
+    # Name any expected field the source omitted.
+    # When the image_refs list is emitted (the combined gate), the standing
     # derived-unverified limitation rides along too -- the sprite URL is derived + never
-    # validated by the server (§V63), so a dead link is never presented as a fact.
+    # validated by the server, so a dead link is never presented as a fact.
     limitations = _enemy_absent_field_limitations(result.enemy)
     data: dict[str, object] = {
         "enemy": _enemy_to_dict(result.enemy, image_refs_enabled=image_refs_enabled)
     }
-    # §T183/§V66 + §V72 (ADR 0014): the shared attach (one §V37 home) hoists the mirror
+    # ADR 0014: the shared attach (one home) hoists the mirror
     # base ONCE onto data and appends the derived-unverified limitation, exactly when
     # the sprite ref is emitted (get_enemy always emits one when the gate is on).
     limitations = attach_image_ref_disclosures(data, limitations, emits_refs=image_refs_enabled)
-    # §V104 (b): the STATIC domains of the two enums every enemy row carries, hoisted
-    # beside the values instead of spelled out in the description (§V111 contention).
+    # The STATIC domains of the two enums every enemy row carries, hoisted
+    # beside the values instead of spelled out in the description.
     limitations = attach_enum_legend(data, TOOL_ENUM_LEGEND_FIELDS[_TOOL_NAME], limitations)
-    # §V104/§V71 (e): the stat block always rides this tool, so its scales ride with it --
+    # The stat block always rides this tool, so its scales ride with it --
     # res/move_speed/weight are read AS numbers, and "res: 80" is undecidable without them.
     limitations = (*limitations, ENEMY_STAT_SCALE_NOTE)
     return ok(
@@ -264,21 +264,21 @@ def _shape(result: EnemyDetailResult, *, image_refs_enabled: bool) -> ResponseEn
 def build_get_enemy_spec(
     get_conn: ConnectionProvider, *, image_refs_enabled: bool = False
 ) -> ToolSpec:
-    """Build the ``get_enemy`` :class:`ToolSpec` (§T35; §V14).
+    """Build the ``get_enemy`` :class:`ToolSpec`.
 
     ``get_conn`` returns the process-wide read-only connection to the promoted
-    build. ``image_refs_enabled`` is the combined §T120 emission gate (config
+    build. ``image_refs_enabled`` is the combined emission gate (config
     private-only posture AND the ``arknights_game_resource`` source enabled, computed
     once at wiring time via :func:`~arknights_mcp.services.image_refs.refs_enabled`); it
     defaults ``False`` so the additive ``image_refs`` field is absent unless the source
-    is enabled (§V21/§V63). The returned spec is read-only (§V2) for the single shared
-    registry both transports dispatch from (§V14); its ``input_schema`` is the bounded
-    model's JSON Schema, so the §V5 required ``server`` + §V18 ``game_id`` cap land on
+    is enabled. The returned spec is read-only for the single shared
+    registry both transports dispatch from; its ``input_schema`` is the bounded
+    model's JSON Schema, so the required ``server`` + the ``game_id`` cap land on
     the wire exactly as validated.
     """
 
     def handler(**params: object) -> ResponseEnvelope:
-        # §V5/§V18 gate: the bounded model requires a region, caps the game_id
+        # The bounded model requires a region, caps the game_id
         # length, and rejects an unknown parameter *before* any query runs -- a
         # ValidationError propagates as a protocol-level rejection.
         parsed = GetEnemyInput.model_validate(params)

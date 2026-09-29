@@ -1,20 +1,20 @@
--- 0011 alias locale tag (SPEC §T98; §V17/§V57).
+-- 0011 alias locale tag.
 -- Adds a `locale` column to the two near-identical alias tables (operator_aliases,
--- enemy_aliases -- kept symmetric per §V37) so each stored alias carries the
+-- enemy_aliases -- kept symmetric) so each stored alias carries the
 -- language-locale of its string. This unblocks the v0.2 extra-locale alias work:
--- T99 imports jp/kr canonical NAMES as locale-tagged rows and T100 rebuilds the FTS
--- index + adds the `search_entities` `locale` param, which filter on this tag.
+-- jp/kr canonical NAMES import as locale-tagged rows and the FTS index rebuilds
+-- with the `search_entities` `locale` param, which filters on this tag.
 --
--- The locale tag is NOT the entity's fact region (§V57): a cn|en entity may carry a
+-- The locale tag is NOT the entity's fact region: a cn|en entity may carry a
 -- jp/kr NAME alias, and an alias match still returns the entity's OWN region facts.
 -- The backfill below tags each existing en/cn alias with the language its canonical
 -- string is in -- en region -> locale `en`, cn region -> locale `zh` -- mirroring
--- REGION_TO_NAME_LOCALE in importers/field_policy.py (the single §V37 home for that
--- coupling, also used for §V59 penguin item names).
+-- REGION_TO_NAME_LOCALE in importers/field_policy.py (the single home for that
+-- coupling, also used for penguin item names).
 --
 -- `locale` is a distinct column, NOT the pre-existing (always-NULL, unwired)
 -- `language` column: `language` was reserved for a free-text language label and is
--- left untouched here; `locale` is the structured region/locale tag §V57 requires.
+-- left untouched here; `locale` is the structured region/locale tag.
 --
 -- The ADD COLUMN is nullable so the additive ALTER is legal in SQLite and any
 -- pre-existing row is not rejected. On a normal fresh build this migration runs

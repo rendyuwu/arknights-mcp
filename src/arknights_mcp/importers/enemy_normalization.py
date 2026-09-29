@@ -1,11 +1,11 @@
 """Raw ``arknights_assets_gamedata`` ENEMY shapes → normalized importer shapes.
 
-The enemy half of the §V30 bridge (§V29; T66), split out of
-:mod:`~arknights_mcp.importers.normalization` when that module crossed the §V38
+The enemy half of the bridge, split out of
+:mod:`~arknights_mcp.importers.normalization` when that module crossed the
 hard cap: the enemy handbook/database and the level files are two source domains
 with two shapes, and only two helpers cross between them (the stage-scoped inline
 variant in a level file carries a partial ``enemyData``, so it reads the same stat
-extractor -- one home, §V37).
+extractor -- one home).
 
 * ``enemy_database.json`` is a top-level *id-keyed dict → list* (no ``"enemies"``
   wrapper); each level's stats live under ``enemyData.attributes.<stat>.m_value``
@@ -17,17 +17,16 @@ Every transform is **shape-gated and idempotent**: given data already in the
 normalized shape (the minimal synthetic fixture, or inline parser tests) it returns
 the input unchanged, so only genuinely-real snapshots take the transform branch.
 Prose/unknown fields are dropped here and re-checked by the parsers' allowlist +
-sanitize step (§V18) — normalization never widens the field policy.
+sanitize step — normalization never widens the field policy.
 
 The field mappings below (``massLevel``→``weight``,
 ``lifePointReduce``→``lifePointReduction``) are **verified against live upstream**,
 not merely inferred from the fixture: the CI-only
-``tests/contract/test_live_upstream.py`` (§T68) imports a pinned
+``tests/contract/test_live_upstream.py`` imports a pinned
 ``arknights_assets_gamedata`` commit and asserts real 4-4 yields non-null
-``hp``/``res``/``attackInterval``/``weight``/``lifePointReduction``/``motion``
-(§V29, §V30).
+``hp``/``res``/``attackInterval``/``weight``/``lifePointReduction``/``motion``.
 
-§V113/B160 is the counter-example that shaped the newest three
+The counter-example that shaped the newest three
 (``rangeRadius``→``attackRange``, ``applyWay``→``targeting``, the nine typed
 ``<x>Immune`` flags→``immunities``): the parsers' allowlist admitted all three
 normalized keys and this bridge mapped NONE of them, so the columns were 100% NULL
@@ -36,14 +35,14 @@ hands the parser the already-normalized key the bridge never emitted. What is
 allowlisted downstream is therefore not evidence that anything upstream reaches it;
 ``tests/contract/test_enemy_substrate.py`` counts these three against the pinned
 snapshot, and ``importers.field_policy.ENEMY_KEY_HOMES`` declares each key's home
-here (§V113 (a)).
+here.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-#: Real ``enemyData.attributes`` stat key → normalized level key (B6 (a)).
+#: Real ``enemyData.attributes`` stat key → normalized level key.
 _ENEMY_STAT_MAP: dict[str, str] = {
     "maxHp": "hp",
     "atk": "atk",
@@ -56,12 +55,12 @@ _ENEMY_STAT_MAP: dict[str, str] = {
 
 #: Real ``enemyData.<key>.m_value`` (outside ``attributes``) → normalized level key.
 #:
-#: ``rangeRadius``/``applyWay`` were mapped by NOTHING until §T210 even though the
+#: ``rangeRadius``/``applyWay`` were mapped by NOTHING until the bridge fix even though the
 #: allowlist admitted their normalized keys, so ``enemy_levels.attack_range`` and
-#: ``.targeting`` were NULL by construction on every build (B160 (a)). Both are
+#: ``.targeting`` were NULL by construction on every build. Both are
 #: ``enemyData`` scalars (not ``attributes`` cells) and both carry ``m_defined``, so
 #: they inherit level-0 through :data:`_INHERITED_LEVEL_KEYS` like every other mapped
-#: key (§V44). ``rangeRadius``'s sentinel is resolved after that inheritance, in
+#: key. ``rangeRadius``'s sentinel is resolved after that inheritance, in
 #: :func:`_finalize_level` — see there for why the order is load-bearing.
 _ENEMY_DATA_SCALAR_MAP: dict[str, str] = {
     "lifePointReduce": "lifePointReduction",
@@ -69,15 +68,15 @@ _ENEMY_DATA_SCALAR_MAP: dict[str, str] = {
     "applyWay": "targeting",
 }
 
-#: Real ``enemyData.attributes.<x>Immune`` flag → the emitted immunity token (§T210).
+#: Real ``enemyData.attributes.<x>Immune`` flag → the emitted immunity token.
 #:
-#: Nine typed booleans upstream, one list on the wire (§V67): the flags answer one
+#: Nine typed booleans upstream, one list on the wire: the flags answer one
 #: question ("which control effects does this enemy ignore?") and nine sibling keys
 #: would put nine near-identical facts on every level row. The token is derived from
 #: the source key MECHANICALLY (drop ``Immune``, UPPER_SNAKE) rather than invented, and
 #: the map is written out rather than computed so the emitted domain is a closed,
-#: greppable set (§V96) and the wire never carries a camelCase source KEY as a VALUE
-#: (§V71 d). Counted @pinned ``413a81a3`` (en): ``silenceImmune`` true 653,
+#: greppable set and the wire never carries a camelCase source KEY as a VALUE.
+#: Counted @pinned ``413a81a3`` (en): ``silenceImmune`` true 653,
 #: ``levitateImmune`` 273, ``stunImmune`` 264 — never a value the classifier guessed.
 _ENEMY_IMMUNITY_MAP: dict[str, str] = {
     "stunImmune": "STUN",
@@ -94,11 +93,11 @@ _ENEMY_IMMUNITY_MAP: dict[str, str] = {
 #: Private normalized key carrying the per-level ``{token: bool}`` immunity flags
 #: between :func:`_normalize_enemy_level` and :func:`_finalize_level`. It never
 #: reaches a parser: :func:`_finalize_level` replaces it with the ``immunities`` list,
-#: and the field allowlist would drop it regardless (§V18).
+#: and the field allowlist would drop it regardless.
 _IMMUNITY_FLAGS_KEY = "_immunityFlags"
 
 #: Normalized key recording that upstream ANSWERED the attack-radius question with its
-#: no-radius sentinel (§V114; B161). Emitted by :func:`_finalize_level` exactly where it
+#: no-radius sentinel. Emitted by :func:`_finalize_level` exactly where it
 #: deletes the sentinel from ``attackRange``, so the two are never both present.
 _RANGE_DECLARED_NONE_KEY = "attackRangeDeclaredNone"
 
@@ -115,12 +114,12 @@ def _m_value(wrapped: Any) -> Any:
 
 
 def _defined_m_value(wrapped: Any) -> tuple[bool, Any]:
-    """A real ``{"m_defined", "m_value"}`` cell → ``(defined, value)`` (§V44/B38).
+    """A real ``{"m_defined", "m_value"}`` cell → ``(defined, value)``.
 
     ``m_defined`` gates whether *this* level entry actually sets the attribute:
     enemy_database level entries are deltas over level 0, and a ``m_defined:false``
     cell carries a sentinel ``m_value`` (typically ``0``) that means "unset at this
-    level, inherit the base" — it MUST NOT be written as a real stat (that is B38:
+    level, inherit the base" — it MUST NOT be written as a real stat (otherwise
     a level-1 flyer with ``magicResistance.m_defined=false`` would report ``res=0``
     instead of the level-0 value). Only an *explicit* ``m_defined:false`` marks a
     cell unset; a cell missing the flag (a plain/shorthand value) is defined.
@@ -136,14 +135,14 @@ def _database_is_normalized(database_raw: Any) -> bool:
 
 
 def _normalize_enemy_data_stats(enemy_data: dict[str, Any]) -> dict[str, Any]:
-    """Extract the §V29-verified stat set from an ``enemyData``-shaped dict.
+    """Extract the verified stat set from an ``enemyData``-shaped dict.
 
     Reads ``attributes.<stat>.m_value`` (via :data:`_ENEMY_STAT_MAP`) and the
     non-attribute scalars (:data:`_ENEMY_DATA_SCALAR_MAP`), emitting only the
-    *defined* cells (``m_defined``, §V44): an undefined stat is omitted so the
+    *defined* cells (``m_defined``): an undefined stat is omitted so the
     consumer inherits the base value rather than a sentinel ``0``. The single home
-    (§V37) shared by the enemy-database level normalizer and the stage-scoped
-    inline-variant extractor (§T80), both of which read the same ``enemyData`` shape
+    shared by the enemy-database level normalizer and the stage-scoped
+    inline-variant extractor, both of which read the same ``enemyData`` shape
     (``overwrittenData`` is a partial ``enemyData``).
     """
     out: dict[str, Any] = {}
@@ -166,22 +165,22 @@ def _defined_motion(raw: Any) -> str | None:
     """A defined ``{m_defined, m_value}`` motion cell → its string, else ``None``.
 
     An undefined (``m_defined:false``) or absent motion is dropped so a variant
-    inherits the base enemy's motion (§V44 semantics extended to §T80 variants).
+    inherits the base enemy's motion (inheritance extends to inline variants).
     """
     defined, value = _defined_m_value(raw)
     return value if defined and isinstance(value, str) and value else None
 
 
 def _immunity_flags(enemy_data: dict[str, Any]) -> dict[str, bool]:
-    """The level's DEFINED immunity flags as ``{token: bool}`` (§V44; §T210).
+    """The level's DEFINED immunity flags as ``{token: bool}``.
 
     Only cells this level actually defines are returned: an ``m_defined:false`` flag
-    means "unset at this level", so the base level's answer for THAT flag stands
-    (§V44). The distinction is per-CELL, not per-list — 7 real level entries redefine
+    means "unset at this level", so the base level's answer for THAT flag stands.
+    The distinction is per-CELL, not per-list — 7 real level entries redefine
     a subset of their base's flags, and one (``enemy_1562_cjtaot`` level 1) defines
     only ``stunImmune`` while its base also carries silence + sleep, so replacing the
     whole list would publish a false "confirmed not immune" for the two it never
-    mentioned (the B38 class, one container up).
+    mentioned.
     """
     attributes = enemy_data.get("attributes")
     if not isinstance(attributes, dict):
@@ -215,7 +214,7 @@ def _normalize_enemy_level(raw_level: Any) -> dict[str, Any]:
 
 
 #: Normalized level keys that inherit the base (level-0) value when a higher
-#: level does not redefine them (§V44/B38). Kept in sync with the two stat maps.
+#: level does not redefine them. Kept in sync with the two stat maps.
 _INHERITED_LEVEL_KEYS: tuple[str, ...] = (
     *_ENEMY_STAT_MAP.values(),
     *_ENEMY_DATA_SCALAR_MAP.values(),
@@ -223,7 +222,7 @@ _INHERITED_LEVEL_KEYS: tuple[str, ...] = (
 
 
 def _apply_level_deltas(levels: list[dict[str, Any]]) -> None:
-    """Backfill each higher level's unset mapped stats from level 0 (§V44/B38).
+    """Backfill each higher level's unset mapped stats from level 0.
 
     Enemy_database level entries are deltas: a higher level (variant) only carries
     the attributes it changes, and ``_normalize_enemy_level`` now drops the ones it
@@ -242,7 +241,7 @@ def _apply_level_deltas(levels: list[dict[str, Any]]) -> None:
             if key not in lvl and key in base:
                 lvl[key] = base[key]
         # The immunity flags inherit per CELL, not per key: a level that redefines one
-        # flag leaves the other eight at the base's answer (§V44), so this MERGES the
+        # flag leaves the other eight at the base's answer, so this MERGES the
         # two dicts instead of copying whichever one is present.
         if isinstance(base_flags, dict):
             merged = {**base_flags, **lvl.get(_IMMUNITY_FLAGS_KEY, {})}
@@ -250,7 +249,7 @@ def _apply_level_deltas(levels: list[dict[str, Any]]) -> None:
 
 
 def _finalize_level(level: dict[str, Any]) -> None:
-    """Resolve a normalized level's sentinel + list-shaped keys, in place (§T210).
+    """Resolve a normalized level's sentinel + list-shaped keys, in place.
 
     Runs AFTER :func:`_apply_level_deltas`, and the order is load-bearing in both
     directions:
@@ -258,13 +257,13 @@ def _finalize_level(level: dict[str, Any]) -> None:
     * ``attackRange`` -- upstream writes ``rangeRadius.m_value = -1.0`` (420 of the
       1170 DEFINED en cells, and never any other negative) for "this enemy has no
       attack radius". That is a mask sentinel, not a distance, so it must never be
-      stored as one (§V103). It is stripped here rather than at extraction because a
+      stored as one. It is stripped here rather than at extraction because a
       level that DEFINES the sentinel has answered the question: dropping it earlier
       would leave the key missing at the delta step, and the level would then inherit
-      the base's real radius (§V44) -- turning "no range" into a fabricated reach.
+      the base's real radius -- turning "no range" into a fabricated reach.
 
-      The strip removes a VALUE; it must not remove the fact that upstream ANSWERED
-      (§V114/B161). So the sentinel is replaced by :data:`_RANGE_DECLARED_NONE_KEY`
+      The strip removes a VALUE; it must not remove the fact that upstream ANSWERED.
+      So the sentinel is replaced by :data:`_RANGE_DECLARED_NONE_KEY`
       rather than dropped: without it, "the source said none" and "the source said
       nothing" arrive downstream as one NULL, and every consumer calling that cell
       *missing* is wrong about the first class -- which is what let ``ranged_arts``
@@ -273,16 +272,16 @@ def _finalize_level(level: dict[str, Any]) -> None:
       a higher level that inherits the base's ``-1.0`` inherits the base's ANSWER, so
       the flag lands on every level the sentinel reaches.
 
-      What the sentinel MEANS stays unverified and is not encoded (§V114 c) --
+      What the sentinel MEANS stays unverified and is not encoded --
       ``enemy_1404_msnip`` is a sniper, so ``-1.0`` plausibly says "no BASE attack
       radius" rather than "cannot strike", and no upstream field settles it. A
       non-numeric radius is dropped WITHOUT the flag: that is a shape this bridge
       cannot read, not an answer the source gave.
-    * ``immunities`` -- the merged ``{token: bool}`` flags become the list §V67
-      describes: ``[]`` when the source DEFINED flags and every one is false
+    * ``immunities`` -- the merged ``{token: bool}`` flags become the emitted list:
+      ``[]`` when the source DEFINED flags and every one is false
       (confirmed none), and the key is ABSENT when neither this level nor its base
       ever defined one (not-in-source). A sorted list keeps the build byte-
-      deterministic (§V91).
+      deterministic.
     """
     attack_range = level.get("attackRange")
     if isinstance(attack_range, int | float) and not isinstance(attack_range, bool):
@@ -317,9 +316,9 @@ def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[st
         if not isinstance(game_id, str) or not isinstance(raw_levels, list):
             continue
         levels = [_normalize_enemy_level(rl) for rl in raw_levels]
-        _apply_level_deltas(levels)  # §V44/B38: unset higher-level stats inherit level 0
+        _apply_level_deltas(levels)  # unset higher-level stats inherit level 0
         for level in levels:
-            _finalize_level(level)  # §V103 sentinel + §V67 list shape, after inheritance
+            _finalize_level(level)  # sentinel + list shape, after inheritance
         enemies[game_id] = {"levels": levels}
         for rl in raw_levels:
             enemy_data = rl.get("enemyData") if isinstance(rl, dict) else None
@@ -333,7 +332,7 @@ def normalize_enemy_database(database_raw: Any) -> tuple[dict[str, Any], dict[st
 def _inject_motion(handbook_raw: Any, motion_by_id: dict[str, str]) -> Any:
     """Backfill ``motionType`` into each handbook entry from the enemy DB motion.
 
-    Real handbooks carry no ``motionType`` (§V29); the motion source of truth is
+    Real handbooks carry no ``motionType``; the motion source of truth is
     the enemy database. Returns a new handbook mapping so the input is never
     mutated. When ``motion_by_id`` is empty (already-normalized input) the handbook
     is returned unchanged. An existing ``motionType`` is never overwritten.
@@ -366,7 +365,7 @@ def normalize_enemy_sources(handbook_raw: Any, database_raw: Any) -> tuple[Any, 
 
     Returns ``(handbook_norm, database_norm)`` ready for
     :func:`arknights_mcp.importers.enemies.parse_enemies`. Idempotent on
-    already-normalized input (§V29, §V30).
+    already-normalized input.
     """
     database_norm, motion_by_id = normalize_enemy_database(database_raw)
     handbook_norm = _inject_motion(handbook_raw, motion_by_id)
@@ -379,12 +378,12 @@ def normalize_kengxxiao_enemy_database(
     """Kengxxiao CN enemy DB (KV-list shape) → normalized ``{"enemies": {...}}`` + motion.
 
     Kengxxiao's ``enemy_database.json`` wraps its enemies as a list of
-    ``{"Key": <id>, "Value": [<levels>]}`` pairs (§T69), not the top-level id-keyed
-    dict ``arknights_assets_gamedata`` uses (§V29). The *inner* level shape
+    ``{"Key": <id>, "Value": [<levels>]}`` pairs, not the top-level id-keyed
+    dict ``arknights_assets_gamedata`` uses. The *inner* level shape
     (``enemyData.attributes.<stat>.m_value``, ``enemyData.motion.m_value``) is the
     same, so this reshapes the KV list into the id-keyed dict and delegates to the
-    shared per-level normalizer (§V30: the one raw→normalized bridge home). Pure
-    JSON→JSON — never persisted into a build (§C: kengxxiao is CI-only, never a
+    shared per-level normalizer (the one raw→normalized bridge home). Pure
+    JSON→JSON — never persisted into a build (kengxxiao is CI-only, never a
     runtime dep, never overrides the primary source). Idempotent on
     already-normalized input.
     """

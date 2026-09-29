@@ -1,4 +1,4 @@
--- 0002 enemy domain (SPEC §T13; PRD §12.4).
+-- 0002 enemy domain (PRD Section 12.4).
 -- enemies, enemy_levels, enemy_aliases. Source identity = (server, game_id).
 
 CREATE TABLE enemies (

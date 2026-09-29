@@ -1,20 +1,20 @@
-"""§T45 ``compare_operator_modules`` tool tests (§V5/§V7/§V23; §I.tool).
+"""``compare_operator_modules`` tool tests.
 
 The tool is the model -> service -> envelope bridge for comparing one operator's
 modules across module levels; these drive it end to end against the production
-read-only path (§V2) using the operator fixture (Amiya: one CX-1 module with three
+read-only path using the operator fixture (Amiya: one CX-1 module with three
 real levels -- atk 34/48/66, +150 Max HP at level 3, a trait change at level 1 and
 a talent change at level 2). They assert:
 
-* the §V5 region + provenance ride every ``ok`` result, and an ``en`` operator is
+* the region + provenance ride every ``ok`` result, and an ``en`` operator is
   never surfaced under a ``cn`` query;
 * ``facts_only`` returns the per-level comparison; the requested ``levels`` subset
-  is honored; ``with_observations`` adds §V6 observations + the analyzer version;
-* §V7: observations state capability facts, never a mandatory/best-in-slot verdict;
-* the typed §V23 envelope, including fail-closed ``not_found`` /
+  is honored; ``with_observations`` adds observations + the analyzer version;
+* observations state capability facts, never a mandatory/best-in-slot verdict;
+* the typed envelope, including fail-closed ``not_found`` /
   ``database_unavailable`` / ``internal_error`` with no path/trace leak;
-* the §I.tool wire contract: a read-only spec with a bounded input schema, and the
-  §V18/§V19 input gate (unknown param, over-length id, bad region, bad levels).
+* the wire contract: a read-only spec with a bounded input schema, and the
+  input gate (unknown param, over-length id, bad region, bad levels).
 """
 
 from __future__ import annotations
@@ -72,13 +72,13 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 #: Amiya's CX-1 module upgrade-cost item ids (per level) + a display name for each, so a
-#: seeded build can resolve them (§T132/§V69). The operator fixture itself ships no items.
+#: seeded build can resolve them. The operator fixture itself ships no items.
 _MODULE_COST_NAMES = {"mat_1": "Orirock Cube", "mat_2": "Sugar", "mat_3": "Polyester Pack"}
 
 
 @pytest.fixture
 def conn_named_costs(tmp_path: Path) -> sqlite3.Connection:
-    """Fixture build with the module upgrade-cost item names seeded (§T132/§V69)."""
+    """Fixture build with the module upgrade-cost item names seeded."""
     path = tmp_path / "cand.sqlite"
     adapter = LocalSnapshotAdapter(FIXTURE_ROOT, "en", "local_snapshot")
     build_candidate(
@@ -113,7 +113,7 @@ def test_facts_only_compares_all_three_levels(conn: sqlite3.Connection) -> None:
     assert data["levels"] == [1, 2, 3]
     # facts_only carries no observations section.
     assert "observations" not in data and "warnings" not in data
-    # §V67 (B135/T196): facts_only runs no analyzer, so the envelope omits the key
+    # facts_only runs no analyzer, so the envelope omits the key
     # rather than reporting a null version a client would have to interpret.
     assert env.analyzer_version is None
     assert "analyzer_version" not in env.to_dict()
@@ -122,7 +122,7 @@ def test_facts_only_compares_all_three_levels(conn: sqlite3.Connection) -> None:
     levels = {lv["level"]: lv for lv in module["levels"]}
     assert all(levels[n]["present"] for n in (1, 2, 3))
     # The atk progression + the level-3 max_hp bonus survive as typed structural JSON.
-    # §T138/§V67/B63: the always-null ``valueStr`` key is omitted at emit.
+    # The always-null ``valueStr`` key is omitted at emit.
     assert levels[1]["stat_bonus"] == [{"key": "atk", "value": 34}]
     assert {"key": "max_hp", "value": 150} in levels[3]["stat_bonus"]
     assert levels[1]["cost"] == [{"id": "mat_1", "count": 8, "type": "MATERIAL"}]
@@ -135,7 +135,7 @@ def test_levels_subset_is_honored(conn: sqlite3.Connection) -> None:
     assert [lv["level"] for lv in _cx1(data)["levels"]] == [1, 3]
 
 
-# --- with_observations: §V6 observations + §V7 conservative -------------------
+# --- with_observations: observations + conservative ---
 
 
 def test_with_observations_emits_module_observations(conn: sqlite3.Connection) -> None:
@@ -146,11 +146,11 @@ def test_with_observations_emits_module_observations(conn: sqlite3.Connection) -
     obs = data["observations"]
     assert isinstance(obs, list) and obs
     tags = {o["tag"] for o in obs}
-    # §T202/ADR 0018 (B152): the trait + talent rules are retired -- both restated facts
+    # ADR 0018: the trait + talent rules are retired -- both restated facts
     # this same payload already carries in its trait_changes / talent_changes rows, so the
     # only module rule left is the one whose delta is computed rather than re-read.
     assert tags == {"stat_bonus"}
-    # §V6: every observation carries the five fields; the version rides the envelope.
+    # Every observation carries the five fields; the version rides the envelope.
     version = env.to_dict()["analyzer_version"]
     assert version is not None
     for o in obs:
@@ -161,15 +161,15 @@ def test_with_observations_emits_module_observations(conn: sqlite3.Connection) -
 
 
 def test_observations_are_conservative(conn: sqlite3.Connection) -> None:
-    # §V7: capability facts only -- never a mandatory/best-in-slot recommendation.
+    # Capability facts only -- never a mandatory/best-in-slot recommendation.
     env = _handler(conn)(server="en", game_id=_AMIYA, mode="with_observations")
     blob = str(env.to_dict()["data"]["observations"]).lower()  # type: ignore[index]
     assert not any(word in blob for word in _PRESCRIPTIVE)
 
 
 def test_evidence_count_emitted_only_when_collapsed() -> None:
-    # §V85/§V21/§V67: `count` is the additive-optional collapsed-row tally on the
-    # evidence wire mapping -- an int when §V85 dedup collapsed byte-identical rows,
+    # `count` is the additive-optional collapsed-row tally on the
+    # evidence wire mapping -- an int when dedup collapsed byte-identical rows,
     # an omitted key (never null) on a unique row.
     unique = evidence_to_dict(EvidenceItem(ref="r", field="f", value=1))
     assert "count" not in unique
@@ -179,11 +179,11 @@ def test_evidence_count_emitted_only_when_collapsed() -> None:
     assert collapsed["count"] == 12
 
 
-# --- §V65/T126: blackboard grounding FLOOR ------------------------------------
+# --- blackboard grounding FLOOR ---
 
 
 def test_module_changes_carry_grounding_limitation(conn: sqlite3.Connection) -> None:
-    # §V65 (b): the per-level stat/trait/talent changes are raw blackboard key-value
+    # The per-level stat/trait/talent changes are raw blackboard key-value
     # data with no effect text, so every comparison that emits a module attaches the
     # standing grounding limitation -- in BOTH modes (facts_only also emits the raw
     # blackboard).
@@ -195,25 +195,25 @@ def test_module_changes_carry_grounding_limitation(conn: sqlite3.Connection) -> 
 
 
 def test_effect_template_rides_trait_and_talent_changes(conn: sqlite3.Connection) -> None:
-    # §T127/§V65 (a)/ADR 0010: each per-level change emits its in-game effect description
-    # template alongside the raw blackboard (additive, §V21).
+    # ADR 0010: each per-level change emits its in-game effect description
+    # template alongside the raw blackboard (additive).
     env = _handler(conn)(server="en", game_id=_AMIYA)
     module = _cx1(env.to_dict()["data"])
     levels = {lv["level"]: lv for lv in module["levels"]}
-    # §T146/§V66.3: the trait template is byte-identical across the module's levels (only
+    # The trait template is byte-identical across the module's levels (only
     # level 1 defines a trait change here), so it is hoisted once to the module and dropped
     # from the per-level trait_changes entry -- but the blackboard values stay per level.
     assert "{atk_scale:0%}" in module["trait_change_description"]
     trait = levels[1]["trait_changes"]
     assert trait and "description" not in trait[0]
     assert trait[0]["blackboard"] == [{"key": "atk_scale", "value": 1.1}]
-    # talent_changes are unchanged by §T146: the template still rides each entry inline.
+    # talent_changes are unaffected: the template still rides each entry inline.
     talent = levels[2]["talent_changes"]
     assert talent and "{prob:0%}" in talent[0]["description"]
 
 
 def test_change_descriptions_extracts_templates_and_ignores_trait_less_levels() -> None:
-    # §T146/§V66.3 hoist input: the descriptions of each bundle in a decoded change list;
+    # Hoist input: the descriptions of each bundle in a decoded change list;
     # a non-list (trait-less level) yields no entries so it does not force non-uniformity.
     assert _change_descriptions([{"description": "X"}, {"description": "Y"}]) == ["X", "Y"]
     assert _change_descriptions(None) == []
@@ -221,7 +221,7 @@ def test_change_descriptions_extracts_templates_and_ignores_trait_less_levels() 
 
 
 def test_strip_change_description_drops_only_that_key() -> None:
-    # §T146/§V66.3: stripping the hoisted template leaves every other bundle key intact;
+    # Stripping the hoisted template leaves every other bundle key intact;
     # a non-list value is returned unchanged.
     stripped = _strip_change_description(
         [{"description": "X", "blackboard": [{"key": "atk_scale", "value": 1.1}]}]
@@ -231,21 +231,21 @@ def test_strip_change_description_drops_only_that_key() -> None:
 
 
 def test_description_points_to_blackboard_glossary(conn: sqlite3.Connection) -> None:
-    # §V84/§T169 (B89): the ~1.5KB glossary lives once in the server instructions; the
+    # The ~1.5KB glossary lives once in the server instructions; the
     # description carries only a pointer, not the glossary itself (no double-billing).
     desc = build_compare_operator_modules_spec(lambda: conn).description
     assert BLACKBOARD_GLOSSARY_POINTER in desc
     assert BLACKBOARD_KEY_GLOSSARY not in desc
-    # §V65 (c) grounding floor: the glossary is still reachable, now in one home.
+    # Grounding floor: the glossary is still reachable, now in one home.
     assert BLACKBOARD_KEY_GLOSSARY in SERVER_INSTRUCTIONS
     for key in ("atk_scale", "attack@times", "stun", "prob", "max_hp"):
         assert key in BLACKBOARD_KEY_GLOSSARY, key
 
 
 def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection) -> None:
-    # §V83/B88: the trait/talent change dedup + the applies_to "token" label + the
-    # level-hoist semantics are part of the client contract. §T207/§V111 (a) moved the
-    # home from BOTH module-tool descriptions to a standing limitation -- it names what
+    # The trait/talent change dedup + the applies_to "token" label + the
+    # level-hoist semantics are part of the client contract. The home moved from
+    # BOTH module-tool descriptions to a standing limitation -- it names what
     # the emitted bundles omit, which is read against the payload. Moved, not deleted.
     env = _handler(conn)(server="en", game_id=_AMIYA)
     lims = env.to_dict()["limitations"]
@@ -256,9 +256,9 @@ def test_module_response_carries_the_change_dedup_note(conn: sqlite3.Connection)
 
 
 def test_confidence_scale_rides_only_the_observation_mode(conn: sqlite3.Connection) -> None:
-    # §V104/§V6: the scale is stated ONCE per response that carries a confidence (§V66),
+    # The scale is stated ONCE per response that carries a confidence,
     # and facts_only carries none -- so the caveat rides with_observations alone rather
-    # than the description of all four observation-emitting tools (§V111 a).
+    # than the description of all four observation-emitting tools.
     with_obs = _handler(conn)(server="en", game_id=_AMIYA, mode="with_observations")
     assert CONFIDENCE_SCALE_NOTE in with_obs.to_dict()["limitations"]
     facts_only = _handler(conn)(server="en", game_id=_AMIYA)
@@ -266,18 +266,17 @@ def test_confidence_scale_rides_only_the_observation_mode(conn: sqlite3.Connecti
 
 
 def test_client_facing_blackboard_text_has_no_internal_cites() -> None:
-    # §V71 (b): published client-facing text carries no internal spec cites or jargon.
+    # Published client-facing text carries no maintainer jargon.
     for text in (BLACKBOARD_LIMITATION, BLACKBOARD_KEY_GLOSSARY):
-        assert "§V" not in text and "§T" not in text
         assert "degenerate" not in text and "asymmetric-broken" not in text
 
 
-# --- §T132/§V69 module upgrade-cost item name pairing -------------------------
+# --- module upgrade-cost item name pairing ---
 
 
 def test_module_cost_items_paired_with_display_name(conn_named_costs: sqlite3.Connection) -> None:
-    # §V69: each {id,count,type} upgrade-cost entry gains its item display_name when the
-    # name is present in this build (additive, §V21).
+    # Each {id,count,type} upgrade-cost entry gains its item display_name when the
+    # name is present in this build (additive).
     env = _handler(conn_named_costs)(server="en", game_id=_AMIYA)
     assert env.status == "ok"
     module = _cx1(env.to_dict()["data"])
@@ -286,12 +285,12 @@ def test_module_cost_items_paired_with_display_name(conn_named_costs: sqlite3.Co
         {"id": "mat_1", "count": 8, "type": "MATERIAL", "display_name": "Orirock Cube"}
     ]
     assert levels[2]["cost"][0]["display_name"] == "Sugar"
-    # §V69: every cost item resolved, so no cost-name limitation rides the response.
+    # Every cost item resolved, so no cost-name limitation rides the response.
     assert COST_ITEM_NAME_LIMITATION not in env.limitations
 
 
 def test_module_cost_absent_name_keeps_id_and_emits_limitation(conn: sqlite3.Connection) -> None:
-    # §V69/§V26: the fixture ships no items, so the cost item ids have no imported name ->
+    # The fixture ships no items, so the cost item ids have no imported name ->
     # the id is emitted exactly as stored (never a fabricated name) + the standing
     # cost-name limitation rides the response.
     env = _handler(conn)(server="en", game_id=_AMIYA)
@@ -301,24 +300,19 @@ def test_module_cost_absent_name_keeps_id_and_emits_limitation(conn: sqlite3.Con
             continue
         for entry in lv["cost"]:
             assert entry["id"]  # the bare id is preserved
-            assert "display_name" not in entry  # never fabricated (§V26)
+            assert "display_name" not in entry  # never fabricated
     assert COST_ITEM_NAME_LIMITATION in env.limitations
 
 
 def test_cost_name_pairing_is_additive(conn_named_costs: sqlite3.Connection) -> None:
-    # §V21: pairing preserves the original id/count/type keys (adds display_name only).
+    # Pairing preserves the original id/count/type keys (adds display_name only).
     env = _handler(conn_named_costs)(server="en", game_id=_AMIYA, levels=[1])
     entry = _cx1(env.to_dict()["data"])["levels"][0]["cost"][0]
     assert {"id", "count", "type"} <= set(entry)
     assert entry["id"] == "mat_1" and entry["count"] == 8 and entry["type"] == "MATERIAL"
 
 
-def test_cost_name_limitation_has_no_internal_cites() -> None:
-    # §V71 (b): the client-facing limitation carries no internal spec cites or jargon.
-    assert "§V" not in COST_ITEM_NAME_LIMITATION and "§T" not in COST_ITEM_NAME_LIMITATION
-
-
-# --- §V5 region + provenance --------------------------------------------------
+# --- region + provenance ---
 
 
 def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
@@ -331,11 +325,11 @@ def test_ok_carries_region_and_provenance(conn: sqlite3.Connection) -> None:
 
 
 def test_wrong_region_is_not_found(conn: sqlite3.Connection) -> None:
-    # §V5: en data is not surfaced under a cn query -- en/cn never mixed.
+    # en data is not surfaced under a cn query -- en/cn never mixed.
     assert _handler(conn)(server="cn", game_id=_AMIYA).status == "not_found"
 
 
-# --- §V23 typed failures ------------------------------------------------------
+# --- typed failures ---
 
 
 def test_not_found_envelope(conn: sqlite3.Connection) -> None:
@@ -344,7 +338,7 @@ def test_not_found_envelope(conn: sqlite3.Connection) -> None:
     data = env.to_dict()["data"]
     assert isinstance(data, dict)
     assert data["message"] == "no operator matched the given region and game_id"
-    # §V24: a not_found never suggests a query-time download/scrape.
+    # A not_found never suggests a query-time download/scrape.
     action = str(data["suggested_action"]).lower()  # type: ignore[index]
     assert "download" not in action and "scrape" not in action
 
@@ -366,16 +360,16 @@ def test_unexpected_error_fails_closed_to_internal_error() -> None:
 
     env = build_compare_operator_modules_spec(boom).handler(server="en", game_id=_AMIYA)
     assert env.status == "internal_error"
-    # §V23: the fixed message carries no exception text / stack trace / local path.
+    # The fixed message carries no exception text / stack trace / local path.
     assert str(env.to_dict()["data"]).find("/home/ubuntu") == -1
     assert "blew up" not in str(env.to_dict()["data"])
 
 
-# --- §V18/§V19 input gate -----------------------------------------------------
+# --- input gate ---
 
 
 def test_unknown_parameter_rejected(conn: sqlite3.Connection) -> None:
-    # §V18: extra="forbid" -> a crafted request cannot smuggle an unknown field.
+    # extra="forbid" -> a crafted request cannot smuggle an unknown field.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id=_AMIYA, include_everything=True)
 
@@ -401,7 +395,7 @@ def test_empty_levels_rejected(conn: sqlite3.Connection) -> None:
 
 
 def test_out_of_range_level_rejected(conn: sqlite3.Connection) -> None:
-    # §T45: module levels are bounded to {1, 2, 3}; 4 is rejected.
+    # Module levels are bounded to {1, 2, 3}; 4 is rejected.
     with pytest.raises(ValidationError):
         _handler(conn)(server="en", game_id=_AMIYA, levels=[4])
 
@@ -411,7 +405,7 @@ def test_bad_mode_rejected(conn: sqlite3.Connection) -> None:
         _handler(conn)(server="en", game_id=_AMIYA, mode="freeform")
 
 
-# --- §V2 read-only / §I.tool wire contract ------------------------------------
+# --- read-only / wire contract ---
 
 
 def test_service_is_read_only(conn: sqlite3.Connection) -> None:
@@ -421,15 +415,15 @@ def test_service_is_read_only(conn: sqlite3.Connection) -> None:
 
 
 def test_description_names_module_levels_not_potential(conn: sqlite3.Connection) -> None:
-    # §V48/B40: the comparison axis is MODULE levels (1/2/3), NOT operator potential.
+    # The comparison axis is MODULE levels (1/2/3), NOT operator potential.
     # A client reads the tool description + input schema literally; calling the axis
     # "potential levels" conflates the module upgrade tier with the separate,
-    # potential-gated talent axis (§T45) -> wrong tool selection. Pin the wording.
+    # potential-gated talent axis -> wrong tool selection. Pin the wording.
     spec = build_compare_operator_modules_spec(lambda: conn)
     desc = spec.description.lower()
     assert "module levels" in desc
     assert "potential" not in desc
-    # The bounded input schema is client-facing (§V21): its description (the model
+    # The bounded input schema is client-facing: its description (the model
     # docstring) must not mislabel the axis either.
     schema_desc = str(spec.to_mcp_tool().inputSchema.get("description", "")).lower()
     assert "potential" not in schema_desc

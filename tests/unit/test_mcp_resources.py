@@ -1,19 +1,19 @@
-"""§T37 ``arknights://`` MCP resource tests (§V27; §V14/§V37; §V5/§V23; §I.resource).
+"""``arknights://`` MCP resource tests.
 
 The resources are a second, read-only projection over the same services the tools
 expose. These drive the shared :class:`ResourceRegistry` end to end against the
 pinned 4-4 fixture (two enemies, one stage) and assert:
 
-* **§I.resource / PRD §13.11** -- the advertised surface: the fixed
+* **PRD section 13.11** -- the advertised surface: the fixed
   ``arknights://sources`` resource + the enemy/stage/status templates, with the
-  operator resource intentionally absent until ``get_operator`` (§T44);
-* **§V14 / §V37** -- an entity read returns the *same* envelope the corresponding
+  operator resource intentionally absent until ``get_operator``;
+* An entity read returns the *same* envelope the corresponding
   tool returns (resources dispatch the tool handler, no duplicated logic);
-* **§V27** -- ``arknights://sources`` is public-safe (no policy notes / local path);
-* **§V5 / §V23** -- region + provenance on factual bodies, a typed status, and
+* ``arknights://sources`` is public-safe (no policy notes / local path);
+* Region + provenance on factual bodies, a typed status, and
   fail-closed ``unsupported_server`` / ``not_found`` / unknown-uri handling with no
-  leak; **§V19** -- point lookups only, no bulk-enumeration resource;
-* **§V2** -- reads never write.
+  leak; point lookups only, no bulk-enumeration resource;
+* Reads never write.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def _body(result: ReadResourceResult) -> dict[str, object]:
     return json.loads(text)
 
 
-# --- §I.resource / PRD §13.11 advertised surface ------------------------------
+# --- PRD section 13.11 advertised surface -------------------------------------
 
 
 def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None:
@@ -82,9 +82,9 @@ def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None
 
     fixed_uris = {str(r.uri) for r in fixed}
     template_uris = {r.uriTemplate for r in templates}
-    # §V84/§V111 (a) (§T207): two static reading guides joined the fixed set -- the homes
-    # the stage-map and search-coverage blocks moved to when they outgrew the §V71 (f)
-    # description budget. A pointer must name a surface a client can really fetch (B144).
+    # Two static reading guides joined the fixed set -- the homes
+    # the stage-map and search-coverage blocks moved to when they outgrew the
+    # description budget. A pointer must name a surface a client can really fetch.
     assert fixed_uris == {
         "arknights://sources",
         "arknights://glossary/blackboard",
@@ -100,7 +100,7 @@ def test_lists_fixed_and_template_resources(resources: ResourceRegistry) -> None
 
 
 def test_operator_resource_absent_until_get_operator(resources: ResourceRegistry) -> None:
-    # §T44: the operator service is a stub -> no operator resource is advertised
+    # The operator service is a stub -> no operator resource is advertised
     # (a resource whose reads always fail is worse than an absent one).
     assert "operator" not in resources
     all_uris = {str(r.uri) for r in resources.list_resources()} | {
@@ -110,7 +110,7 @@ def test_operator_resource_absent_until_get_operator(resources: ResourceRegistry
 
 
 def test_no_bulk_enumeration_resource(resources: ResourceRegistry) -> None:
-    # §V19 / PRD §13.11: entity resources are point lookups -- each carries an id
+    # PRD section 13.11: entity resources are point lookups -- each carries an id
     # placeholder; there is no plural/list resource that dumps the dataset.
     for template in resources.list_resource_templates():
         if template.uriTemplate.startswith(("arknights://enemy", "arknights://stage")):
@@ -122,13 +122,13 @@ def test_no_bulk_enumeration_resource(resources: ResourceRegistry) -> None:
     assert "arknights://stages" not in all_uris
 
 
-# --- §V14 / §V37: same envelope as the tool -----------------------------------
+# --- same envelope as the tool ------------------------------------------------
 
 
 def test_enemy_read_matches_get_enemy_tool(
     resources: ResourceRegistry, conn: sqlite3.Connection
 ) -> None:
-    # §V14: the resource dispatches the exact get_enemy tool handler -> identical body.
+    # The resource dispatches the exact get_enemy tool handler -> identical body.
     tool_env = build_get_enemy_spec(lambda: conn).handler(server="en", game_id="enemy_1007_slime")
     body = _body(resources.read("arknights://enemy/en/enemy_1007_slime"))
     assert body == tool_env.to_dict()
@@ -139,19 +139,19 @@ def test_enemy_read_matches_get_enemy_tool(
 
 
 def test_stage_read_resolves_by_game_id(resources: ResourceRegistry) -> None:
-    # §I.resource: {stage_id} is the game stage id (game_id), not the display code.
+    # {stage_id} is the game stage id (game_id), not the display code.
     body = _body(resources.read("arknights://stage/en/main_04-04"))
     assert body["status"] == "ok"
     stage = body["data"]["stage"]  # type: ignore[index]
     assert stage["game_id"] == "main_04-04"
     assert stage["stage_code"] == "4-4"
-    # §V22: the heavy sections stay off the default resource body (facts only). §V14: the
-    # resource dispatches the get_stage TOOL, so it carries the same §V104 (b) enum_legend
+    # The heavy sections stay off the default resource body (facts only). The
+    # resource dispatches the get_stage TOOL, so it carries the same enum_legend
     # -- a domain must not be decidable on one surface and not the other.
     assert set(body["data"]) == {"stage", "enum_legend"}  # type: ignore[arg-type]
 
 
-# --- §V5 region + provenance --------------------------------------------------
+# --- region + provenance ------------------------------------------------------
 
 
 def test_enemy_body_carries_region_and_provenance(resources: ResourceRegistry) -> None:
@@ -164,12 +164,12 @@ def test_enemy_body_carries_region_and_provenance(resources: ResourceRegistry) -
 
 
 def test_wrong_region_entity_is_not_found(resources: ResourceRegistry) -> None:
-    # §V5: en data is never surfaced under a cn URI (en/cn never mixed).
+    # En data is never surfaced under a cn URI (en/cn never mixed).
     body = _body(resources.read("arknights://enemy/cn/enemy_1007_slime"))
     assert body["status"] == "not_found"
 
 
-# --- §V27 public-safe sources -------------------------------------------------
+# --- public-safe sources ------------------------------------------------------
 
 
 def test_sources_read_is_public_safe(
@@ -178,21 +178,21 @@ def test_sources_read_is_public_safe(
     result = resources.read("arknights://sources")
     body = _body(result)
     assert body["status"] == "ok"
-    # §V27/§V34: identical to the service (routed through registry.public_view()).
+    # Identical to the service (routed through registry.public_view()).
     assert body["data"] == get_data_sources(registry, conn).to_dict()
     dumped = json.dumps(body)
     assert "policy_notes" not in dumped
     assert str(REPO_ROOT) not in dumped
 
 
-# --- §V84/B144: the blackboard glossary's CLIENT-FETCHABLE home ---------------
+# --- the blackboard glossary's CLIENT-FETCHABLE home --------------------------
 
 
 def test_glossary_read_serves_the_single_entries_home(resources: ResourceRegistry) -> None:
-    # §V84 (B144): the operator tools' descriptions used to point at the server
+    # The operator tools' descriptions used to point at the server
     # ``instructions``, an OPTIONAL initialize field a client may drop -- for such a
     # client the pointer named a surface that did not exist. This resource IS the home
-    # they now name, and it projects the one shared entries tuple (§V37), so the resource
+    # they now name, and it projects the one shared entries tuple, so the resource
     # and the instructions can never disagree about a key's meaning.
     body = _body(resources.read("arknights://glossary/blackboard"))
     assert body["status"] == "ok"
@@ -208,8 +208,8 @@ def test_glossary_read_serves_the_single_entries_home(resources: ResourceRegistr
 
 
 def test_glossary_read_needs_no_database(registry: SourceRegistry) -> None:
-    # Static project text (§V18/§V31: never assembled from imported source strings), so it
-    # must stay readable on a server with no promoted build -- the §V65 (c) grounding path
+    # Static project text (never assembled from imported source strings), so it
+    # must stay readable on a server with no promoted build -- the grounding path
     # cannot depend on the data being there.
     def broken_conn() -> sqlite3.Connection:
         raise DatabaseUnavailable("no build")
@@ -218,11 +218,11 @@ def test_glossary_read_needs_no_database(registry: SourceRegistry) -> None:
     body = _body(resources.read("arknights://glossary/blackboard"))
     assert body["status"] == "ok"
     assert body["data"]["entries"]  # type: ignore[index]
-    # It states no source fact, so it carries no region/provenance (§V5 governs facts).
+    # It states no source fact, so it carries no region/provenance.
     assert body["provenance"] == []
 
 
-# --- §V23 typed status resource -----------------------------------------------
+# --- typed status resource ----------------------------------------------------
 
 
 def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistry) -> None:
@@ -231,13 +231,13 @@ def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistr
     data = body["data"]
     assert data["server"] == "en"  # type: ignore[index]
     snaps = data["snapshots"]  # type: ignore[index]
-    # §V66/B78 (T157): region + ``imported_at`` live on the top-level ``server`` +
+    # Region + ``imported_at`` live on the top-level ``server`` +
     # envelope provenance; each snapshot row keeps the source/age extras PLUS its
-    # ``snapshot_id`` -- the §V87 inline join key that ties the row to its
+    # ``snapshot_id`` -- the inline join key that ties the row to its
     # provenance entry (one region holds several active snapshots, so position
-    # cannot). Rows stay server-less here (§V77: region stated once for a
-    # region-scoped resource), unlike the multi-region tool's inline region key
-    # (§V87/B96); null commit/version keys are scrubbed (§V67/B96).
+    # cannot). Rows stay server-less here (region stated once for a
+    # region-scoped resource), unlike the multi-region tool's inline region key;
+    # null commit/version keys are scrubbed.
     prov = body["provenance"]
     assert isinstance(prov, list) and prov and prov[0]["server"] == "en"
     prov_ids = {p["snapshot_id"] for p in prov}
@@ -250,13 +250,13 @@ def test_status_read_is_region_scoped_with_provenance(resources: ResourceRegistr
 
 
 def test_banners_read_is_region_scoped_ok_list(resources: ResourceRegistry) -> None:
-    # §T114/§V62: banners/{server} dispatches get_banners -> a typed ok list body. The
+    # Banners/{server} dispatches get_banners -> a typed ok list body. The
     # 4-4 fixture has no gacha_table, so a region is a legitimate empty ``ok`` list
-    # (tolerant-absent, §V41/B36), never a not_found.
+    # (tolerant-absent), never a not_found.
     body = _body(resources.read("arknights://banners/en"))
     assert body["status"] == "ok"
     data = body["data"]
-    # §V77/§V66 (B79): region stated ONCE on the parent server, never per row.
+    # Region stated ONCE on the parent server, never per row.
     assert set(data) == {"server", "banners", "page"}  # type: ignore[arg-type]
     assert data["server"] == "en"  # type: ignore[index]
     assert data["banners"] == []  # type: ignore[index]
@@ -264,7 +264,7 @@ def test_banners_read_is_region_scoped_ok_list(resources: ResourceRegistry) -> N
 
 
 def test_banners_unsupported_region_fails_closed(resources: ResourceRegistry) -> None:
-    # §V5: a bad region short-circuits to unsupported_server, never a leaked value.
+    # A bad region short-circuits to unsupported_server, never a leaked value.
     body = _body(resources.read("arknights://banners/jp"))
     assert body["status"] == "unsupported_server"
     assert "jp" not in json.dumps(body["data"])
@@ -275,10 +275,10 @@ def test_status_other_region_has_no_snapshots(resources: ResourceRegistry) -> No
     body = _body(resources.read("arknights://status/cn"))
     assert body["data"]["snapshots"] == []  # type: ignore[index]
     assert body["provenance"] == []
-    # §V5: a region with no active snapshot is data_stale for that region -- the
+    # A region with no active snapshot is data_stale for that region -- the
     # global "ok" verdict (en is present) must not leak into the cn view.
     assert body["status"] == "data_stale"
-    # §V99/§V66 (B148, T198): the verdict lives on the ENVELOPE only. The ``data.status``
+    # The verdict lives on the ENVELOPE only. The ``data.status``
     # echo is gone -- it duplicated the envelope carrier and shared its name with the
     # snapshot rows' own lifecycle state, in the same payload.
     assert "status" not in body["data"]  # type: ignore[operator]
@@ -286,13 +286,13 @@ def test_status_other_region_has_no_snapshots(resources: ResourceRegistry) -> No
     assert body["data"]["warnings"]  # type: ignore[index]
 
 
-# --- §V23 fail-closed paths ---------------------------------------------------
+# --- fail-closed paths --------------------------------------------------------
 
 
 def test_unsupported_region_fails_closed(resources: ResourceRegistry) -> None:
     body = _body(resources.read("arknights://enemy/jp/enemy_1007_slime"))
     assert body["status"] == "unsupported_server"
-    # §V23: the message never echoes the untrusted URI region back.
+    # The message never echoes the untrusted URI region back.
     assert "jp" not in json.dumps(body["data"])
 
 
@@ -302,7 +302,7 @@ def test_status_unsupported_region_fails_closed(resources: ResourceRegistry) -> 
 
 
 def test_over_length_id_is_not_found(resources: ResourceRegistry) -> None:
-    # §V18/§V23: an over-length id trips the tool's bounded model -> not_found, not a
+    # An over-length id trips the tool's bounded model -> not_found, not a
     # leaked ValidationError.
     body = _body(resources.read("arknights://enemy/en/" + "x" * 500))
     assert body["status"] == "not_found"
@@ -322,11 +322,11 @@ def test_database_unavailable_fails_closed(registry: SourceRegistry) -> None:
     res = build_default_resources(boom, registry=registry, mode="local")
     body = _body(res.read("arknights://enemy/en/enemy_1007_slime"))
     assert body["status"] == "database_unavailable"
-    # §V23: no local path / file name leaks into the client-facing body.
+    # No local path / file name leaks into the client-facing body.
     assert "cand.sqlite" not in json.dumps(body)
 
 
-# --- §V2 read-only ------------------------------------------------------------
+# --- read-only ----------------------------------------------------------------
 
 
 def test_reads_do_not_write(resources: ResourceRegistry, conn: sqlite3.Connection) -> None:

@@ -1,4 +1,4 @@
-"""T5: agent guardrail files exist and carry the key non-negotiables.
+"""Agent guardrail files exist and carry the key non-negotiables.
 
 `AGENTS.md` is the canonical tool-agnostic guardrail set; `CLAUDE.md` is the
 Claude-Code-specific pointer. Both must instruct agents to read the PRD, keep
@@ -49,4 +49,4 @@ def test_agents_covers_core_guardrails() -> None:
 def test_both_files_reference_invariants() -> None:
     for name in ("AGENTS.md", "CLAUDE.md"):
         text = _norm(name)
-        assert "cli-only" in text  # admin ops are CLI-only (§V28)
+        assert "cli-only" in text  # admin ops are CLI-only

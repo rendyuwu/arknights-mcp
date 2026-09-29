@@ -1,8 +1,8 @@
-"""T14: stage + level/map/wave/spawn parser for the pinned 4-4 fixture.
+"""Stage + level/map/wave/spawn parser for the pinned 4-4 fixture.
 
 Verifies zones/stages import, the level parser fills map/tiles/routes/waves/
-spawns and derives stage_enemies, prose is dropped (§V18), provenance is
-attached (§V17), and unresolved spawn references fail closed (§21.2).
+spawns and derives stage_enemies, prose is dropped, provenance is
+attached, and unresolved spawn references fail closed (section 21.2).
 """
 
 from __future__ import annotations
@@ -198,9 +198,9 @@ def test_parse_stages_drops_prose() -> None:
 
 
 def test_parse_zones_reads_real_shape_zone_name() -> None:
-    # T179 review-fix: the REAL zone_table (tests/fixtures/stage_4_4_real) names a
+    # The REAL zone_table (tests/fixtures/stage_4_4_real) names a
     # zone via ``zoneNameSecond`` and carries no ``zoneName`` key; without the
-    # fallback every real build imports display_name NULL and the §T179 stage
+    # fallback every real build imports display_name NULL and the stage
     # search alias ("Lone Trail" -> its stages) is dead on arrival.
     real_shape = {"zoneID": "main_4", "type": "MAINLINE", "zoneNameSecond": "Chapter 4"}
     parsed = parse_zones({"zones": {"main_4": real_shape}})
@@ -220,7 +220,7 @@ def test_stage_and_zone_imported(tmp_path: Path) -> None:
     ).fetchone()
     assert stage[0] == "4-4"
     assert stage[2] == 18
-    assert stage[3] is not None  # V17 provenance
+    assert stage[3] is not None  # provenance
     assert stage[4] is not None  # zone resolved
 
 
@@ -260,7 +260,7 @@ def test_no_stage_prose_in_db(tmp_path: Path) -> None:
 
 
 def test_level_rows_carry_provenance(tmp_path: Path) -> None:
-    # H2/§V17: rows derived from the level file link to a provenance row whose
+    # Rows derived from the level file link to a provenance row whose
     # source_path is the level file (distinct from the stage table's source_path).
     conn, _ = _import_all(tmp_path)
     prov = conn.execute(
@@ -285,14 +285,14 @@ def test_level_rows_carry_provenance(tmp_path: Path) -> None:
 
 
 def test_zone_carries_provenance(tmp_path: Path) -> None:
-    # L4/§V17: zone rows link to their own provenance row (was discarded before).
+    # Zone rows link to their own provenance row (was discarded before).
     conn, _ = _import_all(tmp_path)
     prov_id = conn.execute("SELECT provenance_id FROM zones").fetchone()[0]
     assert prov_id is not None
 
 
 def test_spawn_source_fragment_is_allowlisted(tmp_path: Path) -> None:
-    # M1/§V18: only allowlisted structural spawn keys reach source_fragment_json;
+    # Only allowlisted structural spawn keys reach source_fragment_json;
     # an injected prose field is dropped.
     root = tmp_path / "en"
     _write(root, "gamedata/excel/enemy_handbook_table.json", HANDBOOK)

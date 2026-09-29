@@ -1,12 +1,12 @@
-"""T80: stage-scoped inline enemy variant modelling end-to-end (§V29/§V43/§V18).
+"""Stage-scoped inline enemy variant modelling end-to-end.
 
 A ``useDb:false`` wave-action ref is a level-inline enemy variant whose real stats
-(``overwrittenData``) differ from its base prefab (B37). These tests drive the real
+(``overwrittenData``) differ from its base prefab. These tests drive the real
 grid-shape level through ``import_stages`` and assert the variant is persisted as a
 stage-scoped ``stage_enemy_variants`` row with a ``prefab_base`` FK + provenance +
 region, that its overridden stats are read *over* the base at query time, that two
 distinct variants of the same base do not collapse, that prose never lands, that an
-unresolvable base fails closed (§V3), and that a purge cascades the variant rows.
+unresolvable base fails closed, and that a purge cascades the variant rows.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 _SOURCE_ID = "local_snapshot"
 
 # Base prefab the inline variants derive from; base def/res are deliberately low so
-# an overriding variant reads a clearly different value (variant-over-base, §V43).
+# an overriding variant reads a clearly different value (variant-over-base).
 HANDBOOK = {
     "enemyData": {
         "enemy_1105_tyokai": {
@@ -81,11 +81,11 @@ def _real_level(*, base_prefab: str = "enemy_1105_tyokai") -> dict:
             "def": {"m_defined": True, "m_value": 9999},
             "magicResistance": {"m_defined": True, "m_value": 80},
             # An undefined stat is a delta sentinel: it must be dropped so the base
-            # value is inherited, not written as 0 (§V44).
+            # value is inherited, not written as 0.
             "atk": {"m_defined": False, "m_value": 0},
         },
         "motion": {"m_defined": True, "m_value": "FLY"},
-        # Prose that must never be persisted (§V18/§V16).
+        # Prose that must never be persisted.
         "name": {"m_defined": True, "m_value": _VARIANT_NAME_PROSE},
         "description": _VARIANT_DESC_PROSE,
     }
@@ -175,7 +175,7 @@ def _stage_pk(conn: sqlite3.Connection) -> int:
 
 
 def test_inline_variant_rows_carry_prefab_base_and_provenance(tmp_path: Path) -> None:
-    """§T80/§V17/§V29: each useDb:false variant is a stage-scoped row with a
+    """Each useDb:false variant is a stage-scoped row with a
     prefab_base FK to the base enemy, provenance, and the defined stat overrides."""
     conn = _import(tmp_path, _real_level())
     rows = conn.execute(
@@ -191,9 +191,9 @@ def test_inline_variant_rows_carry_prefab_base_and_provenance(tmp_path: Path) ->
     assert var_b[2] == 9999  # def override
     assert var_b[3] == 80  # res override
     assert var_b[4] == "FLY"  # motion override
-    assert var_b[6] is not None  # §V17 provenance
+    assert var_b[6] is not None  # provenance
 
-    # §V44: an undefined stat (atk) is not written -- inherit the base at read.
+    # An undefined stat (atk) is not written -- inherit the base at read.
     assert var_b[5] is None  # hp not overridden on _b
     assert (
         conn.execute(
@@ -204,7 +204,7 @@ def test_inline_variant_rows_carry_prefab_base_and_provenance(tmp_path: Path) ->
 
 
 def test_inline_variant_prose_never_persisted(tmp_path: Path) -> None:
-    """§V18/§V16: overwrittenData name/description prose is stripped by the field
+    """OverwrittenData name/description prose is stripped by the field
     allowlist and never reaches any stored row."""
     conn = _import(tmp_path, _real_level())
     dump = "\n".join(
@@ -217,7 +217,7 @@ def test_inline_variant_prose_never_persisted(tmp_path: Path) -> None:
 
 
 def test_variants_of_same_base_do_not_collapse(tmp_path: Path) -> None:
-    """§T80: two distinct inline variants of the same base prefab + level stay as
+    """Two distinct inline variants of the same base prefab + level stay as
     distinct occurrences (each keeps its own stats), plus the base spawn itself."""
     conn = _import(tmp_path, _real_level())
     stage_pk = _stage_pk(conn)
@@ -232,7 +232,7 @@ def test_variants_of_same_base_do_not_collapse(tmp_path: Path) -> None:
 
 
 def test_spawn_links_variant_pk(tmp_path: Path) -> None:
-    """§T80: a variant spawn carries variant_pk; the base spawn carries NULL."""
+    """A variant spawn carries variant_pk; the base spawn carries NULL."""
     conn = _import(tmp_path, _real_level())
     linked = conn.execute(
         "SELECT COUNT(*) FROM stage_spawns WHERE variant_pk IS NOT NULL"
@@ -243,7 +243,7 @@ def test_spawn_links_variant_pk(tmp_path: Path) -> None:
 
 
 def test_occurrence_reads_variant_stats_over_base(tmp_path: Path) -> None:
-    """§V43 resolved: the repository occurrence reads the variant's def/res/motion
+    """The repository occurrence reads the variant's def/res/motion
     over the base prefab; an un-overridden stat inherits the base."""
     conn = _import(tmp_path, _real_level())
     repo = StageRepository(conn)
@@ -258,7 +258,7 @@ def test_occurrence_reads_variant_stats_over_base(tmp_path: Path) -> None:
     assert var_b.motion_type == "FLY"  # variant motion over base
 
     var_c = occ["enemy_1105_tyokai_c"]
-    assert var_c.hp == 12345  # _c overrides maxHp -> variant hp over base (§V47 COALESCE)
+    assert var_c.hp == 12345  # _c overrides maxHp -> variant hp over base (COALESCE)
     assert var_c.atk == 300  # _c doesn't override atk -> inherits base through the variant row
     assert var_c.def_ == 100  # _c overrides only hp -> def inherits base
     assert var_c.res == 10
@@ -266,7 +266,7 @@ def test_occurrence_reads_variant_stats_over_base(tmp_path: Path) -> None:
 
 
 def test_get_stage_and_analyze_surface_variant_id(tmp_path: Path) -> None:
-    """§T80/§V14: both stage read paths expose variant_id (analyzer occurrence +
+    """Both stage read paths expose variant_id (analyzer occurrence +
     get_stage spawn), so a client can tell an inline variant from the base."""
     conn = _import(tmp_path, _real_level())
     analysis = analyze_stage(conn, server="en", stage_code="4-4")
@@ -279,7 +279,7 @@ def test_get_stage_and_analyze_surface_variant_id(tmp_path: Path) -> None:
 
 
 def test_variant_with_unresolvable_base_fails_closed(tmp_path: Path) -> None:
-    """§V3/§V43: an inline variant whose prefab base is not in the region's enemies
+    """An inline variant whose prefab base is not in the region's enemies
     fails closed with a graceful ImporterError, never a fabricated enemy row."""
     level = _real_level(base_prefab="enemy_does_not_exist")
     with pytest.raises(ImporterError, match="unknown base enemy"):
@@ -287,7 +287,7 @@ def test_variant_with_unresolvable_base_fails_closed(tmp_path: Path) -> None:
 
 
 def test_purge_cascades_variant_rows(tmp_path: Path) -> None:
-    """§V32: purging the source removes its stage_enemy_variants rows and leaves no
+    """Purging the source removes its stage_enemy_variants rows and leaves no
     dangling foreign key (children-before-parents)."""
     conn = _import(tmp_path, _real_level())
     assert conn.execute("SELECT COUNT(*) FROM stage_enemy_variants").fetchone()[0] == 2

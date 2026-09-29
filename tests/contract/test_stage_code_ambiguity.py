@@ -1,10 +1,10 @@
-"""T195: §V102's real-build guard -- shared stage codes are real, and disclosed.
+"""Real-build guard -- shared stage codes are real, and disclosed.
 
-The §T195 unit tests build a two-stage fixture and assert the disclosure fires. That
+The unit tests build a two-stage fixture and assert the disclosure fires. That
 proves the mechanism, not the PREMISE: if shared stage codes were rare or synthetic, the
 whole task would be ceremony, and a change that quietly stopped resolving them (or that
-made the alternates list wrong) would still pass every fixture test. §V96/§V29 want the
-population COUNTED on the real corpus, not assumed.
+made the alternates list wrong) would still pass every fixture test. The population must
+be COUNTED on the real corpus, not assumed.
 
 Counted on the shipped ``2026-07-28T170428Z`` build:
 
@@ -12,7 +12,7 @@ Counted on the shipped ``2026-07-28T170428Z`` build:
   a quarter of the en stage table, not a corner case;
 * group sizes run 2 (775 groups), 3 (134), 4 (5), then a tail to **36** (``LT-1``..
   ``LT-6``), which is why the emitted list is bounded while its count stays exact;
-* B139's own case is live: ``4-4`` en names ``main_04-04`` (NORMAL) AND ``main_04-04#f#``
+* The reported case is live: ``4-4`` en names ``main_04-04`` (NORMAL) AND ``main_04-04#f#``
   (FOUR_STAR), and the second was reachable only through a game_id nothing pointed at;
 * **206 shared codes have a first-by-order stage with NO drop cache while a sibling under
   the same code HAS one** (cn ``10-10`` resolves to ``easy_10-09`` over ``main_10-09`` /
@@ -87,7 +87,7 @@ def _groups(conn: sqlite3.Connection, server: str) -> dict[str, list[tuple[int, 
 def test_shared_stage_codes_are_a_large_population(
     conn: sqlite3.Connection, server: str, minimum: int
 ) -> None:
-    # Counted, not assumed (§V96): en 927 / cn 989 shared codes on the 2026-07-28 build.
+    # Counted, not assumed: en 927 / cn 989 shared codes on the 2026-07-28 build.
     # A floor rather than an equality so an upstream stage release does not fail the
     # suite -- the claim under guard is "many", and a collapse to a handful would mean
     # the resolution rule stopped seeing them.
@@ -129,14 +129,14 @@ def test_get_stage_discloses_the_pick_and_the_alternate(conn: sqlite3.Connection
 
 
 def test_analyze_stage_discloses_on_the_reported_stage(conn: sqlite3.Connection) -> None:
-    # 7-4 = main_07-03, the stage B153 was reported on; it too has a four-star sibling.
+    # 7-4 = main_07-03, the stage the defect was reported on; it too has a four-star sibling.
     env = build_analyze_stage_spec(lambda: conn).handler(server="en", stage_code="7-4")
     (disclosure,) = [lim for lim in env.to_dict()["limitations"] if "stage_code 7-4" in lim]
     assert "main_07-03#f#" in disclosure
 
 
 def test_tower_group_is_summarised_with_an_exact_count(conn: sqlite3.Connection) -> None:
-    # The 36-stage LT-1 group: every alternate named would be a §V66 economy breach, so
+    # The 36-stage LT-1 group: every alternate named would be an economy breach, so
     # the list is bounded -- but the COUNT is the real one, so the client is never told
     # the ambiguity is smaller than it is.
     members = _groups(conn, "en")["LT-1"]
@@ -168,9 +168,9 @@ def test_drop_divergent_groups_exist_and_are_disclosed(conn: sqlite3.Connection)
     # 206 shared codes on this build resolve to a stage with no drop cache while a
     # sibling under the same code has one, so the empty answer says nothing about the code
     # the client asked about. Count them from the table, then drive the tool on one.
-    # §V106 (b): the stage RESOLVED, so the answer is an ``ok`` with an empty ``drops`` --
+    # The stage RESOLVED, so the answer is an ``ok`` with an empty ``drops`` --
     # the alternates that make it retryable now ride a limitation instead of the
-    # suggested_action an ``ok`` envelope has no room for (§V111 b, text moved not cut).
+    # suggested_action an ``ok`` envelope has no room for (text moved not cut).
     with_drops = {int(pk) for (pk,) in conn.execute("SELECT DISTINCT stage_pk FROM stage_drops")}
     divergent: list[tuple[str, str, list[str]]] = []
     for server in ("en", "cn"):
@@ -189,7 +189,7 @@ def test_drop_divergent_groups_exist_and_are_disclosed(conn: sqlite3.Connection)
 
 
 def test_resolution_is_deterministic_across_every_shared_code(conn: sqlite3.Connection) -> None:
-    # §V91/§V21: over the WHOLE shared-code population, the resolved stage is the lowest
+    # Over the WHOLE shared-code population, the resolved stage is the lowest
     # stage_pk and the alternates are exactly the rest, in order -- so the disclosure can
     # never name a stage the lookup did not return.
     repo = StageRepository(conn)

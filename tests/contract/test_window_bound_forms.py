@@ -1,6 +1,6 @@
-"""T212: the real-build proof that a window's answer no longer depends on its NOTATION.
+"""The real-build proof that a window's answer no longer depends on its NOTATION.
 
-§V116 (d) is why this file exists. The harm B163 filed is a COLLATION -- bound text sorted
+Notation independence is why this file exists. The harm was a COLLATION -- bound text sorted
 against the dates really stored -- so a fixture cannot witness it: its handful of dates are
 chosen by the same author as the guard, in whatever notation that author typed. Only the
 promoted build carries the two real stored forms (a day-granular ``announcements.date`` and
@@ -105,7 +105,7 @@ _BANNER_DAYS = "SELECT DISTINCT substr(open_time, 1, 10) FROM banners WHERE serv
 
 
 def test_the_two_windowed_columns_really_have_different_forms(conn: sqlite3.Connection) -> None:
-    # The premise of §V116 (b), pinned rather than assumed: one shared validator serves a
+    # The premise of the coarsening rule, pinned rather than assumed: one shared validator serves a
     # day-granular column and a full-timestamp column, so "canonical" cannot be one string
     # shape for both. If a future import changes either form, the coarsening rule above it
     # must be revisited -- and this is the assertion that will say so.
@@ -145,15 +145,15 @@ def test_upper_bound_answer_is_notation_independent(
     assert _banner_ids(conn, region, until=written) == _banner_ids(conn, region, until=extended)
 
 
-# --- non-degenerate controls (§V96): the equality above is not two empties -----
+# --- non-degenerate controls: the equality above is not two empties -----
 
 
 @pytest.mark.parametrize("region", REGIONS)
 def test_the_shared_bound_actually_selects_on_this_build(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # B163 arm 1 was an EMPTY answer, so "both notations agree" must be shown to agree on a
-    # NON-EMPTY one; B163 arm 2 was the whole corpus, so the upper bound must be shown to
+    # The first arm was an EMPTY answer, so "both notations agree" must be shown to agree on a
+    # NON-EMPTY one; the second arm was the whole corpus, so the upper bound must be shown to
     # still exclude something.
     wide_open_banners = _banner_ids(conn, region)
     assert _banner_ids(conn, region, since="20260101"), "the lower bound returns nothing at all"
@@ -179,14 +179,14 @@ def test_a_basic_format_upper_bound_excludes_the_dates_after_it(
         assert banner.open_time[:10] <= "2026-04-01", f"{banner.game_id}: {banner.open_time}"
 
 
-# --- the intra-day window the guard used to reject (B163 arm 3) ----------------
+# --- the intra-day window the guard used to reject (arm 3) ----------------
 
 
 @pytest.mark.parametrize("region", REGIONS)
 def test_every_real_banner_day_answers_as_an_intra_day_window(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # T201's guard rejected this pair on every one of these days; the SQL answers each one,
+    # The earlier guard rejected this pair on every one of these days; the SQL answers each one,
     # so the rejection was withholding rows. Driven over the region's OWN stored days: a
     # chosen pair could miss the notation that breaks, a whole domain cannot.
     days = _stored_days(conn, _BANNER_DAYS, region)
@@ -200,7 +200,7 @@ def test_every_real_banner_day_answers_as_an_intra_day_window(
 def test_a_genuinely_inverted_window_is_still_rejected(
     conn: sqlite3.Connection, region: str
 ) -> None:
-    # The guard must still fire where it should: B143's own pair, and the same pair written
+    # The guard must still fire where it should: the reported pair, and the same pair written
     # in mixed notations, on the build that shipped the defect.
     for since, until in (("2026-07-01", "2026-06-01"), ("20260701", "2026-06-01")):
         for service in (get_announcements, get_banners):
@@ -208,7 +208,7 @@ def test_a_genuinely_inverted_window_is_still_rejected(
                 service(conn, server=region, since=since, until=until)  # type: ignore[operator]
 
 
-# --- the day-granular coarsening, on the real feed (§V116 (b)) -----------------
+# --- the day-granular coarsening, on the real feed -----------------
 
 
 @pytest.mark.parametrize("region", REGIONS)

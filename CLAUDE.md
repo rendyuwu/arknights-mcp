@@ -10,10 +10,7 @@ toolchain. This file adds Claude-Code-specific context only.
 
 1. `Arknights_MCP_PRD_v0.1_FINAL.md` — product requirements. **PRD Section 18
    (D1–D15) is binding**; changes require an ADR (`docs/adr/`).
-2. `SPEC.md` — the distilled design of record (goal §G, constraints §C,
-   interfaces §I, invariants §V, tasks §T, bugs §B). It uses the caveman
-   encoding described in `FORMAT.md`.
-3. `AGENTS.md` — the do/never guardrails.
+2. `AGENTS.md` — the do/never guardrails.
 
 ## Layer map (where things go)
 
@@ -32,17 +29,11 @@ toolchain. This file adds Claude-Code-specific context only.
 
 ## Working rhythm
 
-- Build against `SPEC.md` §T, one task at a time. Flip the status cell
-  `.` → `~` → `x`; commit per task as `T<n>: <goal>` with the §V cites.
 - Run the verification gate before committing:
 
   ```bash
   uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q
   ```
-
-- On a test/build failure, consider **backprop**: is the failure a code bug, a
-  wrong spec, or an unspecified edge case? If the spec is wrong or incomplete,
-  update `SPEC.md` §V/§B first, then fix the code.
 
 ## Non-negotiables (quick reference — full list in `AGENTS.md`)
 

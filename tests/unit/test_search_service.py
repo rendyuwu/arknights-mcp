@@ -1,11 +1,11 @@
-"""T31: the FTS5 entity index + the ``search_entities`` service (§V2, §V5, §V19).
+"""The FTS5 entity index + the ``search_entities`` service.
 
-Two DB shapes are exercised, both through the production read-only path (§V2):
+Two DB shapes are exercised, both through the production read-only path:
 
 * the pinned 4-4 fixture built via :func:`build_candidate` (which populates the
   index in-pipeline) -- covers name / game_id / stage_code search, region
-  scoping (§V5), entity-type narrowing, and FTS/SQL metacharacter safety;
-* a synthetic build -- covers the §V19 result bound and the operator ``tags`` /
+  scoping, entity-type narrowing, and FTS/SQL metacharacter safety;
+* a synthetic build -- covers the result bound and the operator ``tags`` /
   ``aliases`` indexed columns that no importer populates yet (M4).
 """
 
@@ -70,16 +70,16 @@ def test_search_by_stage_code(conn: sqlite3.Connection) -> None:
 
 
 def test_no_match_is_an_empty_ok_with_a_reason(conn: sqlite3.Connection) -> None:
-    # §V106 (b)/B147: a search is a SET query, so zero hits is a delivered empty answer,
+    # A search is a SET query, so zero hits is a delivered empty answer,
     # not a failed request. The typed reason is what lets the tool say WHY without the
-    # domain owning any client-facing wording (§V71 b).
+    # domain owning any client-facing wording.
     result = search_entities(conn, query="zzzznotanentity")
     assert result.status == "ok"
     assert result.hits == ()
     assert result.empty_reason == "no_match"
 
 
-# --- region scoping (§V5) -----------------------------------------------------
+# --- region scoping -----------------------------------------------------------
 
 
 def test_hits_carry_region(conn: sqlite3.Connection) -> None:
@@ -88,16 +88,16 @@ def test_hits_carry_region(conn: sqlite3.Connection) -> None:
 
 
 def test_server_filter_scopes_region(conn: sqlite3.Connection) -> None:
-    # §V5: the en Slug is not surfaced under a cn-scoped search.
+    # The en Slug is not surfaced under a cn-scoped search.
     assert search_entities(conn, query="slug", server="en").hits
     assert search_entities(conn, query="slug", server="cn").hits == ()
 
 
-# --- §V50/§V24 region availability gate (B42) ---------------------------------
+# --- region availability gate -------------------------------------------------
 
 
 def test_cn_without_snapshot_is_data_stale_not_not_found(conn: sqlite3.Connection) -> None:
-    # §V50/§V24: this build has an en snapshot only. A cn-scoped search must honor
+    # This build has an en snapshot only. A cn-scoped search must honor
     # region availability BEFORE asserting absence: no cn snapshot -> ``data_stale``,
     # never a bare ``not_found`` (which would wrongly claim the entity absent on cn).
     entities = search_entities(conn, query="drone", server="cn")
@@ -109,17 +109,17 @@ def test_cn_without_snapshot_is_data_stale_not_not_found(conn: sqlite3.Connectio
 
 
 def test_unsupported_region_is_unsupported_server(conn: sqlite3.Connection) -> None:
-    # §V50/§V5: a region outside {en, cn} is ``unsupported_server`` -- not a
+    # A region outside {en, cn} is ``unsupported_server`` -- not a
     # ``not_found`` and not a silent empty result. The service enforces this even
-    # though the MCP input model also rejects a non-Region ``server`` (§V14 depth).
+    # though the MCP input model also rejects a non-Region ``server``.
     assert search_entities(conn, query="drone", server="jp").status == "unsupported_server"
     assert search_stages(conn, query="4-4", server="jp").status == "unsupported_server"
 
 
 def test_supported_region_with_snapshot_reports_a_real_absence(conn: sqlite3.Connection) -> None:
-    # §V50/§V106: once the region index is confirmed present, absence is a real answer --
-    # and since T198 that answer is ``ok`` + ``no_match``, never a ``data_stale`` gate.
-    # The distinction is the point of §V50: "this region has no data" and "this region has
+    # Once the region index is confirmed present, absence is a real answer --
+    # and that answer is ``ok`` + ``no_match``, never a ``data_stale`` gate.
+    # The distinction is the point: "this region has no data" and "this region has
     # data and none of it matched" must not arrive as the same status.
     result = search_entities(conn, query="zzzznotanentity", server="en")
     assert result.status == "ok"
@@ -127,7 +127,7 @@ def test_supported_region_with_snapshot_reports_a_real_absence(conn: sqlite3.Con
 
 
 def test_empty_index_unscoped_search_is_data_stale(tmp_path: Path) -> None:
-    # §V50: an unscoped search against a build with NO active snapshot at all is
+    # An unscoped search against a build with NO active snapshot at all is
     # ``data_stale`` (the whole index is empty) -- not a bare ``not_found``.
     path = tmp_path / "empty.sqlite"
     writer = build_database(path)
@@ -147,31 +147,31 @@ def test_entity_type_filter(conn: sqlite3.Connection) -> None:
     assert search_entities(conn, query="drone", entity_type="stage").hits == ()
 
 
-# --- §V2 / §V18 query safety --------------------------------------------------
+# --- query safety -------------------------------------------------------------
 
 
 def test_query_metacharacters_are_safe(conn: sqlite3.Connection) -> None:
     # A query of only FTS metacharacters holds no word token -> nothing to search. That
-    # is its OWN empty case (§V106 b): the query never ran, so it must not be reported as
+    # is its OWN empty case: the query never ran, so it must not be reported as
     # a query that ran and matched nothing.
     metacharacters = search_entities(conn, query="*:^()")
     assert metacharacters.status == "ok"
     assert metacharacters.empty_reason == "no_searchable_tokens"
     # A stray FTS operator / paren is stripped; the real token still matches and
-    # the MATCH never sees an injected operator or syntax error (§V2/§V18).
+    # the MATCH never sees an injected operator or syntax error.
     assert any(h.game_id == "enemy_1105_drone" for h in search_entities(conn, query="drone)").hits)
     # Raw quotes / a NEAR keyword are parsed as literal tokens, never operators.
     search_entities(conn, query='" NEAR drone')  # must not raise
 
 
 def test_search_is_read_only(conn: sqlite3.Connection) -> None:
-    # §V2: the service only reads -- no writes recorded on the connection.
+    # The service only reads -- no writes recorded on the connection.
     before = conn.total_changes
     search_entities(conn, query="drone")
     assert conn.total_changes == before
 
 
-# --- §V19 result bound + operator tags/aliases --------------------------------
+# --- result bound + operator tags/aliases -------------------------------------
 
 
 def _seed_provenance(conn: sqlite3.Connection) -> int:
@@ -197,7 +197,7 @@ def _seed_provenance(conn: sqlite3.Connection) -> int:
 
 
 def test_result_bounded_to_v19_max(tmp_path: Path) -> None:
-    # §V19: search returns at most MAX_LIMIT even when more rows match.
+    # Search returns at most MAX_LIMIT even when more rows match.
     path = tmp_path / "many.sqlite"
     writer = build_database(path)
     provenance_id = _seed_provenance(writer)
@@ -217,7 +217,7 @@ def test_result_bounded_to_v19_max(tmp_path: Path) -> None:
 
 
 def test_out_of_range_limit_rejected(conn: sqlite3.Connection) -> None:
-    # §V19: the service *rejects* an out-of-range limit rather than silently
+    # The service *rejects* an out-of-range limit rather than silently
     # clamping -- the same contract SearchEntitiesInput enforces at the MCP gate,
     # so a caller reaching the service directly gets no silent widening/narrowing.
     for bad in (0, -1, MAX_LIMIT + 1, 100):
@@ -227,7 +227,7 @@ def test_out_of_range_limit_rejected(conn: sqlite3.Connection) -> None:
 
 def test_operator_tags_and_aliases_indexed(tmp_path: Path) -> None:
     # The operator importer lands in M4; the index builder already covers the
-    # tags + aliases columns (§T31) -- verify against a synthetic operator row.
+    # tags + aliases columns -- verify against a synthetic operator row.
     path = tmp_path / "op.sqlite"
     writer = build_database(path)
     provenance_id = _seed_provenance(writer)
@@ -251,11 +251,11 @@ def test_operator_tags_and_aliases_indexed(tmp_path: Path) -> None:
         assert any(h.game_id == "char_002_amiya" for h in by_alias)
 
 
-# --- §T142 / §V73: item domain in the shared FTS index (B67) -------------------
+# --- item domain in the shared FTS index --------------------------------------
 
 
 def _seed_item(tmp_path: Path) -> Path:
-    """Build a DB carrying one synthetic item row + its FTS document (§V37 home)."""
+    """Build a DB carrying one synthetic item row + its FTS document."""
     path = tmp_path / "item.sqlite"
     writer = build_database(path)
     provenance_id = _seed_provenance(writer)
@@ -270,7 +270,7 @@ def _seed_item(tmp_path: Path) -> Path:
 
 
 def test_item_searchable_by_name_and_game_id(tmp_path: Path) -> None:
-    # §V73/B67: an item is resolvable by name -> game_id so get_item_drops has a real
+    # An item is resolvable by name -> game_id so get_item_drops has a real
     # name->id path (the FTS locator's game_id is exactly items.game_id).
     with open_read_only(_seed_item(tmp_path)) as conn:
         by_name = search_entities(conn, query="Loxic").hits
@@ -281,14 +281,14 @@ def test_item_searchable_by_name_and_game_id(tmp_path: Path) -> None:
 
 
 def test_item_entity_type_filter(tmp_path: Path) -> None:
-    # §V73: the item domain narrows via entity_type, like the other domains.
+    # The item domain narrows via entity_type, like the other domains.
     with open_read_only(_seed_item(tmp_path)) as conn:
         assert search_entities(conn, query="Loxic", entity_type="item").hits
         assert search_entities(conn, query="Loxic", entity_type="enemy").hits == ()
 
 
 def test_item_locator_feeds_get_item_drops(tmp_path: Path) -> None:
-    # §V73/B67: the item locator's game_id is the key get_item_drops resolves items by
+    # The item locator's game_id is the key get_item_drops resolves items by
     # ((server, game_id)), so a search hit is a live name->id bridge, not a dead end.
     from arknights_mcp.db.repositories.drops import DropRepository
 
@@ -298,11 +298,11 @@ def test_item_locator_feeds_get_item_drops(tmp_path: Path) -> None:
         assert resolved is not None
 
 
-# --- T179: zone/event display name as stage alias -------------------------------
+# --- zone/event display name as stage alias ------------------------------------
 
 
 def test_zone_name_finds_stage_via_pipeline(conn: sqlite3.Connection) -> None:
-    # T179: the fixture stage's zone is "Chapter 4" (zone_table.json); the
+    # The fixture stage's zone is "Chapter 4" (zone_table.json); the
     # in-pipeline index build carries the zone name on the stage document, so a
     # zone-name query surfaces the stage in both search tools.
     hits = search_entities(conn, query="Chapter").hits
@@ -336,7 +336,7 @@ def _seed_zone_and_stage(
 
 
 def test_event_name_finds_only_its_stages(tmp_path: Path) -> None:
-    # T179: an event display name matches the stages in that zone -- and only
+    # An event display name matches the stages in that zone -- and only
     # those; a stage in a different zone stays out of the result set.
     path = tmp_path / "zone.sqlite"
     writer = build_database(path)
@@ -369,7 +369,7 @@ def test_event_name_finds_only_its_stages(tmp_path: Path) -> None:
 
 
 def test_zone_alias_is_region_guarded(tmp_path: Path) -> None:
-    # §V5: the index join is guarded on z.server = s.server -- a stage whose
+    # The index join is guarded on z.server = s.server -- a stage whose
     # zone_pk (wrongly) points at the other region's zone row must not borrow
     # that region's zone name into its search document.
     path = tmp_path / "zone_region.sqlite"
@@ -392,14 +392,14 @@ def test_zone_alias_is_region_guarded(tmp_path: Path) -> None:
         assert search_entities(conn, query="Lone Trail", server="en").hits == ()
 
 
-# --- deterministic region order (B97) ------------------------------------------
+# --- deterministic region order ------------------------------------------------
 
 
 @pytest.fixture
 def two_region_conn(tmp_path: Path) -> sqlite3.Connection:
     """Both regions built from the same 4-4 fixture: identical FTS documents per
     region, so every bm25 rank ties across en/cn and only the deterministic
-    region order (B97) decides who comes first."""
+    region order decides who comes first."""
     path = tmp_path / "cand2.sqlite"
     build_candidate(
         path,
@@ -417,7 +417,7 @@ def two_region_conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 def test_unfiltered_search_lists_en_before_cn(two_region_conn: sqlite3.Connection) -> None:
-    # B97: an unfiltered search previously broke bm25 ties by insert order, so
+    # An unfiltered search previously broke bm25 ties by insert order, so
     # results[0] could be either region. Order is now region-major: every en hit
     # precedes every cn hit, deterministically.
     hits = search_entities(two_region_conn, query="drone").hits
@@ -429,8 +429,8 @@ def test_unfiltered_search_lists_en_before_cn(two_region_conn: sqlite3.Connectio
 def test_unfiltered_stage_search_ranks_en_exact_code_first(
     two_region_conn: sqlite3.Connection,
 ) -> None:
-    # B97: unfiltered "4-4" must surface the en exact-code row first, never the cn
-    # twin; the §T33 exact-code-first contract is preserved, region orders within
+    # Unfiltered "4-4" must surface the en exact-code row first, never the cn
+    # twin; the exact-code-first contract is preserved, region orders within
     # the exact group.
     hits = search_stages(two_region_conn, query="4-4").hits
     assert hits[0].server == "en"
@@ -442,7 +442,7 @@ def test_unfiltered_stage_search_ranks_en_exact_code_first(
     )
 
 
-# --- membership vs display (B97): region order never evicts a better match ------
+# --- membership vs display: region order never evicts a better match -----------
 
 
 @pytest.fixture
@@ -453,7 +453,7 @@ def saturated_conn() -> sqlite3.Connection:
     single cn document IS the token (short doc, strongest bm25). Membership in the
     bounded result set must be best-match-first, so the cn row survives; display is
     then region-major (en before cn). The stub ``stages`` / ``zones`` tables satisfy the
-    §V70 difficulty and T186 zone-name LEFT JOINs.
+    difficulty and zone-name LEFT JOINs.
     """
     conn = sqlite3.connect(":memory:")
     conn.executescript(
@@ -484,7 +484,7 @@ def saturated_conn() -> sqlite3.Connection:
 
 
 def test_region_order_never_evicts_stronger_cn_match(saturated_conn: sqlite3.Connection) -> None:
-    # B97 asked for deterministic ORDER, not membership: with >= limit weak en
+    # Deterministic ORDER, not membership, was the requirement: with >= limit weak en
     # matches, the strongest hit (cn) must stay IN the bounded set -- membership is
     # bm25-first -- while the returned set still lists en before cn.
     rows = SearchRepository(saturated_conn).search(
@@ -537,7 +537,7 @@ def test_stage_region_order_never_evicts_stronger_cn_match() -> None:
     assert any(r.game_id == "cn_stage_trail" for r in rows)
 
 
-# --- T186 / B113: zone-alias hardening (§V90 own-name precedence) ---------------
+# --- zone-alias hardening (own-name precedence) --------------------------------
 
 
 #: The "Gavial's Footprints" member stages, TRANSCRIBED from the shipped build
@@ -545,9 +545,9 @@ def test_stage_region_order_never_evicts_stronger_cn_match() -> None:
 #: first draft of this fixture named them "Unrelated Stage Name 00".. and the guard
 #: passed BEFORE the fix, because bm25 length-normalizes -- long invented names scored
 #: the alias-only docs down until they no longer outranked anything, and the fixture
-#: quietly stopped reproducing B113. The real names are short ("Feint", "Torrent"),
+#: quietly stopped reproducing the defect. The real names are short ("Feint", "Torrent"),
 #: which is precisely why their documents beat the own-name hits on the real corpus.
-#: Same synthetic-fixture escape as B107/B128; see the non-degeneracy assertion below.
+#: Same synthetic-fixture escape as the earlier ones; see the non-degeneracy assertion below.
 _FOOTPRINTS_MEMBERS: tuple[tuple[str, str, str], ...] = (
     ("act12d0_ex01", "RI-EX-1", "Feint"),
     ("act12d0_ex02", "RI-EX-2", "Wanderlust"),
@@ -572,7 +572,7 @@ _OWN_NAME_GAME_IDS = frozenset({"char_187_ccheal", "char_1026_gvial2", "act12d0_
 
 
 def _seed_collision(path: Path, *, member_stages: int = len(_FOOTPRINTS_MEMBERS)) -> None:
-    """The B113 collision, reduced from the real corpus: one event named after an operator.
+    """The collision, reduced from the real corpus: one event named after an operator.
 
     Four kinds of document, all transcribed from the shipped en build:
 
@@ -585,7 +585,7 @@ def _seed_collision(path: Path, *, member_stages: int = len(_FOOTPRINTS_MEMBERS)
     * ``act12d0_08`` "Gavial's Fist" -- a stage matching on its own name, from a zone
       named something else entirely ("Great Chief's Path");
     * ``member_stages`` stages of "Gavial's Footprints", matching ONLY through the
-      T179 zone alias, their own names and codes saying nothing about the query.
+      zone alias, their own names and codes saying nothing about the query.
     """
     writer = build_database(path)
     provenance_id = _seed_provenance(writer)
@@ -627,7 +627,7 @@ def _seed_collision(path: Path, *, member_stages: int = len(_FOOTPRINTS_MEMBERS)
 
 
 def test_collision_fixture_still_reproduces_b113(tmp_path: Path) -> None:
-    """NON-DEGENERACY guard (§V96 class): the fixture must still exercise the bug.
+    """NON-DEGENERACY guard: the fixture must still exercise the bug.
 
     Ranked the old way -- plain bm25 with no own-name group -- an alias-only member
     stage has to come out ahead of at least one own-name document, or the tests below
@@ -653,7 +653,7 @@ def test_collision_fixture_still_reproduces_b113(tmp_path: Path) -> None:
 
 
 def test_zone_alias_never_outranks_an_own_name_match(tmp_path: Path) -> None:
-    # §V90/B113: the operator and the stage NAMED "Gavial's Fist" matched the query in
+    # The operator and the stage NAMED "Gavial's Fist" matched the query in
     # their own names; the event's member stages matched only through the zone alias.
     # Every own-name hit must precede every alias-only hit -- on the real corpus this
     # ordering was inverted, with seven alias-only stages ahead of both.
@@ -664,14 +664,14 @@ def test_zone_alias_never_outranks_an_own_name_match(tmp_path: Path) -> None:
         positions = {h.game_id: i for i, h in enumerate(hits)}
         assert set(positions) >= _OWN_NAME_GAME_IDS, "own-name entities missing from the results"
         alias_only = [i for gid, i in positions.items() if gid not in _OWN_NAME_GAME_IDS]
-        assert alias_only, "fixture no longer exercises B113: no alias-only hits"
+        assert alias_only, "fixture no longer exercises the defect: no alias-only hits"
         assert max(positions[gid] for gid in _OWN_NAME_GAME_IDS) < min(alias_only)
 
 
 def test_zone_alias_never_evicts_an_own_name_match_from_the_bounded_set(
     tmp_path: Path,
 ) -> None:
-    # The membership half of B113 (the part a display-only sort cannot fix): with more
+    # The membership half of the defect (the part a display-only sort cannot fix): with more
     # alias-only member stages than the whole result window, an own-name match must
     # still be IN the bounded set. 13 members vs limit 10 -- under the old ordering the
     # cn operator and "Gavial's Fist" fell to #17 and #14 on the real corpus.
@@ -684,8 +684,9 @@ def test_zone_alias_never_evicts_an_own_name_match_from_the_bounded_set(
 
 
 def test_stage_search_alias_precedence_sits_under_exact_code(tmp_path: Path) -> None:
-    # §T33 is not weakened by §V90: an exact stage-code match still wins outright, and
-    # only below it does own-name beat alias-only. Both rules apply in search_stages.
+    # Exact-code-first is not weakened by own-name precedence: an exact stage-code match
+    # still wins outright, and only below it does own-name beat alias-only. Both rules
+    # apply in search_stages.
     path = tmp_path / "stage_precedence.sqlite"
     _seed_collision(path)
     with open_read_only(path) as conn:
@@ -696,7 +697,7 @@ def test_stage_search_alias_precedence_sits_under_exact_code(tmp_path: Path) -> 
 
 
 def test_alias_only_hit_carries_the_zone_name_that_matched(tmp_path: Path) -> None:
-    # B113's second half: an alias hit was unattributable on the wire. A stage whose
+    # The second half of the fix: an alias hit was unattributable on the wire. A stage whose
     # own name and code say nothing about "Gavial" now ships the string that did match.
     path = tmp_path / "attribution.sqlite"
     _seed_collision(path, member_stages=3)
@@ -710,7 +711,7 @@ def test_alias_only_hit_carries_the_zone_name_that_matched(tmp_path: Path) -> No
 
 
 def test_zone_name_absent_leaves_zone_display_name_none(tmp_path: Path) -> None:
-    # §V67: a stage whose zone carries no name in source (416 of 3264 en stages on the
+    # A stage whose zone carries no name in source (416 of 3264 en stages on the
     # 2026-07-27 build) yields None here, and the tool layer omits the key -- never a
     # null a client cannot tell from "this zone is called nothing".
     path = tmp_path / "unnamed_zone.sqlite"

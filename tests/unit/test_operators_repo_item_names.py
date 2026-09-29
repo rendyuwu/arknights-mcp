@@ -1,14 +1,14 @@
-"""``OperatorRepository.item_display_names`` batched cost-item name lookup (§T132/§V69).
+"""``OperatorRepository.item_display_names`` batched cost-item name lookup.
 
 The module/skill upgrade-cost name pairing resolves a cost's item ids to their
 region-locale display names in ONE batched parameterized query -- a single
 ``WHERE game_id IN (?, …)`` with every value bound and only the ``?`` placeholder count
-composed from ``len(ids)`` (§V2: structural, never a value, so injection stays
+composed from ``len(ids)`` (structural, never a value, so injection stays
 impossible). These pin the batch behaviour directly (the F2 change from an N+1 per-id
 loop): a multi-id lookup returns every resolved name, an id present-but-unnamed or absent
-is excluded (the caller then emits a bare id + limitation, never a fabricated name,
-§V26/§V69), an empty id set short-circuits without a query, and the lookup is
-region-scoped so en/cn never mix (§V5).
+is excluded (the caller then emits a bare id + limitation, never a fabricated name),
+an empty id set short-circuits without a query, and the lookup is
+region-scoped so en/cn never mix.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
         [ServerImport("en", adapter, "local_snapshot")],
         registry=load_source_registry(REGISTRY),
     )
-    # A None display name seeds an item present-but-unnamed (§T132 leaves a bare id).
+    # A None display name seeds an item present-but-unnamed.
     seed_items(
         path,
         {"mat_1": "Orirock Cube", "mat_2": "Sugar", "mat_unnamed": None},
@@ -57,7 +57,7 @@ def test_batched_lookup_returns_every_resolved_name(conn: sqlite3.Connection) ->
 
 def test_unnamed_and_absent_ids_are_excluded(conn: sqlite3.Connection) -> None:
     # mat_unnamed is present with a null display name; mat_absent is not in the table.
-    # Neither is in the map -> the caller emits a bare id + limitation (§V26/§V69).
+    # Neither is in the map -> the caller emits a bare id + limitation.
     names = OperatorRepository(conn).item_display_names(
         "en", ["mat_1", "mat_unnamed", "mat_absent"]
     )
@@ -77,7 +77,7 @@ def test_empty_id_set_short_circuits(conn: sqlite3.Connection) -> None:
 
 
 def test_lookup_is_region_scoped(conn: sqlite3.Connection) -> None:
-    # §V5: the items are seeded under en, so a cn query resolves none of them -- the
+    # The items are seeded under en, so a cn query resolves none of them -- the
     # server value is bound, en/cn are never mixed.
     assert OperatorRepository(conn).item_display_names("en", ["mat_1"]) == {"mat_1": "Orirock Cube"}
     assert OperatorRepository(conn).item_display_names("cn", ["mat_1"]) == {}

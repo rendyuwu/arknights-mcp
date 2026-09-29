@@ -4,12 +4,12 @@ One PostgreSQL table, ``account_roster``: one row per server holding the whole
 allowlisted roster as canonical JSON. ``account sync`` replaces that row inside
 one transaction, so a reader sees the old or the new roster, never a mix, and a
 failed write leaves the old row. MCP reads it on each call through a SELECT-only
-role; only CLI ``account sync|purge`` write (§V2).
+role; only CLI ``account sync|purge`` write.
 
 SQL comes only from SQLAlchemy Core constructs with bound parameters. The URL in
 ``ARKNIGHTS_MCP_ACCOUNT_DB_URL`` is a secret: no error raised here carries the URL,
-host, user, password, or a driver message -- only the exception class name
-(§V12). ``sqlite:///`` URLs are accepted for the test suite.
+host, user, password, or a driver message -- only the exception class name.
+``sqlite:///`` URLs are accepted for the test suite.
 """
 
 from __future__ import annotations

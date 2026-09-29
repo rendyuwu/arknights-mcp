@@ -1,15 +1,15 @@
-"""T189/B125: the shared importer guards have exactly one home (§V37/§V30/§V58).
+"""The shared importer guards have exactly one home.
 
 Two patterns had been copy-pasted per domain; both now live in
 :mod:`arknights_mcp.importers.guards`:
 
-* the §V30 silent-empty guard -- six former inline copies (banners, skins, penguin
+* the silent-empty guard -- six former inline copies (banners, skins, penguin
   drops, announcements twice, activity titles) plus the pipeline's combat guard;
-* the §V58 optional-domain fail-open -- two verbatim pipeline copies (banners, and
+* the optional-domain fail-open -- two verbatim pipeline copies (banners, and
   skins copy-pasted from banners).
 
 This verifies the shared behaviour AND that no divergent copy remains in the modules
-that used to carry one -- the introspection half is the part that stops the B92/B106
+that used to carry one -- the introspection half is the part that stops the
 copy-drift class from re-landing with the next optional domain.
 """
 
@@ -43,7 +43,7 @@ _GUARD_KW = {
 }
 
 
-# --- §V30: the shared silent-empty predicate ---------------------------------------
+# --- the shared silent-empty predicate ---------------------------------------------
 
 
 def test_candidates_with_zero_produced_fails_closed() -> None:
@@ -51,13 +51,13 @@ def test_candidates_with_zero_produced_fails_closed() -> None:
         guard_not_silently_empty(candidates=3, produced=0, scope="en", **_GUARD_KW)
     assert str(exc_info.value) == (
         "en: gacha_table had 3 pool entr(y|ies) but none resolved to a banner; "
-        "refusing a silent empty banner build (§V30)"
+        "refusing a silent empty banner build"
     )
 
 
 def test_empty_source_is_a_legitimate_empty_domain() -> None:
     # Zero candidates is not a regression: an optional domain the snapshot simply
-    # does not carry imports zero rows without failing the build (B36/§V41).
+    # does not carry imports zero rows without failing the build.
     guard_not_silently_empty(candidates=0, produced=0, scope="en", **_GUARD_KW)
 
 
@@ -73,7 +73,7 @@ def test_scope_is_optional_for_parse_time_callers() -> None:
     assert str(exc_info.value).startswith("gacha_table had 26 ")
 
 
-def test_compound_cite_and_detail_ride_through() -> None:
+def test_detail_rides_through() -> None:
     with pytest.raises(ImporterError) as exc_info:
         guard_not_silently_empty(
             candidates=2,
@@ -83,24 +83,23 @@ def test_compound_cite_and_detail_ride_through() -> None:
             unit="entr(y|ies)",
             resolution="carried a mapped date",
             outcome="degraded announcement build",
-            cite="§V30/§V61",
             detail=" -- the feed field-map matched no known date shape",
         )
     assert str(exc_info.value) == (
         "cn: announcement feed had 2 entr(y|ies) but none carried a mapped date; "
-        "refusing a silent degraded announcement build (§V30/§V61) -- the feed "
+        "refusing a silent degraded announcement build -- the feed "
         "field-map matched no known date shape"
     )
 
 
 def test_refuse_silent_empty_always_raises_typed() -> None:
-    # §V33: the low-level home for the raise, used by the one caller whose reason does
+    # The low-level home for the raise, used by the one caller whose reason does
     # not fit the candidates-vs-produced predicate (the pipeline's tiles/spawns case).
     with pytest.raises(ImporterError, match=r"^en: boom; refusing a silent empty combat build"):
         refuse_silent_empty("en: boom", outcome="empty combat build")
 
 
-# --- §V58: the shared optional-domain fail-open ------------------------------------
+# --- the shared optional-domain fail-open ------------------------------------------
 
 
 def _conn() -> sqlite3.Connection:
@@ -124,7 +123,6 @@ def test_optional_domain_returns_the_import_result_on_success() -> None:
             server="en",
             describe="banner archive",
             empty=lambda: "empty",
-            cites="§V62/§V58",
         )
         assert result == "imported"
     finally:
@@ -134,7 +132,7 @@ def test_optional_domain_returns_the_import_result_on_success() -> None:
 def test_optional_domain_rolls_back_partial_rows_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # §V58/§V3: the domain's ImporterError rolls back only THIS domain's writes (the
+    # The domain's ImporterError rolls back only THIS domain's writes (the
     # row written before the block survives), the build continues with the typed empty
     # result, and the skip is warned once so it is visible in the sync log.
     conn = _conn()
@@ -152,13 +150,11 @@ def test_optional_domain_rolls_back_partial_rows_and_warns(
                 server="en",
                 describe="banner archive",
                 empty=lambda: "empty",
-                cites="§V62/§V58",
             )
         assert result == "empty"
         assert _rows(conn) == [1]
         assert any(
-            "en: banner archive unavailable, skipped; continuing combat build (§V62/§V58)"
-            in r.getMessage()
+            "en: banner archive unavailable, skipped; continuing combat build" in r.getMessage()
             for r in caplog.records
         )
     finally:
@@ -183,7 +179,6 @@ def test_optional_domain_does_not_swallow_other_errors() -> None:
                 server="en",
                 describe="banner archive",
                 empty=lambda: "empty",
-                cites="§V62/§V58",
             )
         # the savepoint still rolled the partial write back before re-raising
         assert _rows(conn) == [1]
@@ -191,11 +186,11 @@ def test_optional_domain_does_not_swallow_other_errors() -> None:
         conn.close()
 
 
-# --- §V37: no divergent copies remain ----------------------------------------------
+# --- no divergent copies remain ----------------------------------------------------
 
 
 def test_silent_empty_message_has_single_home() -> None:
-    # V37: only the guards module builds the refusal message; every former copy now
+    # Only the guards module builds the refusal message; every former copy now
     # calls the shared guard instead of re-forking the f-string.
     for mod in (
         banners_mod,
@@ -212,12 +207,12 @@ def test_silent_empty_message_has_single_home() -> None:
 
 
 def test_fail_open_block_has_single_home() -> None:
-    # V37/B125: the savepoint + `except ImporterError` + warn + empty-result block is
+    # The savepoint + `except ImporterError` + warn + empty-result block is
     # gone from the pipeline; the next optional domain gets the helper, not a copy.
     src = inspect.getsource(pipeline_mod)
     assert "except ImporterError" not in src
     assert "savepoint(" not in src
-    # banners + skins + ranges (§T200): each optional domain reaches the helper, and the
+    # banners + skins + ranges: each optional domain reaches the helper, and the
     # count moves WITH a new domain so a hand-rolled copy beside them still fails here.
     assert src.count("import_optional_domain(") == 3
     assert import_optional_domain.__module__ == "arknights_mcp.importers.guards"

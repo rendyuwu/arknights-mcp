@@ -1,16 +1,16 @@
-"""Skill importer (§T42; PRD §12.3) -- the ``skill_table`` half of the operator domain.
+"""Skill importer (PRD section 12.3) -- the ``skill_table`` half of the operator domain.
 
 Parses the real ``skill_table.json`` (a top-level id-keyed dict, no wrapper) into
 ``skills`` + ``skill_levels``, applying the explicit field allowlist and string
-sanitization (§V18/§V31) and attaching per-record provenance (§V17) to each skill row
+sanitization and attaching per-record provenance to each skill row
 (level rows link through their parent). The per-level effect description TEMPLATE is
 imported into ``gameplay_description`` and emitted alongside the blackboard for
-grounding (§V65 path (a), ADR 0010).
+grounding (ADR 0010).
 
-Split out of :mod:`~arknights_mcp.importers.operators` under §V38 (§T202): that module
-had crossed the 800-line hard cap, and the skill table is a distinct responsibility
-group with a distinct source file -- the same forced split as ``effect_changes`` (§T209)
-and ``enemy_normalization`` (§T210). The dependency runs one way, ``operators`` -> here,
+Split out of :mod:`~arknights_mcp.importers.operators` -- that module had crossed the
+800-line hard cap, and the skill table is a distinct responsibility group with a
+distinct source file -- the same forced split as ``effect_changes`` and
+``enemy_normalization``. The dependency runs one way, ``operators`` -> here,
 so the operator importer keeps a single entry point per source file.
 """
 
@@ -49,10 +49,10 @@ class ParsedSkillLevel:
     range_id: str | None
     blackboard: Any
     #: In-game skill effect description TEMPLATE (mechanic text referencing the
-    #: blackboard keys; §V65 path (a), ADR 0010). Allowlisted + sanitized + capped
-    #: at parse time (§V18); ``None`` when the source level carries no description.
+    #: blackboard keys; ADR 0010). Allowlisted + sanitized + capped
+    #: at parse time; ``None`` when the source level carries no description.
     description: str | None
-    #: This level's OWN name / enum values (§V112/B159). The source scopes all four per
+    #: This level's OWN name / enum values. The source scopes all four per
     #: level; they are carried here so a level that disagrees with its siblings keeps its
     #: value instead of being overwritten by level 1's.
     display_name: str | None
@@ -64,7 +64,7 @@ class ParsedSkillLevel:
 @dataclass(frozen=True)
 class ParsedSkill:
     game_id: str
-    #: The value every level shares, or ``None`` when the levels disagree (§V112 a/b).
+    #: The value every level shares, or ``None`` when the levels disagree.
     #: ``None`` is not "absent from the source": it means the fact is per level, and the
     #: level rows carry it. Never level 1's value standing in for the rest.
     display_name: str | None
@@ -83,19 +83,19 @@ def _enum_text(value: Any) -> str | None:
     still round-trips into a ``TEXT`` column. ``bool`` is rejected (an ``int`` subclass,
     never a real code).
 
-    The numeric arm is NOT a legacy encoding -- §T208 corrects the framing B157 inherited
-    from this docstring. The pinned upstream ``413a81a3`` ships BOTH forms in the SAME file
-    at the SAME pin: ``spType`` is a name on 8674 en / 9108 cn skill-level rows and the bare
-    int ``8`` on 1515 en / 1745 cn, and skill ``sktok_mjcsdw`` carries both across its own
-    levels. A second, independent export of the same game data emits that same bare ``8``
-    on every one of the 1352 skill ids it shares with the pin, with zero disagreements, so
-    the NAME does not exist upstream rather than having been missed here.
+    The numeric arm is NOT a legacy encoding. The pinned upstream ``413a81a3`` ships BOTH
+    forms in the SAME file at the SAME pin: ``spType`` is a name on 8674 en / 9108 cn
+    skill-level rows and the bare int ``8`` on 1515 en / 1745 cn, and skill
+    ``sktok_mjcsdw`` carries both across its own levels. A second, independent export of
+    the same game data emits that same bare ``8`` on every one of the 1352 skill ids it
+    shares with the pin, with zero disagreements, so the NAME does not exist upstream
+    rather than having been missed here.
 
-    Stringifying is therefore the honest coercion (§V99 wants one type per key, but not at
+    Stringifying is therefore the honest coercion (one type per key is wanted, but not at
     the price of a fabricated one): dropping the int would erase the field on 1145 rows of
-    the promoted build, and mapping it to a name would invent one, which §V29/§V96 forbid.
-    What the client gets instead is disclosure -- ``OPEN_ENUM_LIMITATIONS['sp_type']``
-    (§V104 c), a floor rather than a resolution.
+    the promoted build, and mapping it to a name would invent one, which the real-value
+    rule forbids. What the client gets instead is disclosure --
+    ``OPEN_ENUM_LIMITATIONS['sp_type']``, a floor rather than a resolution.
 
     ``skillType``/``durationType`` are 100% strings at the same pin (10189 en / 10853 cn
     level rows each), so the two clean siblings are clean by DATA, not by construction:
@@ -116,13 +116,13 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
 
     ``name`` / ``skillType`` / ``durationType`` / ``spData.spType`` are scoped PER LEVEL
     upstream, so each :class:`ParsedSkillLevel` keeps its own value and the skill-wide
-    scalar is the one every level shares -- ``None`` when they disagree (§V112, B159).
+    scalar is the one every level shares -- ``None`` when they disagree.
     Reading level 1 and calling it the skill's value discarded the others: ``sktok_mjcsdw``
     stored the unnamed ``spType`` code ``8`` from its level 1 while its level 2 sends
     ``INCREASE_WITH_TIME``, and ``sktok_sunmao`` stored "Connect" while its level 5 is
     "Engrave". The uniform case (1597 of 1598 EN skills) is unchanged: the value rides the
     skill row and every level row leaves it ``NULL``, the same hoist ``gameplay_description``
-    already uses (§V66.3).
+    already uses.
     """
     if not isinstance(skill_raw, dict):
         return []
@@ -150,12 +150,12 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
                     duration=as_float(kept.get("duration")),
                     range_id=as_str(kept.get("rangeId")),
                     blackboard=blackboard,
-                    # §V65 (a)/ADR 0010: the effect template rides the blackboard as its
+                    # ADR 0010: the effect template rides the blackboard as its
                     # grounding. Read from the RAW level, not `kept`: the allowlist cap
-                    # lands before the tag strip and cuts the template mid-sentence
-                    # (§V109/B154). `description` is on SKILL_LEVEL_ALLOWLIST either way.
+                    # lands before the tag strip and cuts the template mid-sentence.
+                    # `description` is on SKILL_LEVEL_ALLOWLIST either way.
                     description=template_text(raw_level.get("description")),
-                    # §V112: this level's OWN four, not level 1's (B159).
+                    # this level's OWN four, not level 1's.
                     display_name=as_str(kept.get("name")),
                     skill_type=_enum_text(kept.get("skillType")),
                     sp_type=_enum_text(sp.get("spType")),
@@ -165,9 +165,9 @@ def parse_skills(skill_raw: Any) -> list[ParsedSkill]:
         parsed.append(
             ParsedSkill(
                 game_id=game_id,
-                # §V112 (a): a scalar the skill may claim only when every level agrees;
+                # a scalar the skill may claim only when every level agrees;
                 # `uniform_str` returns None the moment they diverge, and the diverging
-                # values stay on their level rows (§V112 b).
+                # values stay on their level rows.
                 display_name=uniform_str(lv.display_name for lv in levels),
                 skill_type=uniform_str(lv.skill_type for lv in levels),
                 sp_type=uniform_str(lv.sp_type for lv in levels),
@@ -184,10 +184,10 @@ def _level_only(
 ) -> tuple[str | None, str | None, str | None, str | None]:
     """The four per-level values to STORE on ``level``: its own, or ``NULL`` when hoisted.
 
-    A field the skill row already carries (every level agreed, §V112 a) is redundant on
+    A field the skill row already carries (every level agreed) is redundant on
     each level row, so it is stored once on the skill and ``NULL`` here -- the same
-    hoist ``gameplay_description`` and the module change bundles use (§V66.3). A field
-    the skill row left ``NULL`` is either varying (§V112 b) or absent from the source;
+    hoist ``gameplay_description`` and the module change bundles use. A field
+    the skill row left ``NULL`` is either varying or absent from the source;
     in both cases this level's own value is the honest one to store.
     """
     return (
@@ -250,8 +250,8 @@ def insert_skills(
                         level.duration,
                         level.range_id,
                         json_or_none(level.blackboard),
-                        level.description,  # effect template (§V65 (a)/ADR 0010)
-                        # §V112 (a)/§V66.3: a value the whole skill shares rides the skill
+                        level.description,  # effect template (ADR 0010)
+                        # a value the whole skill shares rides the skill
                         # row once; a level stores its own only when the levels disagree,
                         # so NULL here reads as "see the skill row" and the uniform case
                         # costs no repeated bytes.

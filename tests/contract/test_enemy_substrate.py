@@ -1,10 +1,10 @@
-"""T210: the enemy SUBSTRATE, counted against real upstream (§V113/§V103/§V44; B160).
+"""The enemy SUBSTRATE, counted against real upstream.
 
 Six allowlisted enemy columns shipped 100% NULL on every build ever promoted --
 ``enemy_levels.{attack_range,block_behavior,targeting,immunities_json,abilities_json}``
 0/4343 and ``enemies.attack_type`` 0/3879 -- so four of the nine registered threat rules
 emitted zero observations over 3264 en + 1200 cn stages. No rule-level test could see it:
-a rule reading an always-NULL field takes its own §V26 "field missing -> reduce
+a rule reading an always-NULL field takes its own "field missing -> reduce
 confidence" arm and returns **clean**.
 
 The three causes are three different questions about the SOURCE, so this module asks the
@@ -16,19 +16,19 @@ source (@pinned ``413a81a3``, en + cn)::
     attackType    null 1585/1585 en     -- present, retired, empty
     damageType    [PHYSIC] 1022 | [MAGIC] 338 | [NO_DAMAGE] 180 | both 42 | [HEAL] 2
 
-and then asserts the §V30 bridge really maps what it found. The build-side counterpart --
+and then asserts the bridge really maps what it found. The build-side counterpart --
 what the promoted corpus stores and whether the client-facing legends match it -- lives in
 ``tests/contract/test_enum_domain_coverage.py``, and the offline accounting of key ->
 upstream home lives in ``tests/contract/test_column_liveness.py``.
 
-The last group is the one B160 was really about: the false positives a naive revival would
+The last group is the real point: the false positives a naive revival would
 have shipped. 383 EN enemies are arts-capable, 77 of them carry no radius at all, and 55 of
 THOSE declare ``applyWay: MELEE``. A ranged-arts rule that fell from "no radius" straight to
-§V26's inference would publish all 55 as ranged threats against the source's own word, which
+the inference would publish all 55 as ranged threats against the source's own word, which
 is why reading ``targeting`` first is a pinned property and not a style choice.
 
-CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like §T68 and the §V97 /
-§V109 / §V110 / §V99 guards. Nothing fetched is persisted (§V16, code-only distribution).
+CI-only: needs network, gated behind ``ARKMCP_LIVE_UPSTREAM`` like the other
+live-upstream guards. Nothing fetched is persisted (code-only distribution).
 """
 
 from __future__ import annotations
@@ -69,10 +69,10 @@ IMMUNE_KEYS = (
     "attractImmune",
 )
 
-#: §V96 non-degenerate floors. Every one is far under the pinned count (en: 1170 defined
+#: Non-degenerate floors. Every one is far under the pinned count (en: 1170 defined
 #: radii, 1778 defined applyWay cells, 1194 levels with an immunity flag, 1585 handbook
 #: entries, 381 arts-capable). A corpus that stopped carrying a field would otherwise let
-#: every assertion below pass vacuously -- the exact failure mode B160 was.
+#: every assertion below pass vacuously -- the exact failure mode the fix was about.
 MIN_DEFINED_RANGE = 400
 MIN_DEFINED_TARGETING = 800
 MIN_LEVELS_WITH_IMMUNITY = 400
@@ -82,7 +82,7 @@ MIN_ARTS_ENEMIES = 100
 
 @lru_cache(maxsize=len(SERVERS))
 def _enemy_database(server: str) -> dict[str, Any]:
-    """The pinned ``enemy_database`` for ``server``; fetched once, never written (§V16)."""
+    """The pinned ``enemy_database`` for ``server``; fetched once, never written."""
     url = f"{arknights_assets_base_url(server)}/gamedata/levels/enemydata/enemy_database.json"
     table = json.loads(fetch_upstream_bytes(url).decode("utf-8"))
     assert isinstance(table, dict) and table, f"{server} enemy_database is not a populated dict"
@@ -91,7 +91,7 @@ def _enemy_database(server: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=len(SERVERS))
 def _enemy_handbook(server: str) -> dict[str, Any]:
-    """The pinned ``enemy_handbook_table`` entries for ``server`` (§V16: never written)."""
+    """The pinned ``enemy_handbook_table`` entries for ``server`` (never written)."""
     url = f"{arknights_assets_base_url(server)}/gamedata/excel/enemy_handbook_table.json"
     table = json.loads(fetch_upstream_bytes(url).decode("utf-8"))
     entries = table.get("enemyData") if isinstance(table, dict) else None
@@ -111,13 +111,13 @@ def _cells(server: str, key: str) -> list[Any]:
 
 
 def _defined(cell: Any) -> tuple[bool, Any]:
-    """A ``{m_defined, m_value}`` cell -> ``(defined, value)`` (§V44)."""
+    """A ``{m_defined, m_value}`` cell -> ``(defined, value)``."""
     if isinstance(cell, dict):
         return bool(cell.get("m_defined", True)), cell.get("m_value")
     return True, cell
 
 
-# --- (a) the §V30 bridge gap: upstream carries all three ----------------------
+# --- (a) the bridge gap: upstream carries all three ----------------------
 
 
 @pytest.mark.parametrize("server", SERVERS)
@@ -125,7 +125,7 @@ def test_upstream_carries_a_range_radius_and_a_negative_sentinel(server: str) ->
     """``rangeRadius`` is real AND carries a sentinel -- both halves are load-bearing.
 
     The defined count is what makes the column worth filling; the negative arm is what
-    §V103 keeps OUT of it. If upstream ever stopped using ``-1.0`` for "no radius", the
+    the distance rule keeps OUT. If upstream ever stopped using ``-1.0`` for "no radius", the
     sentinel strip would be silently dropping real data, so the value itself is pinned,
     not just its sign.
     """
@@ -140,7 +140,7 @@ def test_upstream_carries_a_range_radius_and_a_negative_sentinel(server: str) ->
 
 @pytest.mark.parametrize("server", SERVERS)
 def test_upstream_targeting_token_set_matches_the_published_legend(server: str) -> None:
-    """``applyWay``'s real token set is the domain ``targeting``'s legend publishes (§V96)."""
+    """``applyWay``'s real token set is the domain ``targeting``'s legend publishes."""
     tokens = {value for defined, value in map(_defined, _cells(server, "applyWay")) if defined}
     defined_count = sum(1 for defined, _ in map(_defined, _cells(server, "applyWay")) if defined)
     assert defined_count >= MIN_DEFINED_TARGETING, f"{server}: only {defined_count} applyWay cells"
@@ -150,7 +150,7 @@ def test_upstream_targeting_token_set_matches_the_published_legend(server: str) 
 
 @pytest.mark.parametrize("server", SERVERS)
 def test_upstream_carries_the_nine_typed_immunity_flags(server: str) -> None:
-    """All nine flags exist, are typed booleans, and are SET on real enemies (§V96)."""
+    """All nine flags exist, are typed booleans, and are SET on real enemies."""
     with_any_defined = 0
     ever_true: set[str] = set()
     for levels in _enemy_database(server).values():
@@ -179,9 +179,9 @@ def test_upstream_carries_the_nine_typed_immunity_flags(server: str) -> None:
 
 @pytest.mark.parametrize("server", SERVERS)
 def test_the_bridge_emits_all_three_from_a_real_entry(server: str) -> None:
-    """End of the §V113 chain: upstream -> bridge, on a REAL enemy, not a fixture.
+    """End of the substrate chain: upstream -> bridge, on a REAL enemy, not a fixture.
 
-    B160's shape was three keys that existed upstream and in the allowlist and nowhere in
+    The gap was three keys that existed upstream and in the allowlist and nowhere in
     between. Counting upstream alone would have reproduced exactly that blind spot, so
     this runs the real records through the real bridge.
     """
@@ -208,7 +208,7 @@ def test_the_bridge_emits_all_three_from_a_real_entry(server: str) -> None:
 
 @pytest.mark.parametrize("server", SERVERS)
 def test_the_bridge_never_stores_the_sentinel_as_a_distance(server: str) -> None:
-    """§V103: ``-1.0`` means "no radius"; a distance column must not carry it."""
+    """``-1.0`` means "no radius"; a distance column must not carry it."""
     sentinel_ids = {
         game_id: levels
         for game_id, levels in _enemy_database(server).items()
@@ -228,7 +228,7 @@ def test_the_bridge_never_stores_the_sentinel_as_a_distance(server: str) -> None
 
 @pytest.mark.parametrize("server", SERVERS)
 def test_attack_type_is_present_and_empty_while_damage_type_carries_the_fact(server: str) -> None:
-    """§V113 (c): a field can pass §V29 (shape) and §V96 (values) and still be empty.
+    """A field can pass the shape check and the value check and still be empty.
 
     ``attackType`` is on every entry and ``null`` on every entry, which is why only a
     count witnesses it. The day upstream fills it again, this fails and the retirement is
@@ -254,7 +254,7 @@ def test_attack_type_is_present_and_empty_while_damage_type_carries_the_fact(ser
 
 
 def test_damage_type_is_a_list_because_real_enemies_deal_two_kinds() -> None:
-    """The shape argument for the list column, measured rather than asserted (§V67).
+    """The shape argument for the list column, measured rather than asserted.
 
     42 EN enemies deal PHYSIC *and* MAGIC. A scalar column could not have carried that
     even when ``attackType`` was populated, so the retirement is not what made the old
@@ -314,7 +314,7 @@ def test_arts_enemies_without_a_radius_but_declaring_melee_really_exist(server: 
         f"{server}: no arts enemy lacks a radius while declaring MELEE -- the census that "
         "decided the rule's field order no longer holds"
     )
-    # ...and the authoritative arm still has a population of its own (§V96).
+    # ...and the authoritative arm still has a population of its own.
     assert [row for row in population if row[1] is not None and row[1] >= 1.0]
 
 

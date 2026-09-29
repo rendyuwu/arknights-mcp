@@ -1,21 +1,21 @@
-"""T39: the M3 deterministic rule engine (§V6, §V7, §V26, §V35).
+"""The M3 deterministic rule engine.
 
 One test group per rule (def/res skew, ranged-arts, pressure-spike, lane/route,
 tiles/deploy) plus cross-cutting guards:
 
-* every emitted observation carries the five §V6 fields;
-* rules decide from typed fields only and handle missing / conflicting fields per
-  §V26 (reduced confidence + limitation; omit + warn);
-* an enemy seen at several level variants is counted once (§V35);
-* no observation uses prescriptive "mandatory"/"best"/"must-use" language (§V7);
+* every emitted observation carries the five mandated fields;
+* rules decide from typed fields only and handle missing / conflicting fields
+  (reduced confidence + limitation; omit + warn);
+* an enemy seen at several level variants is counted once;
+* no observation uses prescriptive "mandatory"/"best"/"must-use" language;
 * the engine is deterministic regardless of input order.
 
 The M0 aerial rule keeps its own suite (``test_analyzer_stage_aerial``); here it
 appears only in the combined scenario.
 
-§T210 (c) retired block-bypass, crowd-control and support-aura, so their groups are
-gone with them: every field those rules decided from is absent from every real source
-(B160 (c)), and the tests that passed were feeding the rules synthetic values no build
+Block-bypass, crowd-control and support-aura are retired, so their groups are
+gone with them: every field those rules decided from is absent from every real source,
+and the tests that passed were feeding the rules synthetic values no build
 could produce. ``tests/contract/test_column_liveness.py`` now pins the retirement.
 """
 
@@ -44,7 +44,7 @@ def occ(game_id: str, **kw: Any) -> EnemyOccurrence:
 
     ``damage_types`` uses the source's OWN token (``PHYSIC``), not the invented
     ``"physical"`` these tests used to pass: that string appears on 0 of 1585 real
-    handbook entries, and a default no build can produce is how B160 stayed invisible.
+    handbook entries, and a default no build can produce is how the flaw stayed invisible.
     """
     base: dict[str, Any] = {
         "display_name": None,
@@ -63,7 +63,7 @@ def ctx(
     route_count: int | None = None,
     tiles: StageTiles | None = None,
 ) -> StageThreatContext:
-    """A stage context whose game_id and stage_code DIFFER on purpose (§V68/B136): a
+    """A stage context whose game_id and stage_code DIFFER on purpose: a
     stage-level evidence row must ref the unique game_id, and a test where the two
     strings are equal cannot tell the two apart."""
     return StageThreatContext(
@@ -77,10 +77,10 @@ def ctx(
 
 
 def _reach_warnings(result: Any, game_id: str) -> list[str]:
-    """The ranged-arts reach warnings naming this enemy, and nothing else (§V118).
+    """The ranged-arts reach warnings naming this enemy, and nothing else.
 
     ``occ()`` leaves def/res absent and ``ctx()`` loads no tiles or routes, so a stage
-    now also carries the "could not judge this" lines B165 added -- including ones that
+    now also carries the "could not judge this" lines -- including ones that
     name the same enemy. A test about the reach conflict has to say which warning it
     means, or it reads whichever refusal happens to sort first.
     """
@@ -92,7 +92,7 @@ def _obs_by_tag(result: Any) -> dict[str, Observation]:
 
 
 def _assert_v6_fields(o: Observation) -> None:
-    """§V6: every observation carries rule_id + evidence + confidence + limitations
+    """Every observation carries rule_id + evidence + confidence + limitations
     + analyzer_version, well-formed."""
     assert o.rule_id
     assert o.analyzer_version
@@ -109,7 +109,7 @@ def test_def_res_skew_fires_on_high_armor_low_res() -> None:
     obs = _obs_by_tag(result)["def_res_skew"]
     assert obs.rule_id == DEF_RES_SKEW_ID
     _assert_v6_fields(obs)
-    # §V101/B137: one fact per row -- two separately-typed stats, never one row with an
+    # One fact per row -- two separately-typed stats, never one row with an
     # invented "def/res" path and a packed "def=800,res=0" string the client must split.
     assert [(e.field, e.value) for e in obs.evidence] == [("def", 800), ("res", 0)]
     assert all(isinstance(e.value, int) for e in obs.evidence)
@@ -118,7 +118,7 @@ def test_def_res_skew_fires_on_high_armor_low_res() -> None:
 def test_def_res_skew_fires_on_high_res_low_armor() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_mystic", defense=100, res=70))))["def_res_skew"]
     assert [(e.field, e.value) for e in obs.evidence] == [("def", 100), ("res", 70)]
-    # The comparison stays prose on both rows (§V101): it says which damage type wins,
+    # The comparison stays prose on both rows: it says which damage type wins,
     # which neither scalar states on its own.
     assert all(e.note is not None and "physical" in e.note for e in obs.evidence)
 
@@ -129,7 +129,7 @@ def test_def_res_skew_balanced_enemy_does_not_fire() -> None:
 
 
 def test_def_res_skew_partial_stats_recorded_as_limitation() -> None:
-    # §V26: a fully-typed skewed enemy fires; a coexisting enemy with only one stat
+    # A fully-typed skewed enemy fires; a coexisting enemy with only one stat
     # typed cannot be concluded from -> its missing stat is surfaced as a limitation
     # on the observation, not silently ignored.
     result = analyze_stage(
@@ -145,12 +145,12 @@ def test_def_res_skew_partial_stats_recorded_as_limitation() -> None:
 
 # --- ranged-arts --------------------------------------------------------------
 #
-# §T210 (a)/(b): the rule reads THREE typed fields in a fixed order of authority --
+# The rule reads THREE typed fields in a fixed order of authority --
 # damage_types gates it, a measured attack_range decides it, and upstream's own
 # targeting token decides it when no radius was stored. The order is the fix: counted
 # over the pinned EN snapshot, 77 of the 383 arts-capable enemies carry no radius and
 # 55 of THOSE declare applyWay MELEE, so a rule that fell straight from "no radius" to
-# the §V26 inference would publish 55 enemies as ranged threats against the source.
+# the inference would publish 55 enemies as ranged threats against the source.
 
 
 def test_ranged_arts_fires_on_arts_at_range() -> None:
@@ -193,7 +193,7 @@ def test_ranged_arts_reads_targeting_before_inferring_from_absence() -> None:
 
 
 def test_ranged_arts_melee_targeting_without_a_radius_does_not_fire() -> None:
-    # THE 55-false-positive case (§T210 b): arts damage, no radius, and the source's own
+    # THE 55-false-positive case: arts damage, no radius, and the source's own
     # token says melee. Inferring reach here would contradict the field that answered.
     result = analyze_stage(
         ctx(
@@ -204,7 +204,7 @@ def test_ranged_arts_melee_targeting_without_a_radius_does_not_fire() -> None:
 
 
 def test_ranged_arts_no_targeting_at_all_is_a_conflict_not_a_conclusion() -> None:
-    # §V26 conflicting typed fields: it deals arts damage yet states no attack reach.
+    # Conflicting typed fields: it deals arts damage yet states no attack reach.
     result = analyze_stage(
         ctx(occ("enemy_inert", damage_types=("MAGIC",), attack_range=None, targeting="NONE"))
     )
@@ -212,8 +212,8 @@ def test_ranged_arts_no_targeting_at_all_is_a_conflict_not_a_conclusion() -> Non
     assert any("no attack reach" in w for w in result.warnings)
 
 
-# §T211/§V114 (B161): an absent radius is not always a missing field. Upstream's -1.0
-# sentinel is an ANSWER ("no attack radius") that §V103 keeps out of the distance column,
+# An absent radius is not always a missing field. Upstream's -1.0
+# sentinel is an ANSWER ("no attack radius") that is kept out of the distance column,
 # so the rule reads the flag BEFORE targeting -- otherwise it publishes a true conclusion
 # under the false reason "attack_range missing" for the 13 en / 16 cn arts enemies that
 # carry the sentinel AND declare RANGED|ALL.
@@ -231,7 +231,7 @@ def test_ranged_arts_denied_radius_conflicting_with_targeting_warns_and_omits() 
             )
         )
     )
-    # §V26: two typed source fields disagree -> omit the conclusion, report the conflict.
+    # Two typed source fields disagree -> omit the conclusion, report the conflict.
     assert result.observations == ()
     warning = next(iter(_reach_warnings(result, "enemy_1404_msnip")))
     assert "declares no attack radius" in warning
@@ -278,7 +278,7 @@ def test_ranged_arts_denied_radius_with_melee_targeting_is_silent() -> None:
 
 def test_ranged_arts_denied_radius_with_no_targeting_keeps_the_no_reach_conflict() -> None:
     # The arts-damage-versus-no-reach conflict is the same finding whether the radius was
-    # denied or never stated, so the denial must not silence it (§V37: one wording).
+    # denied or never stated, so the denial must not silence it (one wording).
     result = analyze_stage(
         ctx(
             occ(
@@ -354,7 +354,7 @@ def test_ranged_arts_physical_does_not_fire() -> None:
 
 
 def test_ranged_arts_absent_damage_types_does_not_fire() -> None:
-    # §V26: the source carried no damage kind at all -> no conclusion, not a guess.
+    # The source carried no damage kind at all -> no conclusion, not a guess.
     assert (
         analyze_stage(
             ctx(occ("enemy_unknown", damage_types=None, attack_range=3.0, targeting="RANGED"))
@@ -371,12 +371,12 @@ def test_pressure_spike_fires_on_tight_burst() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(swarm)))["pressure_spike"]
     assert obs.rule_id == PRESSURE_SPIKE_ID
     _assert_v6_fields(obs)
-    # B30/§V39: first/last_spawn_time is fragment-relative preDelay aggregated across
+    # first/last_spawn_time is fragment-relative preDelay aggregated across
     # waves, not elapsed time -> the rule no longer asserts a high-confidence burst; it
     # fires at reduced confidence and stamps the fragment-relative limitation.
     assert obs.confidence < 0.8
     assert any("fragment-relative" in lim for lim in obs.limitations)
-    # §V101/B137: the note used to pack "8 spawns; computed window 8s is fragment-
+    # The note used to pack "8 spawns; computed window 8s is fragment-
     # relative" -- one number restating the typed value, one the client had to parse out.
     # The window's two operands are separately emitted fields, so each is its own row.
     assert [(e.field, e.value) for e in obs.evidence] == [
@@ -388,7 +388,7 @@ def test_pressure_spike_fires_on_tight_burst() -> None:
 
 
 def test_pressure_spike_fragment_relative_window_reports_with_limitation() -> None:
-    # B30/§V39: an enemy trickled across >=6 fragments each at a low per-fragment preDelay
+    # An enemy trickled across >=6 fragments each at a low per-fragment preDelay
     # collapses to a ~0 computed window (first == last). The rule must NOT conclude a
     # confident burst from that cross-wave min/max; it reports at reduced confidence with
     # a limitation that the window is fragment-relative and may overstate the burst.
@@ -414,8 +414,8 @@ def test_pressure_spike_missing_window_reduces_confidence_and_limits() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(blind)))["pressure_spike"]
     assert obs.confidence < 0.8
     assert any("spawn timing missing" in lim for lim in obs.limitations)
-    # §V26/§V67: an absent window emits no spawn-bound row at all -- never a null or a
-    # zero standing in for "unknown". The §V26 limitation is the sole absence signal.
+    # An absent window emits no spawn-bound row at all -- never a null or a
+    # zero standing in for "unknown". The limitation is the sole absence signal.
     assert [(e.field, e.value) for e in obs.evidence] == [("total_count", 8)]
 
 
@@ -426,8 +426,8 @@ def test_lane_route_fires_on_multiple_routes() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), route_count=3)))["lane_route"]
     assert obs.rule_id == LANE_ROUTE_ID
     _assert_v6_fields(obs)
-    # §V68/B136: the stage-level row refs the unique game_id, never the shared stage_code.
-    # §V101: the count is the typed value and nothing restates it in prose.
+    # The stage-level row refs the unique game_id, never the shared stage_code.
+    # The count is the typed value and nothing restates it in prose.
     assert obs.evidence[0].ref == "main_01-01"
     assert obs.evidence[0].field == "metrics.route_record_count"
     assert obs.evidence[0].value == 3
@@ -435,9 +435,9 @@ def test_lane_route_fires_on_multiple_routes() -> None:
 
 
 def test_lane_route_raw_count_is_not_labelled_lanes() -> None:
-    # §V49/B43: a stage with 26 raw route records must NOT headline "26 lanes" -- the
+    # A stage with 26 raw route records must NOT headline "26 lanes" -- the
     # raw route-record count overstates distinct lanes. It fires at reduced confidence
-    # with a limitation that the raw count is not the lane count. §V101: "records, not
+    # with a limitation that the raw count is not the lane count. "records, not
     # lanes" is carried by the field name + the limitation, never by a number in a note.
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), route_count=26)))["lane_route"]
     assert "26 lanes" not in obs.summary
@@ -462,8 +462,8 @@ def test_tiles_deploy_fires_on_scarce_surface() -> None:
     obs = _obs_by_tag(analyze_stage(ctx(occ("enemy_a"), tiles=tiles)))["tiles_deploy"]
     assert obs.rule_id == TILES_DEPLOY_ID
     _assert_v6_fields(obs)
-    # §V68/B136: B136 named lane_route only; this rule had the same stage_code ref on
-    # every row it has ever emitted. §V101: the grid total was prose ("of 24 tiles") and
+    # lane_route was the named case; this rule had the same stage_code ref on
+    # every row it has ever emitted. The grid total was prose ("of 24 tiles") and
     # is now its own typed row at its own emitted path.
     assert {e.ref for e in obs.evidence} == {"main_01-01"}
     assert [(e.field, e.value) for e in obs.evidence] == [
@@ -491,7 +491,7 @@ def test_tiles_deploy_absent_tiles_does_not_fire() -> None:
 
 # --- cross-cutting guards -----------------------------------------------------
 
-#: Prescriptive language §V7 forbids in an observation (it must state facts, not
+#: Prescriptive language forbidden in an observation (it must state facts, not
 #: prescribe a "mandatory"/"best"/"must-use" answer).
 _FORBIDDEN = ("mandatory", "must use", "must bring", "best operator", "always bring", "recommended")
 
@@ -527,7 +527,7 @@ def test_every_observation_carries_v6_fields() -> None:
 
 
 def test_no_observation_uses_prescriptive_language() -> None:
-    # §V7: observations state capability/threat facts, never a prescriptive verdict.
+    # observations state capability/threat facts, never a prescriptive verdict.
     for obs in _every_observation():
         blob = f"{obs.title} {obs.summary}".lower()
         for term in _FORBIDDEN:
@@ -541,7 +541,7 @@ def test_engine_deterministic_regardless_of_input_order() -> None:
 
 
 def test_registry_covers_every_named_rule() -> None:
-    # §T39 named nine rules; §T210 (c) retired three whose deciding fields no real
+    # Nine rules were named; three were retired whose deciding fields no real
     # source fills, so the registry exposes exactly these six rule_ids.
     ids = {rule.rule_id for rule in THREAT_RULES}
     assert ids == {
@@ -552,5 +552,5 @@ def test_registry_covers_every_named_rule() -> None:
         LANE_ROUTE_ID,
         TILES_DEPLOY_ID,
     }
-    # A retired rule may not creep back in without its substrate (§V113 b).
+    # A retired rule may not creep back in without its substrate.
     assert not (ids & RETIRED_RULES)

@@ -1,7 +1,7 @@
-"""§T49 M5 release audit (§V16): the distributable artifacts carry code + policy
+"""M5 release audit: the distributable artifacts carry code + policy
 only.
 
-§V16 forbids a release from shipping a raw snapshot, a prebuilt DB, artwork,
+A release never ships a raw snapshot, a prebuilt DB, artwork,
 audio, story script, voice line, wiki/community prose, or a full announcement
 body. ADR 0004 + ``NOTICE`` fix the release scope: "code, schema, migrations,
 tests, and parsers only". So the *minimal* test fixtures are in-scope, but a raw
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from tests.support import MAX_DATA_JSON_BYTES, REQUIRED_POLICY_FILES, BuiltDistributions
 
-# --- Forbidden-in-any-release-artifact patterns (§V16) -----------------------
+# --- Forbidden-in-any-release-artifact patterns ------------------------------
 
 #: A promoted / prebuilt database is never distributed -- users build their own.
 _DATABASE_SUFFIXES = (".sqlite", ".sqlite3", ".db")
@@ -89,7 +89,7 @@ def _all_members(dists: BuiltDistributions) -> dict[str, dict[str, int]]:
 def test_wheel_is_code_and_metadata_only(built_distributions: BuiltDistributions) -> None:
     # Allowlist (fail-closed): a stray data file added to the package later has
     # no matching rule and trips this. The wheel is the installable artifact, so
-    # it gets the tightest §V16 gate.
+    # it gets the tightest gate.
     def allowed(name: str) -> bool:
         return (
             name.endswith(".py")
@@ -103,7 +103,7 @@ def test_wheel_is_code_and_metadata_only(built_distributions: BuiltDistributions
 
 
 def test_wheel_ships_license_and_notice(built_distributions: BuiltDistributions) -> None:
-    # V16: Apache-2.0 covers project code only; the NOTICE scoping must travel
+    # Apache-2.0 covers project code only; the NOTICE scoping must travel
     # with the artifact so the license boundary is legible to any consumer.
     names = built_distributions.wheel_sizes
     assert any(n.endswith(".dist-info/licenses/LICENSE") for n in names)
@@ -113,7 +113,7 @@ def test_wheel_ships_license_and_notice(built_distributions: BuiltDistributions)
 def test_no_prebuilt_db_or_game_binary_in_artifacts(
     built_distributions: BuiltDistributions,
 ) -> None:
-    # V16: neither the wheel nor the sdist may carry a database, a promoted
+    # Neither the wheel nor the sdist may carry a database, a promoted
     # build, a raw-snapshot dir, or binary game content.
     offenders: list[str] = []
     for artifact, members in _all_members(built_distributions).items():
@@ -127,7 +127,7 @@ def test_no_prebuilt_db_or_game_binary_in_artifacts(
 def test_bundled_json_data_is_minimal_not_raw_dump(
     built_distributions: BuiltDistributions,
 ) -> None:
-    # V16 / §T15: fixtures may ship (ADR 0004 releases include tests), but each
+    # Fixtures may ship (ADR 0004 releases include tests), but each
     # must be a minimal fixture, never a raw full-dump snapshot. Size is the
     # cheap, content-agnostic proxy: a real upstream table is orders of
     # magnitude larger than the cap.
@@ -143,7 +143,7 @@ def test_bundled_json_data_is_minimal_not_raw_dump(
 
 
 def test_sdist_ships_complete_policy_file_set(built_distributions: BuiltDistributions) -> None:
-    # V16: the source release carries the full policy / legal set so the data
+    # The source release carries the full policy / legal set so the data
     # boundary, takedown path, and privacy stance travel with the code.
     members = built_distributions.sdist_sizes
     missing = [name for name in REQUIRED_POLICY_FILES if name not in members]

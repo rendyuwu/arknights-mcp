@@ -1,9 +1,9 @@
-"""``source`` command group: list/enable/disable/purge data sources (§T26).
+"""``source`` command group: list/enable/disable/purge data sources.
 
-Source management is CLI-only and never an MCP tool (§V28). ``enable``/``disable``
-touch only the registry kill switch + the operational journal (§V20); ``purge
+Source management is CLI-only and never an MCP tool. ``enable``/``disable``
+touch only the registry kill switch + the operational journal; ``purge
 --rebuild`` rebuilds fail-closed, keeping current data active until the rebuilt
-candidate validates and promotes (§V4/§V20/§V32).
+candidate validates and promotes.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from arknights_mcp.sources.registry import set_source_enabled
 def _cmd_source_list(args: argparse.Namespace, ctx: CliContext) -> int:
     _, registry = _load(args)
     if args.json:
-        # Public-safe projection only (no policy notes / private hosting, §V27).
+        # Public-safe projection only (no policy notes / private hosting).
         _out(json.dumps(registry.public_registry(), indent=2, sort_keys=True))
         return 0
     _out("sources:")
@@ -46,11 +46,11 @@ def _cmd_source_list(args: argparse.Namespace, ctx: CliContext) -> int:
 
 
 def _toggle_source(args: argparse.Namespace, *, enabled: bool) -> int:
-    """Flip a source's registry kill switch and journal the policy event (§V20).
+    """Flip a source's registry kill switch and journal the policy event.
 
     ``enable``/``disable`` only touch the registry (the mutable kill switch) and
     the operational journal -- they never rebuild or mutate the active database,
-    so current data stays served until the next explicit build (§V4/§V20).
+    so current data stays served until the next explicit build.
     """
     config, registry = _load(args)
     source_id = args.source_id
@@ -71,7 +71,7 @@ def _toggle_source(args: argparse.Namespace, *, enabled: bool) -> int:
     if enabled:
         _out(f"enabled {source_id!r}: sync resumes on next `sync`")
     else:
-        _out(f"disabled {source_id!r}: new sync stopped; current data stays active (§V20)")
+        _out(f"disabled {source_id!r}: new sync stopped; current data stays active")
     return 0
 
 
@@ -84,14 +84,14 @@ def _cmd_source_disable(args: argparse.Namespace, ctx: CliContext) -> int:
 
 
 def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
-    """Rebuild the active DB with a source's rows removed, promote iff valid (§V20).
+    """Rebuild the active DB with a source's rows removed, promote iff valid.
 
     Fail-closed: the current build stays active until the rebuilt candidate passes
     validation and is promoted atomically; a failing rebuild leaves it untouched.
     """
     config, registry = _load(args)
     if not args.rebuild:
-        _err("purge requires --rebuild in v0.1 (§I.cmd/§V20)")
+        _err("purge requires --rebuild in v0.1")
         return 1
     source_id = args.source_id
     if registry.get(source_id) is None:
@@ -104,7 +104,7 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
 
     data_dir = config.database.data_dir
     # Takedown: also flip the registry kill switch so a later `sync` cannot
-    # repopulate the purged source (M6). Disabling keeps current data (§V20) and
+    # repopulate the purged source (M6). Disabling keeps current data and
     # is truthful even if the rebuild below fails, so it is journaled immediately.
     if set_source_enabled(config.source_registry.machine_registry, source_id, False):
         append_event(data_dir, source_id=source_id, event_type="disable", reason=args.reason)
@@ -118,10 +118,7 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
         created_at=datetime.now(tz=UTC).isoformat(),
         reason=args.reason,
     )
-    _out(
-        f"purge: rebuilding without {source_id!r}; "
-        f"current database stays active until validated (§V20)"
-    )
+    _out(f"purge: rebuilding without {source_id!r}; current database stays active until validated")
     result = purge_and_rebuild(
         active,
         source_id,
@@ -138,7 +135,7 @@ def _cmd_source_purge(args: argparse.Namespace, ctx: CliContext) -> int:
         f"{affected['enemies']} enemies, {affected['stages']} stages"
     )
     if not result.validation_passed:
-        _err("rebuilt candidate failed validation; current database left active (§V20)")
+        _err("rebuilt candidate failed validation; current database left active")
         print(format_report(result.report), file=sys.stderr)
         return 1
     # Rebuild validated + promoted: the purge really happened, so record it now.

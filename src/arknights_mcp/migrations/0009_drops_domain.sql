@@ -1,14 +1,14 @@
--- 0009 drop-rate domain (SPEC §T88; §V17/§V53/§V54).
+-- 0009 drop-rate domain.
 -- items + stage_drops back the v0.2 M8 penguin_statistics drop-rate cache. A drop
 -- rate is a penguin-sourced FACT with its OWN provenance chain, distinct from the
--- arknights_assets game-data FACT (§V54) -- so every row carries a provenance_id FK
--- (snapshot_id + source_path/key + record_hash + transform_version, §V17) plus, per
--- §V53, the penguin snapshot_id, region, fetched_at, and expires_at needed to serve
--- a stale-aware, attributed drop fact (past expires_at -> data_stale, §V24/§V53).
+-- arknights_assets game-data FACT -- so every row carries a provenance_id FK
+-- (snapshot_id + source_path/key + record_hash + transform_version) plus
+-- the penguin snapshot_id, region, fetched_at, and expires_at needed to serve
+-- a stale-aware, attributed drop fact (past expires_at -> data_stale).
 --
 -- Both tables stay OUT of CRITICAL_TABLES: penguin is optional/disabled-by-default,
 -- so an empty drops domain is a legitimate build (unlike the combat/operator domains).
--- The importer (T89) resolves penguin stageId/itemId to the internal stage_pk/item_pk
+-- The importer resolves penguin stageId/itemId to the internal stage_pk/item_pk
 -- FKs and skips a drop whose stage/item is absent (fail-closed, no fabricated row).
 
 CREATE TABLE items (
@@ -27,7 +27,7 @@ CREATE TABLE items (
 -- same columns would only add write amplification.
 
 -- One aggregated drop observation per (stage, item): quantity dropped over `times`
--- sampled runs with penguin's reported drop_rate. region is carried explicitly (§V5)
+-- sampled runs with penguin's reported drop_rate. region is carried explicitly
 -- even though it is implied by the stage/item server, so a drop fact stands alone.
 CREATE TABLE stage_drops (
     drop_pk       INTEGER PRIMARY KEY AUTOINCREMENT,

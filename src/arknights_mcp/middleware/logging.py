@@ -1,10 +1,10 @@
-"""Redacted access logging for the remote transport (§V12).
+"""Redacted access logging for the remote transport.
 
 Emits one operational access line per ``http`` request:
 
     <method> <path> -> <status> (<dur_ms>ms) principal=<iss|sub>
 
-and nothing else. §V12 forbids default logs from carrying the full prompt, full
+and nothing else. Default logs never carry the full prompt, full
 tool arguments, a response body, the ``Authorization`` header, a bearer token, a raw
 source record, or roster/account data. This middleware satisfies that *by
 construction*: it reads only the request ``method``/``path``, the response
@@ -18,7 +18,7 @@ this is the wire-level access log, which has neither the tool arguments nor the 
 results in hand (they live inside the opaque MCP request/response bodies this layer
 never parses). Those flags govern the tool-dispatch layer, if ever enabled; the
 access log stays body-blind regardless, so flipping them on can never make this log
-leak (fail-closed, §V12).
+leak (fail-closed).
 
 Placed as the OUTERMOST layer of the remote stack so it records every request's
 outcome -- including a ``401`` from the bearer challenge or a ``429`` from the rate
@@ -41,7 +41,7 @@ _LOG = logging.getLogger("arknights_mcp.access")
 
 
 class RedactedLoggingMiddleware:
-    """ASGI middleware emitting a body-blind access log per request (§V12).
+    """ASGI middleware emitting a body-blind access log per request.
 
     :param app: the wrapped ASGI app (the next layer inward).
     :param clock: monotonic time source (injectable for deterministic tests).
@@ -64,7 +64,7 @@ class RedactedLoggingMiddleware:
         # Strip control/format chars before logging: uvicorn percent-decodes the
         # URL into ``scope["path"]``, so a ``%0a``-laced path would otherwise inject a
         # forged line into the access log (log forging). ``method`` is sanitized for
-        # the same reason -- both are attacker-controlled request line fields (§V12).
+        # the same reason -- both are attacker-controlled request line fields.
         method = strip_control_chars(scope.get("method", "-"))
         path = strip_control_chars(scope.get("path", "-"))
         started = self._clock()
@@ -81,7 +81,7 @@ class RedactedLoggingMiddleware:
         finally:
             # Read the principal *after* the inner stack ran: the bearer layer, if it
             # validated, has by then stashed it on the scope. Only the id (iss|sub) is
-            # logged -- never the token that produced it (§V12).
+            # logged -- never the token that produced it.
             principal_id = principal_id_of(scope)
             duration_ms = (self._clock() - started) * 1000.0
             _LOG.info(

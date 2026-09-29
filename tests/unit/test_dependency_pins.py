@@ -1,4 +1,4 @@
-"""V25 regression: ``mcp>=1.28.1,<2`` must be declared in pyproject and the
+"""``mcp>=1.28.1,<2`` must be declared in pyproject and the
 exact resolved version recorded in ``uv.lock`` must fall inside that range.
 Migrating to MCP SDK v2 requires an ADR, so an accidental ``>=2`` resolution
 must fail the suite.
@@ -36,7 +36,7 @@ def _locked_versions() -> dict[str, str]:
 
 
 def test_uv_lock_exists() -> None:
-    assert UV_LOCK.is_file(), "uv.lock must be committed (V25: exact resolved versions)"
+    assert UV_LOCK.is_file(), "uv.lock must be committed (exact resolved versions)"
 
 
 def test_pyproject_declares_mcp_v1_bound() -> None:
@@ -45,14 +45,14 @@ def test_pyproject_declares_mcp_v1_bound() -> None:
     # The declared specifier must itself forbid v2 and require >=1.28.1.
     spec = reqs["mcp"].specifier
     assert Version("1.28.1") in spec, "mcp specifier must allow 1.28.1"
-    assert Version("2.0.0") not in spec, "mcp specifier must forbid v2 (V25)"
+    assert Version("2.0.0") not in spec, "mcp specifier must forbid v2"
 
 
 def test_required_runtime_deps_present() -> None:
     reqs = _runtime_requirements()
     for name in ("mcp", "pydantic", "sqlalchemy"):
         assert name in reqs, f"missing runtime dependency: {name}"
-    # Pydantic v2 line (V: Pydantic v2).
+    # Pydantic v2 line.
     assert Version("2.0.0") in reqs["pydantic"].specifier
     assert Version("3.0.0") not in reqs["pydantic"].specifier
 
@@ -68,7 +68,7 @@ def test_locked_mcp_is_v1() -> None:
     locked = _locked_versions()
     assert "mcp" in locked, "mcp must be resolved in uv.lock"
     resolved = Version(locked["mcp"])
-    assert resolved in MCP_RANGE, f"resolved mcp {resolved} violates {MCP_RANGE} (V25)"
+    assert resolved in MCP_RANGE, f"resolved mcp {resolved} violates {MCP_RANGE}"
 
 
 def test_locked_pydantic_is_v2() -> None:

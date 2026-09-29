@@ -24,7 +24,7 @@ We follow this operational procedure (PRD Section 10.8):
 4. **Purge** snapshots and normalized rows attributable **only** to that source.
 5. **Rebuild and validate** the SQLite database without the source.
 6. **Promote** the rebuilt database atomically (the current database stays
-   active until the rebuilt candidate validates — SPEC §V20).
+   active until the rebuilt candidate validates).
 7. **Update** `DATA_SOURCES.md` and the machine-readable registry
    (`config/data_sources.toml`).
 8. **Acknowledge** completion to the requester when contact details are
@@ -32,8 +32,7 @@ We follow this operational procedure (PRD Section 10.8):
 
 ## Administrative commands
 
-These operations are **CLI-only** and are never exposed as MCP tools
-(SPEC §V28):
+These operations are **CLI-only** and are never exposed as MCP tools:
 
 ```bash
 arknights-mcp source list

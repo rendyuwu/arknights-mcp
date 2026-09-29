@@ -1,20 +1,20 @@
-"""Candidate validation gate (§T23; §V4).
+"""Candidate validation gate.
 
-A candidate is promotable only after it passes this gate (§V4): SQLite
+A candidate is promotable only after it passes this gate: SQLite
 ``PRAGMA integrity_check`` + ``PRAGMA foreign_key_check``, a critical-table
 presence check, row-count sanity, an orphan/cross-region consistency check, an
-FTS smoke + integrity check (skipped until the FTS index exists, §T31), and
+FTS smoke + integrity check (skipped until the FTS index exists), and
 golden domain invariants (regions confined to ``{en, cn}``; the schema version
 matches the applied migrations). The report is data only -- the caller decides
 whether to promote -- so ``sync``/``import``/``purge`` all gate promotion on the
 same result and the ``validate`` CLI command can print it without side effects.
 
-Read-only: the candidate is opened through the read-only connection factory
-(§V2); validation never mutates it. The one exception is FTS5's own
+Read-only: the candidate is opened through the read-only connection factory;
+validation never mutates it. The one exception is FTS5's own
 ``integrity-check`` command -- ``PRAGMA integrity_check`` does not verify FTS5
 shadow tables, and SQLite prepares ``integrity-check`` as a write statement, so
 it runs on a short-lived writable handle. It performs no writes and leaves the
-candidate byte-identical, so byte-reproducibility (T24) is preserved.
+candidate byte-identical, so byte-reproducibility is preserved.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ CRITICAL_TABLES: tuple[str, ...] = (
     "entity_fts",
 )
 
-#: Regions confined to the v0.1 set (§C, §V5).
+#: Regions confined to the v0.1 set.
 VALID_REGIONS = frozenset({"en", "cn"})
 
 
@@ -131,7 +131,7 @@ def _row_counts(conn: sqlite3.Connection, *, min_snapshots: int) -> CheckResult:
 
 
 def _orphans(conn: sqlite3.Connection) -> CheckResult:
-    """Cross-region / logical orphans not caught by declared foreign keys (§V5)."""
+    """Cross-region / logical orphans not caught by declared foreign keys."""
     mismatched = conn.execute(
         "SELECT COUNT(*) FROM stage_enemies se "
         "JOIN stages s ON s.stage_pk = se.stage_pk "
@@ -145,18 +145,18 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         "JOIN enemies e ON e.enemy_pk = sp.enemy_pk "
         "WHERE s.server <> e.server"
     ).fetchone()[0]
-    # A stage-scoped inline variant (§T80) must derive from a base enemy in the same
-    # region as its stage (§V5): en/cn never silently mixed via a variant's prefab.
+    # A stage-scoped inline variant must derive from a base enemy in the same
+    # region as its stage: en/cn never silently mixed via a variant's prefab.
     variant_mismatch = conn.execute(
         "SELECT COUNT(*) FROM stage_enemy_variants v "
         "JOIN stages s ON s.stage_pk = v.stage_pk "
         "JOIN enemies e ON e.enemy_pk = v.prefab_base_enemy_pk "
         "WHERE s.server <> e.server"
     ).fetchone()[0]
-    # A skin row soft-resolved to an operator must resolve within its OWN region
-    # (§V5/§T182): the nullable operator_pk FK cannot express this, so the gate does.
+    # A skin row soft-resolved to an operator must resolve within its OWN region:
+    # the nullable operator_pk FK cannot express this, so the gate does.
     # Table-guarded: purge validates a copy of the active build, which may predate
-    # migration 0014 (§V21 backward compatibility).
+    # migration 0014 (backward compatibility).
     skin_mismatch = (
         conn.execute(
             "SELECT COUNT(*) FROM operator_skins k "
@@ -166,7 +166,7 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         if table_exists(conn, "operator_skins")
         else 0
     )
-    # Same class for the banner archive (§V5/§V62, B124): banner_featured_ops carries no
+    # Same class for the banner archive: banner_featured_ops carries no
     # server column of its own, so its nullable operator_pk soft-resolve can only be
     # region-checked through the parent banner. Every nullable soft-resolve FK needs its
     # own gate row here -- fixing one domain's instance does not close the class.
@@ -183,7 +183,7 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
 
 
 def _fts_smoke(conn: sqlite3.Connection, db_path: Path) -> CheckResult:
-    """Smoke-test + integrity-check any FTS index (§V4; no-op until §T31 lands).
+    """Smoke-test + integrity-check any FTS index (no-op until the FTS index lands).
 
     Two layers guard the promotion gate. First a no-match ``MATCH`` proves the
     index is queryable on the read-only connection. Then FTS5's own
@@ -192,7 +192,7 @@ def _fts_smoke(conn: sqlite3.Connection, db_path: Path) -> CheckResult:
     FTS index would otherwise pass validation and get promoted. ``integrity-check``
     is prepared as a write statement (rejected on the ``mode=ro`` handle), so it
     runs on a short-lived writable connection; it performs no writes, leaving the
-    candidate byte-identical (T24).
+    candidate byte-identical.
     """
     fts_tables = [
         row[0]
@@ -201,7 +201,7 @@ def _fts_smoke(conn: sqlite3.Connection, db_path: Path) -> CheckResult:
         )
     ]
     if not fts_tables:
-        return CheckResult("fts_smoke", True, "no FTS index yet (M2/§T31)")
+        return CheckResult("fts_smoke", True, "no FTS index yet (M2)")
     try:
         for name in fts_tables:
             conn.execute(f"SELECT COUNT(*) FROM {name} WHERE {name} MATCH ?", ("zzzznomatch",))
@@ -268,12 +268,12 @@ def validate_database(
     expected_schema_version: str | None = None,
     min_snapshots: int = 1,
 ) -> ValidationReport:
-    """Run the full validation gate against a candidate database (read-only, §V2).
+    """Run the full validation gate against a candidate database (read-only).
 
     Returns a :class:`ValidationReport`; a missing or non-SQLite file yields a
-    report with ``passed`` false (never an exception), so callers fail closed
-    (§V3). ``min_snapshots`` may be 0 for a rebuild that legitimately removes its
-    only source (§V20).
+    report with ``passed`` false (never an exception), so callers fail closed.
+    ``min_snapshots`` may be 0 for a rebuild that legitimately removes its
+    only source.
     """
     path = Path(db_path)
     try:

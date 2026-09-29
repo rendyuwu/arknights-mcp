@@ -1,12 +1,12 @@
-"""T94: migration 0010 announcement-metadata domain schema (§V16/§V17/§V56).
+"""Migration 0010 announcement-metadata domain schema.
 
 ``announcements`` backs the v0.2 M9 official-announcement adapter (D14). These tests
-assert the migration applies cleanly, that the table carries a provenance FK (§V17),
+assert the migration applies cleanly, that the table carries a provenance FK,
 that the column set is METADATA-ONLY -- a subset of {announce_id, title, date, url,
 category, region} plus the pk/provenance bookkeeping, so there is no place to store
-an article body/html/prose/image (§V16/§V56) -- that ``region`` is NOT NULL (§V5), and
-that a metadata row round-trips. Schema only: the adapter/importer (T95) and tool
-(T96) land separately.
+an article body/html/prose/image -- that ``region`` is NOT NULL, and
+that a metadata row round-trips. Schema only: the adapter/importer and tool
+land separately.
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ from arknights_mcp.db.migrations import build_database
 _FIELD_POLICY_VERSION = "test"
 _TRANSFORM_VERSION = "test"
 
-#: The complete, metadata-only column set (§V56). announcement_pk + provenance_id are
+#: The complete, metadata-only column set. announcement_pk + provenance_id are
 #: bookkeeping; the rest are exactly the six allowed metadata fields. A future
-#: body/html/prose/image column would break the subset assertion below (§V16).
+#: body/html/prose/image column would break the subset assertion below.
 _ALLOWED_COLUMNS = {
     "announcement_pk",
     "region",
@@ -35,7 +35,7 @@ _ALLOWED_COLUMNS = {
     "provenance_id",
 }
 
-#: Columns that would smuggle in the forbidden full-body/prose/image content (§V16).
+#: Columns that would smuggle in the forbidden full-body/prose/image content.
 _FORBIDDEN_SUBSTRINGS = ("body", "html", "prose", "image", "content", "text")
 
 
@@ -93,7 +93,7 @@ def test_integrity_and_foreign_key_checks_pass(tmp_path: Path) -> None:
 
 
 def test_metadata_only_column_set(tmp_path: Path) -> None:
-    # §V16/§V56: the schema holds ONLY announce metadata -- no body/html/prose/image
+    # The schema holds ONLY announce metadata -- no body/html/prose/image
     # column exists to store the forbidden full announcement content.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
@@ -106,7 +106,7 @@ def test_metadata_only_column_set(tmp_path: Path) -> None:
 
 
 def test_region_is_not_null(tmp_path: Path) -> None:
-    # §V5: every announcement is region-attributed; region cannot be NULL.
+    # Every announcement is region-attributed; region cannot be NULL.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         region_col = next(
@@ -118,7 +118,7 @@ def test_region_is_not_null(tmp_path: Path) -> None:
 
 
 def test_provenance_fk_present_and_enforced(tmp_path: Path) -> None:
-    # §V17: an announcement carries provenance; a dangling provenance_id is rejected.
+    # An announcement carries provenance; a dangling provenance_id is rejected.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         assert "provenance_id" in _columns(conn, "announcements")
@@ -163,8 +163,8 @@ def test_announcement_metadata_roundtrips(tmp_path: Path) -> None:
 
 def test_unique_region_announce_id(tmp_path: Path) -> None:
     # UNIQUE(region, announce_id): a duplicate (region, announce_id) collides so the
-    # importer (T95) can map the anomaly to a typed ImporterError (§V33 pattern);
-    # the same announce_id in a DIFFERENT region is allowed (§V5 region separation).
+    # importer can map the anomaly to a typed ImporterError;
+    # the same announce_id in a DIFFERENT region is allowed.
     conn = build_database(tmp_path / "cand.sqlite")
     try:
         prov = _seed_provenance(conn)

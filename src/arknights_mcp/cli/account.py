@@ -1,6 +1,6 @@
 """``arknights-mcp account`` -- personal Yostar (en) account roster (ADR 0020).
 
-CLI-only (§V28), run on the owner's own machine so every Yostar and game-server
+CLI-only, run on the owner's own machine so every Yostar and game-server
 request leaves from the owner's usual IP. ``login`` asks for the email and a
 one-time code once and saves the resulting Yostar token pair in a mode-600
 session file; ``sync`` reuses it, pulls ``account/syncData`` and replaces the
@@ -73,7 +73,7 @@ def _session_path(env: Mapping[str, str]) -> Path:
 def _write_session(session: YostarSession) -> None:
     path = _session_path(os.environ)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # mkstemp creates the file 0600 (§V15).
+    # mkstemp creates the file 0600.
     atomic_write_text(
         path,
         json.dumps(

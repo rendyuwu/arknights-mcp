@@ -1,4 +1,4 @@
-"""§T53/§V14/§V10: principal/session isolation — no cross-user session leak.
+"""Principal/session isolation — no cross-user session leak.
 
 The Streamable HTTP transport runs the SDK session manager *stateful*, so it keeps
 one persistent MCP session per ``Mcp-Session-Id``. Isolation requires each session
@@ -7,12 +7,12 @@ binding is driven by ``scope["user"]``; these tests prove:
 
 * :func:`_session_user` projects a :class:`Principal` onto an owner identity keyed
   on ``principal_id`` (``iss|sub``) -- never the OAuth client (``azp``) -- and never
-  carries the raw bearer (§V12);
+  carries the raw bearer;
 * :class:`_BearerAuthASGIApp` attaches that user on a validated request;
 * the SDK's stateful handler, given our user, rejects a request that presents a
   session id owned by a *different* principal (404) while letting the owning
   principal reuse it -- the whole isolation surface, since the shared read-only core
-  holds no other per-principal state (§V14).
+  holds no other per-principal state.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ _ALICE = _principal(
     scopes=frozenset({"arknights:read"}),
 )
 # Same iss|sub as Alice but a *different* OAuth client (azp) + scope set: still the
-# same principal (§V10 keys identity on iss|sub, not the client).
+# same principal (identity keys on iss|sub, not the client).
 _ALICE_OTHER_CLIENT = _principal(
     issuer="https://issuer.example.com/",
     subject="auth0|alice",
@@ -68,7 +68,7 @@ _BOB = _principal(
     scopes=frozenset({"arknights:read"}),
 )
 # Same subject string as Alice but a *different* issuer -- ``sub`` is unique only
-# per issuer, so this is a distinct principal (§V10).
+# per issuer, so this is a distinct principal.
 _ALICE_OTHER_ISSUER = _principal(
     issuer="https://other-issuer.example.com/",
     subject="auth0|alice",
@@ -82,8 +82,8 @@ def _owner(principal: Principal) -> Any:
 
 
 def test_session_user_keys_on_principal_id_not_client() -> None:
-    # §V10/§T53: two clients (azp) acting for the same iss|sub are the same
-    # principal, so their session-owner keys are equal -- client_id must not split
+    # Two clients (azp) acting for the same iss|sub are the same principal,
+    # so their session-owner keys are equal -- client_id must not split
     # the identity.
     assert _owner(_ALICE) == _owner(_ALICE_OTHER_CLIENT)
     assert _session_user(_ALICE).username == _ALICE.principal_id
@@ -91,14 +91,14 @@ def test_session_user_keys_on_principal_id_not_client() -> None:
 
 
 def test_session_user_separates_distinct_principals() -> None:
-    # §T53: a different subject or a different issuer is a different principal ->
+    # A different subject or a different issuer is a different principal ->
     # different owner key -> no cross-user session reuse.
     assert _owner(_ALICE) != _owner(_BOB)
     assert _owner(_ALICE) != _owner(_ALICE_OTHER_ISSUER)
 
 
 def test_session_user_never_carries_raw_bearer() -> None:
-    # §V12: the owner AccessToken holds a redaction placeholder, never a credential.
+    # The owner AccessToken holds a redaction placeholder, never a credential.
     user = _session_user(_ALICE)
     assert user.access_token.token == _REDACTED_SESSION_TOKEN
     assert user.access_token.token != "the.real.jwt"
@@ -125,7 +125,7 @@ class _InnerApp:
 
 
 def test_bearer_auth_attaches_session_user_keyed_on_principal() -> None:
-    # §T53: a validated request reaches the inner app carrying an AuthenticatedUser
+    # A validated request reaches the inner app carrying an AuthenticatedUser
     # whose owner key equals the principal's -- and still the Principal on state.
     inner = _InnerApp()
     app = _BearerAuthASGIApp(inner, _StubVerifier(_ALICE), _SETTINGS)  # type: ignore[arg-type]
@@ -198,7 +198,7 @@ def _drive_session_request(
 
 
 def test_stateful_session_rejects_cross_principal_and_allows_owner() -> None:
-    # §T53/§V14: a session created by Alice cannot be resumed by Bob -- the SDK
+    # A session created by Alice cannot be resumed by Bob -- the SDK
     # owner-binding, fed our principal-keyed user, returns 404 "Session not found"
     # without touching the session transport; Alice (any client of hers) may reuse
     # it. This is the concrete no-cross-user-cache-leak proof.

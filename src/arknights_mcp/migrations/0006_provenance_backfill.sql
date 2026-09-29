@@ -1,4 +1,4 @@
--- 0006 per-record provenance for level-derived + zone rows (SPEC §V17).
+-- 0006 per-record provenance for level-derived + zone rows.
 -- Fixes the gap where rows derived from a stage's level file (a distinct
 -- source_path) and zone rows carried no per-record provenance/tamper hash.
 -- Each column is a nullable FK -> record_provenance; the importer always

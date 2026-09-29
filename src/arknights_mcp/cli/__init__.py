@@ -1,20 +1,19 @@
 """``arknights-mcp`` command-line entry point (admin-only).
 
 Admin operations (``sync``, ``import``, ``validate``, ``status``, ``doctor``,
-``source ...``, ``account ...``) are CLI-only and are never exposed as MCP tools
-(§V28). Network access happens only here, in ``sync`` and ``account login|sync``
--- never at query time (§V1). Every build
+``source ...``, ``account ...``) are CLI-only and are never exposed as MCP tools.
+Network access happens only here, in ``sync`` and ``account login|sync``
+-- never at query time. Every build
 produces a *candidate* that is promoted only after it passes validation, and the
-active database is never mutated in place (§V3, §V4).
+active database is never mutated in place.
 
-This package splits the former ``cli.py`` (§V38): one module per command group
-(:mod:`~arknights_mcp.cli.sync` §T21, :mod:`~arknights_mcp.cli.import_` §T22,
-:mod:`~arknights_mcp.cli.validate` §T23, :mod:`~arknights_mcp.cli.status`
-status+doctor §T25, :mod:`~arknights_mcp.cli.source` §T26, :mod:`~arknights_mcp.cli.serve` stdio
-§T47, :mod:`~arknights_mcp.cli.account` personal Yostar en account roster, ADR 0020)
+This package splits the former ``cli.py``: one module per command group
+(:mod:`~arknights_mcp.cli.sync`, :mod:`~arknights_mcp.cli.import_`,
+:mod:`~arknights_mcp.cli.validate`, :mod:`~arknights_mcp.cli.status`
+status+doctor, :mod:`~arknights_mcp.cli.source`, :mod:`~arknights_mcp.cli.serve` stdio,
+:mod:`~arknights_mcp.cli.account` personal Yostar en account roster, ADR 0020)
 over shared helpers in :mod:`~arknights_mcp.cli._shared`. This module wires the
-argument parser and dispatches. ``serve --transport streamable-http`` (M6) lands
-with §T51.
+argument parser and dispatches. ``serve --transport streamable-http`` lands in M6.
 """
 
 from __future__ import annotations
@@ -50,14 +49,14 @@ from arknights_mcp.sources.http_fetch import Fetcher
 from arknights_mcp.sources.yostar import YostarSend
 
 # Re-exported so ``arknights_mcp.cli.is_placeholder`` resolves to the single
-# shared home and the §V37 no-re-duplication guard (test_text.py) still holds.
+# shared home and the no-re-duplication guard (test_text.py) still holds.
 from arknights_mcp.util.text import is_placeholder
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="arknights-mcp",
-        description="Admin CLI for the read-only Arknights Intelligence MCP (CLI-only ops, §V28).",
+        description="Admin CLI for the read-only Arknights Intelligence MCP (CLI-only ops).",
     )
     parser.add_argument(
         "--config",
@@ -96,7 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--transport",
         choices=["stdio", "streamable-http"],
         default="stdio",
-        help="transport to serve (v0.1: stdio; streamable-http lands in M6/§T51)",
+        help="transport to serve (v0.1: stdio; streamable-http lands in M6)",
     )
     p_serve.set_defaults(func=_cmd_serve)
 
@@ -113,14 +112,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_src_enable.set_defaults(func=_cmd_source_enable)
 
     p_src_disable = source_sub.add_parser(
-        "disable", help="stop new sync for a source; keep current data (§V20)"
+        "disable", help="stop new sync for a source; keep current data"
     )
     p_src_disable.add_argument("source_id")
     p_src_disable.add_argument("--reason", help="note recorded in the policy-event journal")
     p_src_disable.set_defaults(func=_cmd_source_disable)
 
     p_src_purge = source_sub.add_parser(
-        "purge", help="rebuild without a source's rows; current DB active until validated (§V20)"
+        "purge", help="rebuild without a source's rows; current DB active until validated"
     )
     p_src_purge.add_argument("source_id")
     p_src_purge.add_argument(
@@ -164,7 +163,7 @@ def main(
     fetcher: Fetcher | None = None,
     yostar_send: YostarSend | None = None,
 ) -> int:
-    """Console-script entry point. ``fetcher`` (``sync``, §T21) and ``yostar_send``
+    """Console-script entry point. ``fetcher`` (``sync``) and ``yostar_send``
     (``account``, ADR 0020) are test seams."""
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)

@@ -1,13 +1,13 @@
--- 0008 stage-scoped inline enemy variants (SPEC §T80; §V29/§V43/§V18).
+-- 0008 stage-scoped inline enemy variants.
 -- A useDb:false wave-action ref is a LEVEL-INLINE enemy variant whose real stats
--- live in overwrittenData and differ from its base prefab (B37/§V43). Model each
+-- live in overwrittenData and differ from its base prefab. Model each
 -- as a STAGE-SCOPED variant row -- never a global enemy: the same inline id resolves
 -- to a different prefab base across levels, and the same id is db-backed elsewhere
--- (B37) -- with a prefab_base FK + provenance + region (via stage_pk). Spawns and
+-- with a prefab_base FK + provenance + region (via stage_pk). Spawns and
 -- occurrences of a variant carry variant_pk so get_stage + the threat analyzers read
--- the variant's stats OVER the base (COALESCE), resolving the §V43 limitation.
+-- the variant's stats OVER the base (COALESCE), resolving the limitation.
 --
--- Stat columns mirror the §V29-verified enemy_levels stat set (attributes.<stat>
+-- Stat columns mirror the verified enemy_levels stat set (attributes.<stat>
 -- .m_value + lifePointReduce + motion); a NULL column means the variant did not
 -- override that stat (m_defined:false) so the base value is inherited at read.
 

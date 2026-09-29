@@ -1,8 +1,8 @@
-"""Source adapter contract (SPEC §V1).
+"""Source adapter contract.
 
 A source adapter is the *only* boundary through which the import pipeline reads
 raw snapshot files. Adapters are used exclusively by CLI ``sync``/``import``
-jobs; runtime MCP tools never touch an adapter (§V1). Each adapter is scoped to
+jobs; runtime MCP tools never touch an adapter. Each adapter is scoped to
 one region (``server``) and exposes read-only access to files under a fixed
 root, with path-traversal prevention.
 """
@@ -22,14 +22,14 @@ class SourceNotFoundError(SourceAdapterError):
 
     A subclass so existing ``except SourceAdapterError`` handlers still catch it,
     but distinct enough that the sync stager can skip a level file that
-    ``stage_table`` references but that has been pruned from the snapshot (B34)
+    ``stage_table`` references but that has been pruned from the snapshot
     without swallowing genuine fetch failures (500, timeout, size cap).
     """
 
 
 #: Default JSON-safety caps every source adapter applies when parsing a file.
-#: A single home (§V37) so the network stager and the local snapshot reader bound
-#: nesting depth and node count identically (anti-abuse; B5, §V22/§V19-adjacent).
+#: A single home so the network stager and the local snapshot reader bound
+#: nesting depth and node count identically (anti-abuse).
 DEFAULT_MAX_JSON_DEPTH = 64
 DEFAULT_MAX_JSON_NODES = 2_000_000
 
@@ -71,9 +71,9 @@ class SourceAdapter(Protocol):
     """Read-only access to a single region's snapshot files.
 
     ``touches_network`` documents whether an adapter may perform network I/O.
-    Local adapters are always ``False``; a network sync adapter (T21) sets it
+    Local adapters are always ``False``; a network sync adapter sets it
     ``True`` and is still only ever invoked from CLI sync jobs, never at query
-    time (§V1).
+    time.
     """
 
     source_id: str

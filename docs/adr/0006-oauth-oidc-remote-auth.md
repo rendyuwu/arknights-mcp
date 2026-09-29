@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Founder decision:** D15 (Authentication), D12/D13 (private, non-commercial)
-- **Invariants:** §V9, §V10, §V11, §V12
 
 ## Context
 
@@ -21,16 +20,16 @@ token's **issuer, audience, expiry, JWKS signature, and required scope**. It
 environment or a secret manager, never TOML.
 
 **Startup fails closed:** if non-loopback remote mode is enabled without HTTPS
-assumptions and valid OAuth/OIDC settings, the server refuses to start (§V9).
+assumptions and valid OAuth/OIDC settings, the server refuses to start.
 Authless non-loopback access is prohibited (loopback dev is the only
 exception). The remote transport enforces per-principal rate/concurrency limits,
-request timeouts, and request/response caps (§V11), and redacts logs (§V12).
+request timeouts, and request/response caps, and redacts logs.
 
 ## Consequences
 
 - Standards-based auth that web MCP clients support; no bespoke credential
-  store (§V10).
-- Misconfiguration cannot silently expose an open endpoint (§V9).
+  store.
+- Misconfiguration cannot silently expose an open endpoint.
 - Local `stdio` remains unauthenticated by design (no port, local trust).
 - A public multi-tenant profile is explicitly out of scope and needs a separate
   ADR + readiness checklist (PRD 17.7).

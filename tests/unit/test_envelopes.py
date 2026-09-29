@@ -1,5 +1,5 @@
-"""§T29 envelope tests: §V21 (schema_version), §V22 (200 KB cap), §V23 (typed
-status vocabulary + no stack-trace/path leak in errors)."""
+"""Envelope tests: schema_version, the 200 KB cap, and the typed
+status vocabulary + no stack-trace/path leak in errors."""
 
 from __future__ import annotations
 
@@ -30,26 +30,26 @@ def _prov() -> Provenance:
     return Provenance(server="en", snapshot_id="snap-1", imported_at="2026-07-18T00:00:00+00:00")
 
 
-# --- §V21: every envelope stamps the stable schema_version, first in the dict ---
+# --- every envelope stamps the stable schema_version, first in the dict ---
 
 
 def test_ok_envelope_stamps_schema_version_first() -> None:
     env = ok({"stage_code": "4-4"}, provenance=[_prov()])
     payload = env.to_dict()
     assert payload["schema_version"] == SCHEMA_VERSION
-    # §I field order: schema_version leads the envelope.
+    # Field order: schema_version leads the envelope.
     assert next(iter(payload)) == "schema_version"
 
 
 def test_schema_version_is_stable_string() -> None:
-    # A change here is a breaking wire-contract change (§V21 -> bump + ADR).
-    # v0.3 = the coordinated T198 reshape (ADR 0017): item rarity as a 1-indexed int,
+    # A change here is a breaking wire-contract change -> bump + ADR.
+    # v0.3 = the coordinated reshape (ADR 0017): item rarity as a 1-indexed int,
     # entity-prefixed ranking keys, snake_case change bundles with one phase encoding,
     # empty-set queries answering ok, and the get_data_status key collisions.
-    # v0.4 = the T219 image-ref hoist (ADR 0019): ``image_refs[].source_id`` REMOVED and
-    # carried once as ``image_refs_source_id`` (§V66 (4)/B168). One member, breaking
-    # because it removes a published per-row key -- not additive, which is what B168's
-    # cell claimed before the count.
+    # v0.4 = the image-ref hoist (ADR 0019): ``image_refs[].source_id`` REMOVED and
+    # carried once as ``image_refs_source_id``. One member, breaking
+    # because it removes a published per-row key -- not additive, which is what the
+    # original report claimed before the count.
     assert SCHEMA_VERSION == "0.4"
 
 
@@ -65,7 +65,7 @@ def test_field_order_matches_interface_contract() -> None:
     ]
 
 
-# --- §V22: default response < 200 KB; oversized fails closed to bounded partial ---
+# --- default response < 200 KB; oversized fails closed to bounded partial ---
 
 
 def test_under_cap_response_passes_through() -> None:
@@ -86,11 +86,11 @@ def test_oversized_response_fails_closed_to_partial() -> None:
     assert env.provenance and env.provenance[0].server == "en"
 
 
-# --- §V119: the content mirror + the cap accounting that pays for it -------------
+# --- the content mirror + the cap accounting that pays for it ---
 
 
 def test_mirror_text_round_trips_to_the_envelope_and_stays_compact() -> None:
-    # §V119 (a)/(b): the mirror a content-only client reads is the SAME payload as the
+    # The mirror a content-only client reads is the SAME payload as the
     # structured half, serialized compactly -- not the SDK's indent=2 fallback.
     env = ok({"note": "small", "n": 1}, provenance=[_prov()])
     text = mirror_text(env)
@@ -100,9 +100,9 @@ def test_mirror_text_round_trips_to_the_envelope_and_stays_compact() -> None:
 
 
 def test_cap_counts_both_wire_copies() -> None:
-    # §V119 (e)/B166: a payload that fits under the cap as ONE serialized copy but not
-    # as the frame that ships two must fail closed. This is the B21 accounting gap
-    # restated: measuring one copy of a two-copy wire under-measures, which §V22
+    # A payload that fits under the cap as ONE serialized copy but not
+    # as the frame that ships two must fail closed. This is the accounting gap
+    # restated: measuring one copy of a two-copy wire under-measures, which the cap
     # forbids. The pre-fix measure (serialized_size) would have passed this payload.
     env = ok({"blob": "x" * 110_000}, provenance=[_prov()])
     assert env.status == "partial"
@@ -116,12 +116,12 @@ def test_cap_counts_both_wire_copies() -> None:
     assert 2.0 <= wire_size(raw) / serialized_size(raw) <= 2.2
 
 
-# --- §V23: typed status vocabulary + safe error bodies ---
+# --- typed status vocabulary + safe error bodies ---
 
 
 def test_status_vocabulary_is_exactly_the_specified_set() -> None:
-    # §V23: the typed status vocabulary is exactly these eleven -- ``invalid_input``
-    # was added (§V71 (c)/B60) so a malformed request rides the same envelope.
+    # The typed status vocabulary is exactly these eleven -- ``invalid_input``
+    # was added so a malformed request rides the same envelope.
     expected = {
         "ok",
         "partial",
@@ -166,7 +166,7 @@ def test_internal_error_leaks_no_trace_or_path() -> None:
         assert marker not in serialized
 
 
-# --- §V23/§V71 (c) / B60: invalid_input wraps a pydantic error, framing-free -----
+# --- invalid_input wraps a pydantic error, framing-free ---
 
 
 class _Sample(BaseModel):
@@ -175,7 +175,7 @@ class _Sample(BaseModel):
 
 
 def test_invalid_input_wraps_validation_error_as_typed_envelope() -> None:
-    # §V23: a malformed request is a typed ``invalid_input`` result, an error status.
+    # A malformed request is a typed ``invalid_input`` result, an error status.
     try:
         _Sample.model_validate({"limit": 5})  # missing required ``server``
     except ValidationError as exc:
@@ -189,7 +189,7 @@ def test_invalid_input_wraps_validation_error_as_typed_envelope() -> None:
 
 
 def test_invalid_input_message_drops_pydantic_framing_and_url() -> None:
-    # §V71 (c)/B60: never the raw pydantic framing ("N validation errors for Model")
+    # Never the raw pydantic framing ("N validation errors for Model")
     # or the errors.pydantic.dev documentation URL.
     try:
         _Sample.model_validate({"server": "en", "limit": "not-an-int"})
@@ -199,5 +199,3 @@ def test_invalid_input_message_drops_pydantic_framing_and_url() -> None:
     assert "errors.pydantic.dev" not in serialized
     assert "validation error" not in serialized.lower()
     assert "https://" not in serialized
-    # §V71 (b): no internal spec cites in the client-facing text either.
-    assert "§V" not in serialized and "§T" not in serialized

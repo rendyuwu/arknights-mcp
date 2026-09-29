@@ -2,9 +2,9 @@
 ``get_my_inventory``.
 
 Read-only views of the owner's synced account. Model -> shared service -> envelope
-only (§V14): the services in :mod:`arknights_mcp.services.account` read the account
-database through a SELECT-only role and the promoted build read-only (§V2), and never
-touch the network (§V1). Sync is CLI-only and never a tool (§V28). The services catch
+only: the services in :mod:`arknights_mcp.services.account` read the account
+database through a SELECT-only role and the promoted build read-only, and never
+touch the network. Sync is CLI-only and never a tool. The services catch
 account-database failures themselves, so an outage answers ``database_unavailable``
 here instead of reaching :func:`run_guarded`'s ``internal_error`` path.
 """

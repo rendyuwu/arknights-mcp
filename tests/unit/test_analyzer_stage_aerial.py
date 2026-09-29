@@ -1,10 +1,10 @@
-"""T16: the M0 deterministic aerial threat rule + stage analyzer (§V6, §V26).
+"""The M0 deterministic aerial threat rule + stage analyzer.
 
-Verifies every observation carries the §V6 fields, that the rule decides from
-typed fields only (never prose, §V26), and that an absent / unrecognized
-``motion_type`` yields no conclusion plus a §V26 limitation.
+Verifies every observation carries the mandated fields, that the rule decides from
+typed fields only (never prose), and that an absent / unrecognized
+``motion_type`` yields no conclusion plus a limitation.
 
-§T210 (c)/B160: the rule's second arm -- infer flight from an ``aerial`` ability
+The rule's second arm -- infer flight from an ``aerial`` ability
 token, and warn when a ground motion contradicted one -- is gone with the
 ``abilities`` field. No source has ever carried a typed ability vocabulary, so that
 arm decided 0 of the 507 EN observations this rule really makes while its tests
@@ -27,7 +27,7 @@ from arknights_mcp.analyzers.rules.aerial import RULE_ID, AerialThreatRule
 def _ctx(
     *occ: EnemyOccurrence, stage_game_id: str = "main_04-04", stage_code: str = "4-4"
 ) -> StageThreatContext:
-    # §V68/B136: game_id and stage_code differ on purpose -- "4-4" is shared by
+    # game_id and stage_code differ on purpose -- "4-4" is shared by
     # main_04-04 and main_04-04#f#, which is exactly why a ref may not be the code.
     return StageThreatContext(
         server="en",
@@ -39,7 +39,7 @@ def _ctx(
 
 # Both carry the source's OWN damage token (the real handbook sends ``damageType``
 # ["MAGIC"] for this drone and ["PHYSIC"] for this slug); the invented "physical"
-# string these fixtures used to pass appears on 0 of 1585 real entries (B160 (b)).
+# string these fixtures used to pass appears on 0 of 1585 real entries.
 DRONE = EnemyOccurrence(
     game_id="enemy_1105_drone",
     display_name="Recon Drone",
@@ -59,8 +59,8 @@ SLUG = EnemyOccurrence(
 
 
 def test_registry_rules_match_protocol_with_unique_ids() -> None:
-    # M3 (§T39) grew the engine from one rule to nine; §T210 (c) retired the three
-    # that no real column could feed. Each survivor still satisfies the ThreatRule
+    # The engine grew from one rule to nine; three were retired
+    # because no real column could feed them. Each survivor still satisfies the ThreatRule
     # protocol (rule_id + evaluate) and every rule_id is unique.
     assert len(THREAT_RULES) == 6
     for rule in THREAT_RULES:
@@ -73,10 +73,10 @@ def test_registry_rules_match_protocol_with_unique_ids() -> None:
 def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
     result = analyze_stage(_ctx(DRONE, SLUG))
     assert result.analyzer_version == ANALYZER_VERSION
-    # The drone is an arts flyer, so the ranged-arts rule fires on it too (that is the
-    # §T210 revival working); this suite is about the aerial one.
+    # The drone is an arts flyer, so the ranged-arts rule fires on it too; this suite
+    # is about the aerial one.
     obs = next(o for o in result.observations if o.rule_id == RULE_ID)
-    # §V6: every mandated field present + well-formed.
+    # every mandated field present + well-formed.
     assert obs.rule_id == RULE_ID
     assert obs.analyzer_version == ANALYZER_VERSION
     assert 0.0 <= obs.confidence <= 1.0
@@ -88,7 +88,7 @@ def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
     ev = obs.evidence[0]
     assert ev.field == "motion_type"
     assert ev.value == "FLY"
-    # §V101/B137: how many drones the stage fields used to ride the deciding row as a
+    # How many drones the stage fields used to ride the deciding row as a
     # "total_count=2" note -- a second number buried in a string the client had to parse.
     # It is a fact with its own emitted field path, so it is its own row with no prose.
     assert [(e.field, e.value) for e in obs.evidence] == [
@@ -101,14 +101,14 @@ def test_aerial_fires_on_flying_enemy_with_v6_fields() -> None:
 def test_no_observation_when_only_ground_enemies() -> None:
     result = analyze_stage(_ctx(SLUG))
     assert result.observations == ()
-    # §V118/B165: a ground-only stage still says what it could NOT judge -- this fixture
+    # a ground-only stage still says what it could NOT judge -- this fixture
     # loads no tiles or routes and types no stats -- but never that an enemy flies.
     assert not any("aerial" in warning for warning in result.warnings)
 
 
 def test_typed_field_only_no_nl_keyword_match() -> None:
     # Name screams "aerial/flying" but typed fields say ground with no aerial
-    # ability -> §V26 forbids matching on the natural-language name.
+    # ability -> never match on the natural-language name.
     trap = EnemyOccurrence(
         game_id="enemy_nl_trap",
         display_name="Aerial Flying Skyborne Terror",
@@ -121,7 +121,7 @@ def test_typed_field_only_no_nl_keyword_match() -> None:
 
 
 def test_missing_motion_type_yields_no_conclusion_and_a_limitation() -> None:
-    # §V26: the one field that decides is absent -> the enemy is not judged, and the
+    # The one field that decides is absent -> the enemy is not judged, and the
     # response says which enemy went unjudged rather than defaulting it to ground.
     unknown = EnemyOccurrence(
         game_id="enemy_infer",
@@ -137,7 +137,7 @@ def test_missing_motion_type_yields_no_conclusion_and_a_limitation() -> None:
 
 
 def test_unrecognized_motion_type_yields_no_conclusion_and_a_limitation() -> None:
-    # §V96: a token outside the known vocabulary is not silently bucketed as ground.
+    # a token outside the known vocabulary is not silently bucketed as ground.
     odd = EnemyOccurrence(
         game_id="enemy_odd",
         display_name=None,
@@ -152,7 +152,7 @@ def test_unrecognized_motion_type_yields_no_conclusion_and_a_limitation() -> Non
 
 
 def test_same_flyer_at_two_variants_counts_as_one_type() -> None:
-    # M3/§V6: one enemy appearing at two level variants yields two evidence items
+    # one enemy appearing at two level variants yields two evidence items
     # with the same ref; the headline must count distinct enemies, not evidence.
     drone_v1 = EnemyOccurrence(
         game_id="enemy_1105_drone",

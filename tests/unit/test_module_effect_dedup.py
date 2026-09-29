@@ -1,16 +1,16 @@
-"""T168 (§V83/§V66/B88) + T198 (§V71 d/B140): the shared module trait/talent change dedup,
+"""The shared module trait/talent change dedup,
 token-label, per-level cross-hoist, and wire-key normalization helpers.
 
 The module read services (:func:`~arknights_mcp.services.operators.get_operator` modules and
 :func:`~arknights_mcp.services.module_compare.compare_operator_modules`) route every emitted
-talent/trait change list through these single §V37 homes so a module no longer emits N
-near-identical rows for one change (B88), a ``-1`` summon/token change is labelled instead of
+talent/trait change list through these single homes so a module no longer emits N
+near-identical rows for one change, a ``-1`` summon/token change is labelled instead of
 left bare, a change bundle byte-identical across every level rides the module once, and the
 source's camelCase keys plus its doubly-encoded unlock phase are normalized before the wire.
 
 The ORDER matters and is asserted below: dedup and labelling read the SOURCE key names, the
 rename runs last. Reversing them would leave the dedup identity keying on names the source
-never sends, so every bundle would look distinct and B88 would silently return.
+never sends, so every bundle would look distinct and the dedup would silently return.
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ _COND = {"phase": "PHASE_2", "level": 1}
 _BB = [{"key": "atk", "value": 1}]
 
 
-# --- dedup_effect_changes: collapse duplicate/subset rows (§V83/§V66) ----------
+# --- dedup_effect_changes: collapse duplicate/subset rows ----------------------
 
 
 def test_six_redundant_rows_for_one_talent_collapse_to_one() -> None:
-    # B88: Kal'tsit Mon3tr had 6 talent_changes for ONE talent -- 2 prose-only, 2
+    # Kal'tsit Mon3tr had 6 talent_changes for ONE talent -- 2 prose-only, 2
     # blackboard+prose duplicates, 2 blackboard-only. They share one identity
     # (talentIndex/potential/unlock), so they merge into a SINGLE row carrying the union of
     # the non-empty fields (blackboard + description). Byte-lossless: no field is lost.
@@ -106,11 +106,11 @@ def test_dedup_non_list_passthrough() -> None:
     assert dedup_effect_changes(42) == 42
 
 
-# --- label_token_effects: rename the source's own isToken flag (§V83/§V115) ----
+# --- label_token_effects: rename the source's own isToken flag ----------------
 
 
 def test_source_token_flag_becomes_the_applies_to_label() -> None:
-    # §V115/B162: the label reports the field that STATES the fact -- the part's own
+    # The label reports the field that STATES the fact -- the part's own
     # isToken, carried down onto each bundle by the importer -- and the raw source key
     # never reaches the wire.
     out = label_token_effects([{"talentIndex": 1, "isToken": True, "blackboard": _BB}])
@@ -120,13 +120,13 @@ def test_source_token_flag_becomes_the_applies_to_label() -> None:
 def test_source_operator_flag_is_an_answer_not_a_silence() -> None:
     # isToken false is a STATEMENT ("this describes the operator"), so it ships as a
     # label rather than as an absent key -- absence is reserved for a source that said
-    # nothing (§V67/§V114).
+    # nothing.
     out = label_token_effects([{"talentIndex": 1, "isToken": False, "blackboard": _BB}])
     assert out == [{"talentIndex": 1, "applies_to": "operator", "blackboard": _BB}]
 
 
 def test_talent_index_minus_one_alone_earns_no_label() -> None:
-    # The B162 regression in one assertion: -1 is a change with no talent index of its
+    # The regression in one assertion: -1 is a change with no talent index of its
     # own, NOT a token marker -- 454 of 513 en rows carrying it sit on parts the source
     # flags isToken false. Unflagged, it gets no applies_to at all.
     row = {"talentIndex": -1, "blackboard": _BB}
@@ -147,7 +147,7 @@ def test_label_is_idempotent_and_passes_through_non_list() -> None:
 
 def test_dedup_and_label_composes_all_three_steps() -> None:
     # The service pipeline: collapse duplicates, label from the source flag, THEN rename
-    # the keys for the wire (§V71 d). The rename is last so the first two steps still read
+    # the keys for the wire. The rename is last so the first two steps still read
     # the source's own names.
     row = {
         "talentIndex": -1,
@@ -168,7 +168,7 @@ def test_dedup_and_label_composes_all_three_steps() -> None:
 
 
 def test_two_povs_of_one_change_stay_two_rows() -> None:
-    # §V83 amended (B162): 89 en / 101 cn groups carry both an operator-POV and a
+    # 89 en / 101 cn groups carry both an operator-POV and a
     # token-POV copy under one (talentIndex, requiredPotentialRank). isToken is part of
     # the identity, so they never merge.
     operator_pov = {
@@ -184,7 +184,7 @@ def test_two_povs_of_one_change_stay_two_rows() -> None:
 
 
 def test_an_unmarked_change_never_absorbs_a_token_label() -> None:
-    # This is what putting isToken IN the §V83 identity actually buys, measured rather
+    # This is what putting isToken IN the identity actually buys, measured rather
     # than assumed: a first attempt at this guard used two fully-populated POVs and passed
     # with the member removed, because a differing isToken is also a value CONFLICT and
     # the conflict check alone keeps that pair apart.
@@ -192,7 +192,7 @@ def test_an_unmarked_change_never_absorbs_a_token_label() -> None:
     # The case only the identity decides is a bundle the source never marked meeting one
     # it did. Absent is not a conflict -- it is subsumed -- so without the member the two
     # merge and the unmarked bundle comes out labelled "token": a statement the source
-    # never made, which is B162's failure mode in miniature (§V115 c/§V67).
+    # never made, which is the failure mode in miniature.
     unmarked = {
         "talentIndex": 1,
         "requiredPotentialRank": 0,
@@ -211,13 +211,13 @@ def test_an_unmarked_change_never_absorbs_a_token_label() -> None:
     assert out[1]["applies_to"] == "token"  # type: ignore[index]
 
 
-# --- normalize_change_keys: snake_case + one phase encoding (§V71 d/§V99/B140) --
+# --- normalize_change_keys: snake_case + one phase encoding ---------------------
 
 
 def test_camelcase_keys_are_renamed_for_the_wire() -> None:
-    # §V71 (d)/B140: these three shipped camelCase in a snake_case envelope, three lines
-    # from a sibling ``unlock_phase``. The §V named them and the fix lost its vehicle when
-    # B69 spent the bump it was gated behind; T198 delivers it.
+    # These three shipped camelCase in a snake_case envelope, three lines
+    # from a sibling ``unlock_phase``. The rename lost its vehicle when a version
+    # bump consumed it; it lands now.
     out = normalize_change_keys(
         [{"talentIndex": 1, "requiredPotentialRank": 0, "unlockCondition": _COND}]
     )
@@ -231,7 +231,7 @@ def test_camelcase_keys_are_renamed_for_the_wire() -> None:
 
 
 def test_nested_unlock_phase_collapses_to_one_encoding() -> None:
-    # §V99/B140: the same object encoded the phase twice, two ways -- an int
+    # The same object encoded the phase twice, two ways -- an int
     # ``unlock_phase: 2`` beside ``unlockCondition.phase: "PHASE_2"``. One concept, two
     # types. The nested one becomes the int its sibling already is.
     out = normalize_change_keys([{"unlockCondition": {"phase": "PHASE_2", "level": 60}}])
@@ -239,7 +239,7 @@ def test_nested_unlock_phase_collapses_to_one_encoding() -> None:
 
 
 def test_unparsable_phase_is_left_exactly_as_the_source_sent_it() -> None:
-    # §V26: an encoding we do not recognize is REPORTED, never guessed at or dropped. A
+    # An encoding we do not recognize is REPORTED, never guessed at or dropped. A
     # silent None here would delete a fact the source stated.
     assert normalize_change_keys([{"unlockCondition": {"phase": "WEIRD"}}]) == [
         {"unlock_condition": {"phase": "WEIRD"}}
@@ -263,7 +263,7 @@ def test_normalize_passes_through_non_list_and_non_dict_entries() -> None:
     assert normalize_change_keys(["raw", 7]) == ["raw", 7]
 
 
-# --- hoist_uniform_changes: cross-level bundle hoist (§V66.3/§V83) --------------
+# --- hoist_uniform_changes: cross-level bundle hoist ----------------------------
 
 
 def test_identical_bundle_across_levels_is_hoisted() -> None:

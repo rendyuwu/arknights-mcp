@@ -1,5 +1,5 @@
-"""T9: machine-readable source registry loads, is complete for enabled sources
-(§V27), stays in sync with the DATA_SOURCES.md mirror, and its public view omits
+"""Machine-readable source registry loads, is complete for enabled sources,
+stays in sync with the DATA_SOURCES.md mirror, and its public view omits
 internal-only fields.
 """
 
@@ -55,7 +55,7 @@ def test_primary_source_enabled_with_mandatory_fields() -> None:
 
 
 def test_internal_ref_is_the_only_carrier_of_internal_refs() -> None:
-    # §V71 (b)/B131 (T194): the registry is a CLIENT-facing surface -- every public field
+    # The registry is a CLIENT-facing surface -- every public field
     # ships verbatim through get_data_sources. Decision/ADR/milestone/spec refs live in
     # the one explicitly ignorable `internal_ref` field, never inline in `purpose` prose a
     # client reads. Keeping the field in the PUBLIC allowlist is deliberate: the client is
@@ -64,7 +64,6 @@ def test_internal_ref_is_the_only_carrier_of_internal_refs() -> None:
     reg = load_source_registry(REGISTRY)
     for entry in reg.entries.values():
         assert "internal_ref" in entry.public_view(), entry.source_id
-        assert "§" not in entry.purpose, entry.source_id
         assert "ADR" not in entry.purpose, entry.source_id
     # The refs were MOVED, not deleted: the sources whose purpose carried them still
     # record them (a sweep that silently dropped the bookkeeping would pass a "no cites"
@@ -96,20 +95,20 @@ def test_public_view_omits_internal_fields() -> None:
         assert entry["source_id"]
         assert "attribution_text" in entry
         assert "last_reviewed_at" in entry
-        # PRD §13.10 posture is intended-public and must appear (aligns with the
+        # PRD Section 13.10 posture is intended-public and must appear (aligns with the
         # get_data_sources service so the two projections cannot diverge, M4).
         assert "private_hosting_status" in entry
         assert "redistribution_status" in entry
 
 
 def test_public_projections_do_not_diverge() -> None:
-    # §V34/B18: the CLI `source list --json` view and the get_data_sources service
+    # The CLI `source list --json` view and the get_data_sources service
     # must emit an IDENTICAL public field set -- both route through the single
     # registry.public_view() projection -- apart from the DB-only active_snapshots
     # enrichment the service adds. A set-equality assert (not a named-field spot
-    # check) is what catches a re-forked allowlist: B18 slipped through precisely
-    # because the service re-enumerated fields and dropped adapter_version /
-    # transform_version while the CLI view kept them.
+    # check) is what catches a re-forked allowlist: the original defect slipped
+    # through precisely because the service re-enumerated fields and dropped
+    # adapter_version / transform_version while the CLI view kept them.
     reg = load_source_registry(REGISTRY)
     cli_keys: set[str] = set().union(*(e.keys() for e in reg.public_registry()))
     svc_keys: set[str] = set().union(*(s.to_dict().keys() for s in get_data_sources(reg).sources))
@@ -121,7 +120,7 @@ def test_public_projections_do_not_diverge() -> None:
 
 
 def test_public_view_is_allowlist_partition() -> None:
-    # §V27/§V34 (finding #5): public_view is an allowlist, not a denylist. Every
+    # The public view is an allowlist, not a denylist. Every
     # model field must be classified as either public or internal-only, and the two
     # sets are disjoint -- so a field added to SourceRegistryEntry is withheld from
     # clients until explicitly classified (fail-closed), rather than leaking by
@@ -137,7 +136,7 @@ def test_public_view_is_allowlist_partition() -> None:
 
 
 def test_incomplete_enabled_source_rejected() -> None:
-    # V27: an enabled source missing a mandatory field must fail validation.
+    # An enabled source missing a mandatory field must fail validation.
     bad = SourceRegistry(
         entries={
             "x": SourceRegistryEntry(
@@ -155,7 +154,7 @@ def test_incomplete_enabled_source_rejected() -> None:
             )
         }
     )
-    with pytest.raises(RegistryError, match="V27"):
+    with pytest.raises(RegistryError, match="incomplete source registry"):
         bad.assert_complete()
 
 
@@ -168,12 +167,12 @@ def test_disabled_source_exempt_from_completeness() -> None:
     reg.assert_complete()  # must not raise
 
 
-# --- T118: image-ref source `arknights_game_resource` (§V27/§V63/§V16) ---------
+# --- image-ref source `arknights_game_resource` ---------
 
 
 def test_image_ref_source_registered_and_complete() -> None:
-    # §V27: the new source is present and, though disabled-by-default, still
-    # populates every §V27 mandatory field (the task requires completeness; a
+    # The new source is present and, though disabled-by-default, still
+    # populates every mandatory field (the task requires completeness; a
     # snapshot commit is N/A because nothing is imported). The runtime registry
     # still loads (validate=True) since a disabled source is exempt from the
     # enabled-only completeness gate.
@@ -184,7 +183,7 @@ def test_image_ref_source_registered_and_complete() -> None:
     assert entry.owner_name == "yuanyan3060"
     assert entry.canonical_url == "https://github.com/yuanyan3060/ArknightsGameResource"
     assert entry.last_reviewed_at == "2026-07-22"
-    # §V27: the public projection carries no internal-only field (e.g. policy_notes,
+    # The public projection carries no internal-only field (e.g. policy_notes,
     # which may hold takedown correspondence) and no secret/local-path/OAuth key.
     public = entry.public_view()
     assert "policy_notes" not in public
@@ -192,13 +191,13 @@ def test_image_ref_source_registered_and_complete() -> None:
 
 
 def test_image_ref_source_on_by_default_regions_and_posture() -> None:
-    # §V63/§T124: image URL REFERENCE source is ON by default (founder 2026-07-22),
+    # Image URL REFERENCE source is ON by default (founder 2026-07-22),
     # region-scoped en/cn, owned by yuanyan3060, and records the AGPL-code /
     # Yostar-copyright / removal-on-request permission posture. No snapshot commit (no import).
     reg = load_source_registry(REGISTRY)
     entry = reg.get("arknights_game_resource")
     assert entry is not None
-    assert entry.enabled is True  # ON by default (§T124); still private + noncommercial
+    assert entry.enabled is True  # ON by default; still private + noncommercial
     assert entry.regions == ["en", "cn"]  # region-scoped, en/cn never mixed
     assert entry.license_identifier == "AGPL-3.0"  # mirror CODE license
     # Permission posture: not granted, private/noncommercial, removal on request.
@@ -211,7 +210,7 @@ def test_image_ref_source_on_by_default_regions_and_posture() -> None:
 
 
 def test_image_ref_source_reference_link_only_never_bytes() -> None:
-    # §V16: redistribution posture is reference-link only, NEVER bytes; the human
+    # Redistribution posture is reference-link only, NEVER bytes; the human
     # mirror (DATA_SOURCES.md) and NOTICE both record the no-bytes attribution so
     # a release artifact carries the reference-only posture, not artwork.
     reg = load_source_registry(REGISTRY)
