@@ -212,6 +212,35 @@ def test_cross_region_banner_featured_op_detected(tmp_path: Path) -> None:
     assert not _check(report, "orphans").passed
 
 
+def test_cross_region_base_skill_link_detected(tmp_path: Path) -> None:
+    # operator_base_skills carries no server column; an en operator linked to a cn
+    # base skill is only region-checkable through its two parents (ADR 0021).
+    path = _valid_candidate(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    prov = conn.execute("SELECT MIN(provenance_id) FROM record_provenance").fetchone()[0]
+    op_pk = conn.execute(
+        "INSERT INTO operators (server, game_id, display_name, provenance_id) "
+        "VALUES ('en', 'char_z_test', 'Z', ?)",
+        (prov,),
+    ).lastrowid
+    skill_pk = conn.execute(
+        "INSERT INTO base_skills (server, buff_id, room_type, provenance_id) "
+        "VALUES ('cn', 'buff_z_test', 'TRADING', ?)",
+        (prov,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO operator_base_skills (operator_pk, slot_index, stage_index, "
+        "base_skill_pk, unlock_phase, unlock_level, provenance_id) VALUES (?, 1, 1, ?, 0, 1, ?)",
+        (op_pk, skill_pk, prov),
+    )
+    conn.commit()
+    conn.close()
+    report = validate_database(path)
+    assert not report.passed
+    assert not _check(report, "orphans").passed
+
+
 # --- golden invariants --------------------------------------------------------
 
 

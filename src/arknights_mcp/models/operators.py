@@ -1,6 +1,6 @@
 """Bounded input models for the operator tools.
 
-Covers ``get_operator`` and ``compare_operator_modules``. Heavy
+Covers ``get_operator``, ``compare_operator_modules``, and ``find_operators``. Heavy
 operator sections (phases, skills, talents, modules) are opt-in include flags that
 default ``False`` so the default response stays small; a lightweight
 ``summary`` defaults on. Region attribution rides the envelope unconditionally;
@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any, Literal, get_args
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-from arknights_mcp.models.common import MAX_ID_LEN, Region, StrictModel
+from arknights_mcp.models.common import MAX_ID_LEN, PageParams, Region, StrictModel
 
 #: Facts-only vs facts + deterministic module observations (conservative).
 CompareMode = Literal["facts_only", "with_observations"]
@@ -29,6 +29,23 @@ ModuleLevel = Literal[1, 2, 3]
 #: Valid module levels in-game, derived FROM :data:`ModuleLevel` so the published enum
 #: and the check that reports it cannot drift (one home).
 _VALID_MODULE_LEVELS = frozenset(get_args(ModuleLevel))
+
+#: A base (RIIC) facility: the ``building_data`` ``roomType`` domain (ADR 0021).
+RoomType = Literal[
+    "CONTROL",
+    "DORMITORY",
+    "HIRE",
+    "MANUFACTURE",
+    "MEETING",
+    "POWER",
+    "TRADING",
+    "TRAINING",
+    "WORKSHOP",
+]
+
+#: ``find_operators`` needs a narrowing filter; ``collab=False`` alone would page
+#: every operator. The service raises the same message.
+FIND_FILTER_REQUIRED = "set room_type or faction, or collab to true"
 
 
 class GetOperatorInput(StrictModel):
@@ -49,6 +66,7 @@ class GetOperatorInput(StrictModel):
     include_skills: bool = False
     include_talents: bool = False
     include_modules: bool = False
+    include_base_skills: bool = False
     include_provenance: bool = False
 
 
@@ -95,3 +113,23 @@ class CompareOperatorModulesInput(StrictModel):
             raise ValueError("levels must not be empty")
         # Dedup + sort so the comparison order is deterministic.
         return tuple(sorted(set(value)))
+
+
+class FindOperatorsInput(StrictModel):
+    """Parameters for ``find_operators`` (ADR 0021).
+
+    Needs ``room_type`` or ``faction``, or ``collab=True``; ``collab=False`` only
+    narrows another filter. Pages through the bounded ``PageParams``.
+    """
+
+    server: Region
+    room_type: RoomType | None = None
+    faction: str | None = Field(default=None, min_length=1, max_length=MAX_ID_LEN)
+    collab: bool | None = None
+    page: PageParams = Field(default_factory=PageParams)
+
+    @model_validator(mode="after")
+    def _require_filter(self) -> FindOperatorsInput:
+        if self.room_type is None and self.faction is None and self.collab is not True:
+            raise ValueError(FIND_FILTER_REQUIRED)
+        return self

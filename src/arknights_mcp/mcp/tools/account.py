@@ -15,10 +15,16 @@ import sqlite3
 from functools import partial
 
 from arknights_mcp.db.account import AccountStore
-from arknights_mcp.mcp.envelopes import Provenance, ResponseEnvelope, error, ok
+from arknights_mcp.mcp.envelopes import ResponseEnvelope, error
 from arknights_mcp.mcp.tool_registry import ToolSpec
-from arknights_mcp.mcp.tools._enum_legend import TOOL_ENUM_LEGEND_FIELDS, attach_enum_legend
-from arknights_mcp.mcp.tools._shared import ConnectionProvider, page_to_dict, run_guarded
+from arknights_mcp.mcp.tools._enum_legend import TOOL_ENUM_LEGEND_FIELDS
+from arknights_mcp.mcp.tools._shared import (
+    FACTION_NOT_FOUND_ACTION,
+    FACTION_NOT_FOUND_MESSAGE,
+    ConnectionProvider,
+    operator_rows_ok,
+    run_guarded,
+)
 from arknights_mcp.models.account import (
     GetMyInventoryInput,
     GetMyOperatorInput,
@@ -58,7 +64,10 @@ _ROSTER_DESCRIPTION = (
     "with their level, and equipped_module_id. min_rarity and min_elite narrow the list. "
     "Rows are ordered by rarity, then elite, then level, highest first. synced_at says "
     "when the account was read; nothing newer is known. Call get_my_operator for one "
-    "operator's skills, modules, and owned skins by name."
+    "operator's skills, modules, and owned skins by name. room_type, faction, and collab "
+    "narrow the list the same way as in find_operators; with room_type each row adds "
+    "base_skills for that facility, and in_effect marks the entry of each slot the "
+    "account's elite and level have unlocked."
 )
 _OPERATOR_DESCRIPTION = (
     "Takes an operator game_id (such as char_002_amiya, from search_entities or "
@@ -99,25 +108,17 @@ def _shape(tool: str, result: AccountResult) -> ResponseEnvelope:
         return error(
             "not_found", ACCOUNT_NOT_OWNED_MESSAGE, suggested_action=ACCOUNT_NOT_OWNED_ACTION
         )
-    data = dict(result.data)
-    if result.page is not None:
-        data["page"] = page_to_dict(result.page)
-    rows = data.get("operators", [data.get("operator", {})])
-    emits_profession = isinstance(rows, list) and any(
-        isinstance(row, dict) and "profession" in row for row in rows
-    )
-    limitations = attach_enum_legend(
-        data,
-        TOOL_ENUM_LEGEND_FIELDS.get(tool, ()) if emits_profession else (),
-        result.limitations,
-    )
-    return ok(
-        data,
-        provenance=tuple(
-            Provenance(server=result.server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
-            for p in result.provenance
-        ),
-        limitations=limitations,
+    if result.status == "unknown_faction":
+        return error(
+            "not_found", FACTION_NOT_FOUND_MESSAGE, suggested_action=FACTION_NOT_FOUND_ACTION
+        )
+    return operator_rows_ok(
+        result.data,
+        server=result.server,
+        page=result.page,
+        provenance=result.provenance,
+        limitations=result.limitations,
+        legend_fields=TOOL_ENUM_LEGEND_FIELDS.get(tool, ()),
     )
 
 
@@ -134,6 +135,9 @@ def build_get_my_roster_spec(
                 server=parsed.server,
                 min_rarity=parsed.min_rarity,
                 min_elite=parsed.min_elite,
+                room_type=parsed.room_type,
+                faction=parsed.faction,
+                collab=parsed.collab,
                 page=parsed.page.page,
                 page_size=parsed.page.page_size,
             )

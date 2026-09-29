@@ -27,3 +27,4 @@ Section 2).
 | [0018](0018-module-observation-retirement.md) | Retire the two module observations that restate their own payload; keep the computed stat delta | D5, D8 |
 | [0019](0019-response-shape-v0.4.md) | Response-shape v0.4 — `image_refs[].source_id` removed, hoisted to one `image_refs_source_id`; `schema_version` `0.3`→`0.4`; closes the v0.3 line | none (schema-rule mandated) |
 | [0020](0020-personal-account-roster-sync.md) | Personal Yostar account roster sync — CLI login/sync on the owner's machine, PostgreSQL roster store, read-only roster tools | D10 (reversed), PRD section 2 game-server login + data store |
+| [0021](0021-base-skill-faction-collab-import.md) | Base-skill, faction, and collab-flag import — RIIC mechanic text and faction ids in, handbook lore out | D4, D11 (extends 0010); D5-adjacent |

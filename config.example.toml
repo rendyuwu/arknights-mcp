@@ -14,7 +14,9 @@ read_only = true
 enabled_sources = ["arknights_assets_gamedata"]
 allow_remote_download = true
 retain_versions = 3
-max_total_download_mb = 500
+# Whole-run cap over every server and ride-along. A full `sync --server all` charged
+# 523 MiB on 2026-09-29 (with the ADR 0021 base-skill and handbook files).
+max_total_download_mb = 640
 # Bounded parallelism for `sync` downloads (keep-alive connection reuse + a
 # thread pool over the fetch set). 1 = serial. Default 8.
 max_parallel_downloads = 8

@@ -1,0 +1,144 @@
+{
+  "chars": {
+    "char_002_amiya": {
+      "charId": "char_002_amiya",
+      "maxManpower": 8640000,
+      "buffChar": [
+        {
+          "buffData": [
+            {
+              "buffId": "control_tra_spd[000]",
+              "cond": {
+                "phase": "PHASE_0",
+                "level": 1
+              }
+            }
+          ]
+        },
+        {
+          "buffData": [
+            {
+              "buffId": "dorm_rec_all[010]",
+              "cond": {
+                "phase": "PHASE_2",
+                "level": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "char_4037_demetr": {
+      "charId": "char_4037_demetr",
+      "maxManpower": 8640000,
+      "buffChar": [
+        {
+          "buffData": [
+            {
+              "buffId": "trade_ord_spd_ext[020]",
+              "cond": {
+                "phase": "PHASE_0",
+                "level": 1
+              }
+            },
+            {
+              "buffId": "trade_ord_spd_ext[021]",
+              "cond": {
+                "phase": "PHASE_2",
+                "level": 1
+              }
+            }
+          ]
+        },
+        {
+          "buffData": [
+            {
+              "buffId": "trade_ord_limit&cost_P[020]",
+              "cond": {
+                "phase": "PHASE_0",
+                "level": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "buffs": {
+    "control_tra_spd[000]": {
+      "buffId": "control_tra_spd[000]",
+      "buffName": "Agreement",
+      "buffIcon": "control",
+      "skillIcon": "bskill_ctrl_t_spd",
+      "sortId": 1503,
+      "buffColor": "#005752",
+      "textColor": "#ffffff",
+      "buffCategory": "FUNCTION",
+      "roomType": "CONTROL",
+      "description": "When this Operator is assigned to the Control Center, all Trading Posts' order efficiency <@cc.vup>+7%</> (only the most effective one will take effect when assigned Operators have the same skill effect)",
+      "efficiency": 0,
+      "targetGroupSortId": 0,
+      "targets": {}
+    },
+    "trade_ord_limit&cost_P[020]": {
+      "buffId": "trade_ord_limit&cost_P[020]",
+      "buffName": "Outstanding Debt",
+      "buffIcon": "trading",
+      "skillIcon": "bskill_tra_demetr",
+      "sortId": 4907,
+      "buffColor": "#0075a9",
+      "textColor": "#ffffff",
+      "buffCategory": "OUTPUT",
+      "roomType": "TRADING",
+      "description": "When this Operator is assigned to the same Trading Post as <@cc.kw>Vigil</>, Morale consumed each hour <@cc.vup>-0.1</>, and order limit <@cc.vup>+2</>",
+      "efficiency": 0,
+      "targetGroupSortId": 0,
+      "targets": {}
+    },
+    "trade_ord_spd_ext[020]": {
+      "buffId": "trade_ord_spd_ext[020]",
+      "buffName": "Famiglia Business α",
+      "buffIcon": "trading",
+      "skillIcon": "bskill_tra_ord_spd_ext2",
+      "sortId": 6126,
+      "buffColor": "#0075a9",
+      "textColor": "#ffffff",
+      "buffCategory": "OUTPUT",
+      "roomType": "TRADING",
+      "description": "When this Operator is assigned to a Trading Post, order acquisition efficiency <@cc.vup>+25%</>; When <@cc.kw>Vigil</> is in the Base (excluding Assistants and Activity Room users), increase order acquisition efficiency by an additional <@cc.vup>+5%</>",
+      "efficiency": 25,
+      "targetGroupSortId": 0,
+      "targets": {}
+    },
+    "trade_ord_spd_ext[021]": {
+      "buffId": "trade_ord_spd_ext[021]",
+      "buffName": "Famiglia Business β",
+      "buffIcon": "trading",
+      "skillIcon": "bskill_tra_ord_spd_ext3",
+      "sortId": 6126,
+      "buffColor": "#0075a9",
+      "textColor": "#ffffff",
+      "buffCategory": "OUTPUT",
+      "roomType": "TRADING",
+      "description": "When this Operator is assigned to a Trading Post, order acquisition efficiency <@cc.vup>+30%</>; When <@cc.kw>Vigil</> is in the Base (excluding Assistants and Activity Room users), increase order acquisition efficiency by an additional <@cc.vup>+10%</>",
+      "efficiency": 30,
+      "targetGroupSortId": 0,
+      "targets": {}
+    },
+    "dorm_rec_all[010]": {
+      "buffId": "dorm_rec_all[010]",
+      "buffName": "Violin Solo",
+      "buffIcon": "dormitory",
+      "skillIcon": "bskill_dorm_all2",
+      "sortId": 5404,
+      "buffColor": "#21cdcb",
+      "textColor": "#ffffff",
+      "buffCategory": "RECOVERY",
+      "roomType": "DORMITORY",
+      "description": "When this Operator is assigned to a Dormitory, restores <@cc.vup>+0.15</> Morale per hour to all Operators assigned to that Dormitory (Only the strongest effect of this type takes place)",
+      "efficiency": 0,
+      "targetGroupSortId": 0,
+      "targets": {}
+    }
+  }
+}

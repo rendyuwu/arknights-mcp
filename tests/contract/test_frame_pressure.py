@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from tests.support.tool_calls import active_build, registry_for
 
 from arknights_mcp.db.connection import open_read_only
@@ -61,6 +62,7 @@ from arknights_mcp.mcp.cap_pressure import (
 )
 from arknights_mcp.mcp.envelopes import MAX_RESPONSE_BYTES, ResponseEnvelope, wire_size
 from arknights_mcp.mcp.tool_registry import ToolRegistry, ToolSpec
+from arknights_mcp.models.operators import FIND_FILTER_REQUIRED
 
 BUILD = active_build()
 
@@ -83,7 +85,13 @@ _ROW_CORPUS: Mapping[str, str] = {
 }
 
 #: Region-scoped list tools: swept page by page to the end of both regions.
-_PAGED_TOOLS = ("get_announcements", "get_banners", "get_my_roster", "get_my_inventory")
+_PAGED_TOOLS = (
+    "get_announcements",
+    "get_banners",
+    "find_operators",
+    "get_my_roster",
+    "get_my_inventory",
+)
 
 #: Free-text tools. Their request space is unbounded, so the battery below stands in for it
 #: and the declaration says so -- what actually bounds them is 50 rows of capped locator
@@ -187,13 +195,28 @@ def _sweep_paged_tool(spec: ToolSpec) -> Peak:
     knobs = widest_knobs(spec.input_schema, pressure)
     kinds = classify_inputs(spec.input_schema, pressure)
     page_key = next(name for name, kind in kinds.items() if kind is InputKind.PAGE)
+    variants = enum_filter_variants(spec.input_schema, pressure)
     best = Peak()
-    for server in ("en", "cn"):
+    for server, variant in itertools.product(("en", "cn"), variants):
+        # Sorted so the label a peak reports is stable enough to pin in the declaration.
+        filters = "".join(f", {name}={value}" for name, value in sorted(variant.items()))
         for page in range(1, _MAX_PAGES + 1):
-            params = {"server": server, **knobs, page_key: {**knobs[page_key], "page": page}}
-            env = spec.handler(**params)
+            params = {
+                "server": server,
+                **knobs,
+                **variant,
+                page_key: {**knobs[page_key], "page": page},
+            }
+            try:
+                env = spec.handler(**params)
+            except ValidationError as exc:
+                # The one shape outside the legal request space: find_operators with no
+                # narrowing filter. Anything else is a regression, so it surfaces.
+                if page > 1 or variant or FIND_FILTER_REQUIRED not in str(exc):
+                    raise
+                break
             size = params[page_key]["page_size"]
-            best = _better(best, env, f"{server} page {page}, page_size={size}", params)
+            best = _better(best, env, f"{server} page {page}, page_size={size}{filters}", params)
             info = _page_info(env.data)
             if info is None or not info.get("has_more"):
                 break

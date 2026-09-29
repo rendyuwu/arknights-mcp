@@ -23,6 +23,7 @@ from arknights_mcp.importers.operators import (
     ParsedOperator,
     import_operators,
     insert_operators,
+    parse_collab_flags,
     parse_operators,
 )
 from arknights_mcp.importers.search_index import build_search_index
@@ -594,3 +595,56 @@ def test_cn_operator_aliases_stamped_with_zh_locale(tmp_path: Path) -> None:
     ).fetchall()
     assert rows  # at least one alias inserted
     assert all(server == "cn" and locale == "zh" for server, locale in rows)
+
+
+# --- factions + collab flag (ADR 0021) -----------------------------------------
+
+_OPERATOR_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "operator" / "en"
+
+
+def test_factions_come_main_first_with_their_names_and_the_collab_flag(tmp_path: Path) -> None:
+    conn = build_database(tmp_path / "cand.sqlite")
+    _seed_snapshot(conn)
+    import_operators(conn, LocalSnapshotAdapter(_OPERATOR_FIXTURE, server="en"), "en:test000000")
+    conn.commit()
+    rows = conn.execute(
+        "SELECT f.faction_id, f.display_name, f.is_main FROM operator_factions f "
+        "JOIN operators o ON o.operator_pk = f.operator_pk WHERE o.game_id = 'char_002_amiya' "
+        "ORDER BY f.is_main DESC, f.faction_id"
+    ).fetchall()
+    assert rows == [("rhodes", "Rhodes Island", 1), ("rim", "Rim Billiton", 0)]
+    collab = conn.execute(
+        "SELECT collab FROM operators WHERE game_id = 'char_002_amiya'"
+    ).fetchone()[0]
+    assert collab == 0
+
+
+def test_collab_flags_read_is_limited_and_nothing_else() -> None:
+    raw = {"handbookDict": {"char_1030_noirc2": {"isLimited": True, "storyTextAudio": []}}}
+    assert parse_collab_flags(raw) == {"char_1030_noirc2": True}
+    # A non-bool flag is unknown, never coerced.
+    assert parse_collab_flags({"handbookDict": {"char_x": {"isLimited": "yes"}}}) == {}
+
+
+def test_absent_handbook_files_leave_collab_unknown_and_names_null(tmp_path: Path) -> None:
+    character = {
+        "char_x": {
+            "name": "X",
+            "profession": "CASTER",
+            "mainPower": {"nationId": "yan", "groupId": "lungmen", "teamId": None},
+            "subPower": [{"nationId": "yan", "groupId": None, "teamId": None}],
+            "phases": [],
+            "skills": [],
+            "talents": [],
+        }
+    }
+    root = _adapter(tmp_path, character=character)
+    conn = build_database(tmp_path / "cand.sqlite")
+    _seed_snapshot(conn)
+    import_operators(conn, LocalSnapshotAdapter(root, server="en"), "en:test000000")
+    conn.commit()
+    assert conn.execute("SELECT collab FROM operators").fetchone()[0] is None
+    # The repeated sub-faction id is kept once, as its first (main) occurrence.
+    assert conn.execute(
+        "SELECT faction_id, display_name, is_main FROM operator_factions ORDER BY faction_id"
+    ).fetchall() == [("lungmen", None, 1), ("yan", None, 1)]

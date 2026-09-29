@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from arknights_mcp.db.repositories.operators import (
+    BaseSkillRow,
+    FactionRow,
     ModuleLevelRow,
     ModuleRow,
     OperatorPhaseRow,
@@ -81,6 +83,10 @@ class OperatorSummary:
     skill_count: int
     talent_count: int
     module_count: int
+    #: Factions (ADR 0021), main first; empty on a build without them.
+    factions: tuple[FactionRow, ...]
+    #: The collab flag; ``None`` when this build does not know it.
+    collab: bool | None
 
 
 @dataclass(frozen=True)
@@ -276,6 +282,11 @@ class OperatorFacts:
     modules: tuple[OperatorModuleFacts, ...]
     skins: tuple[OperatorSkinFacts, ...]
     ranges: tuple[RangeGridFacts, ...]
+    #: Base (RIIC) skill stages (ADR 0021), loaded by ``include_base_skills``.
+    base_skills: tuple[BaseSkillRow, ...]
+    #: ``include_base_skills`` was asked on a build predating migration 0021, so the
+    #: empty ``base_skills`` means "no data", not "no base skills".
+    base_skill_domain_missing: bool
     unresolved_range_ids: tuple[str, ...]
     provenance: OperatorProvenance
 
@@ -350,7 +361,30 @@ def hoist_uniform_template(values: Iterable[str | None]) -> str | None:
     return uniform_str(values)
 
 
-def _summary(operator: OperatorRow, counts: OperatorSectionCounts) -> OperatorSummary:
+def operator_identity(game_id: str, operator: OperatorRow | None) -> dict[str, object]:
+    """``{game_id, display_name?, rarity?, profession?}``: the operator list-row identity.
+
+    Shared by ``find_operators`` and the account roster; a missing build row or value is
+    omitted, never null.
+    """
+    row: dict[str, object] = {"game_id": game_id}
+    if operator is not None:
+        for key, value in (
+            ("display_name", operator.display_name),
+            ("rarity", operator.rarity),
+            ("profession", operator.profession),
+        ):
+            if value is not None:
+                row[key] = value
+    return row
+
+
+def _summary(
+    operator: OperatorRow,
+    counts: OperatorSectionCounts,
+    factions: tuple[FactionRow, ...],
+    collab: bool | None,
+) -> OperatorSummary:
     return OperatorSummary(
         rarity=operator.rarity,
         profession=operator.profession,
@@ -363,6 +397,8 @@ def _summary(operator: OperatorRow, counts: OperatorSectionCounts) -> OperatorSu
         skill_count=counts.skills,
         talent_count=counts.talents,
         module_count=counts.modules,
+        factions=factions,
+        collab=collab,
     )
 
 
@@ -631,6 +667,7 @@ def get_operator(
     include_skills: bool = False,
     include_talents: bool = False,
     include_modules: bool = False,
+    include_base_skills: bool = False,
     load_skins: bool = False,
 ) -> OperatorDetailResult:
     """Fetch one operator's facts + opt-in heavy sections for ``server``.
@@ -652,8 +689,20 @@ def get_operator(
     if operator is None:
         return OperatorDetailResult(status="not_found", server=server, operator=None)
 
+    pk = operator.operator_pk
     summary = (
-        _summary(operator, repo.section_counts(operator.operator_pk)) if include_summary else None
+        _summary(
+            operator,
+            repo.section_counts(pk),
+            tuple(repo.factions([pk]).get(pk, [])),
+            repo.collab_flags([pk]).get(pk),
+        )
+        if include_summary
+        else None
+    )
+    base_skills = tuple(repo.base_skills([pk]).get(pk, [])) if include_base_skills else ()
+    base_skill_domain_missing = (
+        include_base_skills and not base_skills and not repo.has_base_skill_domain()
     )
     phases = (
         tuple(_phase_facts(p) for p in repo.phases(operator.operator_pk)) if include_phases else ()
@@ -689,6 +738,8 @@ def get_operator(
         modules=modules,
         skins=skins,
         ranges=ranges,
+        base_skills=base_skills,
+        base_skill_domain_missing=base_skill_domain_missing,
         unresolved_range_ids=unresolved_range_ids,
         provenance=OperatorProvenance(
             snapshot_id=operator.snapshot_id, imported_at=operator.imported_at

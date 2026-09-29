@@ -117,6 +117,15 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
         if has_skins_table
         else []
     )
+    # One probe for all three 0021 tables (ADR 0021), same pre-migration degrade.
+    has_base_skill_domain = table_exists(conn, "base_skills")
+    base_skill_pks = (
+        _select_ids(
+            conn, "SELECT base_skill_pk FROM base_skills WHERE provenance_id IN (%s)", prov_ids
+        )
+        if has_base_skill_domain
+        else []
+    )
 
     # stage domain: children -> parents. stage_spawns / stage_enemies are removed
     # only within the purged source's own waves/stages (by wave_pk / stage_pk),
@@ -153,6 +162,14 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     # skins are untouched.
     _delete_in(conn, "operator_skins", "skin_pk", skin_pks)
 
+    # base-skill + faction domain (ADR 0021): links by their own provenance, then the
+    # skills, then the faction children of the purged operators, before the operator
+    # domain below.
+    if has_base_skill_domain:
+        _delete_in(conn, "operator_base_skills", "provenance_id", prov_ids)
+        _delete_in(conn, "base_skills", "base_skill_pk", base_skill_pks)
+        _delete_in(conn, "operator_factions", "operator_pk", operator_pks)
+
     # operator domain: children -> parents (each core row carries its own
     # provenance; sub-tables link through the parent, section 12.3).
     _delete_in(conn, "module_levels", "module_pk", module_pks)
@@ -171,6 +188,9 @@ def _purge_source_rows(conn: sqlite3.Connection, source_id: str) -> dict[str, in
     _delete_in(conn, "enemy_aliases", "enemy_pk", enemy_pks)
     _delete_in(conn, "enemies", "enemy_pk", enemy_pks)
     _delete_in(conn, "zones", "provenance_id", prov_ids)
+    # Range grids (migration 0020) reference provenance too; guarded for older copies.
+    if table_exists(conn, "ranges"):
+        _delete_in(conn, "ranges", "provenance_id", prov_ids)
     _delete_in(conn, "record_provenance", "provenance_id", prov_ids)
     _delete_in(conn, "source_snapshots", "snapshot_id", snapshot_ids)
 

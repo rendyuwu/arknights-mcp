@@ -176,7 +176,26 @@ def _orphans(conn: sqlite3.Connection) -> CheckResult:
         "JOIN operators o ON o.operator_pk = f.operator_pk "
         "WHERE b.server <> o.server"
     ).fetchone()[0]
-    total = mismatched + spawn_mismatch + variant_mismatch + skin_mismatch + featured_mismatch
+    # A base-skill link joins an operator to a base skill of the SAME region; guarded
+    # for a build predating migration 0021 (ADR 0021).
+    base_skill_mismatch = (
+        conn.execute(
+            "SELECT COUNT(*) FROM operator_base_skills l "
+            "JOIN operators o ON o.operator_pk = l.operator_pk "
+            "JOIN base_skills b ON b.base_skill_pk = l.base_skill_pk "
+            "WHERE o.server <> b.server"
+        ).fetchone()[0]
+        if table_exists(conn, "base_skills")
+        else 0
+    )
+    total = (
+        mismatched
+        + spawn_mismatch
+        + variant_mismatch
+        + skin_mismatch
+        + featured_mismatch
+        + base_skill_mismatch
+    )
     if total:
         return CheckResult("orphans", False, f"{total} cross-region reference(s)")
     return CheckResult("orphans", True, "no cross-region references")

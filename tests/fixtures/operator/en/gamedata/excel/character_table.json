@@ -9,6 +9,8 @@
     "position": "RANGED",
     "tagList": ["Arts", "DPS"],
     "isNotObtainable": false,
+    "mainPower": {"nationId": "rhodes", "groupId": null, "teamId": null},
+    "subPower": [{"nationId": "rim", "groupId": null, "teamId": null}],
     "phases": [
       {
         "rangeId": "1-1",

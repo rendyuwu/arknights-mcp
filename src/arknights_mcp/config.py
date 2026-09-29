@@ -84,7 +84,8 @@ class SyncConfig(_Model):
     enabled_sources: list[str] = Field(default_factory=lambda: ["arknights_assets_gamedata"])
     allow_remote_download: bool = True
     retain_versions: int = 3
-    max_total_download_mb: int = 500
+    # A full `sync --server all` charged 523 MiB on 2026-09-29; 500 no longer fit.
+    max_total_download_mb: int = 640
     # Bounded parallelism for the network sync: reuse a keep-alive
     # connection per worker and fan out downloads over a thread pool. ``1`` forces
     # the serial fallback; the pool never exceeds this bound (never unbounded fan-out).

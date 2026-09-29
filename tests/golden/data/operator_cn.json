@@ -1,5 +1,7 @@
 {
   "operator": {
+    "base_skill_domain_missing": false,
+    "base_skills": [],
     "display_name": "陈",
     "game_id": "char_1013_chen",
     "modules": [],
@@ -59,6 +61,8 @@
     ],
     "skins": [],
     "summary": {
+      "collab": null,
+      "factions": [],
       "module_count": 0,
       "obtainable": true,
       "phase_count": 1,

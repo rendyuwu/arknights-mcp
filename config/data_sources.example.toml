@@ -18,7 +18,7 @@ owner_name = "ArknightsAssets / ArknightsGamedata project"
 canonical_url = "https://github.com/ArknightsAssets/ArknightsGamedata"
 source_type = "structured_game_data_snapshot"
 regions = ["en", "cn"]
-purpose = "Primary EN/CN structured gameplay snapshot (stages, enemies, operators, modules)."
+purpose = "Primary EN/CN structured gameplay snapshot (stages, enemies, operators, modules, base skills, factions)."
 # This list is a CLAIM about the code and ships verbatim to a
 # client, so it must equal the set of snapshot files a real sync stages and an
 # importer actually reads -- not a wish list. It is enforced against
@@ -37,6 +37,9 @@ fields_consumed = [
     "skin_table.json",
     "activity_table.json",
     "range_table.json",
+    "building_data.json",
+    "handbook_team_table.json",
+    "handbook_info_table.json",
     "enemy_handbook_table.json",
     "enemy_database.json",
     "stage_table.json",

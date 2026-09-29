@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from arknights_mcp.db.repositories.base import Repository
+from arknights_mcp.util.sqlite import table_exists
 
 
 @dataclass(frozen=True)
@@ -178,16 +179,88 @@ class OperatorSkinRow:
     is_buy_skin: bool | None
 
 
-_OPERATOR_SQL = (
+@dataclass(frozen=True)
+class BaseSkillRow:
+    """One base (RIIC) skill stage of an operator slot (``operator_base_skills``)."""
+
+    slot_index: int
+    stage_index: int
+    display_name: str | None
+    room_type: str
+    description: str | None
+    unlock_phase: int
+    unlock_level: int
+
+
+@dataclass(frozen=True)
+class FactionRow:
+    """One faction of an operator (``operator_factions``)."""
+
+    faction_id: str
+    display_name: str | None
+    is_main: bool
+
+
+def _missing_optional_schema(exc: sqlite3.OperationalError) -> bool:
+    """True when the error is a build predating migration 0021 (ADR 0021)."""
+    return "no such table" in str(exc) or "no such column" in str(exc)
+
+
+def _placeholders(ids: Collection[int]) -> tuple[str, tuple[int, ...]]:
+    ordered = tuple(sorted(set(ids)))
+    return "(" + ", ".join("?" * len(ordered)) + ")", ordered
+
+
+# The operator row + its provenance, no predicate: ``_OPERATOR_SQL`` (one operator) and
+# ``filter_operators`` (a filtered list) append their own WHERE.
+_OPERATOR_SELECT = (
     "SELECT o.operator_pk, o.server, o.game_id, o.display_name, o.rarity, o.profession, "
     "o.subclass_id, o.subclass_name, o.position, o.tag_json, o.obtainable, "
     "p.snapshot_id, ss.imported_at "
     "FROM operators o "
     "JOIN record_provenance p ON p.provenance_id = o.provenance_id "
     "JOIN source_snapshots ss ON ss.snapshot_id = p.snapshot_id "
-    "WHERE o.server = ? AND o.game_id = ? "
-    "LIMIT 1"
 )
+
+_OPERATOR_SQL = _OPERATOR_SELECT + "WHERE o.server = ? AND o.game_id = ? LIMIT 1"
+
+# Obtainable operators of one region narrowed by three optional filters; each
+# ``? IS NULL OR`` arm is bound twice (NULL = filter off). A NULL (unknown) collab
+# never matches either value.
+_FILTER_OPERATORS_SQL = (
+    _OPERATOR_SELECT + "WHERE o.server = ? AND o.obtainable = 1 "
+    "AND (? IS NULL OR EXISTS (SELECT 1 FROM operator_base_skills l "
+    "JOIN base_skills b ON b.base_skill_pk = l.base_skill_pk "
+    "WHERE l.operator_pk = o.operator_pk AND b.room_type = ?)) "
+    "AND (? IS NULL OR EXISTS (SELECT 1 FROM operator_factions f "
+    "WHERE f.operator_pk = o.operator_pk AND f.faction_id = ?)) "
+    "AND (? IS NULL OR o.collab = ?) "
+    "ORDER BY o.rarity DESC, o.game_id"
+)
+
+_FACTION_IDS_SQL = (
+    "SELECT DISTINCT f.faction_id, f.display_name FROM operator_factions f "
+    "JOIN operators o ON o.operator_pk = f.operator_pk WHERE o.server = ?"
+)
+
+# Batched by operator_pk: the caller appends only a ``(?, …)`` placeholder group
+# (the item_display_names pattern) and binds every id.
+_BASE_SKILLS_SQL_PREFIX = (
+    "SELECT l.operator_pk, l.slot_index, l.stage_index, b.display_name, b.room_type, "
+    "b.description, l.unlock_phase, l.unlock_level "
+    "FROM operator_base_skills l JOIN base_skills b ON b.base_skill_pk = l.base_skill_pk "
+    "WHERE l.operator_pk IN "
+)
+_BASE_SKILLS_SQL_ORDER = " ORDER BY l.operator_pk, l.slot_index, l.stage_index"
+
+_FACTIONS_SQL_PREFIX = (
+    "SELECT operator_pk, faction_id, display_name, is_main FROM operator_factions "
+    "WHERE operator_pk IN "
+)
+_FACTIONS_SQL_ORDER = " ORDER BY operator_pk, is_main DESC, faction_id"
+
+_COLLAB_SQL_PREFIX = "SELECT operator_pk, collab FROM operators WHERE operator_pk IN "
+_COLLAB_SQL_SUFFIX = " AND collab IS NOT NULL"
 
 # One round-trip for the four summary counts; every value bound.
 _COUNTS_SQL = (
@@ -472,3 +545,77 @@ class OperatorRepository(Repository):
             for game_id, display_name in self._all(sql, (server, *ids))
             if display_name is not None
         }
+
+    def has_base_skill_domain(self) -> bool:
+        """True when this build carries migration 0021 (one probe for its tables and column).
+
+        The reads below degrade a pre-0021 build to empty on their own; callers ask this
+        only on an empty answer, to tell "nothing matches" from "this build has no data".
+        """
+        return table_exists(self._conn, "base_skills")
+
+    def _batched(self, prefix: str, suffix: str, operator_pks: Collection[int]) -> list[Any]:
+        """Rows of a batched ``operator_pk IN (…)`` read; ``[]`` on a pre-0021 build."""
+        if not operator_pks:
+            return []
+        group, ids = _placeholders(operator_pks)
+        try:
+            return self._all(f"{prefix}{group}{suffix}", ids)
+        except sqlite3.OperationalError as exc:
+            if _missing_optional_schema(exc):
+                return []
+            raise
+
+    def base_skills(self, operator_pks: Collection[int]) -> dict[int, list[BaseSkillRow]]:
+        """Every base-skill stage per operator, ordered by slot then stage."""
+        out: dict[int, list[BaseSkillRow]] = {}
+        for r in self._batched(_BASE_SKILLS_SQL_PREFIX, _BASE_SKILLS_SQL_ORDER, operator_pks):
+            out.setdefault(r[0], []).append(BaseSkillRow(*r[1:]))
+        return out
+
+    def factions(self, operator_pks: Collection[int]) -> dict[int, list[FactionRow]]:
+        """Every faction per operator, main first, then by id."""
+        out: dict[int, list[FactionRow]] = {}
+        for pk, faction_id, name, is_main in self._batched(
+            _FACTIONS_SQL_PREFIX, _FACTIONS_SQL_ORDER, operator_pks
+        ):
+            out.setdefault(pk, []).append(FactionRow(faction_id, name, bool(is_main)))
+        return out
+
+    def collab_flags(self, operator_pks: Collection[int]) -> dict[int, bool]:
+        """The known collab flag per operator; an unknown (NULL) flag is absent."""
+        rows = self._batched(_COLLAB_SQL_PREFIX, _COLLAB_SQL_SUFFIX, operator_pks)
+        return {pk: bool(collab) for pk, collab in rows}
+
+    def resolve_faction(self, server: str, value: str) -> str | None:
+        """The faction id matching ``value`` by id or display name, case-insensitive."""
+        try:
+            rows = self._all(_FACTION_IDS_SQL, (server,))
+        except sqlite3.OperationalError as exc:
+            if _missing_optional_schema(exc):
+                return None
+            raise
+        wanted = value.casefold()
+        for faction_id, name in sorted(rows, key=lambda r: (r[0], r[1] or "")):
+            if wanted == faction_id.casefold() or (name is not None and wanted == name.casefold()):
+                return str(faction_id)
+        return None
+
+    def filter_operators(
+        self,
+        server: str,
+        *,
+        room_type: str | None,
+        faction_id: str | None,
+        collab: bool | None,
+    ) -> list[OperatorRow]:
+        """Obtainable operators of ``server`` matching every set filter, rarity-first."""
+        flag = None if collab is None else int(collab)
+        params = (server, room_type, room_type, faction_id, faction_id, flag, flag)
+        try:
+            rows = self._all(_FILTER_OPERATORS_SQL, params)
+        except sqlite3.OperationalError as exc:
+            if _missing_optional_schema(exc):
+                return []
+            raise
+        return [_to_operator_row(r) for r in rows]

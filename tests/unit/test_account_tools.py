@@ -17,12 +17,15 @@ from arknights_mcp.importers.pipeline import ServerImport, build_candidate
 from arknights_mcp.mcp.envelopes import ResponseEnvelope
 from arknights_mcp.mcp.tool_registry import ToolRegistry
 from arknights_mcp.mcp.tools import build_tool_registry
+from arknights_mcp.mcp.tools._shared import FACTION_NOT_FOUND_MESSAGE
 from arknights_mcp.mcp.tools.account import ACCOUNT_UNAVAILABLE_MESSAGE
 from arknights_mcp.services.account import (
     ACCOUNT_EMPTY_ROSTER_LIMITATION,
     ACCOUNT_UNKNOWN_OPERATOR_LIMITATION,
     ACCOUNT_UNNAMED_PART_LIMITATION,
+    ROSTER_BASE_SKILL_NOTE,
 )
+from arknights_mcp.services.base_skills import BASE_SKILL_DOMAIN_MISSING_LIMITATION
 from arknights_mcp.sources.local_snapshot import LocalSnapshotAdapter
 from arknights_mcp.sources.registry import load_source_registry
 
@@ -94,6 +97,46 @@ def test_a_filter_that_matches_nothing_is_an_ok_empty_list(conn: sqlite3.Connect
     assert env.status == "ok"
     assert env.data["operators"] == []
     assert ACCOUNT_EMPTY_ROSTER_LIMITATION in env.limitations
+
+
+def test_room_type_keeps_owned_operators_with_that_facility_and_marks_the_stage_in_effect(
+    conn: sqlite3.Connection,
+) -> None:
+    env = _call(conn, "get_my_roster", server="en", room_type="DORMITORY")
+    assert env.status == "ok"
+    assert env.data["room_type"] == "DORMITORY"
+    (amiya,) = env.data["operators"]
+    assert (amiya["game_id"], amiya["elite"], amiya["level"]) == ("char_002_amiya", 2, 80)
+    assert [(s["slot"], s["display_name"], s["in_effect"]) for s in amiya["base_skills"]] == [
+        (2, "Violin Solo", True)
+    ]
+    assert ROSTER_BASE_SKILL_NOTE in env.limitations
+
+
+def test_faction_drops_operators_this_build_does_not_place_in_it(
+    conn: sqlite3.Connection,
+) -> None:
+    env = _call(conn, "get_my_roster", server="en", faction="rim")
+    assert env.status == "ok"
+    assert [o["game_id"] for o in env.data["operators"]] == ["char_002_amiya"]
+    assert "base_skills" not in env.data["operators"][0]
+
+
+def test_an_unknown_roster_faction_is_not_found(conn: sqlite3.Connection) -> None:
+    env = _call(conn, "get_my_roster", server="en", faction="nowhere")
+    assert env.status == "not_found"
+    assert env.data["message"] == FACTION_NOT_FOUND_MESSAGE
+
+
+def test_a_facility_no_owned_operator_serves_is_a_plain_empty_list(
+    conn: sqlite3.Connection,
+) -> None:
+    # A current build that matches nothing never tells the client to ask for a sync.
+    env = _call(conn, "get_my_roster", server="en", room_type="TRADING")
+    assert env.status == "ok"
+    assert env.data["operators"] == []
+    assert ACCOUNT_EMPTY_ROSTER_LIMITATION in env.limitations
+    assert BASE_SKILL_DOMAIN_MISSING_LIMITATION not in env.limitations
 
 
 def test_operator_detail_marks_alternate_forms_and_owned_skins(conn: sqlite3.Connection) -> None:

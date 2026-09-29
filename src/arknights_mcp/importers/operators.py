@@ -11,6 +11,10 @@ each operator's subclass DISPLAY NAME (it shipped as a bare id before). The file
 was already fetched for the module importer, so the pairing costs no new source --
 it was fetched and never read.
 
+``handbook_team_table.json`` supplies faction display names for the
+``mainPower``/``subPower`` ids, and ``handbook_info_table.json`` supplies the collab
+flag (``isLimited``, the only field read from it; ADR 0021). Both are tolerant-absent.
+
 Applies the explicit field allowlist and string sanitization and
 attaches per-record provenance to each core row (operators + skills);
 sub-tables link through their parent. The skill-level + talent-candidate effect
@@ -37,8 +41,11 @@ from typing import Any
 from arknights_mcp.importers.enemies import ImporterError
 from arknights_mcp.importers.field_policy import (
     CHARACTER_ALLOWLIST,
+    HANDBOOK_INFO_ALLOWLIST,
+    HANDBOOK_TEAM_ALLOWLIST,
     PHASE_ALLOWLIST,
     PHASE_ATTR_ALLOWLIST,
+    POWER_ALLOWLIST,
     REGION_TO_NAME_LOCALE,
     SKILL_LINK_ALLOWLIST,
     SUBPROF_ALLOWLIST,
@@ -121,6 +128,13 @@ class ParsedAlias:
 
 
 @dataclass(frozen=True)
+class ParsedFaction:
+    faction_id: str
+    display_name: str | None
+    is_main: bool
+
+
+@dataclass(frozen=True)
 class ParsedOperator:
     game_id: str
     display_name: str | None
@@ -136,6 +150,9 @@ class ParsedOperator:
     skill_links: list[ParsedSkillLink]
     talents: list[ParsedTalent]
     provenance_record: dict[str, Any]
+    factions: tuple[ParsedFaction, ...] = ()
+    #: ``handbook_info_table`` ``isLimited``; ``None`` when the file has no entry.
+    collab: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +163,7 @@ class OperatorImportResult:
     talents_inserted: int = 0
     skill_links_inserted: int = 0
     aliases_inserted: int = 0
+    factions_inserted: int = 0
 
 
 # --- coercion helpers --------------------------------------------------------
@@ -300,8 +318,71 @@ def parse_subclass_names(uniequip_raw: Any) -> dict[str, str]:
     return names
 
 
+def parse_faction_names(team_raw: Any) -> dict[str, str]:
+    """``handbook_team_table`` → ``{powerId: display name}`` (the subclass-name mirror).
+
+    An absent/foreign shape or an entry with no id or name yields no pairing, which
+    leaves the faction's ``display_name`` NULL rather than guessing.
+    """
+    if not isinstance(team_raw, dict):
+        return {}
+    names: dict[str, str] = {}
+    for entry in team_raw.values():
+        if not isinstance(entry, dict):
+            continue
+        kept = apply_allowlist(entry, HANDBOOK_TEAM_ALLOWLIST).kept
+        power_id = as_str(kept.get("powerId"))
+        name = as_str(kept.get("powerName"), sanitize=True)
+        if power_id and name:
+            names[power_id] = name
+    return names
+
+
+def parse_collab_flags(info_raw: Any) -> dict[str, bool]:
+    """``handbook_info_table.handbookDict`` → ``{charId: isLimited}``.
+
+    ``isLimited`` is the only key read; every lore field of the entry is dropped by
+    the allowlist (ADR 0021). A non-bool flag is skipped, leaving collab unknown.
+    """
+    hb = info_raw.get("handbookDict") if isinstance(info_raw, dict) else None
+    if not isinstance(hb, dict):
+        return {}
+    flags: dict[str, bool] = {}
+    for char_id, entry in hb.items():
+        if not isinstance(char_id, str) or not isinstance(entry, dict):
+            continue
+        value = apply_allowlist(entry, HANDBOOK_INFO_ALLOWLIST).kept.get("isLimited")
+        if isinstance(value, bool):
+            flags[char_id] = value
+    return flags
+
+
+def _parse_factions(
+    entry: dict[str, Any], names: dict[str, str]
+) -> tuple[tuple[ParsedFaction, ...], dict[str, Any]]:
+    """``mainPower`` + ``subPower[]`` → distinct faction ids, main entries first."""
+    sub_raw = entry.get("subPower")
+    blocks = [(as_dict(entry.get("mainPower")), True)]
+    blocks += [(as_dict(b), False) for b in (sub_raw if isinstance(sub_raw, list) else [])]
+    factions: list[ParsedFaction] = []
+    seen: set[str] = set()
+    kept_blocks: list[dict[str, Any]] = []
+    for block, is_main in blocks:
+        kept = apply_allowlist(block, POWER_ALLOWLIST).kept
+        kept_blocks.append(kept)
+        for key in ("nationId", "groupId", "teamId"):
+            faction_id = as_str(kept.get(key))
+            if faction_id and faction_id not in seen:
+                seen.add(faction_id)
+                factions.append(ParsedFaction(faction_id, names.get(faction_id), is_main))
+    return tuple(factions), {"mainPower": kept_blocks[0], "subPower": kept_blocks[1:]}
+
+
 def parse_operators(
-    character_raw: Any, subclass_names: dict[str, str] | None = None
+    character_raw: Any,
+    subclass_names: dict[str, str] | None = None,
+    faction_names: dict[str, str] | None = None,
+    collab_flags: dict[str, bool] | None = None,
 ) -> list[ParsedOperator]:
     """Transform raw ``character_table`` (id-keyed dict) into typed operators.
 
@@ -313,6 +394,8 @@ def parse_operators(
     if not isinstance(character_raw, dict):
         raise ImporterError("character table is not a JSON object")
     names = subclass_names or {}
+    powers = faction_names or {}
+    flags = collab_flags or {}
     parsed: list[ParsedOperator] = []
     for game_id in sorted(character_raw):
         entry = character_raw[game_id]
@@ -329,6 +412,7 @@ def parse_operators(
         phases, kept_phases = _parse_phases(entry.get("phases"))
         skill_links, kept_links = _parse_skill_links(entry.get("skills"))
         talents, kept_talents = _parse_talents(entry.get("talents"))
+        factions, kept_powers = _parse_factions(entry, powers)
         parsed.append(
             ParsedOperator(
                 game_id=game_id,
@@ -349,7 +433,10 @@ def parse_operators(
                     "phases": kept_phases,
                     "skills": kept_links,
                     "talents": kept_talents,
+                    "powers": kept_powers,
                 },
+                factions=factions,
+                collab=flags.get(game_id),
             )
         )
     return parsed
@@ -365,8 +452,8 @@ def insert_operators(
     character_source_path: str,
     skills_inserted: int = 0,
 ) -> OperatorImportResult:
-    """Insert operators + aliases + phases + skill links + talents."""
-    counts = {"operators": 0, "phases": 0, "talents": 0, "links": 0, "aliases": 0}
+    """Insert operators + aliases + phases + skill links + talents + factions."""
+    counts = {"operators": 0, "phases": 0, "talents": 0, "links": 0, "aliases": 0, "factions": 0}
     for op in parsed:
         provenance_id = insert_record_provenance(
             conn,
@@ -385,8 +472,8 @@ def insert_operators(
             cur = conn.execute(
                 "INSERT INTO operators "
                 "(server, game_id, display_name, rarity, profession, subclass_id, "
-                "subclass_name, position, tag_json, obtainable, provenance_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "subclass_name, position, tag_json, obtainable, collab, provenance_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     server,
                     op.game_id,
@@ -398,6 +485,7 @@ def insert_operators(
                     op.position,
                     json_or_none(op.tags) if op.tags else None,
                     int(op.obtainable),
+                    None if op.collab is None else int(op.collab),
                     provenance_id,
                 ),
             )
@@ -409,6 +497,7 @@ def insert_operators(
                 conn, operator_pk, op.game_id, op.skill_links, skill_pk_by_game_id
             )
             counts["talents"] += _insert_talents(conn, operator_pk, op.talents)
+            counts["factions"] += _insert_factions(conn, operator_pk, op.factions)
     return OperatorImportResult(
         operators_inserted=counts["operators"],
         skills_inserted=skills_inserted,
@@ -416,6 +505,7 @@ def insert_operators(
         talents_inserted=counts["talents"],
         skill_links_inserted=counts["links"],
         aliases_inserted=counts["aliases"],
+        factions_inserted=counts["factions"],
     )
 
 
@@ -439,6 +529,18 @@ def _insert_aliases(
             (operator_pk, alias.alias, None, alias.normalized_alias, alias.alias_type, locale),
         )
     return len(aliases)
+
+
+def _insert_factions(
+    conn: sqlite3.Connection, operator_pk: int, factions: tuple[ParsedFaction, ...]
+) -> int:
+    for faction in factions:
+        conn.execute(
+            "INSERT INTO operator_factions (operator_pk, faction_id, display_name, is_main) "
+            "VALUES (?, ?, ?, ?)",
+            (operator_pk, faction.faction_id, faction.display_name, int(faction.is_main)),
+        )
+    return len(factions)
 
 
 def _insert_phases(conn: sqlite3.Connection, operator_pk: int, phases: list[ParsedPhase]) -> int:
@@ -529,6 +631,8 @@ def import_operators(
     character_table_path: str = "gamedata/excel/character_table.json",
     skill_table_path: str = "gamedata/excel/skill_table.json",
     uniequip_table_path: str = "gamedata/excel/uniequip_table.json",
+    handbook_team_table_path: str = "gamedata/excel/handbook_team_table.json",
+    handbook_info_table_path: str = "gamedata/excel/handbook_info_table.json",
 ) -> OperatorImportResult:
     """Read character + skill tables via the adapter and import them.
 
@@ -543,6 +647,10 @@ def import_operators(
     leaves ``subclass_name`` NULL rather than failing the domain. The file is already
     in the sync's supplementary set for the module importer, so pairing the name
     costs no new source; the module importer reads its own keys from the same file.
+
+    ``handbook_team_table.json`` (faction names) and ``handbook_info_table.json`` (the
+    collab flag) are read tolerantly the same way; absent, factions keep NULL names and
+    collab stays unknown (ADR 0021).
     """
     if not adapter.exists(character_table_path):
         return OperatorImportResult()
@@ -550,6 +658,16 @@ def import_operators(
     skill_raw = adapter.read_json(skill_table_path) if adapter.exists(skill_table_path) else {}
     uniequip_raw = (
         adapter.read_json(uniequip_table_path) if adapter.exists(uniequip_table_path) else {}
+    )
+    team_raw = (
+        adapter.read_json(handbook_team_table_path)
+        if adapter.exists(handbook_team_table_path)
+        else {}
+    )
+    info_raw = (
+        adapter.read_json(handbook_info_table_path)
+        if adapter.exists(handbook_info_table_path)
+        else {}
     )
     parsed_skills = parse_skills(skill_raw)
     skill_pk_by_game_id = insert_skills(
@@ -559,7 +677,12 @@ def import_operators(
         snapshot_id=snapshot_id,
         skill_source_path=skill_table_path,
     )
-    parsed_operators = parse_operators(character_raw, parse_subclass_names(uniequip_raw))
+    parsed_operators = parse_operators(
+        character_raw,
+        parse_subclass_names(uniequip_raw),
+        parse_faction_names(team_raw),
+        parse_collab_flags(info_raw),
+    )
     return insert_operators(
         conn,
         parsed_operators,

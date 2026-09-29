@@ -23,14 +23,21 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from arknights_mcp.analyzers import EvidenceItem, Observation, RankedObservation
 from arknights_mcp.analyzers.base import dedupe_evidence
 from arknights_mcp.db.connection import DatabaseUnavailable
-from arknights_mcp.mcp.envelopes import ResponseEnvelope, error, internal_error
+from arknights_mcp.mcp.envelopes import (
+    Provenance,
+    ResponseEnvelope,
+    error,
+    internal_error,
+    ok,
+)
+from arknights_mcp.mcp.tools._enum_legend import attach_enum_legend
 from arknights_mcp.services.image_refs import (
     IMAGE_REFS_BASE_URL,
     IMAGE_REFS_LEGEND,
     SOURCE_ID,
 )
 from arknights_mcp.services.operators import cost_item_id
-from arknights_mcp.services.stages import SectionPage
+from arknights_mcp.services.stages import SectionPage, StageProvenance
 
 #: Supplies the process-wide read-only connection to the promoted build. The
 #: app/transport layer owns the connection's lifecycle (opened once, reused); a
@@ -281,6 +288,14 @@ MODULE_TYPE_NOTE = (
 SUBCLASS_NAME_LIMITATION = (
     "This build has no name for this operator's subclass_id, so only the id is shown. A "
     "name is never guessed for it."
+)
+
+#: ``find_operators`` / ``get_my_roster`` ``faction`` matched no faction id or name of
+#: this build (ADR 0021). Shared: one failure mode, one home.
+FACTION_NOT_FOUND_MESSAGE = "no faction with this id or name in this build"
+FACTION_NOT_FOUND_ACTION = (
+    "use a faction_id from the factions that get_operator or find_operators rows carry, "
+    "such as yan, lungmen, sui, babel, rhine, abyssal, or rainbow"
 )
 
 
@@ -573,6 +588,40 @@ def page_to_dict(page: SectionPage) -> dict[str, object]:
         "total": page.total,
         "has_more": page.has_more,
     }
+
+
+def operator_rows_ok(
+    data: Mapping[str, object],
+    *,
+    server: str,
+    page: SectionPage | None,
+    provenance: Iterable[StageProvenance],
+    limitations: tuple[str, ...],
+    legend_fields: tuple[str, ...],
+) -> ResponseEnvelope:
+    """The ``ok`` envelope of an operator-row answer (``find_operators``, the account tools).
+
+    Adds the page descriptor, attaches ``legend_fields`` only when a row under
+    ``operators`` (or the single ``operator``) actually emits ``profession``, and stamps
+    every provenance entry with the region. One home for both tool families.
+    """
+    out = dict(data)
+    if page is not None:
+        out["page"] = page_to_dict(page)
+    rows = out.get("operators", [out.get("operator", {})])
+    emits_profession = isinstance(rows, list) and any(
+        isinstance(row, dict) and "profession" in row for row in rows
+    )
+    # attach_enum_legend writes enum_legend into ``out``, so it runs before ok() reads it.
+    limitations = attach_enum_legend(out, legend_fields if emits_profession else (), limitations)
+    return ok(
+        out,
+        provenance=tuple(
+            Provenance(server=server, snapshot_id=p.snapshot_id, imported_at=p.imported_at)
+            for p in provenance
+        ),
+        limitations=limitations,
+    )
 
 
 #: The convention sentence folded into the description of every tool that emits

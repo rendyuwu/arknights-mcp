@@ -258,6 +258,7 @@ def _all_sections(conn: sqlite3.Connection, *, server: str, game_id: str):  # ty
         include_skills=True,
         include_talents=True,
         include_modules=True,
+        include_base_skills=True,
     )
 
 

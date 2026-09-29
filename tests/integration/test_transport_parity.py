@@ -81,6 +81,7 @@ _CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_enemy", {"server": "en", "game_id": "enemy_1007_slime"}),
     ("get_operator", {"server": "en", "game_id": "char_002_amiya"}),
     ("compare_operator_modules", {"server": "en", "game_id": "char_002_amiya"}),
+    ("find_operators", {"server": "en", "room_type": "CONTROL"}),
     ("analyze_stage", {"server": "en", "stage_code": "4-4"}),
     # No penguin drop cache in the promoted fixture build, so these resolve to
     # not_found -- a legitimate identical domain result across both wires (like the

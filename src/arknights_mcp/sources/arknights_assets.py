@@ -101,6 +101,12 @@ STAGE_TABLE_PATH = "gamedata/excel/stage_table.json"
 #: bare on every operator phase and skill level with no resolver. 68 EN / 73 CN
 #: grids, ~70 KiB, resolving every emitted id with zero unresolved. Same tolerant-absent
 #: posture: a combat-only snapshot lacks it and the wire falls back to the limitation.
+#: ``building_data``, ``handbook_team_table``, and ``handbook_info_table`` (ADR 0021)
+#: are the class once more: the base-skill importer reads ``building_data`` buffs and
+#: per-char slots, and the operator importer reads faction names and the collab flag
+#: from the SAME snapshot. All three are optional facts (the 0021 tables are outside
+#: CRITICAL_TABLES) and a combat-only snapshot legitimately lacks them, so they are
+#: fetched every sync and tolerated-if-absent.
 SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/character_table.json",
     "gamedata/excel/skill_table.json",
@@ -110,6 +116,9 @@ SUPPLEMENTARY_FILES: tuple[str, ...] = (
     "gamedata/excel/skin_table.json",
     "gamedata/excel/activity_table.json",
     "gamedata/excel/range_table.json",
+    "gamedata/excel/building_data.json",
+    "gamedata/excel/handbook_team_table.json",
+    "gamedata/excel/handbook_info_table.json",
 )
 
 

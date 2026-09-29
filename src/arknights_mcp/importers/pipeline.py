@@ -32,6 +32,7 @@ from pathlib import Path
 from arknights_mcp.db.migrations import build_database
 from arknights_mcp.db.policy_events import PolicyEvent, materialize_policy_events
 from arknights_mcp.importers.banners import BannerImportResult, import_banners
+from arknights_mcp.importers.base_skills import BaseSkillImportResult, import_base_skills
 from arknights_mcp.importers.enemies import import_enemies
 from arknights_mcp.importers.guards import (
     guard_not_silently_empty,
@@ -207,6 +208,16 @@ def _import_one(
         server=job.server,
         describe="skin gallery",
         empty=SkinImportResult,
+    )
+    # Base (RIIC) skills (ADR 0021): same optional fail-open class; they link to an
+    # operator_pk, so they import after operators. The counts feed no summary field.
+    import_optional_domain(
+        conn,
+        lambda: import_base_skills(conn, job.adapter, record.snapshot_id),
+        domain="base_skills",
+        server=job.server,
+        describe="base skills",
+        empty=BaseSkillImportResult,
     )
     # The attack-range grids that resolve the `range_id` phases and
     # skill levels emit. Same optional fail-open class as banners/skins -- `range_table`

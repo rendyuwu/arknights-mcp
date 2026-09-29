@@ -293,11 +293,13 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         filters=(),
         enum_knobs=(),
         shed=ShedStatus.NONE,
-        peak_frame_bytes=97839,
+        peak_frame_bytes=100195,
         peak_at="cn/char_1033_swire2",
         counted=(
-            "48.9% of cap -- the widest headroom of any tool that declares no plan. 884 "
-            "operators x all six include flags, pre-shed frame bytes. This row is where "
+            "50.1% of cap, counted on build 2026-09-29T154159Z-en-cn.sqlite. 884 operators x "
+            "all seven include flags, pre-shed frame bytes. include_base_skills and the "
+            "summary's factions "
+            "and collab (ADR 0021) moved the peak 2356 bytes from 97839. This row is where "
             "the scope claim was tested and failed: it called the per-ref source_id the "
             "biggest lever for every refs-bearing surface, and counted, this surface carries "
             "6167 refs over 884 rows -- about 7 a row, not the fat gallery the claim assumed. "
@@ -321,6 +323,25 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
             "20.4% of cap. 884 operators x levels=[1,2,3] (the whole published domain) x "
             "mode=with_observations, pre-shed frame bytes. Peaks on the same operator "
             "get_operator does, one fifth the frame."
+        ),
+    ),
+    ToolFramePressure(
+        tool="find_operators",
+        selectors=(),
+        filters=("faction", "collab"),
+        enum_knobs=(),
+        shed=ShedStatus.NONE,
+        peak_frame_bytes=132081,
+        peak_at="cn page 1, page_size=100, room_type=MANUFACTURE",
+        counted=(
+            "66.0% of cap, counted on build 2026-09-29T154159Z-en-cn.sqlite -- the heaviest "
+            "frame of any tool that declares no plan. Every page of both regions at "
+            "page_size=100 x every room_type, pre-shed frame bytes. The sweep cannot reach a "
+            "no-room_type request: with no filter the call is illegal, and faction/collab are "
+            "narrowing filters it omits. That space was measured by hand on the same build -- "
+            "every page of all 88 (region, faction_id) pairs plus collab=true, identity-only "
+            "rows -- "
+            "and peaks at 57690 B (28.8%, cn page 1, faction=rhodes)."
         ),
     ),
     ToolFramePressure(
@@ -405,16 +426,17 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
     ToolFramePressure(
         tool="get_my_roster",
         selectors=(),
-        filters=("min_rarity", "min_elite"),
+        filters=("min_rarity", "min_elite", "faction", "collab"),
         enum_knobs=(),
         shed=ShedStatus.NONE,
-        peak_frame_bytes=2874,
-        peak_at="en page 1, page_size=100",
+        peak_frame_bytes=3417,
+        peak_at="en page 1, page_size=100, room_type=CONTROL",
         counted=(
-            "1.4% of cap, counted on build 2026-09-27T220724Z-en-cn.sqlite with the synthetic "
+            "1.7% of cap, counted on build 2026-09-29T154159Z-en-cn.sqlite with the synthetic "
             "account fixture tests/fixtures/account/sync_data_en.json, pre-shed frame bytes. "
             "A real roster is personal and never in the basis; a full 100-row page of real "
-            "operator ids is proven under the cap by the account roster cap contract test."
+            "operator ids is proven under the cap by the account roster cap contract test, "
+            "and so is a full room_type page of every en operator."
         ),
     ),
     ToolFramePressure(
@@ -468,12 +490,14 @@ FRAME_PRESSURE: tuple[ToolFramePressure, ...] = (
         filters=(),
         enum_knobs=(),
         shed=ShedStatus.NONE,
-        peak_frame_bytes=17601,
+        peak_frame_bytes=17616,
         peak_at="no parameters",
         counted=(
-            "8.8% of cap. One shape, pre-shed frame bytes. Sized by the registered source "
-            "count in config/data_sources.toml rather than by any build, so this row moves "
-            "when a source is added, never when the corpus grows."
+            "8.8% of cap, counted on build 2026-09-29T154159Z-en-cn.sqlite. One shape, "
+            "pre-shed frame bytes. Sized by the registered sources in config/data_sources.toml "
+            "rather than by any build, so this row moves when a source or its registry text "
+            "changes (the ADR 0021 purpose wording moved it 15 bytes from 17601), never when "
+            "the corpus grows."
         ),
     ),
 )

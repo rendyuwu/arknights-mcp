@@ -25,6 +25,12 @@ from arknights_mcp.db.repositories.metadata import MetadataRepository
 from arknights_mcp.db.repositories.operators import OperatorRepository, OperatorRow
 from arknights_mcp.importers.account import AccountRoster, OwnedOperator
 from arknights_mcp.models.common import PAGE_SIZE_DEFAULT
+from arknights_mcp.services.base_skills import (
+    BASE_SKILL_DOMAIN_MISSING_LIMITATION,
+    COLLAB_LIMITATION,
+    base_skill_entries,
+)
+from arknights_mcp.services.operators import operator_identity
 from arknights_mcp.services.stages import (
     SectionPage,
     StageProvenance,
@@ -33,7 +39,12 @@ from arknights_mcp.services.stages import (
 )
 
 AccountStatus = Literal[
-    "ok", "not_found", "unsupported_server", "account_unavailable", "schema_incompatible"
+    "ok",
+    "not_found",
+    "unsupported_server",
+    "account_unavailable",
+    "schema_incompatible",
+    "unknown_faction",
 ]
 
 ACCOUNT_SNAPSHOT_LIMITATION = (
@@ -45,7 +56,12 @@ ACCOUNT_UNKNOWN_OPERATOR_LIMITATION = (
     "build, so only their game_id and account progress are shown."
 )
 ACCOUNT_EMPTY_ROSTER_LIMITATION = (
-    "No owned operator matches min_rarity and min_elite. Lower or drop them to widen the list."
+    "No owned operator matches these filters. Loosen or drop them to widen the list."
+)
+ROSTER_BASE_SKILL_NOTE = (
+    "base_skills lists, per slot, the entry in effect for this account (in_effect true) and "
+    "any stage not unlocked yet (in_effect false). A stage that a later unlocked stage "
+    "replaced is left out."
 )
 ACCOUNT_UNNAMED_PART_LIMITATION = (
     "Some skill or module names are not in this build, so only their ids are shown. Skills "
@@ -107,15 +123,7 @@ def _provenance(
 
 
 def _identity(op: OwnedOperator, build: OperatorRow | None) -> dict[str, object]:
-    row: dict[str, object] = {"game_id": op.char_id}
-    if build is not None:
-        for key, value in (
-            ("display_name", build.display_name),
-            ("rarity", build.rarity),
-            ("profession", build.profession),
-        ):
-            if value is not None:
-                row[key] = value
+    row = operator_identity(op.char_id, build)
     row.update(elite=op.elite, level=op.level, potential=op.potential, skill_level=op.skill_level)
     return row
 
@@ -127,6 +135,9 @@ def get_my_roster(
     server: str,
     min_rarity: int | None = None,
     min_elite: int | None = None,
+    room_type: str | None = None,
+    faction: str | None = None,
+    collab: bool | None = None,
     page: int = 1,
     page_size: int = PAGE_SIZE_DEFAULT,
 ) -> AccountResult:
@@ -137,6 +148,22 @@ def get_my_roster(
     p, size = _validate_page(page, page_size)
 
     repo = OperatorRepository(game)
+    faction_id: str | None = None
+    if faction is not None:
+        faction_id = repo.resolve_faction(server, faction)
+        if faction_id is None:
+            return _failed("unknown_faction", server)
+    filtered = room_type is not None or faction_id is not None or collab is not None
+    allowed = (
+        {
+            r.operator_pk
+            for r in repo.filter_operators(
+                server, room_type=room_type, faction_id=faction_id, collab=collab
+            )
+        }
+        if filtered
+        else set()
+    )
     enriched = [(op, repo.operator_by_game_id(server, op.char_id)) for op in roster.operators]
     matching = [
         (op, build)
@@ -146,6 +173,7 @@ def get_my_roster(
             or (build is not None and build.rarity is not None and build.rarity >= min_rarity)
         )
         and (min_elite is None or op.elite >= min_elite)
+        and (not filtered or (build is not None and build.operator_pk in allowed))
     ]
     matching.sort(
         key=lambda pair: (
@@ -156,6 +184,11 @@ def get_my_roster(
         )
     )
     window = matching[(p - 1) * size : p * size]
+    skills = (
+        repo.base_skills([build.operator_pk for _, build in window if build is not None])
+        if room_type is not None
+        else {}
+    )
 
     rows: list[dict[str, object]] = []
     for op, build in window:
@@ -177,6 +210,12 @@ def get_my_roster(
         row["modules"] = modules
         if op.equipped_module_id is not None:
             row["equipped_module_id"] = op.equipped_module_id
+        if room_type is not None and build is not None:
+            row["base_skills"] = base_skill_entries(
+                skills.get(build.operator_pk, []),
+                room_type=room_type,
+                progress=(op.elite, op.level),
+            )
         rows.append(row)
 
     limitations = [ACCOUNT_SNAPSHOT_LIMITATION]
@@ -184,10 +223,22 @@ def get_my_roster(
         limitations.append(ACCOUNT_UNKNOWN_OPERATOR_LIMITATION)
     if not matching:
         limitations.append(ACCOUNT_EMPTY_ROSTER_LIMITATION)
+    if filtered and not allowed and not repo.has_base_skill_domain():
+        limitations.append(BASE_SKILL_DOMAIN_MISSING_LIMITATION)
+    if any(row.get("base_skills") for row in rows):
+        limitations.append(ROSTER_BASE_SKILL_NOTE)
+    if collab is not None:
+        limitations.append(COLLAB_LIMITATION)
+    data: dict[str, object] = {"server": server, "synced_at": stored.synced_at}
+    if room_type is not None:
+        data["room_type"] = room_type
+    if faction_id is not None:
+        data["faction_id"] = faction_id
+    data["operators"] = rows
     return AccountResult(
         status="ok",
         server=server,
-        data={"server": server, "synced_at": stored.synced_at, "operators": rows},
+        data=data,
         page=_section_page(p, size, len(matching)),
         provenance=_provenance(stored, [build for _, build in matching]),
         limitations=tuple(limitations),

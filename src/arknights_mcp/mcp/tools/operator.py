@@ -49,6 +49,13 @@ from arknights_mcp.mcp.tools._shared import (
 )
 from arknights_mcp.models.common import tool_input_schema
 from arknights_mcp.models.operators import GetOperatorInput
+from arknights_mcp.services.base_skills import (
+    BASE_SKILL_DOMAIN_MISSING_LIMITATION,
+    BASE_SKILL_SLOT_NOTE,
+    COLLAB_LIMITATION,
+    base_skill_entries,
+    faction_entries,
+)
 from arknights_mcp.services.image_refs import operator_ref_dicts
 from arknights_mcp.services.operators import (
     ModuleLevelFacts,
@@ -91,11 +98,14 @@ _TOOL_DESCRIPTION = (
     "Fetch one Arknights operator's facts by region + game_id (for example server en, "
     "game_id char_002_amiya). The default response is compact identity, a summary of the "
     "operator's class and section counts, region, and provenance. Set include_phases / "
-    "include_skills / include_talents / include_modules to add each bounded heavy "
-    "section. include_provenance only adds a second copy of the snapshot provenance "
-    "inside data; the envelope carries it either way. To compare one operator's modules "
-    "across their upgrade levels side by side, or for evidence-backed module "
+    "include_skills / include_talents / include_modules / include_base_skills to add each "
+    "bounded heavy section. include_provenance only adds a second copy of the snapshot "
+    "provenance inside data; the envelope carries it either way. To compare one operator's "
+    "modules across their upgrade levels side by side, or for evidence-backed module "
     "observations, use compare_operator_modules instead. en/cn are never mixed. "
+    "base_skills entries carry slot, room_type, description, unlock_elite and unlock_level; "
+    "a later entry in a slot replaces the earlier one once unlocked. The summary adds "
+    "factions and collab. "
     "The operator's rarity is their star count as an integer, 1 to 6. "
     "The response's enum_legend gives the values of profession and position, and of a "
     "skill's skill_type, sp_type, and duration_type. A skill's effect template rides the "
@@ -123,6 +133,7 @@ _NOT_FOUND_ACTION = (
 _SUMMARY_ENUM_FIELDS = ("profession", "position")
 _SKILL_ENUM_FIELDS = ("skill_type", "sp_type", "duration_type")
 _MODULE_ENUM_FIELDS = ("applies_to",)
+_BASE_SKILL_ENUM_FIELDS = ("room_type",)
 
 #: The four ``skill_table`` fields the source scopes PER LEVEL. One home for
 #: the list the variance detector and both emit sites below walk. Local to this module,
@@ -185,6 +196,8 @@ def _summary_to_dict(summary: OperatorSummary) -> dict[str, object]:
         "skill_count": summary.skill_count,
         "talent_count": summary.talent_count,
         "module_count": summary.module_count,
+        **({"factions": faction_entries(summary.factions)} if summary.factions else {}),
+        **({"collab": summary.collab} if summary.collab is not None else {}),
     }
 
 
@@ -390,6 +403,8 @@ def _operator_to_dict(
         data["talents"] = [_talent_to_dict(t) for t in operator.talents]
     if operator.modules:
         data["modules"] = [_module_to_dict(m) for m in operator.modules]
+    if operator.base_skills:
+        data["base_skills"] = base_skill_entries(operator.base_skills)
     # The grids resolving the range_ids the emitted sections carry. Absent when nothing
     # emitted a range_id, or when none of them resolved -- the limitation is then the sole
     # signal (no empty map claiming "no grids exist").
@@ -482,6 +497,12 @@ def _shape(
     # silence that made "what is this skill's range" unanswerable.
     if (range_note := unresolved_range_limitation(operator.unresolved_range_ids)) is not None:
         limitations = (*limitations, range_note)
+    if operator.base_skills:
+        limitations = (*limitations, BASE_SKILL_SLOT_NOTE)
+    if operator.base_skill_domain_missing:
+        limitations = (*limitations, BASE_SKILL_DOMAIN_MISSING_LIMITATION)
+    if operator.summary is not None and operator.summary.collab is True:
+        limitations = (*limitations, COLLAB_LIMITATION)
     # Each domain rides the response that actually emits its field -- a legend
     # for a section this call did not request would be noise. Both subsets are
     # drawn from the one shared table, so the tool and the enum-legend guard cannot drift.
@@ -491,6 +512,7 @@ def _shape(
             *(_SUMMARY_ENUM_FIELDS if operator.summary is not None else ()),
             *(_SKILL_ENUM_FIELDS if operator.skills else ()),
             *(_MODULE_ENUM_FIELDS if operator.modules else ()),
+            *(_BASE_SKILL_ENUM_FIELDS if operator.base_skills else ()),
         ),
         limitations,
     )
@@ -539,6 +561,7 @@ def build_get_operator_spec(
                 include_skills=parsed.include_skills,
                 include_talents=parsed.include_talents,
                 include_modules=parsed.include_modules,
+                include_base_skills=parsed.include_base_skills,
                 # Wiring-driven, not a client flag -- the named gallery is
                 # queried only when the emission gate will actually emit it.
                 load_skins=image_refs_enabled,

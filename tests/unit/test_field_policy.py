@@ -53,7 +53,10 @@ def test_field_policy_version_present() -> None:
     #    .json` was DECLARED in the registry's fields_consumed while no sync fetched it
     #    and no importer read it, so `range_id` shipped bare on 2548 phase + 5334
     #    skill-level rows with no resolver and no limitation.
-    assert FIELD_POLICY_VERSION == "15"
+    # 16: added BASE_SKILL_ALLOWLIST + BASE_SKILL_STAGE_ALLOWLIST, POWER_ALLOWLIST,
+    #    HANDBOOK_TEAM_ALLOWLIST, HANDBOOK_INFO_ALLOWLIST -- base (RIIC) skills,
+    #    faction ids + names, and the collab flag (handbook lore stays out; ADR 0021).
+    assert FIELD_POLICY_VERSION == "16"
 
 
 def test_skill_level_allowlist_keeps_effect_template_drops_nothing_else() -> None:

@@ -148,6 +148,18 @@ ENUM_LEGENDS: dict[str, dict[str, str]] = {
         ),
         "the source's own pool-rule token",
     ),
+    # The in-game EN facility names (``building_data.rooms.*.name``; ADR 0021).
+    "room_type": {
+        "CONTROL": "Control Center",
+        "DORMITORY": "Dormitory",
+        "HIRE": "Office",
+        "MANUFACTURE": "Factory",
+        "MEETING": "Reception Room",
+        "POWER": "Power Plant",
+        "TRADING": "Trading Post",
+        "TRAINING": "Training Room",
+        "WORKSHOP": "Workshop",
+    },
 }
 
 
@@ -206,8 +218,10 @@ TOOL_ENUM_LEGEND_FIELDS: dict[str, tuple[str, ...]] = {
         "sp_type",
         "duration_type",
         "applies_to",
+        "room_type",
     ),
     "compare_operator_modules": ("applies_to",),
+    "find_operators": ("profession",),
     "get_stage_drops": ("item_type",),
     "get_item_drops": ("item_type",),
     "get_banners": ("rule_type",),

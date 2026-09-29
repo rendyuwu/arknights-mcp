@@ -79,7 +79,12 @@ from arknights_mcp.util.text import DEFAULT_MAX_TEXT_LENGTH, sanitize_text
 #:    table (migration 0020), so the bump is what promotes them. No
 #:    TRANSFORM_VERSION bump: no existing record's transform changes -- a new domain is
 #:    added beside them (the entry-11 precedent).
-FIELD_POLICY_VERSION = "15"
+#: 16: added BASE_SKILL_ALLOWLIST + BASE_SKILL_STAGE_ALLOWLIST (building_data.json
+#:    base skills: name, facility, mechanic effect text), POWER_ALLOWLIST
+#:    (character_table mainPower/subPower faction ids), HANDBOOK_TEAM_ALLOWLIST (faction
+#:    names), HANDBOOK_INFO_ALLOWLIST (collab flag only; handbook lore stays out).
+#:    ADR 0021.
+FIELD_POLICY_VERSION = "16"
 
 #: Fact region -> name/alias locale tag. A region's canonical
 #: strings are in that region's language: an en entity's name is English (locale
@@ -434,6 +439,32 @@ RANGE_ALLOWLIST: frozenset[str] = frozenset({"id", "grids"})
 
 #: One ``grids[]`` cell of a range: integer offsets from the deploy tile.
 RANGE_GRID_ALLOWLIST: frozenset[str] = frozenset({"row", "col"})
+
+#: One ``character_table`` ``mainPower`` / ``subPower[]`` block: the operator's
+#: nation / group / team faction ids (id-charset strings, any of them null).
+#: ADR 0021.
+POWER_ALLOWLIST: frozenset[str] = frozenset({"nationId", "groupId", "teamId"})
+
+#: One ``handbook_team_table.json`` entry: the faction id plus its SHORT display
+#: label ("Rhodes Island", "Yan-Lungmen"), a proper name rather than prose. The
+#: power level / color / order fields are dropped. ADR 0021.
+HANDBOOK_TEAM_ALLOWLIST: frozenset[str] = frozenset({"powerId", "powerName"})
+
+#: One ``handbook_info_table.json`` ``handbookDict`` entry: the collab flag ONLY.
+#: Every story, profile, voice, and illustrator field of that file is lore and stays
+#: out (ADR 0021).
+HANDBOOK_INFO_ALLOWLIST: frozenset[str] = frozenset({"isLimited"})
+
+#: One ``building_data.json`` ``buffs[]`` entry (a base / RIIC skill). ``description``
+#: is the in-game base-skill EFFECT text -- mechanic text with no lore and no
+#: blackboard, read raw through ``template_text`` like the skill templates (ADR 0010,
+#: ADR 0021). Icons, colors, sort ids, and targets are dropped.
+BASE_SKILL_ALLOWLIST: frozenset[str] = frozenset({"buffId", "buffName", "roomType", "description"})
+
+#: One ``buffChar[].buffData[]`` stage of an operator's base-skill slot. ``cond`` is
+#: the nested ``{phase, level}`` unlock gate, kept structurally as
+#: SKILL_LINK_ALLOWLIST keeps ``unlockCond``. ADR 0021.
+BASE_SKILL_STAGE_ALLOWLIST: frozenset[str] = frozenset({"buffId", "cond"})
 
 #: One Penguin Statistics ``items`` entry. ``itemId`` is the item's
 #: game id (== arknights item id), ``name`` a short display label (kept, like an

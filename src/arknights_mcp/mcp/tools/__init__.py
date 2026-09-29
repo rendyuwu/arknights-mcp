@@ -33,6 +33,7 @@ from arknights_mcp.mcp.tools.drops import (
     build_get_stage_drops_spec,
 )
 from arknights_mcp.mcp.tools.enemy import build_get_enemy_spec
+from arknights_mcp.mcp.tools.find_operators import build_find_operators_spec
 from arknights_mcp.mcp.tools.metadata import (
     build_get_data_sources_spec,
     build_get_data_status_spec,
@@ -89,6 +90,7 @@ def build_tool_registry(
         build_get_enemy_spec(get_conn, image_refs_enabled=image_refs_enabled),
         build_get_operator_spec(get_conn, image_refs_enabled=image_refs_enabled),
         build_compare_operator_modules_spec(get_conn),
+        build_find_operators_spec(get_conn),
         build_analyze_stage_spec(get_conn),
         build_get_stage_drops_spec(get_conn),
         build_get_item_drops_spec(get_conn),

@@ -76,6 +76,8 @@ _EMITTED_ENUM_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("skills", "duration_type", "get_operator"),
     ("operators", "profession", "get_operator"),
     ("operators", "position", "get_operator"),
+    ("base_skills", "room_type", "get_operator"),
+    ("operators", "profession", "find_operators"),
     ("items", "item_type", "get_stage_drops"),
     ("items", "item_type", "get_item_drops"),
     ("banners", "rule_type", "get_banners"),

@@ -1,5 +1,26 @@
 {
   "operator": {
+    "base_skill_domain_missing": false,
+    "base_skills": [
+      {
+        "description": "When this Operator is assigned to the Control Center, all Trading Posts' order efficiency +7% (only the most effective one will take effect when assigned Operators have the same skill effect)",
+        "display_name": "Agreement",
+        "room_type": "CONTROL",
+        "slot_index": 1,
+        "stage_index": 1,
+        "unlock_level": 1,
+        "unlock_phase": 0
+      },
+      {
+        "description": "When this Operator is assigned to a Dormitory, restores +0.15 Morale per hour to all Operators assigned to that Dormitory (Only the strongest effect of this type takes place)",
+        "display_name": "Violin Solo",
+        "room_type": "DORMITORY",
+        "slot_index": 2,
+        "stage_index": 1,
+        "unlock_level": 1,
+        "unlock_phase": 2
+      }
+    ],
     "display_name": "Amiya",
     "game_id": "char_002_amiya",
     "modules": [
@@ -134,7 +155,7 @@
     ],
     "provenance": {
       "imported_at": "2026-07-18T00:00:00+00:00",
-      "snapshot_id": "en:d7fa46edf98a"
+      "snapshot_id": "en:669db5f86451"
     },
     "ranges": [
       {
@@ -324,6 +345,19 @@
     ],
     "skins": [],
     "summary": {
+      "collab": false,
+      "factions": [
+        {
+          "display_name": "Rhodes Island",
+          "faction_id": "rhodes",
+          "is_main": true
+        },
+        {
+          "display_name": "Rim Billiton",
+          "faction_id": "rim",
+          "is_main": false
+        }
+      ],
       "module_count": 1,
       "obtainable": true,
       "phase_count": 2,

@@ -141,6 +141,7 @@ def test_core_files_cover_every_importer_table() -> None:
     import inspect
 
     from arknights_mcp.importers.banners import import_banners
+    from arknights_mcp.importers.base_skills import import_base_skills
     from arknights_mcp.importers.enemies import import_enemies
     from arknights_mcp.importers.modules import import_modules
     from arknights_mcp.importers.operators import import_operators
@@ -155,6 +156,7 @@ def test_core_files_cover_every_importer_table() -> None:
         import_modules,
         import_banners,
         import_skins,
+        import_base_skills,
     ):
         for param in inspect.signature(fn).parameters.values():
             default = param.default

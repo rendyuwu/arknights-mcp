@@ -1,0 +1,14 @@
+{
+  "handbookDict": {
+    "char_002_amiya": {
+      "charID": "char_002_amiya",
+      "infoName": "credit prose that must never be imported",
+      "isLimited": false,
+      "storyTextAudio": [
+        {"stories": [{"storyText": "story prose that must never be imported"}]}
+      ],
+      "handbookAvgList": []
+    }
+  },
+  "npcDict": {}
+}

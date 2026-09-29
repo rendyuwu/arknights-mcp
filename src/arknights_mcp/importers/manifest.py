@@ -61,7 +61,11 @@ from arknights_mcp.util.hashing import record_hash, sha256_hex
 #: ``-1`` sentinel -- two facts that disagree on 454 of 513 en rows. Every module level
 #: row with a change bundle imports different bytes, so the transform moves even where
 #: the field policy would not.
-TRANSFORM_VERSION = "8"
+#:
+#: ``9``: operator records now carry their sub-allowlisted ``mainPower``/``subPower``
+#: blocks in provenance, plus the collab flag and faction rows (ADR 0021), so every
+#: operator row imports different bytes.
+TRANSFORM_VERSION = "9"
 
 
 def _now_iso() -> str:

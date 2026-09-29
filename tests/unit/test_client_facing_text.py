@@ -416,6 +416,26 @@ _ENUM_DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     ("get_operator", "position", ("MELEE", "RANGED")),
     (
+        "get_operator",
+        "room_type",
+        (
+            "CONTROL",
+            "DORMITORY",
+            "HIRE",
+            "MANUFACTURE",
+            "MEETING",
+            "POWER",
+            "TRADING",
+            "TRAINING",
+            "WORKSHOP",
+        ),
+    ),
+    (
+        "find_operators",
+        "profession",
+        ("PIONEER", "WARRIOR", "TANK", "SNIPER", "CASTER", "MEDIC", "SUPPORT", "SPECIAL"),
+    ),
+    (
         "get_stage_drops",
         "item_type",
         (
@@ -611,6 +631,7 @@ _LEADING_SELECTOR: dict[str, str] = {
     "get_enemy": "game_id",
     "get_operator": "game_id",
     "compare_operator_modules": "game_id",
+    "find_operators": "region",
     "analyze_stage": "stage_code",
     "get_stage_drops": "stage_code",
     "get_item_drops": "item game_id",

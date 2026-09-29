@@ -49,6 +49,7 @@ EXPECTED_TOOLS = frozenset(
         "get_enemy",
         "get_operator",
         "compare_operator_modules",
+        "find_operators",
         "analyze_stage",
         "get_stage_drops",
         "get_item_drops",

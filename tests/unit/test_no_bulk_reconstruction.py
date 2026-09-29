@@ -66,6 +66,7 @@ _EXPECTED_TOOLS = frozenset(
         "get_enemy",
         "get_operator",
         "compare_operator_modules",
+        "find_operators",
         "analyze_stage",
         "get_stage_drops",
         "get_item_drops",
@@ -95,7 +96,7 @@ _KEYED_ENTITY_TOOLS = frozenset(  # one entity by unique key/selector, no list k
     }
 )
 _LIST_TOOLS = frozenset(  # region-scoped list, bounded top-level page
-    {"get_announcements", "get_banners", "get_my_roster", "get_my_inventory"}
+    {"get_announcements", "get_banners", "find_operators", "get_my_roster", "get_my_inventory"}
 )
 _POSTURE_TOOLS = frozenset({"get_data_status", "get_data_sources"})  # fixed metadata
 

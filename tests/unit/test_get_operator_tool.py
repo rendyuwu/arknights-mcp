@@ -42,6 +42,7 @@ from arknights_mcp.mcp.tools.operator import (
     build_get_operator_spec,
 )
 from arknights_mcp.models.common import MAX_ID_LEN
+from arknights_mcp.services.base_skills import BASE_SKILL_SLOT_NOTE
 from arknights_mcp.services.operators import (
     OperatorPhaseFacts,
     SkillLevelFacts,
@@ -145,6 +146,31 @@ def test_summary_can_be_dropped(conn: sqlite3.Connection) -> None:
     env = _handler(conn)(server="en", game_id=_AMIYA, include_summary=False)
     op = env.to_dict()["data"]["operator"]  # type: ignore[index]
     assert "summary" not in op
+
+
+def test_include_base_skills_adds_every_facility_with_its_unlock_gate(
+    conn: sqlite3.Connection,
+) -> None:
+    env = _handler(conn)(server="en", game_id=_AMIYA, include_base_skills=True)
+    data = env.to_dict()["data"]
+    skills = data["operator"]["base_skills"]  # type: ignore[index]
+    assert [
+        (s["slot"], s["display_name"], s["room_type"], s["unlock_elite"], s["unlock_level"])
+        for s in skills
+    ] == [(1, "Agreement", "CONTROL", 0, 1), (2, "Violin Solo", "DORMITORY", 2, 1)]
+    assert "Control Center" in data["enum_legend"]["room_type"].values()  # type: ignore[index]
+    assert BASE_SKILL_SLOT_NOTE in env.limitations
+
+
+def test_the_default_summary_carries_factions_and_collab_but_no_base_skills(
+    conn: sqlite3.Connection,
+) -> None:
+    env = _handler(conn)(server="en", game_id=_AMIYA)
+    op = env.to_dict()["data"]["operator"]  # type: ignore[index]
+    assert [f["faction_id"] for f in op["summary"]["factions"]] == ["rhodes", "rim"]
+    assert op["summary"]["collab"] is False
+    assert "base_skills" not in op
+    assert BASE_SKILL_SLOT_NOTE not in env.limitations
 
 
 # --- null discipline: omit the always-optional range_id scalar ----------------

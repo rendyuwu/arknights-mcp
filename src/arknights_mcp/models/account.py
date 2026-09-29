@@ -10,12 +10,16 @@ from __future__ import annotations
 from pydantic import Field
 
 from arknights_mcp.models.common import MAX_ID_LEN, PageParams, Region, StrictModel
+from arknights_mcp.models.operators import RoomType
 
 
 class GetMyRosterInput(StrictModel):
     server: Region
     min_rarity: int | None = Field(default=None, ge=1, le=6)
     min_elite: int | None = Field(default=None, ge=0, le=2)
+    room_type: RoomType | None = None
+    faction: str | None = Field(default=None, min_length=1, max_length=MAX_ID_LEN)
+    collab: bool | None = None
     page: PageParams = Field(default_factory=PageParams)
 
 
